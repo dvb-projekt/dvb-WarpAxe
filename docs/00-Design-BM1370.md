@@ -1311,3 +1311,21 @@ mode**; slave mode stalls the NCM IN direction after ~14 KB and never
 recovers. And a handler that runs on the TinyUSB task (the CDC receive
 callback) must not uninstall TinyUSB itself; the reboot-to-bootloader
 runs on a task of its own.
+
+### 14.10 Stratum V1 on the board (2026-09-23, evening)
+
+`crates/stratum` holds everything that does not touch a socket: line
+classification, request builders, coinbase assembly, merkle root, the
+header fields in the byte orders ESP-Miner hands the BM13xx (previous
+hash in header order, merkle root word-swapped), share difficulty of a
+hash. Tested on the host against a session captured from WarpPool
+(`tests/vectors/warppool-2026-09-23.json`, reference values computed
+independently in Python).
+
+The firmware's `stratum.rs` runs one thread: connect, `mining.configure`
+(BIP 320 mask), subscribe, authorize, then notifies become jobs for the
+chain driver (not yet attached). On the NerdMiner over Wi-Fi it is
+authorized on pool.warppool.org with mask `1fffe000`, difficulty 1, and
+receives jobs (a clean job per block). Lesson: ESP-IDF has no `dup()`,
+so `TcpStream::try_clone` fails with ENOSYS; read and write through
+references to one stream.

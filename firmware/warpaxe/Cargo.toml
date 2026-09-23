@@ -32,6 +32,7 @@ heapless = "0.8"
 anyhow = "1"
 warpaxe-core = { path = "../../crates/core" }
 warpaxe-chain = { path = "../../crates/chain" }
+warpaxe-stratum = { path = "../../crates/stratum" }
 
 [build-dependencies]
 embuild = "0.33"

@@ -12,6 +12,7 @@ mod diag;
 mod display;
 mod font;
 mod net;
+mod stratum;
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -51,7 +52,9 @@ fn draw(d: &mut display::Display) {
             diag::HTTP_HITS.load(std::sync::atomic::Ordering::Relaxed)
         ),
     );
-    d.text(4, 58, 1, GREY, &format!("{}  RESET {}  POOL {}:{}", api::VERSION, diag::reset_reason(), cfg.stratum_url, cfg.stratum_port));
+    let st = stratum::state();
+    let pool_state = if st.authorized { "AUTH" } else if st.connected { "CONN" } else { "OFF" };
+    d.text(4, 58, 1, GREY, &format!("POOL {} {}  DIFF {}  JOBS {}  {}", cfg.stratum_url, pool_state, st.difficulty, st.jobs_received, st.last_job_id));
     match diag::last_crash() {
         Some(c) => {
             d.text(4, 68, 1, RED, &format!("LAST CRASH {}", &c[..c.len().min(46)]));
@@ -139,6 +142,8 @@ fn main() {
             None
         }
     };
+    set_step("STRATUM");
+    stratum::start();
     set_step("RUN");
     info!("running: http on usb {} and wifi when up", net::usb::ip_string());
     loop {

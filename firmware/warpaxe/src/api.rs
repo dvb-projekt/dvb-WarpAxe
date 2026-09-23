@@ -12,7 +12,7 @@ use esp_idf_svc::io::{EspIOError, Read, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{config, diag, net};
+use crate::{config, diag, net, stratum};
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
@@ -41,6 +41,9 @@ pub fn system_info() -> serde_json::Value {
         "uptimeSeconds": diag::uptime_s(),
         "asicCount": cfg.asic_count, "smallCoreCount": 0, "ASICModel": "BM1370",
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user,
+        "isUsingFallbackStratum": false,
+        "poolDifficulty": stratum::state().difficulty,
+        "stratumConnected": stratum::state().authorized,
         "version": VERSION, "boardVersion": "t-display-s3", "runningPartition": running_partition(),
         "fanspeed": cfg.fanspeed, "fanrpm": 0, "autofanspeed": cfg.autofanspeed,
         "overheat_mode": 0,
@@ -71,6 +74,7 @@ pub fn v1_state() -> serde_json::Value {
         },
         "http_hits": diag::HTTP_HITS.load(Ordering::Relaxed),
         "last_crash": diag::last_crash(),
+        "stratum": stratum::state(),
         "config": config::get().redacted(),
     })
 }

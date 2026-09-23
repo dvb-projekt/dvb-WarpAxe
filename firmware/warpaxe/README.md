@@ -18,8 +18,9 @@ What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
 | Display: ST7789 status screen with the last log lines and the previous crash | works |
 | Crash handling: core dump to flash, summary in `/api/v1/state` and on screen, 30 s on USB-Serial/JTAG after a crash before USB OTG takes the PHY | works |
 | Flash-back: `GET /bootloader` or `POST /api/v1/bootloader`, or a `B` byte on the CDC port → ROM download mode with the PHY handed back | works |
+| Stratum V1 client (`crates/stratum` + `src/stratum.rs`): configure (version rolling), subscribe, authorize, notify → job with coinbase, merkle root and chip-ordered header fields; difficulty and mask tracking; reconnect with backoff; state in `/api/v1/state` and on the display | works against pool.warppool.org over Wi-Fi |
 
-Not yet: Stratum, the chain driver on a UART, board profiles, fan/VR/sensor drivers, Wi-Fi provisioning UI.
+Not yet: share submission (needs nonces), the chain driver on a UART, board profiles, fan/VR/sensor drivers, Wi-Fi provisioning UI.
 
 ## Build and flash
 
@@ -61,5 +62,7 @@ curl -X POST --data-binary @/tmp/warpaxe.bin -H 'Expect:' http://192.168.7.1/api
   `sdkconfig.defaults`. After changing `sdkconfig.defaults` delete the
   generated `target/**/esp-idf-sys-*/out/sdkconfig`.
 - espflash skips segments it believes unchanged: `--no-skip`.
+- `TcpStream::try_clone` is `ENOSYS` on ESP-IDF (no `dup`): read and write
+  through `&TcpStream` instead.
 - The CDC console port (`/dev/cu.usbmodem…`, not the JTAG one) carries
   the logs once USB is up; reading it with a plain non-blocking open works.
