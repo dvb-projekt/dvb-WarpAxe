@@ -16,6 +16,7 @@
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
 
+pub mod chip;
 pub mod crc;
 pub mod decoder;
 pub mod frame;
