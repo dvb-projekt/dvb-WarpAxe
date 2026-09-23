@@ -8,8 +8,21 @@ and the simulator have value on their own and are built first.
 
 | crate | purpose | status |
 |---|---|---|
-| `warpaxe-core` | frames, CRCs, PLL solver, chip profiles — pure, `no_std`, no alloc | frames + CRCs done |
-| `warpaxe-sim` | a BM1370 that answers on a UART without hashing, and can be made to misbehave | placeholder |
+| `warpaxe-core` | frames, CRCs, stream decoders both ways, PLL solver, job/result semantics, register payloads, chip profiles with the init sequence as data — pure, `no_std`, no alloc | complete for BM1370 |
+| `warpaxe-sim` | `SimChip`/`SimChain`: a BM1370 chain that answers on a UART without hashing, plus a `Board` with watts, degrees, a VR and a fan — and faults for both | core done |
+| `warpaxe-axeos` | an AxeOS-compatible HTTP device on top: `/api/system/info`, `/api/system/asic`, `PATCH /api/system`, `POST /api/system/restart`, and `/sim/*` to break it | serves WarpTune |
+
+Run the device:
+
+```bash
+cargo run --release -p warpaxe-axeos -- --port 8811 --time-scale 30
+curl -s http://127.0.0.1:8811/api/system/info | jq .
+curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http://127.0.0.1:8811/sim/fault
+```
+
+`--time-scale 30` makes the simulated board's thermal and hashrate
+dynamics run thirty times faster than wall-clock; a tuner's own timers
+are unaffected. `--hostname` and `--mac` let several instances differ.
 
 Nothing in `warpaxe-core` does I/O, reads a clock or allocates. That is what
 lets the same code run under `cargo test` on a laptop, inside the simulator,
@@ -43,4 +56,5 @@ Oliver's notes (`Claude/WarpForge-Firmware/`). Short version:
 - the PLL is **solved**, not looked up, so the reported frequency is the real one;
 - the simulator exists to make field failures reproducible — including the
   one that started this: a VR that shut down silently while the firmware kept
-  reporting full hashrate.
+  reporting full hashrate. `warpaxe-axeos` replays it over HTTP so a tuner can
+  be tested against it: `device::tests::silent_vr_shutdown_looks_like_the_real_one`.
