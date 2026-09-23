@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod chip;
+pub mod cmd;
 pub mod crc;
 pub mod decoder;
 pub mod frame;
