@@ -21,4 +21,5 @@ pub mod decoder;
 pub mod frame;
 pub mod job;
 pub mod pll;
+pub mod regs;
 pub mod result;
