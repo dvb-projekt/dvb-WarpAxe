@@ -396,7 +396,7 @@ impl Device {
         };
         serde_json::json!({
             "power": b.power_w(),
-            "voltage": spec.input_v * 1000.0,
+            "voltage": b.input_v() * 1000.0,
             "current": b.current_a() * 1000.0,
             "temp": b.chip_c(),
             "vrTemp": b.vr_c(),

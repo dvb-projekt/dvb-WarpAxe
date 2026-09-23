@@ -56,6 +56,11 @@ pub struct BoardSpec {
     pub overheat_c: f64,
     /// Firmware power limit, W (`maxPower`).
     pub max_power_w: f64,
+    /// PSU output above nominal at no load, V. A "5 V" supply sits at
+    /// ~5.15 V; tuners guard against an input that sags towards nominal.
+    pub psu_headroom_v: f64,
+    /// Input sag under load, V per A (cable + connector resistance).
+    pub psu_sag_v_per_a: f64,
 }
 
 impl BoardSpec {
@@ -77,6 +82,8 @@ impl BoardSpec {
             vr_droop_mv_per_w: 0.5,
             overheat_c: 75.0,
             max_power_w: 40.0,
+            psu_headroom_v: 0.15,
+            psu_sag_v_per_a: 0.012,
         }
     }
 }
@@ -217,6 +224,13 @@ impl Board {
     /// Input current, A.
     pub fn current_a(&self) -> f64 {
         self.power_w() / self.spec.input_v
+    }
+
+    /// Input voltage as measured at the board, V: PSU headroom above
+    /// nominal minus sag under load. What the API reports as `voltage`
+    /// (in mV) and what a tuner's VIN guard watches.
+    pub fn input_v(&self) -> f64 {
+        self.spec.input_v + self.spec.psu_headroom_v - self.spec.psu_sag_v_per_a * self.current_a()
     }
 
     /// Chip temperature as the sensor reports it, °C.
@@ -380,6 +394,23 @@ mod tests {
         // Less than the full 10 K: the fan is harder at work on the warmer board.
         let diff = b.chip_c() - a.chip_c();
         assert!(diff > 6.0 && diff < 11.0, "diff {diff}");
+    }
+
+    /// WarpTune's VIN guard needs > 5.01 V on a 5 V board to step up;
+    /// a real Gamma reads ~5.1 V. The first live run against the sim was
+    /// blocked by exactly 5.000 V.
+    #[test]
+    fn input_voltage_sits_above_nominal_and_sags_with_load() {
+        let mut b = gamma();
+        let idle = b.input_v();
+        assert!(idle > 5.1 && idle < 5.2, "idle {idle}");
+        b.set_point(640_625_000, 1140);
+        let loaded = b.input_v();
+        assert!(loaded < idle, "sags under load");
+        assert!(
+            loaded > 5.05,
+            "but stays well above the 5.01 V guard: {loaded}"
+        );
     }
 
     #[test]
