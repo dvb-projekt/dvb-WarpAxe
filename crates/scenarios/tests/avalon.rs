@@ -8,6 +8,7 @@
 //! judging window that straddles it, a dead-chip guard that is half
 //! blind because the Q reports no core voltage.
 
+use warpaxe_sim::avalon::POOL_DIFF;
 use warpaxe_sim::{AvalonFault, AvalonQ};
 use warppool_tune::avalon::{mode_for_mhz, parse_estats, AVALON_Q_FAILSAFE_C, AVALON_Q_MODES};
 use warppool_tune::config::VoltageAnchor;
@@ -29,6 +30,14 @@ struct AvalonBench {
     applied: Vec<Applied>,
     writes: Vec<(u64, u8)>,
     restart_requests: u32,
+    /// A write waiting for the device to report its point: (tick the
+    /// write was made, expected nominal MHz).
+    pending: Option<(u64, u16)>,
+    ticks: u64,
+    /// Live control on. `runner.rs` switches it off when a write is not
+    /// verified within `write_verify_ticks`; only heartbeats after that.
+    live: bool,
+    live_off_at: Option<u64>,
 }
 
 /// What `runner.rs` sets for `kind = "avalon"`.
@@ -83,6 +92,10 @@ impl AvalonBench {
             applied: Vec::new(),
             writes: Vec::new(),
             restart_requests: 0,
+            pending: None,
+            ticks: 0,
+            live: true,
+            live_off_at: None,
         }
     }
 
@@ -99,7 +112,11 @@ impl AvalonBench {
         st.stale = s0["Stale"].as_u64();
         st.ghs_15m = s0["MHS 15m"].as_f64().map(|m| m / 1000.0);
         st.stratum_user = Some("bc1qsimulator.AvalonQ".into());
-        Sample::from_info(&st.to_system_info(), self.now_s).expect("sample")
+        let mut s = Sample::from_info(&st.to_system_info(), self.now_s).expect("sample");
+        // The runner takes the share difficulty from the pool's worker
+        // row; the share-based vote needs it.
+        s.pool_difficulty = Some(POOL_DIFF);
+        s
     }
 
     /// Run `secs` of virtual time at the operator's 10 s poll / 30 s decide.
@@ -108,7 +125,19 @@ impl AvalonBench {
         while self.now_s < end {
             self.q.tick(10);
             self.now_s += 10;
+            self.ticks += 1;
             let s = self.sample();
+            // runner.rs `check_pending_write`: the device must report the
+            // written point within write_verify_ticks (12), else live_off.
+            if let Some((since, to)) = self.pending {
+                if s.frequency_mhz == f64::from(to) {
+                    self.pending = None;
+                } else if self.ticks - since >= 12 {
+                    self.pending = None;
+                    self.live = false;
+                    self.live_off_at = Some(self.now_s);
+                }
+            }
             if let Some(d) = self.reg.on_sample(&s) {
                 self.apply(d);
             }
@@ -116,10 +145,11 @@ impl AvalonBench {
     }
 
     fn apply(&mut self, d: Decision) {
-        if d.action.changes_operating_point() {
+        if d.action.changes_operating_point() && self.live {
             let m = mode_for_mhz(d.to.0);
             self.q.set_workmode(m.index);
             self.writes.push((self.now_s, m.index));
+            self.pending = Some((self.ticks, d.to.0));
             self.reg.note_applied(self.now_s);
         }
         if d.restart {
@@ -171,7 +201,6 @@ impl AvalonBench {
 /// that a dead chip nor a power collapse, and must not judge the step
 /// bad on a 15-minute window that still contains the re-init.
 #[test]
-#[ignore = "FINDING A (2026-09-23): the 15-minute judging window contains the ~180 s re-init, so a healthy Standard→Super switch reads 86 % at judge time and is stepped down (urgent), then again Standard→Eco: a cascade. Un-ignore when WarpTune judges the Avalon on a window that starts after settle (e.g. judge_after_s = settle_s + 900)."]
 fn a_healthy_mode_switch_is_neither_a_dead_chip_nor_a_collapse() {
     let mut b = AvalonBench::new(1, 1);
     b.reg.seed_known_good(&[493]);
@@ -210,7 +239,6 @@ fn a_healthy_mode_switch_is_neither_a_dead_chip_nor_a_collapse() {
 /// window, then bring the board back to Standard, and never try Super
 /// again.
 #[test]
-#[ignore = "FINDING B (2026-09-23): recovery itself works (dead-chip hashrate leg at +270 s, restore to Standard), but the re-init after the restore triggers FINDING A and the Q ends in Eco. Un-ignore with A."]
 fn a_collapse_after_reinit_is_recovered_without_retrying_super() {
     let mut b = AvalonBench::new(1, 5);
     b.reg.seed_known_good(&[493]);
@@ -275,23 +303,29 @@ fn a_collapse_after_reinit_is_recovered_without_retrying_super() {
     assert_eq!(supers, 1, "ascset to Super exactly once:\n{t}");
 }
 
-/// An `ascset` the MM refuses: the regulator's write verification must
-/// notice the mode did not change, and must not keep hammering.
+/// An `ascset` the MM refuses: `runner.rs` gives the device
+/// `write_verify_ticks` (12) to report the point, then switches this
+/// miner's live control off — no second write, hands off. (An earlier
+/// version of this bench lacked that path and reported endless
+/// retries: a harness artefact, not a regulator fault.)
 #[test]
-#[ignore = "FINDING C (2026-09-23): a refused ascset is retried every dwell cycle (240 s) indefinitely — 10 writes in 40 min, no back-off, the step is never marked. Un-ignore when WarpTune backs off or marks a step whose write does not verify."]
-fn a_refused_workmode_is_noticed_by_write_verification() {
+fn a_refused_workmode_switches_live_control_off_after_verification_fails() {
     let mut b = AvalonBench::new(1, 2);
     b.reg.seed_known_good(&[493]);
     b.q.inject(AvalonFault::RefuseWorkmode);
     b.run_for(2400);
     let t = b.transcript();
-    assert!(!b.writes.is_empty(), "it tried:\n{t}");
-    assert!(b.q.mode().index == 1 && b.q.hashing(), "device unchanged");
+    assert_eq!(b.writes.len(), 1, "one ascset, then hands off:\n{t}");
+    let off = b
+        .live_off_at
+        .unwrap_or_else(|| panic!("live control never switched off:\n{t}"));
     assert!(
-        b.writes.len() <= 4,
-        "kept hammering ascset: {} writes\n{t}",
-        b.writes.len()
+        off - b.writes[0].0 <= 130,
+        "within 12 ticks of the write: {} s",
+        off - b.writes[0].0
     );
+    assert!(b.q.mode().index == 1 && b.q.hashing(), "device unchanged");
+    assert_eq!(b.q.sets.len(), 1, "the MM saw exactly one ascset");
 }
 
 /// The wire, for real: WarpTune's own `AvalonClient` against the

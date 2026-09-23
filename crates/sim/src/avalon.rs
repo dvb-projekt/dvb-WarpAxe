@@ -16,6 +16,10 @@
 //!   wrong; one that never notices a board that *stays* dead after the
 //!   re-init is also wrong. WarpTune gives the Q 180 s of settle and a
 //!   300 s hold on its power-collapse guard for exactly this.
+//! - **`MHS 15m` decays, it does not slide.** cgminer's 15-minute figure
+//!   is an exponential average with τ = 900 s: fifteen minutes after a
+//!   mode switch it still carries 37 % of the old rate. A regulator that
+//!   judges a step on it has to know that.
 //! - **No core-voltage readback.** The dead-chip guard's voltage leg is
 //!   blind here; only the hashrate leg and the power guard can see a
 //!   dead board.
@@ -29,8 +33,6 @@
 //! 25052801, 23 °C room) as recorded in WarpTune's `avalon.rs`; the
 //! document shapes are from a capture of the same device
 //! (2026-09-23, `avalon-q_cgminer_capture_2026-09-23.json`).
-
-use std::collections::VecDeque;
 
 /// One work mode's ratings.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -142,8 +144,10 @@ pub struct AvalonQ {
     pub ramp_s: u64,
     tavg_c: f64,
     ghs_spd: f64,
-    /// (elapsed_s, ghs) samples for the 15-minute window.
-    ring: VecDeque<(u64, f64)>,
+    /// cgminer's `MHS 15m`: an exponentially decaying average of the
+    /// spot rate with τ = 900 s — not a hard window. Fifteen minutes
+    /// after a switch it still carries e⁻¹ ≈ 37 % of the old rate.
+    ema_15m: f64,
     /// Hashes since boot, for `GHSavg`.
     total_gh: f64,
     accepted: u64,
@@ -160,7 +164,7 @@ impl AvalonQ {
     /// A Q that has been running in `mode` long enough to be settled.
     pub fn settled(mode: u8, ambient_c: f64, seed: u32) -> Self {
         let m = MODES[usize::from(mode.min(2))];
-        let mut q = AvalonQ {
+        AvalonQ {
             ambient_c,
             mode: m.index,
             phase: Phase::Working,
@@ -169,7 +173,7 @@ impl AvalonQ {
             ramp_s: 60,
             tavg_c: m.tavg_c + (ambient_c - 23.0),
             ghs_spd: m.rated_ghs,
-            ring: VecDeque::new(),
+            ema_15m: m.rated_ghs,
             total_gh: m.rated_ghs * 3600.0,
             accepted: 0,
             rejected: 0,
@@ -178,12 +182,7 @@ impl AvalonQ {
             faults: Vec::new(),
             noise: seed.max(1),
             sets: Vec::new(),
-        };
-        // A full 15-minute window at the rated rate.
-        for t in (0..900).step_by(5) {
-            q.ring.push_back((3600 - 900 + t, m.rated_ghs));
         }
-        q
     }
 
     /// Current mode's ratings.
@@ -249,19 +248,9 @@ impl AvalonQ {
         self.ghs_spd
     }
 
-    /// `MHS 15m` in GH/s: mean of the spot rate over the last 900 s.
+    /// `MHS 15m` in GH/s: cgminer's decaying average, τ = 900 s.
     pub fn ghs_15m(&self) -> f64 {
-        let cutoff = self.elapsed_s.saturating_sub(900);
-        let (n, sum) = self
-            .ring
-            .iter()
-            .filter(|(t, _)| *t >= cutoff)
-            .fold((0usize, 0.0), |(n, s), (_, g)| (n + 1, s + g));
-        if n == 0 {
-            0.0
-        } else {
-            sum / n as f64
-        }
+        self.ema_15m
     }
 
     /// Fan duty, %.
@@ -351,11 +340,8 @@ impl AvalonQ {
         } else {
             0.0
         };
-        self.ring.push_back((self.elapsed_s, self.ghs_spd));
-        let cutoff = self.elapsed_s.saturating_sub(900);
-        while self.ring.front().is_some_and(|(t, _)| *t < cutoff) {
-            self.ring.pop_front();
-        }
+        let a15 = 1.0 - (-(dt_s as f64) / 900.0).exp();
+        self.ema_15m += (self.ghs_spd - self.ema_15m) * a15;
         self.total_gh += self.ghs_spd * dt_s as f64;
         // Shares at the pool difficulty.
         self.share_acc += self.ghs_spd * 1e9 / (POOL_DIFF * 4_294_967_296.0) * dt_s as f64;
@@ -626,19 +612,25 @@ mod tests {
     }
 
     #[test]
-    fn fifteen_minute_window_lags_a_switch() {
+    fn fifteen_minute_average_decays_after_a_switch() {
         let mut q = AvalonQ::settled(2, 23.0, 3);
         assert!(q.ghs_15m() > 90_000.0);
         q.set_workmode(0);
         q.tick(200);
         assert!(
-            q.ghs_15m() > 60_000.0,
-            "window still remembers Super: {}",
+            q.ghs_15m() > 70_000.0,
+            "still mostly Super: {}",
             q.ghs_15m()
         );
-        q.tick(900);
+        q.tick(880); // 1080 s after the switch: e^-1 of the old rate left
+        let g = q.ghs_15m();
         assert!(
-            (q.ghs_15m() - 54_000.0).abs() < 3_000.0,
+            g > 60_000.0 && g < 72_000.0,
+            "37 % of Super still in it: {g}"
+        );
+        q.tick(3000);
+        assert!(
+            (q.ghs_15m() - 54_000.0).abs() < 2_000.0,
             "settled on Eco: {}",
             q.ghs_15m()
         );
