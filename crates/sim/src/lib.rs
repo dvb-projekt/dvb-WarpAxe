@@ -20,12 +20,14 @@
 
 #![forbid(unsafe_code)]
 
+pub mod avalon;
 pub mod board;
 pub mod chain;
 pub mod chip;
 pub mod fault;
 pub mod rng;
 
+pub use avalon::{AvalonFault, AvalonQ};
 pub use board::{Board, BoardFault, BoardSpec};
 pub use chain::SimChain;
 pub use chip::{ChipState, ChipStats, SimChip};

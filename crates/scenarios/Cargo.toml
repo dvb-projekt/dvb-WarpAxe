@@ -25,5 +25,7 @@ path = "src/lib.rs"
 warpaxe-core = { path = "../core" }
 warpaxe-sim = { path = "../sim" }
 warpaxe-axeos = { path = "../axeos" }
+warpaxe-cgminer = { path = "../cgminer" }
 warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
 serde_json = "1"
+tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time"] }

@@ -399,6 +399,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "warpaxe-cgminer"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "warpaxe-sim",
+]
+
+[[package]]
 name = "warpaxe-core"
 version = "0.1.0"
 dependencies = [
@@ -410,6 +418,7 @@ name = "warpaxe-sim"
 version = "0.1.0"
 dependencies = [
  "proptest",
+ "serde_json",
  "warpaxe-core",
 ]
 

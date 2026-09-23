@@ -1510,6 +1510,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "warpaxe-cgminer"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "warpaxe-sim",
+]
+
+[[package]]
 name = "warpaxe-core"
 version = "0.1.0"
 
@@ -1518,7 +1526,9 @@ name = "warpaxe-scenarios"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "tokio",
  "warpaxe-axeos",
+ "warpaxe-cgminer",
  "warpaxe-core",
  "warpaxe-sim",
  "warppool-tune",
@@ -1528,6 +1538,7 @@ dependencies = [
 name = "warpaxe-sim"
 version = "0.1.0"
 dependencies = [
+ "serde_json",
  "warpaxe-core",
 ]
 
