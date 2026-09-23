@@ -1,0 +1,23 @@
+[package]
+name = "warpaxe-axeos"
+description = "An AxeOS-compatible HTTP device built on the simulator: /api/system/info and PATCH /api/system from a SimChain plus a board model, with fault injection over HTTP. A test device for tuners."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "warpaxe-axeos"
+path = "src/main.rs"
+
+[dependencies]
+warpaxe-core = { path = "../core" }
+warpaxe-sim = { path = "../sim" }
+tiny_http = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
