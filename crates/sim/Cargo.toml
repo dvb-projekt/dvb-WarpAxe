@@ -1,0 +1,13 @@
+[package]
+name = "warpaxe-sim"
+description = "Host-side BM13xx chip simulator with fault injection. Speaks the wire protocol from warpaxe-core; never hashes."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+warpaxe-core = { path = "../core" }

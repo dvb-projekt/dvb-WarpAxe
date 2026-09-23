@@ -1,0 +1,53 @@
+name: CI
+
+# Runs on Forgejo Actions (self-hosted runner "warppool-forge"), same
+# pattern as dvb-WarpPool. Stage A is host-only: no Xtensa target yet.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust:
+    name: Rust ${{ matrix.task }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [fmt, clippy, test, no_std]
+    steps:
+      - uses: https://github.com/actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: https://github.com/dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: https://github.com/Swatinem/rust-cache@v2
+
+      - name: Format check
+        if: matrix.task == 'fmt'
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        if: matrix.task == 'clippy'
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        if: matrix.task == 'test'
+        run: cargo test --workspace --verbose
+
+      # The core crate must build without std. thumbv7em has no std at
+      # all, so a successful build there proves it — no ESP toolchain needed.
+      - name: no_std build of warpaxe-core
+        if: matrix.task == 'no_std'
+        run: |
+          rustup target add thumbv7em-none-eabihf
+          cargo build -p warpaxe-core --target thumbv7em-none-eabihf

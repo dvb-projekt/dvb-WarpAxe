@@ -1,0 +1,17 @@
+[package]
+name = "warpaxe-core"
+description = "BM13xx ASIC wire protocol: frames, CRCs, PLL solver, chip profiles. no_std, no alloc."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# Deliberately none. This crate is the part that must run on the host,
+# in the simulator and on the ESP32-S3 without a single feature flag.
+
+[dev-dependencies]
+proptest = "1"
