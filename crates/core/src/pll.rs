@@ -127,6 +127,26 @@ impl PllWord {
     }
 }
 
+impl PllWord {
+    /// Read a divider setting back from the four register bytes
+    /// ([`PllWord::register_bytes`] inverted). The VCO-scale byte is
+    /// derived, not stored, so it is ignored here. `None` if a
+    /// post-divider nibble decodes to zero (illegal: dividers are 1..).
+    pub const fn from_register_bytes(b: [u8; 4]) -> Option<Self> {
+        let postdiv1 = (b[3] >> 4) + 1;
+        let postdiv2 = (b[3] & 0x0F) + 1;
+        if b[2] == 0 {
+            return None;
+        }
+        Some(PllWord {
+            fb: b[1] as u16,
+            refdiv: b[2],
+            postdiv1,
+            postdiv2,
+        })
+    }
+}
+
 /// Find the divider setting closest to `target_hz` under `spec`.
 ///
 /// `None` only when no `(refdiv, postdiv1, postdiv2)` triple puts a
@@ -347,6 +367,21 @@ mod tests {
     fn oracle_reproduces_the_esp_miner_test_case_too() {
         let w = c_solver(&PllSpec::bm1366(), 450.0).unwrap();
         assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (72, 2, 2, 1));
+    }
+
+    #[test]
+    fn register_bytes_round_trip_through_from_register_bytes() {
+        let spec = PllSpec::bm1370();
+        for t in [400u32, 525, 600, 640, 690] {
+            let w = solve_mhz(&spec, t).unwrap();
+            let back = PllWord::from_register_bytes(w.register_bytes(&spec)).unwrap();
+            assert_eq!(back, w, "{t} MHz");
+        }
+        assert_eq!(
+            PllWord::from_register_bytes([0x40, 0xA8, 0x00, 0x30]),
+            None,
+            "refdiv 0"
+        );
     }
 
     proptest::proptest! {

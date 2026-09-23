@@ -296,6 +296,7 @@ dependencies = [
 name = "warpaxe-sim"
 version = "0.1.0"
 dependencies = [
+ "proptest",
  "warpaxe-core",
 ]
 

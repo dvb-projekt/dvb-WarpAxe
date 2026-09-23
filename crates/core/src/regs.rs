@@ -115,6 +115,19 @@ pub const fn ticket_mask_int(difficulty: u32) -> u32 {
     (1u32 << power) - 1
 }
 
+/// The difficulty a ticket-mask register value stands for: un-reverse
+/// the bytes, and the mask plus one is the (power-of-two) difficulty.
+/// What the simulator uses to know when a nonce is "found".
+pub const fn ticket_mask_to_difficulty(value: [u8; 4]) -> u32 {
+    let mask = u32::from_be_bytes([
+        reverse_bits(value[0]),
+        reverse_bits(value[1]),
+        reverse_bits(value[2]),
+        reverse_bits(value[3]),
+    ]);
+    mask.wrapping_add(1)
+}
+
 /// Value for [`reg::FAST_UART_CONFIGURATION`] that the reference driver
 /// writes to move the BM1370 to 1 MBaud. (Its comment says "divider of
 /// 0 for 3,125,000" and its log line says 1000000; the driver then sets
@@ -244,6 +257,15 @@ mod tests {
         assert_eq!(ticket_mask(1.0), [0, 0, 0, 0]);
         assert_eq!(ticket_mask(0.5), [0, 0, 0, 0]);
         assert_eq!(ticket_mask(65536.0), [0, 0, 0xFF, 0xFF]);
+    }
+
+    #[test]
+    fn ticket_mask_to_difficulty_inverts_ticket_mask() {
+        for d in [1u32, 2, 4, 256, 512, 1024, 65536, 1 << 20] {
+            assert_eq!(ticket_mask_to_difficulty(ticket_mask(d as f64)), d, "{d}");
+        }
+        assert_eq!(ticket_mask_to_difficulty([0, 0, 0, 0xFF]), 256);
+        assert_eq!(ticket_mask_to_difficulty([0, 0, 0x80, 0xFF]), 512);
     }
 
     #[test]
