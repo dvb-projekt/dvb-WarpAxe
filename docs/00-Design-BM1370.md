@@ -1019,6 +1019,7 @@ a data interface, and does LAN work?
 | Bitaxe Gamma 601/602 | ESP32-S3-WROOM-1 | yes, D+/D- directly on GPIO20/GPIO19 (no bridge chip, no series resistors, no ESD protection) — **checked in the schematic, see 14.5** | no |
 | NerdQAxe+/++ | ESP32-S3 | yes, as above | no |
 | NerdAxe Gaia | ESP32-S3 (Bitronics calls it "ESP-Miner version", 2.4-GHz WLAN only) | yes | no |
+| NerdAxe Gamma (Bitmaker, `BitMaker-hub/NerdAxe`, KiCad open) | LilyGO T-Display-S3 module (ESP32-S3R8, 16 MB flash, 8 MB PSRAM) plugged onto a BM1370 carrier | on the module, not the carrier: native S3 USB; per LilyGO VBUS powers the module's 3V3 rail (CC pulldowns to verify in LilyGO's schematic) — so unlike the Bitaxe Gamma the ESP32 runs from USB alone | no |
 
 The ESP32-S3 has **one** USB full-speed PHY (12 Mbit/s), which via a mux hangs
 either on `USB_SERIAL_JTAG` (factory state: flashing, console) or on the
@@ -1127,6 +1128,15 @@ net of the PSU, not on VBUS.
 NerdQAxe/Gaia (Pmaxsd) are not checked against sources; the boards are closed
 (only Gerber/firmware public). The assumption remains "same standard S3
 wiring" until a device is on the bench.
+
+**Two hardware classes, then (2026-09-23, after Oliver pointed at the NerdAxe Gamma):**
+the Bitaxe Gamma and Pmaxsd's boards (NerdQAxe, Octaxe, Gaia) carry an
+ESP32-S3 module on the main PCB with a bare USB-C socket wired as 14.5
+shows; Bitmaker's NerdAxe Gamma carries a complete LilyGO T-Display-S3
+dev board, whose USB-C is LilyGO's design (powered, presumably with CC).
+WarpAxe treats both the same at the netif level; the differences are
+which USB-C variant powers the MCU and whether C-to-C cables work — a
+documentation matter per board, not a code path.
 
 ### 14.6 USB ↔ LAN purely in software? (question from Oliver, 2026-09-23)
 
