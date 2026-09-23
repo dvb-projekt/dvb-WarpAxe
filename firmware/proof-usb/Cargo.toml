@@ -1,0 +1,42 @@
+[package]
+name = "warpaxe-proof-usb"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["dvb-projekt <oliver-mai@gmx.de>"]
+description = "Hardware proof for WarpAxe stage B on a LilyGO T-Display-S3: USB-C as a CDC-NCM network interface plus CDC-ACM console, an HTTP server on it, the ST7789 display alive, and a flash-back path — no Wi-Fi at all."
+rust-version = "1.77"
+publish = false
+
+# Detached from the workspace on purpose: different target (xtensa), std on ESP-IDF.
+[workspace]
+
+[[bin]]
+name = "warpaxe-proof-usb"
+harness = false
+
+[profile.release]
+opt-level = "s"
+
+[profile.dev]
+debug = true
+opt-level = "z"
+
+[features]
+default = []
+
+[dependencies]
+log = "0.4"
+esp-idf-svc = "0.51"
+
+[build-dependencies]
+embuild = "0.33"
+
+[package.metadata.esp-idf-sys]
+esp_idf_tools_install_dir = "global"
+esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
+
+[[package.metadata.esp-idf-sys.extra_components]]
+component_dirs = "components"
+bindings_header = "bindings.h"
+bindings_module = "tusb"

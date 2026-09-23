@@ -1236,3 +1236,33 @@ one driver for every board; `main/boards/` has `nerdaxegamma`,
    (single BM1370, KiCad open, same controller as Oliver's other devices)
    is the better first target than the Bitaxe Gamma; the Bitaxe stays
    the second, for the WROOM/bare-socket class.
+
+### 14.8 Stage-B proof on the NerdMiner V2 (T-Display-S3), 2026-09-23 — state of play
+
+Code: `firmware/proof-usb/` (Rust std on esp-idf-svc 0.51, ESP-IDF v5.3.3,
+esp_tinyusb 1.7.6 vendored as `components/esp_tinyusb`, TinyUSB 0.21).
+Full 16 MB flash backup of the NerdMiner taken first (CloudDocs, with
+SHA-256); restore is one `esptool write_flash 0`.
+
+Works: ST7789 over i80, TinyUSB composite CDC-ACM + CDC-NCM enumerates on
+macOS (`AppleUSBNCMData`, interface `enX`, alt setting 1 selected,
+host-side MAC = base MAC with bit 0 flipped), watchdog-reset app start,
+in-RAM log ring shown on the display.
+
+Not yet: the host's OUT transfers fail (`Oerrs`, `Ipkts 0` on the Mac), the
+NCM receive callback never fires, so no DHCP lease and no HTTP. Slave-mode
+DWC2 changed nothing. Next: TinyUSB driver log on the display (build 17),
+then a Linux host (the intended bridge host) for comparison.
+
+Facts that go into the firmware and the docs:
+
+- On this board **every DTR/RTS reset via USB-Serial/JTAG ends in ROM
+  download mode** (`rst:0x15, boot:0x3`) — esptool/espflash's default
+  post-flash reset included. `espflash flash -a watchdog-reset` starts the
+  app. Power-on and BOOT-held power-on behave as documented.
+- Once the app switches the PHY to USB OTG, the JTAG console is gone and a
+  software reset does not bring it back; the firmware must offer its own
+  way into download mode (here: HTTP `/bootloader` and a `B` byte on the
+  CDC port). This is the flash-back requirement of 14.2, now concrete.
+- SPIFFS on the NerdMiner keeps old config versions; the newest copy is
+  the last one in flash order (the first read was stale).
