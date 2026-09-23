@@ -2,13 +2,15 @@
 //! its own. Jobs land in [`current_job`] for the chain driver (not yet
 //! attached); everything the API shows is in [`state`].
 
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::Mutex;
+use std::sync::mpsc::{channel, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use warpaxe_stratum::message::{authorize_request, configure_request, parse_subscribe_result, subscribe_request};
+use warpaxe_stratum::message::{authorize_request, configure_request, parse_subscribe_result, submit_request, subscribe_request, Notify, Request};
 use warpaxe_stratum::{parse_line, Incoming, Job, Session};
 
 use crate::{config, diag};
@@ -32,10 +34,17 @@ pub struct StratumState {
     pub clean_jobs: u64,
     pub reconnects: u64,
     pub last_error: String,
+    pub shares_sent: u64,
+    pub shares_accepted: u64,
+    pub shares_rejected: u64,
+    pub last_reject: String,
 }
 
 static STATE: Mutex<Option<StratumState>> = Mutex::new(None);
-static JOB: Mutex<Option<Job>> = Mutex::new(None);
+static NOTIFY: Mutex<Option<(Session, Notify)>> = Mutex::new(None);
+static EXTRANONCE2: Mutex<u32> = Mutex::new(0);
+static SUBMIT: Mutex<Option<Sender<Request>>> = Mutex::new(None);
+static NEXT_ID: Mutex<u64> = Mutex::new(100);
 
 pub fn state() -> StratumState {
     STATE.lock().unwrap().clone().unwrap_or_default()
@@ -47,9 +56,35 @@ fn update(f: impl FnOnce(&mut StratumState)) {
     f(s);
 }
 
-/// The latest job built from the newest notify.
-pub fn current_job() -> Option<Job> {
-    JOB.lock().unwrap().clone()
+/// A fresh job from the newest notify: a new extranonce2 every call, so
+/// re-submitting work to the chips never repeats a nonce space.
+pub fn next_job() -> Option<Job> {
+    let g = NOTIFY.lock().unwrap();
+    let (session, notify) = g.as_ref()?;
+    let mut c = EXTRANONCE2.lock().unwrap();
+    *c = c.wrapping_add(1);
+    let mut en2 = vec![0u8; session.extranonce2_size];
+    let be = c.to_be_bytes();
+    let take = en2.len().min(4);
+    let n = en2.len();
+    en2[n - take..].copy_from_slice(&be[4 - take..]);
+    Job::build(session, notify, &en2)
+}
+
+/// Queue a share. Silently dropped when no session is up.
+pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
+    let user = config::get().stratum_user;
+    let id = {
+        let mut g = NEXT_ID.lock().unwrap();
+        *g += 1;
+        *g
+    };
+    let req = submit_request(id, &user, &job.job_id, &job.extranonce2_hex(), ntime, nonce, version_bits);
+    if let Some(tx) = SUBMIT.lock().unwrap().as_ref() {
+        if tx.send(req).is_ok() {
+            update(|s| s.shares_sent += 1);
+        }
+    }
 }
 
 pub fn start() {
@@ -102,25 +137,46 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
     if let Err(e) = stream.set_nodelay(true) {
         log::warn!("stratum: nodelay not set: {e}");
     }
-    // No try_clone: ESP-IDF has no dup(). `&TcpStream` reads and writes.
-    let mut writer = &stream;
-    let mut reader = BufReader::new(&stream);
+    // No try_clone: ESP-IDF has no dup(). A shared `TcpStream` is read on
+    // this thread and written on a small writer thread (sockets are
+    // full duplex; `&TcpStream` implements both).
+    let stream = Arc::new(stream);
+    let mut reader = BufReader::new(&*stream);
     update(|s| {
         s.connected = true;
         s.last_error.clear();
     });
-
-    let mut send = |line: String| -> anyhow::Result<()> {
-        writer.write_all(line.as_bytes())?;
-        writer.flush()?;
-        Ok(())
-    };
-    send(configure_request(1, BIP320_MASK).to_line())?;
-    send(subscribe_request(2, AGENT).to_line())?;
-    send(authorize_request(3, user, pass).to_line())?;
+    {
+        let mut w = &*stream;
+        for r in [configure_request(1, BIP320_MASK), subscribe_request(2, AGENT), authorize_request(3, user, pass)] {
+            w.write_all(r.to_line().as_bytes())?;
+        }
+        w.flush()?;
+    }
+    let pending: Arc<Mutex<HashMap<u64, String>>> = Arc::new(Mutex::new(HashMap::new()));
+    let (tx, rx) = channel::<Request>();
+    *SUBMIT.lock().unwrap() = Some(tx);
+    {
+        let stream = Arc::clone(&stream);
+        let pending = Arc::clone(&pending);
+        std::thread::Builder::new()
+            .stack_size(6 * 1024)
+            .spawn(move || {
+                let mut w = &*stream;
+                while let Ok(req) = rx.recv() {
+                    if let Some(job_id) = req.params.get(1).and_then(|v| v.as_str()) {
+                        pending.lock().unwrap().insert(req.id, job_id.to_string());
+                    }
+                    if w.write_all(req.to_line().as_bytes()).and_then(|_| w.flush()).is_err() {
+                        break;
+                    }
+                }
+            })
+            .ok();
+    }
+    let _drop_sender_on_exit = SenderGuard;
 
     let mut sess: Option<Session> = None;
-    let mut extranonce2: u32 = 0;
     let mut line = String::new();
     let started = Instant::now();
     loop {
@@ -163,6 +219,20 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                         anyhow::bail!("authorize refused: {:?}", r.error);
                     }
                 }
+                id if id >= 100 => {
+                    let job_id = pending.lock().unwrap().remove(&id).unwrap_or_default();
+                    let ok = r.result.as_bool().unwrap_or(false) && r.error.is_none();
+                    if ok {
+                        update(|s| s.shares_accepted += 1);
+                    } else {
+                        let why = r.error.map(|e| e.to_string()).unwrap_or_else(|| "rejected".into());
+                        log::warn!("stratum: share {id} for {job_id} rejected: {why}");
+                        update(|s| {
+                            s.shares_rejected += 1;
+                            s.last_reject = why;
+                        });
+                    }
+                }
                 _ => log::info!("stratum: response {} -> {} {:?}", r.id, r.result, r.error),
             },
             Incoming::SetDifficulty(d) => {
@@ -183,32 +253,32 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     log::warn!("stratum: notify before subscribe, ignored");
                     continue;
                 };
-                extranonce2 = extranonce2.wrapping_add(1);
-                let mut en2 = vec![0u8; s.extranonce2_size];
-                let be = extranonce2.to_be_bytes();
-                let take = en2.len().min(4);
-                en2[s.extranonce2_size - take..].copy_from_slice(&be[4 - take..]);
-                match Job::build(s, &n, &en2) {
-                    Some(job) => {
-                        let clean = job.clean_jobs;
-                        update(|st| {
-                            st.jobs_received += 1;
-                            st.last_job_id = job.job_id.clone();
-                            st.last_job_uptime_s = diag::uptime_s();
-                            if clean {
-                                st.clean_jobs += 1;
-                            }
-                        });
-                        if started.elapsed() < Duration::from_secs(5) || clean {
-                            log::info!("stratum: job {} ntime {:08x} clean {}", job.job_id, job.ntime, clean);
-                        }
-                        *JOB.lock().unwrap() = Some(job);
+                let clean = n.clean_jobs;
+                update(|st| {
+                    st.jobs_received += 1;
+                    st.last_job_id = n.job_id.clone();
+                    st.last_job_uptime_s = diag::uptime_s();
+                    if clean {
+                        st.clean_jobs += 1;
                     }
-                    None => log::warn!("stratum: notify {} did not parse", n.job_id),
+                });
+                if started.elapsed() < Duration::from_secs(5) || clean {
+                    log::info!("stratum: job {} ntime {} clean {}", n.job_id, n.ntime, clean);
                 }
+                *NOTIFY.lock().unwrap() = Some((s.clone(), n));
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
             Incoming::Unparsed(l) => log::warn!("stratum: unparsed line: {}", &l[..l.len().min(80)]),
         }
+    }
+}
+
+/// Drops the submit sender when a session ends, so the writer thread exits.
+struct SenderGuard;
+
+impl Drop for SenderGuard {
+    fn drop(&mut self) {
+        *SUBMIT.lock().unwrap() = None;
+        *NOTIFY.lock().unwrap() = None;
     }
 }

@@ -11,8 +11,10 @@ mod config;
 mod diag;
 mod display;
 mod font;
+mod miner;
 mod net;
 mod stratum;
+mod uart;
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -55,12 +57,14 @@ fn draw(d: &mut display::Display) {
     let st = stratum::state();
     let pool_state = if st.authorized { "AUTH" } else if st.connected { "CONN" } else { "OFF" };
     d.text(4, 58, 1, GREY, &format!("POOL {} {}  DIFF {}  JOBS {}  {}", cfg.stratum_url, pool_state, st.difficulty, st.jobs_received, st.last_job_id));
+    let m = miner::state();
+    d.text(4, 68, 1, WHITE, &format!("CHAIN {} {}x{}MHz {:.1}GH/S SH {}/{} N {}", m.phase, m.chips, m.frequency_hz / 1_000_000, m.hashrate_ghs, st.shares_accepted, st.shares_rejected, m.nonces));
     match diag::last_crash() {
         Some(c) => {
-            d.text(4, 68, 1, RED, &format!("LAST CRASH {}", &c[..c.len().min(46)]));
-            d.log_tail(78, 9, GREY);
+            d.text(4, 78, 1, RED, &format!("LAST CRASH {}", &c[..c.len().min(46)]));
+            d.log_tail(88, 8, GREY);
         }
-        None => d.log_tail(72, 10, GREY),
+        None => d.log_tail(78, 9, GREY),
     }
     if d.flush().is_err() {
         log::warn!("display flush failed");
@@ -144,6 +148,11 @@ fn main() {
     };
     set_step("STRATUM");
     stratum::start();
+    set_step("CHAIN");
+    match uart::ChipUart::new(peripherals.uart1, peripherals.pins.gpio17, peripherals.pins.gpio18) {
+        Ok(u) => miner::start(u),
+        Err(e) => log::error!("chain uart failed: {e}"),
+    }
     set_step("RUN");
     info!("running: http on usb {} and wifi when up", net::usb::ip_string());
     loop {

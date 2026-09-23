@@ -12,7 +12,7 @@ use esp_idf_svc::io::{EspIOError, Read, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{config, diag, net, stratum};
+use crate::{config, diag, miner, net, stratum};
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
@@ -24,10 +24,12 @@ fn mac_str(m: [u8; 6]) -> String {
 pub fn system_info() -> serde_json::Value {
     let cfg = config::get();
     let n = net::state();
+    let m = miner::state();
+    let st = stratum::state();
     json!({
         "power": 0.0, "voltage": 0.0, "current": 0.0,
         "temp": 0.0, "vrTemp": 0.0,
-        "hashRate": 0.0, "expectedHashrate": 0.0,
+        "hashRate": m.hashrate_ghs, "expectedHashrate": 0.0,
         "bestDiff": "0", "bestSessionDiff": "0",
         "freeHeap": diag::free_heap(),
         "coreVoltage": cfg.core_voltage, "coreVoltageActual": 0,
@@ -37,9 +39,10 @@ pub fn system_info() -> serde_json::Value {
         "wifiStatus": if n.wifi_connected { "Connected!" } else { "Not connected" },
         "wifiRSSI": n.wifi_rssi.unwrap_or(0),
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
-        "sharesAccepted": 0, "sharesRejected": 0,
+        "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
         "uptimeSeconds": diag::uptime_s(),
-        "asicCount": cfg.asic_count, "smallCoreCount": 0, "ASICModel": "BM1370",
+        "asicCount": m.chips, "smallCoreCount": 2040, "ASICModel": "BM1370",
+        "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user,
         "isUsingFallbackStratum": false,
         "poolDifficulty": stratum::state().difficulty,
@@ -75,6 +78,7 @@ pub fn v1_state() -> serde_json::Value {
         "http_hits": diag::HTTP_HITS.load(Ordering::Relaxed),
         "last_crash": diag::last_crash(),
         "stratum": stratum::state(),
+        "miner": miner::state(),
         "config": config::get().redacted(),
     })
 }

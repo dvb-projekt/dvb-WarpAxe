@@ -1329,3 +1329,18 @@ authorized on pool.warppool.org with mask `1fffe000`, difficulty 1, and
 receives jobs (a clean job per block). Lesson: ESP-IDF has no `dup()`,
 so `TcpStream::try_clone` fails with ENOSYS; read and write through
 references to one stream.
+
+### 14.11 The mining loop, ready for chips (2026-09-23, late)
+
+Software side of stage-B step 3 is in place before the cable arrives:
+`crates/simuart` puts `SimChain` behind a real serial port on the host
+(follows the chips' baud switch; a 3 s silence then traffic counts as a
+reset, since the reset line is not on the cable). On the board,
+`uart.rs` is `warpaxe_chain::Uart` over UART1 (GPIO17/18) and `miner.rs`
+runs the chain driver: work from the newest notify with a fresh
+extranonce2 per submission, retire on clean jobs, every nonce re-hashed
+on the host side and compared with the pool difficulty before it goes
+to the Stratum writer, accept/reject counted from the pool's answers.
+Without chips the driver reports `NoChips` and retries every 10 s; the
+rest of the firmware is unaffected. ESP-IDF's UART read returns
+`ESP_ERR_TIMEOUT` for "nothing pending" — mapped to zero bytes.

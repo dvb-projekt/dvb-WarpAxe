@@ -20,7 +20,20 @@ What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
 | Flash-back: `GET /bootloader` or `POST /api/v1/bootloader`, or a `B` byte on the CDC port → ROM download mode with the PHY handed back | works |
 | Stratum V1 client (`crates/stratum` + `src/stratum.rs`): configure (version rolling), subscribe, authorize, notify → job with coinbase, merkle root and chip-ordered header fields; difficulty and mask tracking; reconnect with backoff; state in `/api/v1/state` and on the display | works against pool.warppool.org over Wi-Fi |
 
-Not yet: share submission (needs nonces), the chain driver on a UART, board profiles, fan/VR/sensor drivers, Wi-Fi provisioning UI.
+| Chain driver (`warpaxe-chain`) on UART1, GPIO17 TX / GPIO18 RX, on its own miner thread: bring-up, retries every 10 s while no chip answers, work from Stratum (fresh extranonce2 per submission, retire on clean jobs), nonces checked against the pool difficulty with the host-side header hash, shares queued to the Stratum writer, accept/reject accounting, hashrate estimate; state in `/api/v1/state` and the AxeOS fields | runs; waits for chips (a USB-UART adapter to `warpaxe-simuart`, or an ASIC) |
+
+Not yet: board profiles, fan/VR/sensor drivers, Wi-Fi provisioning UI.
+
+## Hardware-in-the-loop without an ASIC
+
+```bash
+cargo run -p warpaxe-simuart -- --port /dev/cu.usbserial-XXXX --chips 1
+```
+
+on the Mac, with the adapter's TX on GPIO18, RX on GPIO17, GND on GND
+(3.3 V logic, VCC unconnected). The simulator answers the board like a
+BM1370 chain, follows its baud switch and treats a 3 s silence followed
+by traffic as a chip reset.
 
 ## Build and flash
 

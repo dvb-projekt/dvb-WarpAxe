@@ -1,0 +1,15 @@
+[package]
+name = "warpaxe-simuart"
+description = "The BM13xx chain simulator behind a real serial port: plug a USB-UART adapter into a board running the WarpAxe firmware and the board talks to simulated chips."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+warpaxe-core = { path = "../core" }
+warpaxe-sim = { path = "../sim" }
+serialport = "4"
