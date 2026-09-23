@@ -27,6 +27,10 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len);
 /// Enumerated and configured by a host.
 bool wa_usb_mounted(void);
 
+/// The host has activated the NCM data interface (TinyUSB's network init
+/// callback fired). Sending before that is not allowed.
+bool wa_usb_net_ready(void);
+
 /// Restart into the ROM download mode (USB-Serial/JTAG comes back).
 void wa_reboot_to_bootloader(void) __attribute__((noreturn));
 
@@ -39,6 +43,11 @@ void wa_log_line(int i, char *buf, size_t n);
 
 /// TinyUSB's debug printf, filtered to NCM/error lines, into the same ring.
 int wa_tu_printf(const char *fmt, ...);
+
+/// If the previous run crashed, log its core-dump summary (task, cause,
+/// PC, backtrace) through ESP_LOGE so it lands in the ring, then erase it.
+/// Returns 1 if there was one.
+int wa_coredump_log(void);
 
 #ifdef __cplusplus
 }

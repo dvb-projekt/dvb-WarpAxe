@@ -49,6 +49,10 @@ fn gpio_out(pin: i32, level: bool) {
     }
 }
 
+// The panel handle is only ever used from the one thread that owns the
+// Display; the raw pointer is what stops the compiler from seeing that.
+unsafe impl Send for Display {}
+
 impl Display {
     pub fn new() -> Result<Self, sys::EspError> {
         gpio_out(PIN_PWR, true);

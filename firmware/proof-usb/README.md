@@ -36,23 +36,35 @@ The first build downloads ESP-IDF and the `esp_tinyusb` component.
 | `curl http://192.168.7.1/bootloader` | board reboots into ROM download mode; `espflash` / `esptool` see `USB JTAG/serial debug unit` again |
 | flash the backup / NerdMiner | the NerdMiner is back — the flash-back path is proven |
 
-## Status 2026-09-23 (work in progress)
+## Status 2026-09-23: proven
 
-Done on the NerdMiner V2's T-Display-S3: display up, board enumerates as a
-composite CDC-ACM + CDC-NCM device, macOS attaches `AppleUSBNCMData`, brings
-the interface up and selects alternate setting 1. Open: the host's OUT
-transfers fail (`netstat -I enX` shows `Oerrs`, `Ipkts 0`), the board's
-receive callback is never called, so no DHCP, no HTTP yet. TinyUSB in
-slave mode did not change that. Build 17 routes TinyUSB's driver log into
-the on-display ring buffer to see why NTBs are dropped.
+On the NerdMiner V2's T-Display-S3, `host-proof.sh` passes all six steps
+(macOS 26, USB-A-to-C cable): NCM interface with a DHCP lease from the
+board, `GET /` and `GET /api/system/info` over USB, hit counter climbing,
+`GET /bootloader` putting the chip into ROM download mode, esptool talking
+to it. No Wi-Fi involved at any point.
 
-Board quirks learned the hard way, all recorded in the design document:
+What it took (all recorded in the design document, §14.8):
 
-- **Every DTR/RTS reset through USB-Serial/JTAG lands in ROM download mode
-  on this board** (`boot:0x3`), including espflash's default post-flash
-  reset. Use `espflash flash -a watchdog-reset` to start the app.
-- Changes to `sdkconfig.defaults` only take effect after deleting the
-  generated `target/**/esp-idf-sys-*/out/sdkconfig`; esp-idf-sys may then
-  create a second `out` directory — take bootloader and partition table
-  from the one whose `sdkconfig` has the option.
-- A `B` byte on the CDC console port reboots into the ROM download mode.
+- `esp_netif_driver_ifconfig_t.transmit_wrap` must be set as well as
+  `transmit`: the borrowed Wi-Fi-AP netstack calls the wrap variant, and a
+  NULL there crashes the tcpip thread on the first gratuitous ARP.
+- TinyUSB's NCM driver never calls `tud_network_init_cb`; link readiness
+  is the first received frame.
+- Before rebooting into the ROM bootloader, `tinyusb_driver_uninstall()`
+  hands the USB PHY back to USB-Serial/JTAG (the selection lives in the
+  RTC domain and survives a software reset). `RTC_CNTL_FORCE_DOWNLOAD_BOOT`
+  then does the rest. Without this, a software reset leaves the board
+  unreachable until a power cycle.
+- On this board every DTR/RTS reset through USB-Serial/JTAG lands in ROM
+  download mode; `espflash flash -a watchdog-reset` starts the app.
+- `RTC_CNTL_FORCE_DOWNLOAD_BOOT` (RTC domain) is not cleared by the ROM:
+  after `/bootloader` the host must write 0 to `RTC_CNTL_OPTION1_REG`
+  (`esptool write_mem 0x6000812C 0 0xFFFFFFFF`) before the reset that
+  should start the app. `host-proof.sh` step 7 does that; the round trip
+  passed three times in a row.
+- esp-idf-sys does not rebuild a local C component on its own: touch
+  `sdkconfig.defaults` (tracked) to force it. espflash skips segments it
+  believes unchanged: `--no-skip` for a real write.
+- Core dump to flash plus `esp_core_dump_get_summary` rendered on the
+  display is a working crash diagnosis without a console.

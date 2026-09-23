@@ -1237,32 +1237,55 @@ one driver for every board; `main/boards/` has `nerdaxegamma`,
    is the better first target than the Bitaxe Gamma; the Bitaxe stays
    the second, for the WROOM/bare-socket class.
 
-### 14.8 Stage-B proof on the NerdMiner V2 (T-Display-S3), 2026-09-23 — state of play
+### 14.8 Stage-B proof on the NerdMiner V2 (T-Display-S3), 2026-09-23 — PASSED
 
 Code: `firmware/proof-usb/` (Rust std on esp-idf-svc 0.51, ESP-IDF v5.3.3,
 esp_tinyusb 1.7.6 vendored as `components/esp_tinyusb`, TinyUSB 0.21).
 Full 16 MB flash backup of the NerdMiner taken first (CloudDocs, with
 SHA-256); restore is one `esptool write_flash 0`.
 
-Works: ST7789 over i80, TinyUSB composite CDC-ACM + CDC-NCM enumerates on
-macOS (`AppleUSBNCMData`, interface `enX`, alt setting 1 selected,
-host-side MAC = base MAC with bit 0 flipped), watchdog-reset app start,
-in-RAM log ring shown on the display.
+`host-proof.sh` passes all six steps on macOS with a USB-A-to-C cable:
+the board enumerates as CDC-ACM + CDC-NCM, the host gets 192.168.7.2 by
+DHCP from the board, `GET /` and `GET /api/system/info` answer over USB,
+`GET /bootloader` puts the chip into ROM download mode and esptool talks
+to it. No Wi-Fi at any point. The transport decision of 14.2/14.6 is
+therefore hardware-proven for the Nerd class.
 
-Not yet: the host's OUT transfers fail (`Oerrs`, `Ipkts 0` on the Mac), the
-NCM receive callback never fires, so no DHCP lease and no HTTP. Slave-mode
-DWC2 changed nothing. Next: TinyUSB driver log on the display (build 17),
-then a Linux host (the intended bridge host) for comparison.
+Findings that go into the real firmware:
 
-Facts that go into the firmware and the docs:
-
-- On this board **every DTR/RTS reset via USB-Serial/JTAG ends in ROM
-  download mode** (`rst:0x15, boot:0x3`) — esptool/espflash's default
-  post-flash reset included. `espflash flash -a watchdog-reset` starts the
-  app. Power-on and BOOT-held power-on behave as documented.
-- Once the app switches the PHY to USB OTG, the JTAG console is gone and a
-  software reset does not bring it back; the firmware must offer its own
-  way into download mode (here: HTTP `/bootloader` and a `B` byte on the
-  CDC port). This is the flash-back requirement of 14.2, now concrete.
-- SPIFFS on the NerdMiner keeps old config versions; the newest copy is
-  the last one in flash order (the first read was stale).
+1. **`transmit_wrap` is mandatory.** The Wi-Fi-AP netstack config we borrow
+   for the USB netif calls `esp_netif_transmit_wrap`; with only
+   `transmit` set, the first gratuitous ARP at link-up jumps to NULL
+   (Xtensa cause 20, PC 0xFFFFFFFD, tcpip thread). This was the crash
+   behind every symptom from the first flash on: reboot loop, halt,
+   "device never answers".
+2. **TinyUSB's NCM driver never calls `tud_network_init_cb`.** Link
+   readiness must be derived from the first received frame (or from the
+   SET_INTERFACE alt=1, which the driver does not expose).
+3. **The USB PHY selection lives in the RTC domain.** After OTG use, a
+   software reset does not bring USB-Serial/JTAG back; the ROM's
+   download mode is then invisible. `tinyusb_driver_uninstall()` before
+   `RTC_CNTL_FORCE_DOWNLOAD_BOOT` + restart restores it. This is the
+   flash-back path of 14.2, now concrete and tested three times in a row.
+   A panic reboot cannot run that code, so the firmware needs a
+   recoverable path on boot: if the previous reset was a panic, stay on
+   USB-Serial/JTAG for a grace period before switching to OTG.
+4. **On this board every DTR/RTS reset via USB-Serial/JTAG ends in ROM
+   download mode** (`rst:0x15, boot:0x3`); `espflash -a watchdog-reset`
+   starts the app. Power-on and BOOT-held power-on behave as documented.
+   And `RTC_CNTL_FORCE_DOWNLOAD_BOOT` is not cleared by the ROM: after a
+   firmware-requested download mode the host clears
+   `RTC_CNTL_OPTION1_REG` (0x6000812C) before the reset that should boot
+   the app, or the chip returns to download mode every time. The
+   flash-back round trip (app → `/bootloader` → esptool → clear flag →
+   watchdog reset → app with lease and HTTP) passed three times in a row.
+5. **Diagnosis without a console works:** core dump to flash, summary
+   (task, cause, PC, backtrace) rendered on the display at the next boot,
+   symbolised with `xtensa-esp32s3-elf-addr2line` on the host. Keep this
+   in the real firmware.
+6. Build-system traps: esp-idf-sys does not rebuild local C components by
+   itself (touch `sdkconfig.defaults`); it takes bootloader and partition
+   table from whichever `out` directory matches; espflash skips
+   "unchanged" segments unless `--no-skip`.
+7. SPIFFS on the NerdMiner keeps old config versions; the newest copy is
+   the last one in flash order.

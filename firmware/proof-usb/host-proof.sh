@@ -63,5 +63,20 @@ else
   fail "no USB-Serial/JTAG device after /bootloader (usbmodem count before: $before). Manual path: hold BOOT, press RST."
 fi
 
+step "7. Back to the app: clear the force-download flag (RTC domain, survives resets), watchdog reset"
+if [[ -n "$port" ]]; then
+  python3 -m esptool --port "$port" --chip esp32s3 --before no_reset --after no_reset --no-stub write_mem 0x6000812C 0 0xFFFFFFFF >/dev/null 2>&1
+  python3 -m esptool --port "$port" --chip esp32s3 --before no_reset --after watchdog_reset --no-stub chip_id >/dev/null 2>&1
+  back=""
+  for i in {1..45}; do sleep 1; back=$(ifconfig 2>/dev/null | awk '/inet 192\.168\.7\./{print $2}'); [[ -n "$back" ]] && break; done
+  if [[ -n "$back" ]] && curl -s -m 5 http://192.168.7.1/ | grep -q warpaxe-proof-usb; then
+    pass "app is back on USB with lease $back after ${i}s — the round trip is closed"
+  else
+    fail "app did not come back within 45 s"
+  fi
+else
+  fail "skipped: no ROM port from step 5"
+fi
+
 print -- "== failures: $fails"
 exit $fails

@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include "esp_log.h"
+#include "esp_core_dump.h"
+#include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
@@ -36,6 +38,20 @@ static void cdc_rx(int itf, cdcacm_event_t *event)
     }
 }
 
+static volatile bool s_net_ready = false;
+
+static void net_init_cb(void *ctx)
+{
+    (void)ctx;
+    s_net_ready = true;
+    ESP_LOGI(TAG, "NCM data interface up");
+}
+
+bool wa_usb_net_ready(void)
+{
+    return s_net_ready;
+}
+
 esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ctx)
 {
     // NULL descriptors: esp_tinyusb builds them from Kconfig
@@ -65,6 +81,7 @@ esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ct
     tinyusb_net_config_t net_cfg = {
         .on_recv_callback = on_rx,
         .free_tx_buffer = free_tx,
+        .on_init_callback = net_init_cb,
         .user_context = ctx,
     };
     for (int i = 0; i < 6; i++) {
@@ -81,6 +98,9 @@ esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ct
 
 esp_err_t wa_usb_send(void *buffer, uint16_t len)
 {
+    if (!tud_mounted()) {
+        return ESP_ERR_INVALID_STATE; // no host: drop, never touch the driver
+    }
     return tinyusb_net_send_sync(buffer, len, NULL, pdMS_TO_TICKS(100));
 }
 
@@ -91,6 +111,14 @@ bool wa_usb_mounted(void)
 
 void wa_reboot_to_bootloader(void)
 {
+    // Hand the one USB PHY back to USB-Serial/JTAG: the driver's own
+    // teardown does that properly (usb_del_phy). The PHY selection lives in
+    // the RTC domain and survives a software reset, so without this the
+    // ROM's download mode would sit on a PHY nobody is listening to.
+    tinyusb_driver_uninstall();
+    REG_SET_BIT(RTC_CNTL_USB_CONF_REG, RTC_CNTL_SW_HW_USB_PHY_SEL);
+    REG_CLR_BIT(RTC_CNTL_USB_CONF_REG, RTC_CNTL_SW_USB_PHY_SEL);
+    vTaskDelay(pdMS_TO_TICKS(50));
     // The ROM honours this on the next reset and enters download mode on
     // USB-Serial/JTAG — the same thing holding BOOT during reset does.
     REG_WRITE(RTC_CNTL_OPTION1_REG, RTC_CNTL_FORCE_DOWNLOAD_BOOT);
@@ -145,13 +173,18 @@ static int wa_vprintf(const char *fmt, va_list ap)
 
 int wa_tu_printf(const char *fmt, ...)
 {
+    // Never format from interrupt context: the ISR stack is small and
+    // TinyUSB's DCD logs from its interrupt handler.
+    if (xPortInIsrContext()) {
+        return 0;
+    }
     char buf[160];
     va_list ap;
     va_start(ap, fmt);
     int n = vsnprintf(buf, sizeof buf, fmt, ap);
     va_end(ap);
     // Only what helps: NCM driver lines and anything TinyUSB marks as error.
-    if (n > 0 && (strstr(buf, "EE") || strstr(buf, "ncm") || strstr(buf, "NCM") || strstr(buf, "recv") || strstr(buf, "xfer_out") || strstr(buf, "ndp") || strstr(buf, "NTB"))) {
+    if (n > 0 && (strstr(buf, "EE") || strstr(buf, "ASSERT") || strstr(buf, "assert") || strstr(buf, "dcd") || strstr(buf, "fifo") || strstr(buf, "FIFO") || strstr(buf, "ncm") || strstr(buf, "NCM") || strstr(buf, "recv") || strstr(buf, "xfer_out") || strstr(buf, "ndp") || strstr(buf, "NTB"))) {
         wa_push_line(buf, n);
     }
     return n;
@@ -175,4 +208,30 @@ void wa_log_line(int i, char *buf, size_t n)
     strncpy(buf, s_lines[idx], n - 1);
     portEXIT_CRITICAL_SAFE(&s_mux);
     buf[n - 1] = 0;
+}
+
+int wa_coredump_log(void)
+{
+    if (esp_core_dump_image_check() != ESP_OK) {
+        ESP_LOGI(TAG, "no core dump from a previous run");
+        return 0;
+    }
+    esp_core_dump_summary_t *sum = calloc(1, sizeof *sum);
+    if (!sum) return 0;
+    if (esp_core_dump_get_summary(sum) != ESP_OK) {
+        ESP_LOGE(TAG, "core dump present but summary failed");
+        free(sum);
+        return 0;
+    }
+    ESP_LOGE(TAG, "CRASH task=%s cause=%lu pc=%08lx", sum->exc_task, (unsigned long) sum->ex_info.exc_cause, (unsigned long) sum->exc_pc);
+    ESP_LOGE(TAG, "CRASH vaddr=%08lx depth=%lu%s", (unsigned long) sum->ex_info.exc_vaddr, (unsigned long) sum->exc_bt_info.depth, sum->exc_bt_info.corrupted ? " CORRUPT" : "");
+    for (uint32_t i = 0; i < sum->exc_bt_info.depth && i < 16; i += 3) {
+        ESP_LOGE(TAG, "BT%lu %08lx %08lx %08lx", (unsigned long) i,
+                 (unsigned long) sum->exc_bt_info.bt[i],
+                 (unsigned long) (i + 1 < sum->exc_bt_info.depth ? sum->exc_bt_info.bt[i + 1] : 0),
+                 (unsigned long) (i + 2 < sum->exc_bt_info.depth ? sum->exc_bt_info.bt[i + 2] : 0));
+    }
+    free(sum);
+    esp_core_dump_image_erase();
+    return 1;
 }

@@ -10,7 +10,7 @@
 
 use core::ffi::c_void;
 use core::ptr::{null, null_mut};
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use esp_idf_svc::sys::{self as sys, tusb, EspError};
 
@@ -19,6 +19,12 @@ pub const IP: [u8; 4] = [192, 168, 7, 1];
 static mut NETIF: *mut sys::esp_netif_obj = null_mut();
 pub static RX_FRAMES: AtomicU32 = AtomicU32::new(0);
 pub static TX_FRAMES: AtomicU32 = AtomicU32::new(0);
+pub static TX_DROPPED: AtomicU32 = AtomicU32::new(0);
+pub static TX_FAILED: AtomicU32 = AtomicU32::new(0);
+/// The host has sent us at least one frame: its NCM data interface is open.
+/// (TinyUSB's NCM driver never calls the network init callback, so this
+/// is the only reliable sign.)
+static SEEN_RX: AtomicBool = AtomicBool::new(false);
 
 pub fn base_mac() -> [u8; 6] {
     let mut m = [0u8; 6];
@@ -29,6 +35,7 @@ pub fn base_mac() -> [u8; 6] {
 }
 
 unsafe extern "C" fn on_recv(buffer: *mut c_void, len: u16, _ctx: *mut c_void) -> sys::esp_err_t {
+    SEEN_RX.store(true, Ordering::Relaxed);
     let netif = NETIF;
     if netif.is_null() {
         return sys::ESP_OK;
@@ -44,12 +51,36 @@ unsafe extern "C" fn on_recv(buffer: *mut c_void, len: u16, _ctx: *mut c_void) -
 }
 
 unsafe extern "C" fn transmit(_h: *mut c_void, buffer: *mut c_void, len: usize) -> sys::esp_err_t {
-    TX_FRAMES.fetch_add(1, Ordering::Relaxed);
-    let rc = tusb::wa_usb_send(buffer, len as u16);
-    if rc != sys::ESP_OK {
-        log::warn!("usb tx failed: {rc}");
+    // Link-up chatter (gratuitous ARP) arrives before the host has opened
+    // the NCM data interface; dropping it is correct, calling into the
+    // driver then is the crash of build 22.
+    if !net_ready() {
+        TX_DROPPED.fetch_add(1, Ordering::Relaxed);
+        return sys::ESP_OK;
+    }
+    // No logging on this path: it runs on the tcpip thread's small stack.
+    if tusb::wa_usb_send(buffer, len as u16) == sys::ESP_OK {
+        TX_FRAMES.fetch_add(1, Ordering::Relaxed);
+    } else {
+        TX_FAILED.fetch_add(1, Ordering::Relaxed);
     }
     sys::ESP_OK
+}
+
+/// The host has opened the NCM data interface.
+pub fn net_ready() -> bool {
+    SEEN_RX.load(Ordering::Relaxed) && mounted()
+}
+
+/// The Wi-Fi netstack config we borrow calls the *wrap* variant (it exists
+/// for Wi-Fi's zero-copy path); a NULL here was the crash of builds 6–24.
+unsafe extern "C" fn transmit_wrap(
+    h: *mut c_void,
+    buffer: *mut c_void,
+    len: usize,
+    _netstack_buf: *mut c_void,
+) -> sys::esp_err_t {
+    transmit(h, buffer, len)
 }
 
 unsafe extern "C" fn free_rx(_h: *mut c_void, buffer: *mut c_void) {
@@ -75,7 +106,9 @@ pub fn start_usb(mac: [u8; 6]) -> Result<(), EspError> {
 /// The netif with DHCP server behind the NCM link.
 pub fn start_netif(mac: [u8; 6]) -> Result<(), EspError> {
     unsafe {
+        log::info!("netif: esp_netif_init");
         sys::esp!(sys::esp_netif_init())?;
+        log::info!("netif: event loop");
         sys::esp!(sys::esp_event_loop_create_default())?;
 
         let ip_info: &'static sys::esp_netif_ip_info_t = Box::leak(Box::new(sys::esp_netif_ip_info_t {
@@ -96,6 +129,7 @@ pub fn start_netif(mac: [u8; 6]) -> Result<(), EspError> {
             driver: null(),
             stack: sys::_g_esp_netif_netstack_default_wifi_ap,
         };
+        log::info!("netif: esp_netif_new");
         let netif = sys::esp_netif_new(&cfg);
         if netif.is_null() {
             return Err(EspError::from_infallible::<{ sys::ESP_ERR_NO_MEM }>());
@@ -103,13 +137,17 @@ pub fn start_netif(mac: [u8; 6]) -> Result<(), EspError> {
         let drv = sys::esp_netif_driver_ifconfig_t {
             handle: netif as *mut c_void,
             transmit: Some(transmit),
-            transmit_wrap: None,
+            transmit_wrap: Some(transmit_wrap),
             driver_free_rx_buffer: Some(free_rx),
         };
+        log::info!("netif: driver config");
         sys::esp!(sys::esp_netif_set_driver_config(netif, &drv))?;
         NETIF = netif;
+        log::info!("netif: action_start");
         sys::esp_netif_action_start(netif as *mut c_void, null_mut(), 0, null_mut());
+        log::info!("netif: action_connected");
         sys::esp_netif_action_connected(netif as *mut c_void, null_mut(), 0, null_mut());
+        log::info!("netif: up");
     }
     Ok(())
 }

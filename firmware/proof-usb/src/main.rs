@@ -90,8 +90,16 @@ fn http_server(mac: [u8; 6]) -> Result<EspHttpServer<'static>, EspIOError> {
     Ok(server)
 }
 
-fn draw(d: &mut display::Display, mac: [u8; 6], step: &str, err: Option<i32>) {
+static STEP: std::sync::Mutex<(&'static str, Option<i32>)> = std::sync::Mutex::new(("0 BOOT", None));
+
+fn set_step(step: &'static str) {
+    *STEP.lock().unwrap() = (step, None);
+    info!("step: {step}");
+}
+
+fn draw(d: &mut display::Display, mac: [u8; 6]) {
     use display::*;
+    let (step, err) = *STEP.lock().unwrap();
     d.clear(NAVY);
     d.text(4, 4, 2, WHITE, "WARPAXE USB PROOF");
     match err {
@@ -111,25 +119,27 @@ fn draw(d: &mut display::Display, mac: [u8; 6], step: &str, err: Option<i32>) {
         1,
         WHITE,
         &format!(
-            "IP 192.168.7.1  HITS {}  RX {}  TX {}  UP {}S",
+            "192.168.7.1 HITS {} RX {} TX {} DROP {} FAIL {} UP {}S",
             HITS.load(Ordering::Relaxed),
             usb_net::RX_FRAMES.load(Ordering::Relaxed),
             usb_net::TX_FRAMES.load(Ordering::Relaxed),
+            usb_net::TX_DROPPED.load(Ordering::Relaxed),
+            usb_net::TX_FAILED.load(Ordering::Relaxed),
             uptime_s()
         ),
     );
-    d.text(4, 58, 1, GREY, &format!("MAC {}  NO WIFI  GET /BOOTLOADER TO REFLASH", mac_str(mac)));
-    d.log_tail(72, 8, GREY);
+    d.text(4, 58, 1, GREY, &format!("MAC {}  NO WIFI  B ON CDC = BOOTLOADER", mac_str(mac)));
+    d.log_tail(72, 10, GREY);
     if d.flush().is_err() {
         log::warn!("display flush failed");
     }
 }
 
 /// Show the failure and stay alive so the screen can be read.
-fn stuck(d: &mut display::Display, mac: [u8; 6], step: &str, code: i32) -> ! {
+fn stuck(step: &'static str, code: i32) -> ! {
     log::error!("step {step} failed: {code}");
+    *STEP.lock().unwrap() = (step, Some(code));
     loop {
-        draw(d, mac, step, Some(code));
         std::thread::sleep(Duration::from_millis(1000));
     }
 }
@@ -146,16 +156,14 @@ fn main() {
     esp_idf_svc::log::EspLogger::initialize_default();
     unsafe { sys::tusb::wa_log_capture_start() };
     let _ = BOOT.set(Instant::now());
-    // Give the host three seconds to open the USB-Serial/JTAG console
-    // before anything worth reading happens.
-    std::thread::sleep(Duration::from_millis(3000));
+    std::thread::sleep(Duration::from_millis(1000));
     info!("WarpAxe USB proof: boot");
     info!("free heap {} B, free PSRAM {} B", unsafe { sys::esp_get_free_heap_size() }, unsafe {
         sys::heap_caps_get_free_size(sys::MALLOC_CAP_SPIRAM)
     });
 
     let mac = usb_net::base_mac();
-    info!("step 1: display");
+    set_step("1 DISPLAY");
     let mut d = match display::Display::new() {
         Ok(d) => d,
         Err(e) => {
@@ -165,32 +173,51 @@ fn main() {
             }
         }
     };
-    info!("step 1 ok");
-    draw(&mut d, mac, "1 DISPLAY OK", None);
-    std::thread::sleep(Duration::from_millis(1500));
+    // The screen is painted by its own thread from here on, so a hang in
+    // any later step still shows the log tail.
+    std::thread::Builder::new()
+        .stack_size(8192)
+        .spawn(move || loop {
+            draw(&mut d, mac);
+            std::thread::sleep(Duration::from_millis(500));
+        })
+        .expect("display thread");
+    // A crash in the previous run leaves a core dump in flash: show it,
+    // and hold so it can be photographed.
+    let crashed = unsafe { sys::tusb::wa_coredump_log() } != 0;
+    set_step("1 DISPLAY OK");
+    std::thread::sleep(Duration::from_millis(if crashed { 45_000 } else { 1500 }));
 
+    set_step("2 USB");
     if let Err(e) = usb_net::start_usb(mac) {
-        stuck(&mut d, mac, "2 USB", e.code());
+        stuck("2 USB", e.code());
     }
-    info!("usb: NCM + CDC up");
-    draw(&mut d, mac, "2 USB OK", None);
-    std::thread::sleep(Duration::from_millis(1500));
+    set_step("2 USB OK");
+    // Wait for the host to open the NCM data interface (up to 20 s), so the
+    // netif's link-up chatter has somewhere to go. Without a host we go on
+    // anyway; transmit drops until the link exists.
+    for _ in 0..40 {
+        if usb_net::net_ready() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+    }
+    info!("ncm link ready: {}", usb_net::net_ready());
 
+    set_step("3 NETIF");
     if let Err(e) = usb_net::start_netif(mac) {
-        stuck(&mut d, mac, "3 NETIF", e.code());
+        stuck("3 NETIF", e.code());
     }
-    info!("netif 192.168.7.1/24 with DHCP server");
-    draw(&mut d, mac, "3 NETIF OK", None);
+    set_step("3 NETIF OK");
     std::thread::sleep(Duration::from_millis(1500));
 
+    set_step("4 HTTP");
     let _server = match http_server(mac) {
         Ok(s) => s,
-        Err(e) => stuck(&mut d, mac, "4 HTTP", e.0.code()),
+        Err(e) => stuck("4 HTTP", e.0.code()),
     };
-    info!("http: listening on 192.168.7.1:80");
-
+    set_step("4 HTTP OK");
     loop {
-        draw(&mut d, mac, "4 HTTP OK", None);
         std::thread::sleep(Duration::from_millis(1000));
     }
 }
