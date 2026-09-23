@@ -207,16 +207,20 @@ mod tests {
             proptest::prop_assert_eq!(Job::from_bytes(&bytes), job);
         }
 
-        /// Every id the sequence produces is a multiple of the step and
-        /// below 128; with step 24 the cycle length is 16.
+        /// Every id is below 128 and a multiple of gcd(step, 128) — not
+        /// of the step itself: with step 24, 144 wraps to 16. The slots
+        /// the sequence can ever visit are 128 / gcd of them; for the
+        /// BM1370's 24 that is 16.
         #[test]
         fn job_ids_stay_in_range(step in 1u8..=64, n in 1usize..300) {
+            fn gcd(a: u32, b: u32) -> u32 { if b == 0 { a } else { gcd(b, a % b) } }
+            let g = gcd(u32::from(step), 128);
             let mut ids = JobIds::with_step(step);
             let mut seen = [false; 128];
             for _ in 0..n {
                 let id = ids.advance();
                 proptest::prop_assert!(id < 128);
-                proptest::prop_assert_eq!(id % step, 0);
+                proptest::prop_assert_eq!(u32::from(id) % g, 0);
                 seen[id as usize] = true;
             }
             if step == 24 && n >= 16 {
