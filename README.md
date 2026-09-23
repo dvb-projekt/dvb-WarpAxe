@@ -9,6 +9,7 @@ and the simulator have value on their own and are built first.
 | crate | purpose | status |
 |---|---|---|
 | `warpaxe-core` | frames, CRCs, stream decoders both ways, PLL solver, job/result semantics, register payloads, chip profiles with the init sequence as data — pure, `no_std`, no alloc | complete for BM1370 |
+| `warpaxe-chain` | the chain driver: bring-up from the profile's init list, chip enumeration, baud switch, PLL ramp, work dispatch, nonce attribution to work and chip, duplicate and stale filtering, per-chip silence watchdog — over a `Uart` trait, `no_std`, no alloc; the code the firmware will run | BM1370, proven against the simulator |
 | `warpaxe-sim` | `SimChip`/`SimChain`: a BM1370 chain that answers on a UART without hashing, plus a `Board` with watts, degrees, a VR and a fan — and faults for both | core done |
 | `warpaxe-axeos` | an AxeOS-compatible HTTP device on top: `/api/system/info`, `/api/system/asic`, `PATCH /api/system`, `POST /api/system/restart`, and `/sim/*` to break it | serves WarpTune |
 

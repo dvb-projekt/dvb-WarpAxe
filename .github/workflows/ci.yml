@@ -46,11 +46,11 @@ jobs:
 
       # The core crate must build without std. thumbv7em has no std at
       # all, so a successful build there proves it — no ESP toolchain needed.
-      - name: no_std build of warpaxe-core
+      - name: no_std build of warpaxe-core and warpaxe-chain
         if: matrix.task == 'no_std'
         run: |
           rustup target add thumbv7em-none-eabihf
-          cargo build -p warpaxe-core --target thumbv7em-none-eabihf
+          cargo build -p warpaxe-core -p warpaxe-chain --target thumbv7em-none-eabihf
 
   # WarpTune's regulator against the simulator, in-process. A separate
   # package (detached from the workspace) with a git dependency on

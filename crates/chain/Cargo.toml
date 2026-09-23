@@ -1,0 +1,16 @@
+[package]
+name = "warpaxe-chain"
+description = "BM13xx chain driver: initialisation, work dispatch, nonce attribution and per-chip health, over a UART trait. no_std, no alloc; runs against the simulator on the host and against the wire on the chip."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+warpaxe-core = { path = "../core" }
+
+[dev-dependencies]
+warpaxe-sim = { path = "../sim" }

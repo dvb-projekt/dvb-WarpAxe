@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/sim", "crates/axeos", "crates/cgminer"]
+members = ["crates/core", "crates/chain", "crates/sim", "crates/axeos", "crates/cgminer"]
 # crates/scenarios is detached on purpose (path dep on dvb-WarpPool); see its Cargo.toml.
 exclude = ["crates/scenarios"]
 
