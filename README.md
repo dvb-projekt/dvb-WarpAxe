@@ -63,12 +63,12 @@ The design document and the decision record are in [`docs/`](docs/):
 - [`docs/00-Design-BM1370.md`](docs/00-Design-BM1370.md) — architecture,
   chip profiles, PLL, simulator, findings from stage A (§13) and the
   transport decision USB-NCM + USB bridge (§14);
-- [`docs/01-Nutzen-fuer-WarpTune.md`](docs/01-Nutzen-fuer-WarpTune.md) — what
+- [`docs/01-Benefit-for-WarpTune.md`](docs/01-Benefit-for-WarpTune.md) — what
   this buys WarpTune, concretely;
 - [`docs/02-Demo-WarpTune-vs-Sim-2026-09-23.txt`](docs/02-Demo-WarpTune-vs-Sim-2026-09-23.txt)
   — the first run of WarpTune against the emulator, unedited.
 
-The repo copy is canonical; the copy in Oliver's notes is a mirror. Short version:
+The repo copy is canonical and in English; a German draft in Oliver's notes is history, not a mirror. Short version:
 
 - registers and init sequences are **data** (a chip profile), not code per chip;
 - the PLL is **solved**, not looked up, so the reported frequency is the real one;

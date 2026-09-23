@@ -1,21 +1,21 @@
-# WarpForge — Firmware-Design, Stufe 1: BM1370
+# WarpForge — Firmware Design, Stage 1: BM1370
 
-*Arbeitstitel. Stand 2026-09-22. Autor: Oliver + Claude. Status: Entwurf, nichts davon gebaut.*
+*Working title. As of 2026-09-22. Authors: Oliver + Claude. Status: draft, none of it built.*
 
 ---
 
 ## 0. Scope
 
-**Stufe 1 = BM1370, ein Chip, Bitaxe Gamma 60x.** Ein Gerät, eine Topologie, ein
-Referenzboard. Alles andere ist Ballast, solange der erste akzeptierte Share nicht
-steht.
+**Stage 1 = BM1370, one chip, Bitaxe Gamma 60x.** One device, one topology, one
+reference board. Everything else is ballast as long as the first accepted share
+isn't there.
 
-**Nicht-Ziele in Stufe 1:**
+**Non-goals in Stage 1:**
 
-- BM1373 → wartet auf die Gaia-Hardware (NerdAxe Gaia, bitronics.store). Die
-  Architektur hält den Platz frei (Chip-Profil), aber es wird kein Profil auf
-  Verdacht geschrieben.
-  **Am Gerät gemessen 2026-09-22** (NerdOS `v1.1.0-31-gae509770`, `/api/system/asic`
+- BM1373 → waits for the Gaia hardware (NerdAxe Gaia, bitronics.store). The
+  architecture keeps the slot open (chip profile), but no profile gets written
+  on speculation.
+  **Measured on the device 2026-09-22** (NerdOS `v1.1.0-31-gae509770`, `/api/system/asic`
   + `/api/system/info`, 192.168.178.40):
 
   | | BM1373 (Gaia) | BM1370 (Gamma 602) |
@@ -23,167 +23,165 @@ steht.
   | Chips | 1 | 1 |
   | `smallCoreCount` | **6860** | 2040 |
   | Stock | **350 MHz @ 940 mV** | 525 MHz @ 1150 mV |
-  | Frequenz-Optionen | 300,320,340,**350**,360,380,400,420,440 | … bis 575 |
-  | Spannungs-Optionen | 900…1040 mV (20er) | … |
-  | abs-Grenzen | V 800–1300 mV, f **kein Limit** (`absMaxFrequency: 0`) | |
-  | Board | 12 V (10,8–13,2), max 6 A, `maxPower` 40 W | 5 V |
+  | Frequency options | 300,320,340,**350**,360,380,400,420,440 | … up to 575 |
+  | Voltage options | 900…1040 mV (steps of 20) | … |
+  | abs limits | V 800–1300 mV, f **no limit** (`absMaxFrequency: 0`) | |
+  | Board | 12 V (10.8–13.2), max 6 A, `maxPower` 40 W | 5 V |
 
-  `6860 × 350 MHz = 2401 GH/s` — die 2,4 TH/s der Herstellerangabe rechnen exakt auf.
+  `6860 × 350 MHz = 2401 GH/s` — the manufacturer's 2.4 TH/s works out exactly.
 
-  **Die eigentliche Erkenntnis: BM1373 ist breit und langsam, BM1370 schmal und
-  schnell.** 3,4× so viele Cores bei 2/3 der Taktrate. Für das Chip-Profil heißt
-  das ein völlig anderer PLL-Arbeitsbereich — nichts davon lässt sich vom BM1370
-  ableiten, und eine gemeinsame „BM137x"-Leiter wäre falsch.
+  **The real insight: BM1373 is wide and slow, BM1370 narrow and fast.** 3.4×
+  as many cores at 2/3 the clock rate. For the chip profile that means a
+  completely different PLL operating range — none of it can be derived from the
+  BM1370, and a shared "BM137x" ladder would be wrong.
 
-  **Beleg für §3.3 (PLL lösen statt Tabelle):** Die Frequenzliste ist *nicht*
-  gleichmäßig — 20er-Schritte, aber um den Stock-Punkt herum 340/350/360 in
-  10er-Schritten. Das ist genau das Muster einer Liste, die aus dem gebaut wurde,
-  was die PLL tatsächlich trifft. Mit einem Löser hätte man das Raster, statt es
-  zu raten.
+  **Evidence for §3.3 (solve the PLL instead of a table):** The frequency list is
+  *not* uniform — steps of 20, but around the stock point 340/350/360 in steps
+  of 10. That is exactly the pattern of a list built from what the PLL actually
+  hits. With a solver you'd have the grid instead of guessing it.
 
-  Weitere Folgerungen: (a) **Single-Chip wie der Gamma** — n=1 bleibt der
-  Normalfall; (b) das 1,9"-IPS-Display braucht einen eigenen HAL-Trait
-  (`Display`, SPI) plus UI-Task, der **nie** im Mining-Pfad blockiert;
-  (c) ⚠️ **`asicTemps: [0]` — es gibt keine ASIC-Junction-Temperatur.** Die
-  einzigen echten Sensoren sind `temp` (Board) und `vrTemp`. Das ist exakt der
-  Fall aus §7.4: eine Firmware, die hier auf einen Sensor regelt, der nichts
-  misst, hat keinen thermischen Schutz. Die Plausibilitätsprüfung ist kein
-  Luxus, sondern Pflicht.
+  Further conclusions: (a) **single-chip like the Gamma** — n=1 remains the
+  normal case; (b) the 1.9" IPS display needs its own HAL trait
+  (`Display`, SPI) plus a UI task that **never** blocks in the mining path;
+  (c) ⚠️ **`asicTemps: [0]` — there is no ASIC junction temperature.** The
+  only real sensors are `temp` (board) and `vrTemp`. That is exactly the case
+  from §7.4: a firmware that regulates on a sensor here that measures nothing
+  has no thermal protection. The plausibility check is not a luxury but
+  mandatory.
 
-  Noch ungeprüft: MCU-Variante, VR-Typ, tatsächliche PLL-Divider-Grenzen.
-- BM1366 / BM1368 → **endgültig raus** (2026-09-22): nicht im Portfolio, also
-  nie gegen Hardware prüfbar. Siehe §12.1.
-- Mehrchip-Ketten (NerdQAxe++, Octaxe) → die Adressierung wird von Anfang an
-  n-chip-fähig entworfen, aber nur mit n=1 getestet und ausgeliefert.
-- Nichts Kommerzielles. Das hier ist Lernprojekt + Werkzeug, keine Produktlinie.
+  Still unverified: MCU variant, VR type, actual PLL divider limits.
+- BM1366 / BM1368 → **definitively out** (2026-09-22): not in the portfolio, so
+  never verifiable against hardware. See §12.1.
+- Multi-chip chains (NerdQAxe++, Octaxe) → addressing is designed n-chip-capable
+  from the start, but only tested and shipped with n=1.
+- Nothing commercial. This is a learning project + tool, not a product line.
 
-**Das eine Ziel, an dem sich alles misst:** Eine Firmware, deren Verhalten man
-*ohne Hardware* in CI reproduzieren kann. Alles andere in diesem Dokument folgt
-daraus.
+**The one goal everything is measured against:** A firmware whose behavior can
+be reproduced in CI *without hardware*. Everything else in this document follows
+from that.
 
 ---
 
-## 1. Plattform-Entscheidungen
+## 1. Platform Decisions
 
-### 1.1 MCU: ESP32-S3 bleibt
+### 1.1 MCU: ESP32-S3 stays
 
-Nicht verhandelbar, weil die Boards existieren. Ein besserer MCU nützt nichts,
-wenn keiner die Firmware flashen kann.
+Non-negotiable, because the boards exist. A better MCU is useless if nobody can
+flash the firmware.
 
-### 1.2 Sprache: Rust auf ESP-IDF (`std`), nicht `no_std`
+### 1.2 Language: Rust on ESP-IDF (`std`), not `no_std`
 
-| Option | Urteil |
+| Option | Verdict |
 |---|---|
-| C auf ESP-IDF (wie ESP-Miner) | Verworfen. Kein Gewinn gegenüber dem Bestand, und die Bugklassen, die dort weh tun (Buffer, Lifetimes, ignorierte Fehlerrückgaben), bleiben. |
-| Rust `no_std` + `esp-hal` + `embassy` | Verworfen für Stufe 1. Schön, aber WiFi/TLS/OTA müsste man neu bauen oder `esp-wifi` in Kauf nehmen. Das ist Risiko an der falschen Stelle. |
-| **Rust `std` auf `esp-idf-svc`/`esp-idf-hal`** | **Gewählt.** WiFi, mbedTLS, NVS, OTA, HTTP-Server kommen vom IDF. Der Mining-Kern ist trotzdem `no_std`-sauber und damit host-testbar. |
+| C on ESP-IDF (like ESP-Miner) | Rejected. No gain over the existing code, and the bug classes that hurt there (buffers, lifetimes, ignored error returns) remain. |
+| Rust `no_std` + `esp-hal` + `embassy` | Rejected for Stage 1. Nice, but WiFi/TLS/OTA would have to be rebuilt or `esp-wifi` accepted. That is risk in the wrong place. |
+| **Rust `std` on `esp-idf-svc`/`esp-idf-hal`** | **Chosen.** WiFi, mbedTLS, NVS, OTA, HTTP server come from the IDF. The mining core is nevertheless `no_std`-clean and therefore host-testable. |
 
-Der Punkt ist nicht „Rust ist besser". Der Punkt ist: Der Teil, der zählt
-(`forge-core`), ist dann eine reine Bibliothek ohne Hardware-Abhängigkeit, und
-den kann man auf dem Mac in Millisekunden durchtesten statt auf dem Board in
-Minuten.
+The point is not "Rust is better". The point is: the part that counts
+(`forge-core`) is then a pure library without hardware dependency, and you can
+run its tests on the Mac in milliseconds instead of on the board in minutes.
 
 ### 1.3 Toolchain
 
-- `espup` + `esp` Rust-Toolchain (Xtensa), `ldproxy`
-- Build-Matrix: `forge-core` auf **stable host** (x86_64/aarch64) für Tests,
-  Gesamtfirmware auf Xtensa
-- Kein `cargo-espflash`-Zwang im CI — das Firmware-Image wird gebaut und
-  artefaktiert, geflasht wird vom HIL-Runner (§10.3)
+- `espup` + `esp` Rust toolchain (Xtensa), `ldproxy`
+- Build matrix: `forge-core` on **stable host** (x86_64/aarch64) for tests,
+  full firmware on Xtensa
+- No `cargo-espflash` requirement in CI — the firmware image is built and
+  stored as an artifact, flashing is done by the HIL runner (§10.3)
 
 ---
 
-## 2. Modulschnitt
+## 2. Module Split
 
 ```
-forge-core/          no_std, no alloc, keine HW-Traits
-  ├ frame/           0x55AA-Rahmen, CRC5, CRC16, Encode/Decode
-  ├ chip/            ChipProfile-Typen, PLL-Löser, Registerkonstanten
-  ├ job/             Stratum-Job → ASIC-Work, extranonce, version rolling
-  ├ nonce/           Nonce-Response → (chip, core, share), Difficulty-Prüfung
-  └ sha/             double-SHA256 zur lokalen Share-Verifikation
+forge-core/          no_std, no alloc, no HW traits
+  ├ frame/           0x55AA frames, CRC5, CRC16, encode/decode
+  ├ chip/            ChipProfile types, PLL solver, register constants
+  ├ job/             Stratum job → ASIC work, extranonce, version rolling
+  ├ nonce/           nonce response → (chip, core, share), difficulty check
+  └ sha/             double-SHA256 for local share verification
 
-forge-proto/         no_std + alloc, keine HW
-  ├ v1/              Stratum V1: inkrementeller Parser + Encoder
-  └ v2/              Stratum V2: Noise NX + Mining-Protokoll  (Stufe 3)
+forge-proto/         no_std + alloc, no HW
+  ├ v1/              Stratum V1: incremental parser + encoder
+  └ v2/              Stratum V2: Noise NX + mining protocol  (Stage 3)
 
-forge-control/       no_std + alloc, keine HW, keine Uhr (Zeit wird injiziert)
-  ├ tune/            Betriebspunkt-Automat (Settle → Judge → Commit)
-  ├ thermal/         Thermikmodell + Lüfterregelung
-  └ health/          Fehlerbudget, Degradationsstufen
+forge-control/       no_std + alloc, no HW, no clock (time is injected)
+  ├ tune/            operating-point state machine (Settle → Judge → Commit)
+  ├ thermal/         thermal model + fan control
+  └ health/          error budget, degradation levels
 
 forge-hal/           Traits: Uart, Gpio, I2c, Clock, Rng, Storage
-forge-esp32s3/       Implementierung der Traits auf esp-idf-hal
-forge-app/           Tasks, Verdrahtung, HTTP/WS-API, Web-Assets
-forge-sim/           Host-Binary: BM1370-Simulator (§6)
-forge-tests/         Integrationstests: forge-app-Logik gegen forge-sim
+forge-esp32s3/       implementation of the traits on esp-idf-hal
+forge-app/           tasks, wiring, HTTP/WS API, web assets
+forge-sim/           host binary: BM1370 simulator (§6)
+forge-tests/         integration tests: forge-app logic against forge-sim
 ```
 
-**Die Regel, die das Ganze zusammenhält:**
-`forge-core`, `forge-proto` und `forge-control` dürfen **keine** HW-Crate, keine
-`std::time`, kein `log!` mit Seiteneffekt kennen. Zeit kommt als `now_ms: u64`
-rein, Zufall als Seed, I/O als Rückgabewert („ich will diese Bytes senden"),
-nie als Aufruf. Das ist exakt das Muster aus `warppool_tune::regulator` —
-pure decision logic, no I/O — und es funktioniert dort.
+**The rule that holds the whole thing together:**
+`forge-core`, `forge-proto` and `forge-control` may know **no** HW crate, no
+`std::time`, no `log!` with side effects. Time comes in as `now_ms: u64`,
+randomness as a seed, I/O as a return value ("I want to send these bytes"),
+never as a call. That is exactly the pattern from `warppool_tune::regulator` —
+pure decision logic, no I/O — and it works there.
 
-**Konsequenz:** ~80 % der Firmware-Logik läuft in `cargo test` auf dem Mac.
+**Consequence:** ~80 % of the firmware logic runs in `cargo test` on the Mac.
 
 ---
 
-## 3. Chip-Profil: Registermap als Daten
+## 3. Chip Profile: Register Map as Data
 
-### 3.1 Das Problem, das wir vermeiden
+### 3.1 The problem we avoid
 
-ESP-Miner hat `bm1366.c`, `bm1368.c`, `bm1370.c` — dreimal fast derselbe Code.
-Ein Fix in einer Datei landet nicht automatisch in den anderen. (Dieselbe
-Bugklasse wie V1/V2 in WarpPool, nur ohne die Disziplin, beide zu prüfen.)
+ESP-Miner has `bm1366.c`, `bm1368.c`, `bm1370.c` — almost the same code three
+times. A fix in one file doesn't automatically land in the others. (The same bug
+class as V1/V2 in WarpPool, only without the discipline of checking both.)
 
-### 3.2 Die Form
+### 3.2 The shape
 
 ```rust
 // forge-core/src/chip/profile.rs
 pub struct ChipProfile {
     pub name: &'static str,
 
-    // Identität
-    pub chip_id: u16,              // Antwort auf GET_STATUS 0x00
+    // Identity
+    pub chip_id: u16,              // response to GET_STATUS 0x00
     pub id_mask: u16,
 
-    // Topologie
-    pub small_cores: u16,          // BM1370: 2040 (aus esp-miner; zu verifizieren)
+    // Topology
+    pub small_cores: u16,          // BM1370: 2040 (from esp-miner; to be verified)
     pub big_cores: u8,
     pub domains: u8,
 
-    // Takt
+    // Clock
     pub xtal_hz: u32,              // 25_000_000
-    pub pll: PllSpec,              // Divider-Grenzen, siehe 3.3
+    pub pll: PllSpec,              // divider limits, see 3.3
     pub freq_min_mhz: u16,
-    pub freq_max_mhz: u16,         // harte Sperre, nicht "empfohlen"
+    pub freq_max_mhz: u16,         // hard lock, not "recommended"
 
-    // Initialisierung
+    // Initialization
     pub init: &'static [InitStep],
 
-    // Protokoll
+    // Protocol
     pub nonce: NonceLayout,
     pub version_rolling: VersionRollingCaps,
     pub uart: UartSpec,
 
-    // Registeradressen (Familienunterschiede!)
+    // Register addresses (family differences!)
     pub reg: RegMap,
 
-    // Physik
+    // Physics
     pub thermal: ThermalSpec,
     pub electrical: ElectricalSpec,
 }
 ```
 
-`InitStep` ist bewusst eine **Datenliste mit Semantik**, keine Bytefolge:
+`InitStep` is deliberately a **data list with semantics**, not a byte sequence:
 
 ```rust
 pub enum InitStep {
     Write   { reg: u8, val: u32 },
     WriteAll{ reg: u8, val: u32 },
-    Read    { reg: u8, expect: Option<u32> },  // expect=Some → Abbruch bei Abweichung
+    Read    { reg: u8, expect: Option<u32> },  // expect=Some → abort on mismatch
     CoreReg { id: u8, val: u8 },
     ChainInactive,
     SetAddress { step: u8 },
@@ -192,15 +190,14 @@ pub enum InitStep {
 }
 ```
 
-**Warum mit Semantik statt roh:** Der Simulator kann eine Sequenz dann
-*validieren* („du hast SET_ADDRESS geschickt, bevor CHAIN_INACTIVE kam — das
-macht echte Hardware nicht mit") statt nur Bytes zu vergleichen. Und `Read` mit
-`expect` macht die Init zur selbstprüfenden Sequenz: Wenn der Chip nach dem
-PLL-Write nicht den erwarteten Wert zurückliest, brechen wir *dort* ab, statt
-zehn Minuten später über Hardware-Errors zu rätseln. ESP-Miner schreibt
-überwiegend blind.
+**Why with semantics instead of raw:** The simulator can then *validate* a
+sequence ("you sent SET_ADDRESS before CHAIN_INACTIVE came — real hardware
+won't put up with that") instead of merely comparing bytes. And `Read` with
+`expect` turns the init into a self-checking sequence: if the chip doesn't read
+back the expected value after the PLL write, we abort *right there* instead of
+puzzling over hardware errors ten minutes later. ESP-Miner writes mostly blind.
 
-### 3.3 PLL: lösen statt Tabelle nachschlagen
+### 3.3 PLL: solve instead of looking up a table
 
 ```
 f_out = f_xtal × fbdiv / (refdiv × postdiv1 × postdiv2)
@@ -212,173 +209,166 @@ pub struct PllSpec {
     pub refdiv:   RangeInclusive<u8>,
     pub postdiv1: RangeInclusive<u8>,
     pub postdiv2: RangeInclusive<u8>,
-    pub vco_hz:   RangeInclusive<u64>,   // f_xtal × fbdiv / refdiv muss hier rein
-    pub constraints: &'static [PllConstraint],  // z.B. postdiv1 >= postdiv2
+    pub vco_hz:   RangeInclusive<u64>,   // f_xtal × fbdiv / refdiv must land in here
+    pub constraints: &'static [PllConstraint],  // e.g. postdiv1 >= postdiv2
 }
 ```
 
-`solve(profile, target_mhz) -> Option<PllWord>` sucht die Kombination mit dem
-kleinsten Fehler, die *alle* Constraints erfüllt, und gibt die tatsächlich
-erreichte Frequenz mit zurück.
+`solve(profile, target_mhz) -> Option<PllWord>` searches for the combination with the
+smallest error that satisfies *all* constraints, and returns the actually
+achieved frequency along with it.
 
-Zwei Dinge, die das besser macht als heute:
+Two things this does better than today:
 
-1. **Die UI zeigt die echte Frequenz, nicht die gewünschte.** Wenn du 545 MHz
-   einstellst und die PLL nur 543,75 MHz kann, dann steht 543,75 da. Heute lügt
-   die Anzeige, und jede Effizienzrechnung (J/TH) lügt mit.
-2. **Die Frequenzleiter wird generiert, nicht hartcodiert.** Das
-   `STEP_MHZ = 25`-Raster aus WarpTune ist eine Näherung an das, was die PLL
-   tatsächlich treffen kann. Mit dem Löser bekommst du die *erreichbaren* Punkte —
-   und zwischen 525 und 550 liegen mehr davon als eine 25er-Leiter zeigt.
+1. **The UI shows the real frequency, not the requested one.** If you set 545 MHz
+   and the PLL can only do 543.75 MHz, then 543.75 is what's displayed. Today the
+   display lies, and every efficiency calculation (J/TH) lies with it.
+2. **The frequency ladder is generated, not hard-coded.** The
+   `STEP_MHZ = 25` grid from WarpTune is an approximation of what the PLL can
+   actually hit. With the solver you get the *achievable* points — and between
+   525 and 550 there are more of them than a 25-step ladder shows.
 
-Ein `const`-Test prüft in CI, dass jeder Punkt der Leiter lösbar ist und dass die
-gelöste Frequenz innerhalb ±0,5 % liegt.
+A `const` test checks in CI that every point of the ladder is solvable and that
+the solved frequency lies within ±0.5 %.
 
-### 3.4 Quellenlage BM1370 — ehrlich
+### 3.4 Source situation BM1370 — honestly
 
-Alles, was wir über die Registermap wissen, stammt aus Reverse Engineering
-(ESP-Miner `main/asic/bm1370.c`, NerdQAxe-Fork, cgminer-Patches). Es gibt **kein**
-Datenblatt.
+Everything we know about the register map comes from reverse engineering
+(ESP-Miner `main/asic/bm1370.c`, NerdQAxe fork, cgminer patches). There is **no**
+datasheet.
 
-Daraus folgt der Umgang damit:
+From that follows how we handle it:
 
-- Jeder Registerwert im Profil bekommt ein Herkunfts-Attribut:
-  `#[src("esp-miner v2.15.1 bm1370.c:142")]` oder `#[src("measured 2026-xx-xx")]`
-- Werte ohne Messung gelten als **unbestätigt** und werden im Boot-Log als solche
-  markiert
-- Ein `verify`-Modus fährt beim ersten Boot einer neuen Firmware die
-  Read-Back-Prüfung über alle beschreibbaren Register und protokolliert
-  Abweichungen — das ist die Datenquelle, aus der die Map über die Zeit *belegt*
-  statt geerbt wird
+- Every register value in the profile gets a provenance attribute:
+  `#[src("esp-miner v2.15.1 bm1370.c:142")]` or `#[src("measured 2026-xx-xx")]`
+- Values without measurement count as **unconfirmed** and are marked as such in
+  the boot log
+- A `verify` mode runs the read-back check over all writable registers on the
+  first boot of a new firmware and logs deviations — that is the data source
+  from which the map becomes *proven* over time instead of inherited
 
-Sicher genug für den Start (aus dem Bestand, in CI gegen Fixtures gepinnt):
+Safe enough for the start (from the existing code, pinned in CI against fixtures):
 
-| Sache | Wert |
+| Item | Value |
 |---|---|
 | Preamble | `0x55 0xAA` |
-| Command-Prüfsumme | CRC5 (Bitmain-Variante, über Header+Payload) |
-| Work-Prüfsumme | CRC16 |
-| Init-Baudrate | 115200 |
-| Nonce-Response | `0xAA 0x55` + Nonce + Job-ID + Version-Bits + CRC5 |
-| Version-Rolling-Maske | `0x1fffe000` |
-| Ticket-Mask | lokale Difficulty-Schwelle, Zweierpotenz |
-| Stock-Punkt Gamma | 525 MHz @ 1150 mV |
+| Command checksum | CRC5 (Bitmain variant, over header+payload) |
+| Work checksum | CRC16 |
+| Init baud rate | 115200 |
+| Nonce response | `0xAA 0x55` + nonce + job ID + version bits + CRC5 |
+| Version rolling mask | `0x1fffe000` |
+| Ticket mask | local difficulty threshold, power of two |
+| Stock point Gamma | 525 MHz @ 1150 mV |
 
-Alles darüber hinaus: extrahieren, pinnen, messen.
+Everything beyond that: extract, pin, measure.
 
 ---
 
-## 4. Wire-Layer
+## 4. Wire Layer
 
 ### 4.1 Frames
 
 ```rust
-// Encode ist allokationsfrei in einen &mut [u8]
+// Encode is allocation-free into a &mut [u8]
 pub fn encode_cmd(buf: &mut [u8], cmd: Cmd) -> Result<usize, FrameErr>;
 
-// Decode ist inkrementell: füttere Bytes, bekomme Events
-pub struct RxDecoder { /* fester Ringpuffer, kein Heap */ }
+// Decode is incremental: feed bytes, get events
+pub struct RxDecoder { /* fixed ring buffer, no heap */ }
 impl RxDecoder {
     pub fn push(&mut self, byte: u8) -> Option<RxEvent>;
 }
 pub enum RxEvent {
     Nonce(NonceResponse),
     RegRead { chip: u8, reg: u8, val: u32 },
-    Desync { dropped: u16 },     // ← existiert bei ESP-Miner nicht
+    Desync { dropped: u16 },     // ← does not exist in ESP-Miner
 }
 ```
 
-`Desync` ist wichtig: Wenn der UART-Strom aus dem Tritt kommt (kommt vor, bei
-hoher Baudrate und Störungen auf dem Kabel), soll die Firmware das **zählen und
-melden**, nicht stillschweigend Bytes wegwerfen. Eine steigende Desync-Rate ist
-ein Frühindikator für ein Signalintegritätsproblem, lange bevor die
-Hashrate einbricht.
+`Desync` matters: when the UART stream loses step (it happens, at high baud
+rate and with interference on the cable), the firmware should **count and
+report** it, not silently discard bytes. A rising desync rate is an early
+indicator of a signal integrity problem, long before the hashrate collapses.
 
-### 4.2 UART-Betrieb
+### 4.2 UART operation
 
-- RX über DMA in einen Ringpuffer, ISR schiebt nur, Parsing im Task
-- Baudrate-Wechsel als atomarer Schritt: Chip-Register schreiben → Drain →
-  MCU-UART umstellen → Read-Back-Probe → bei Fehlschlag zurück auf 115200
-  (ESP-Miner hat hier keinen Rückweg; ein fehlgeschlagener Baud-Switch heißt
-  Reboot)
-- TX-Budget: Kommandos an definierten Punkten, nie mitten in einem Work-Burst
+- RX via DMA into a ring buffer, ISR only pushes, parsing in the task
+- Baud rate change as an atomic step: write chip register → drain →
+  switch MCU UART → read-back probe → on failure back to 115200
+  (ESP-Miner has no way back here; a failed baud switch means reboot)
+- TX budget: commands at defined points, never in the middle of a work burst
 
 ---
 
-## 5. Job-Pipeline und Speichermodell
+## 5. Job Pipeline and Memory Model
 
-### 5.1 Keine Allokation im Hot-Path
+### 5.1 No allocation in the hot path
 
 ```
-[WiFi/TCP] → [V1-Parser, inkrementell] → [Job-Arena, N=8 Slots, statisch]
-                                              ↓ SPSC-Ring
-                                        [Work-Builder]
+[WiFi/TCP] → [V1 parser, incremental] → [job arena, N=8 slots, static]
+                                              ↓ SPSC ring
+                                        [work builder]
                                               ↓
                                         [UART TX]
 
-[UART RX] → [RxDecoder] → SPSC-Ring → [Share-Validator] → [Submit-Queue, persistiert]
+[UART RX] → [RxDecoder] → SPSC ring → [share validator] → [submit queue, persisted]
 ```
 
-Der Stratum-Parser ist ein **Zustandsautomat über den Bytestrom**, kein
-`cJSON_Parse` über einen zusammengesetzten String. Er schreibt Felder direkt in
-den Job-Slot und hat harte Obergrenzen für jedes Feld (merkle branches, coinb1/2,
-extranonce). Ein Pool, der zu große Felder schickt, bekommt einen Fehler und
-einen Disconnect — nicht einen Heap-Overflow.
+The Stratum parser is a **state machine over the byte stream**, not a
+`cJSON_Parse` over an assembled string. It writes fields directly into the job
+slot and has hard upper bounds for every field (merkle branches, coinb1/2,
+extranonce). A pool that sends oversized fields gets an error and a disconnect —
+not a heap overflow.
 
-Job-Arena: 8 Slots à fester Größe, Ringbelegung, Slot-Generation als Teil der
-Job-ID. Ein Nonce, der zu einem überschriebenen Slot kommt, wird als
-`stale_local` gezählt und **nicht** eingereicht. (Heute wird er teils eingereicht
-und produziert Pool-Rejects, die dann fälschlich als Instabilität gewertet
-werden — genau der Fall, den `is_benign_reject()` in WarpTune nachträglich wieder
-ausfiltern muss.)
+Job arena: 8 slots of fixed size, ring allocation, slot generation as part of the
+job ID. A nonce arriving for an overwritten slot is counted as `stale_local` and
+**not** submitted. (Today it is sometimes submitted and produces pool rejects,
+which are then wrongly counted as instability — exactly the case that
+`is_benign_reject()` in WarpTune has to filter out again after the fact.)
 
-### 5.2 Mining überlebt Netzausfall
+### 5.2 Mining survives network outage
 
-Bei Verbindungsverlust:
+On connection loss:
 
-1. ASIC läuft auf dem letzten Job weiter, `ntime` wird im erlaubten Fenster
-   gerollt
-2. Gefundene Shares gehen in eine persistente Submit-Queue (NVS-Ring, ~64
-   Einträge)
-3. Nach Reconnect: Re-Subscribe, dann Nachreichen dessen, was noch im
-   ntime/job-Fenster liegen kann
+1. ASIC keeps running on the last job, `ntime` is rolled within the allowed
+   window
+2. Found shares go into a persistent submit queue (NVS ring, ~64 entries)
+3. After reconnect: re-subscribe, then submit whatever can still lie within the
+   ntime/job window
 
-Nach 120 s ohne Verbindung wird der Job als tot betrachtet und der ASIC auf
-einen niedrigen Punkt gefahren (Strom sparen statt sinnlos hashen).
+After 120 s without connection the job is considered dead and the ASIC is driven
+to a low point (save power instead of hashing pointlessly).
 
-### 5.3 Failover mit Hot-Standby
+### 5.3 Failover with hot standby
 
-Zwei Pool-Slots, **beide** verbunden, subscribed, authorized. Der Standby
-bekommt Jobs und verwirft sie. Umschalten = Pointer-Swap + ein Work-Push, kein
-Handshake.
+Two pool slots, **both** connected, subscribed, authorized. The standby receives
+jobs and discards them. Switching = pointer swap + one work push, no handshake.
 
-Kosten: ein zweiter TCP-Socket und ~4 KB. Gewinn: Failover ohne
-Hashrate-Loch. Heute kostet ein Pool-Wechsel den vollen Reconnect-Zyklus.
+Cost: a second TCP socket and ~4 KB. Gain: failover without a hashrate hole.
+Today a pool switch costs the full reconnect cycle.
 
-### 5.4 Lokale Share-Verifikation
+### 5.4 Local share verification
 
-Jeder Nonce wird **vor** dem Submit lokal doppelt-SHA256-geprüft gegen die
-Pool-Difficulty. Kostet auf dem S3 wenige µs pro Share (die Rate ist niedrig).
-Gewinn: Ein Chip, der Müll liefert, produziert keine Pool-Rejects mehr, sondern
-einen sauberen lokalen HW-Error-Zähler. Das trennt „Chip instabil" von
-„Pool hat abgelehnt" an der Quelle — statt hinterher aus Reject-Strings raten
-zu müssen.
+Every nonce is double-SHA256-checked locally against the pool difficulty
+**before** submit. Costs a few µs per share on the S3 (the rate is low). Gain: a
+chip delivering garbage no longer produces pool rejects but a clean local
+HW-error counter. That separates "chip unstable" from "pool rejected" at the
+source — instead of having to guess afterwards from reject strings.
 
 ---
 
-## 6. Der Simulator — das eigentliche Kernstück
+## 6. The Simulator — the Actual Centerpiece
 
-`forge-sim` ist ein Host-Binary, das sich wie ein BM1370 am UART verhält.
+`forge-sim` is a host binary that behaves like a BM1370 on the UART.
 
 ### 6.1 Transport
 
-- **PTY-Modus:** legt ein `/dev/ttys00x` an, das die Firmware-unter-Test öffnet
-- **In-Process-Modus:** `forge-sim` als Bibliothek, direkt gegen die
-  `forge-hal::Uart`-Trait-Implementierung — das ist der schnelle Pfad für
-  `cargo test`, kein OS im Spiel
-- **TCP-Modus:** für manuelles Debuggen mit echtem Tooling
+- **PTY mode:** creates a `/dev/ttys00x` that the firmware-under-test opens
+- **In-process mode:** `forge-sim` as a library, directly against the
+  `forge-hal::Uart` trait implementation — that is the fast path for
+  `cargo test`, no OS involved
+- **TCP mode:** for manual debugging with real tooling
 
-### 6.2 Was er modelliert
+### 6.2 What it models
 
 ```rust
 pub struct SimChip {
@@ -388,822 +378,807 @@ pub struct SimChip {
     baud: u32,
     state: ChipState,      // Reset | Addressed | Configured | Hashing
     pll: PllWord,
-    // Physik
-    junction_c: f32,       // einfaches RC-Modell aus Leistung
-    // Arbeit
+    // Physics
+    junction_c: f32,       // simple RC model from power
+    // Work
     current_work: Option<Work>,
-    rng: Pcg32,            // deterministisch! seed = Testparameter
+    rng: Pcg32,            // deterministic! seed = test parameter
 }
 ```
 
-Der Sim **hasht nicht wirklich**. Er zieht aus der Nonce-Rate, die sich aus
-Frequenz × Cores × Ticket-Mask ergibt, deterministisch Zeitpunkte und liefert
-Nonces, die zu dem Work passen — konstruiert, nicht gefunden. Für die
-Firmware ist das ununterscheidbar, und der Test läuft in Millisekunden statt in
-Stunden.
+The sim **doesn't actually hash**. From the nonce rate that results from
+frequency × cores × ticket mask it deterministically draws points in time and
+delivers nonces that match the work — constructed, not found. For the firmware
+that is indistinguishable, and the test runs in milliseconds instead of hours.
 
-### 6.3 Fehlerinjektion — der Grund, warum sich das lohnt
+### 6.3 Fault injection — the reason this is worth it
 
-Steuerkanal (separates Socket / API im In-Process-Modus):
+Control channel (separate socket / API in in-process mode):
 
 ```rust
 pub enum Fault {
     NoResponse { for_ms: u32 },
     GarbageNonces { rate: f32 },
-    BitFlipTx { probability: f32 },      // UART-Störung
+    BitFlipTx { probability: f32 },      // UART interference
     HangAfterFreqChange { above_mhz: u16 },
-    BrownoutBelow { mv: u16 },           // liefert HW-Errors statt Nonces
+    BrownoutBelow { mv: u16 },           // delivers HW errors instead of nonces
     ThermalRunaway { rate_c_per_s: f32 },
     RegReadCorrupt { reg: u8 },
     BaudSwitchFails,
     ColdStartSlow { ms: u32 },
     DuplicateNonce { rate: f32 },
 
-    /// ⚠️ NICHT ausgedacht — am Gaia eingetreten, 2026-09-22 11:44.
-    /// VR-Ausgang auf 0, Leistung 36 W → 5 W, kein Hashing.
-    /// KEIN Fault-Flag, KEIN Reboot, Registerzugriff bleibt beantwortbar,
-    /// gemeldete Hashrate bleibt auf dem alten Wert stehen.
-    /// Siehe 01-Nutzen-fuer-WarpTune.md, Abschnitt „Feldbeleg".
+    /// ⚠️ NOT made up — happened on the Gaia, 2026-09-22 11:44.
+    /// VR output at 0, power 36 W → 5 W, no hashing.
+    /// NO fault flag, NO reboot, register access still answerable,
+    /// reported hashrate stays stuck at the old value.
+    /// See 01-Benefit-for-WarpTune.md, section "Field evidence".
     SilentVrShutdown { above_mhz: u16 },
 }
 ```
 
-`SilentVrShutdown` ist der wichtigste Testfall der ganzen Liste, weil er die
-bequemste Annahme widerlegt: dass ein totes Gerät sich als tot meldet. Der
-einzige ehrliche Messwert war die Leistungsaufnahme. Erwartetes Verhalten:
-Erkennung innerhalb eines Ticks, Punkt als schlecht markiert, Rückfall auf den
-Anker, Eintrag im Post-Mortem-Log — ohne Handeingriff und ohne Netz.
+`SilentVrShutdown` is the most important test case in the whole list, because it
+refutes the most convenient assumption: that a dead device reports itself as
+dead. The only honest measurement was the power draw. Expected behavior:
+detection within one tick, point marked as bad, fallback to the anchor, entry in
+the post-mortem log — without manual intervention and without network.
 
-Jeder davon ist ein Feldfehler, den heute niemand testet, weil man ihn auf echter
-Hardware nicht auf Knopfdruck erzeugen kann. Mit dem Sim ist jeder ein
-Regressionstest:
+Each of these is a field failure that nobody tests today, because you can't
+produce it on real hardware at the push of a button. With the sim each one is a
+regression test:
 
-- „Chip antwortet 5 s nicht" → erwartet: Recovery-Sequenz, kein Reboot,
-  Ereignis im Post-Mortem-Log
-- „Hängt oberhalb 600 MHz" → erwartet: Tuner verankert 575 MHz, markiert 600 als
-  schlecht, kommt eine Stunde nicht wieder (das Step-Memory-Verhalten aus
-  WarpTune, nur eine Ebene tiefer)
-- „Brownout unter 1050 mV" → erwartet: Spannung wird *vor* der Frequenz
-  angehoben, nicht danach
+- "Chip doesn't respond for 5 s" → expected: recovery sequence, no reboot,
+  event in the post-mortem log
+- "Hangs above 600 MHz" → expected: tuner anchors 575 MHz, marks 600 as bad,
+  doesn't come back for an hour (the step-memory behavior from WarpTune, just
+  one layer deeper)
+- "Brownout below 1050 mV" → expected: voltage is raised *before* the
+  frequency, not after
 
-### 6.4 Aufzeichnen und Abspielen
+### 6.4 Record and replay
 
-`forge-sim record` hängt sich (über ein Y-Kabel oder den Board-Debug-UART) an
-echte Hardware und schreibt den Dialog mit. `forge-sim replay <trace>` spielt ihn
-zurück. Damit wird jeder echte Feldfehler, den du einmal einfängst, zu einem
-dauerhaften CI-Test.
+`forge-sim record` attaches (via a Y-cable or the board debug UART) to real
+hardware and logs the dialog. `forge-sim replay <trace>` plays it back. That
+turns every real field failure you capture once into a permanent CI test.
 
-**Das ist der Teil, der unabhängig vom Rest Wert hat** — siehe Teil 2 der
-Durchrechnung.
+**This is the part that has value independently of the rest** — see Part 2 of
+the cost analysis.
 
 ---
 
-## 7. Regelung
+## 7. Control
 
-### 7.1 Aufgabenteilung Firmware ↔ Sidecar
+### 7.1 Division of labor firmware ↔ Sidecar
 
-Das ist die zentrale Designfrage, weil WarpTune die Leiter-Regelung schon hat.
+This is the central design question, because WarpTune already has the ladder
+control.
 
-**In der Firmware, weil nur dort möglich:**
+**In the firmware, because only possible there:**
 
-| Funktion | Warum nicht im Sidecar |
+| Function | Why not in the Sidecar |
 |---|---|
-| Rampen-Ordnung (V vor f hoch, f vor V runter) | Millisekunden, am Bus |
-| PLL-Wechsel an Job-Grenzen | Millisekunden |
-| Not-Aus bei Übertemperatur | darf nicht von WLAN abhängen |
-| Rückfall auf letzten verankerten Punkt | muss ohne Netz funktionieren |
-| Lüfterregelung | Regelkreis, 1 Hz, lokal |
-| Per-Chip-Fehlerattribution | braucht Nonce-Rohdaten |
+| Ramp ordering (V before f going up, f before V going down) | milliseconds, on the bus |
+| PLL change at job boundaries | milliseconds |
+| Emergency stop on over-temperature | must not depend on WLAN |
+| Fallback to last anchored point | must work without network |
+| Fan control | control loop, 1 Hz, local |
+| Per-chip error attribution | needs raw nonce data |
 
-**Im Sidecar (WarpTune), weil dort besser:**
+**In the Sidecar (WarpTune), because better there:**
 
-| Funktion | Warum |
+| Function | Why |
 |---|---|
-| Suchstrategie über Betriebspunkte | braucht Historie, Vergleich über Geräte, Pool-Sicht |
-| Energiemodus / Solar-Attribution | braucht Hauskontext |
-| Langzeit-Journal | braucht Platz |
-| Abstimmung über mehrere Geräte | braucht Gesamtsicht |
+| Search strategy over operating points | needs history, comparison across devices, pool view |
+| Energy mode / solar attribution | needs house context |
+| Long-term journal | needs space |
+| Coordination across multiple devices | needs the overall view |
 
-**Die Schnittstelle dazwischen ist ein Vertrag, kein Befehl:**
+**The interface between them is a contract, not a command:**
 
 ```
 POST /api/v1/operating-point
 { "frequency_mhz": 575, "core_voltage_mv": 1190, "anchor": true, "ttl_s": 3600 }
 ```
 
-- `anchor: true` → dieser Punkt wird nach erfolgreicher Settle-Phase in NVS
-  verankert und ist von da an das Rückfallziel
-- `ttl_s` → wenn das Sidecar stumm wird, fällt das Gerät nach Ablauf auf den
-  letzten Anker zurück, **nicht** auf Werksdefaults
+- `anchor: true` → this point is anchored in NVS after a successful settle phase
+  and is the fallback target from then on
+- `ttl_s` → if the Sidecar goes silent, the device falls back to the last anchor
+  after expiry, **not** to factory defaults
 
-Das ist deine Philosophie direkt in der Firmware: Der Gerätepunkt ist die
-validierte Obergrenze, und die Firmware hält ihn. Kein Sidecar, kein Netz, kein
-Reboot darf ihn wegwerfen.
+That is your philosophy directly in the firmware: the device point is the
+validated upper limit, and the firmware holds it. No Sidecar, no network, no
+reboot may throw it away.
 
-### 7.2 Betriebspunkt-Automat
+### 7.2 Operating-point state machine
 
 ```
         ┌──────────┐
-        │  ANCHOR  │ ◄── Boot, TTL-Ablauf, Watchdog, Not-Aus-Erholung
+        │  ANCHOR  │ ◄── boot, TTL expiry, watchdog, emergency-stop recovery
         └────┬─────┘
-             │ neuer Punkt angefordert
+             │ new point requested
         ┌────▼─────┐
-        │  RAMP    │ V/f in der richtigen Reihenfolge, PLL an Job-Grenze
-        └────┬─────┘
-        ┌────▼─────┐
-        │  SETTLE  │ Messungen verworfen, bis Temperatur τ-stabil
+        │  RAMP    │ V/f in the right order, PLL at job boundary
         └────┬─────┘
         ┌────▼─────┐
-        │  JUDGE   │ bewertet nach N Shares ODER T Sekunden — was zuerst kommt
+        │  SETTLE  │ measurements discarded until temperature τ-stable
+        └────┬─────┘
+        ┌────▼─────┐
+        │  JUDGE   │ evaluates after N shares OR T seconds — whichever comes first
         └──┬────┬──┘
-     gut   │    │  schlecht
+     good  │    │  bad
         ┌──▼─┐ ┌▼──────────┐
-        │ HOLD│ │ FALLBACK │ → ANCHOR, Punkt für 1 h gesperrt
+        │ HOLD│ │ FALLBACK │ → ANCHOR, point blocked for 1 h
         └──┬──┘ └──────────┘
-           │ anchor angefordert
+           │ anchor requested
         ┌──▼─────┐
         │ ANCHOR │
         └────────┘
 ```
 
-**JUDGE bewertet in Shares, nicht in Sekunden.** Bei 1,2 TH/s und Pool-Diff
-`d` dauert ein Share im Mittel `d × 2^32 / 1.2e12` Sekunden. Eine feste
-60-Sekunden-Bewertung ist bei hoher Diff statistisch wertlos. Der Automat wartet
-auf `n_min` Shares (Default 30 → relativer Fehler ~18 %) mit einem Zeitdeckel als
-Notausgang. *(„VarDiff misst man in Shares" — gilt hier genauso.)*
+**JUDGE evaluates in shares, not in seconds.** At 1.2 TH/s and pool diff
+`d`, a share takes on average `d × 2^32 / 1.2e12` seconds. A fixed 60-second
+evaluation is statistically worthless at high diff. The state machine waits for
+`n_min` shares (default 30 → relative error ~18 %) with a time cap as an
+emergency exit. *("VarDiff is measured in shares" — applies here just the same.)*
 
-**Punktwechsel-Erkennung:** Wenn jemand außerhalb (UI, andere API, anderes Tool)
-Frequenz oder Spannung ändert, wird SETTLE/JUDGE neu aufgesetzt. Ein Punkt, der
-halb unter alten und halb unter neuen Bedingungen bewertet wurde, ist eine Lüge.
-(Das ist der Fix, den du in WarpTune schon gebaut hast — er gehört in beide
-Schichten.)
+**Point-change detection:** If someone outside (UI, another API, another tool)
+changes frequency or voltage, SETTLE/JUDGE is restarted. A point that was
+evaluated half under old and half under new conditions is a lie. (That is the
+fix you already built in WarpTune — it belongs in both layers.)
 
-### 7.3 Hashrate: zwei Zahlen, getrennt gemeldet
+### 7.3 Hashrate: two numbers, reported separately
 
-| Feld | Bedeutung |
+| Field | Meaning |
 |---|---|
-| `hashrate_nominal_ghs` | `f_real × small_cores / 1000` — was der Chip *könnte* |
-| `hashrate_effective_ghs` | aus akzeptierten Shares, EWMA über ein **Share-Fenster** |
-| `hashrate_confidence` | 0..1, aus der Share-Zahl im Fenster |
+| `hashrate_nominal_ghs` | `f_real × small_cores / 1000` — what the chip *could* do |
+| `hashrate_effective_ghs` | from accepted shares, EWMA over a **share window** |
+| `hashrate_confidence` | 0..1, from the share count in the window |
 
-ESP-Miner zeigt nur die erste und nennt sie „hashRate". Sie bleibt hoch, während
-der Chip 40 % Müll produziert. Die dritte Zahl ist der Punkt, den heute alle
-Tools raten müssen: *Wie sicher ist diese Messung überhaupt?*
+ESP-Miner shows only the first and calls it "hashRate". It stays high while the
+chip produces 40 % garbage. The third number is the point that every tool has
+to guess today: *How reliable is this measurement at all?*
 
-### 7.4 Thermik
+### 7.4 Thermals
 
-Vorsteuerung aus einem RC-Modell (`τ` pro Board im Profil) plus PI auf der
-Junction-Temperatur. Konkret:
+Feed-forward from an RC model (`τ` per board in the profile) plus PI on the
+junction temperature. Concretely:
 
-- **Plausibilitätsprüfung** zwischen ASIC-Diode und Board-NTC. Differenz
-  außerhalb des Erwartungsfensters → beide als unzuverlässig markieren und
-  konservativ fahren. Nicht: „0 °C, alles gut, Vollgas."
-- **Drosselung weich und früh**: kleine Frequenzschritte ab `target - 3 K`,
-  nicht ein harter Sprung bei `overheat`.
-- **Lüfter mit Akustikdeckel**: eine konfigurierbare Obergrenze, die nur bei
-  echter Not überschritten wird. Die Dinger stehen bei dir zu Hause.
-- **Not-Aus dreistufig**: Frequenz → Spannung → Stop. Jede Stufe protokolliert.
+- **Plausibility check** between ASIC diode and board NTC. Difference outside
+  the expected window → mark both as unreliable and run conservatively. Not:
+  "0 °C, all good, full throttle."
+- **Throttling soft and early**: small frequency steps from `target - 3 K`,
+  not a hard jump at `overheat`.
+- **Fan with an acoustic cap**: a configurable upper limit that is only exceeded
+  in a real emergency. These things sit in your home.
+- **Emergency stop in three stages**: frequency → voltage → stop. Each stage
+  logged.
 
-### 7.5 Fehlerattribution pro Chip
+### 7.5 Error attribution per chip
 
-Der Nonce trägt die Chip-Adresse. Also: HW-Error-Zähler, Nonce-Rate und
-Desync-Rate **pro Chip**, nicht pro Board.
+The nonce carries the chip address. So: HW-error counter, nonce rate and desync
+rate **per chip**, not per board.
 
-Bei n=1 (Gamma) ist das Buchhaltung. Bei n=4/8 (NerdQAxe++, Octaxe) ist es der
-Unterschied zwischen „Board hat 3 % Errors" und „Chip 3 ist der Ausreißer, die
-anderen sind sauber". Deshalb wird es in Stufe 1 gebaut, auch wenn es dort noch
-nichts bringt — nachrüsten heißt das Datenmodell umbauen.
+At n=1 (Gamma) this is bookkeeping. At n=4/8 (NerdQAxe++, Octaxe) it is the
+difference between "board has 3 % errors" and "chip 3 is the outlier, the others
+are clean". That is why it is built in Stage 1, even though it gains nothing
+there yet — retrofitting means rebuilding the data model.
 
 ---
 
-## 8. Betrieb
+## 8. Operation
 
-### 8.1 Konfiguration
+### 8.1 Configuration
 
-NVS mit **Schema-Version** und atomarem Commit: Die gesamte Konfiguration wird
-als eine Transaktion geschrieben, nicht Feld für Feld. Ein Stromausfall mitten
-im Speichern darf keinen halben Zustand hinterlassen.
+NVS with **schema version** and atomic commit: the entire configuration is
+written as one transaction, not field by field. A power failure in the middle of
+saving must not leave a half state behind.
 
-Migration beim Boot: `schema_v` lesen → Migrationskette anwenden → zurückschreiben.
-Kein „das Feld gab es früher nicht, also ist es 0".
+Migration at boot: read `schema_v` → apply migration chain → write back.
+No "the field didn't exist before, so it's 0".
 
-### 8.2 OTA, die nicht brickt
+### 8.2 OTA that doesn't brick
 
 ```
-1. Upload in freien Slot          (A/B)
-2. Signaturprüfung                (ed25519 über das Image)
-3. Boot in neuen Slot, Flag PENDING
-4. Health-Gate:
-     - WiFi verbunden             innerhalb 60 s
-     - Pool verbunden             innerhalb 120 s
-     - ASIC initialisiert         innerhalb 30 s
-     - ≥1 akzeptierter Share      innerhalb 600 s
-     - kein Panic, kein WDT-Reset
-5. alle erfüllt → Slot als VALID markieren
-   sonst        → Reboot in alten Slot, Grund im Post-Mortem-Log
+1. Upload into free slot          (A/B)
+2. Signature check                (ed25519 over the image)
+3. Boot into new slot, flag PENDING
+4. Health gate:
+     - WiFi connected             within 60 s
+     - pool connected             within 120 s
+     - ASIC initialized           within 30 s
+     - ≥1 accepted share          within 600 s
+     - no panic, no WDT reset
+5. all met  → mark slot as VALID
+   otherwise → reboot into old slot, reason in the post-mortem log
 ```
 
-Das ist der Unterschied zwischen „Update hat was kaputtgemacht, ich fahre
-zurück" und „Gerät ist tot, hol den USB-Adapter".
+That is the difference between "the update broke something, I'm rolling back"
+and "device is dead, get the USB adapter".
 
-Secure Boot v2 und Flash-Encryption: vorbereitet, aber **standardmäßig aus**.
-Einmal eingebrannt ist irreversibel, und ein Gerät, das man nicht mehr
-umflashen kann, ist für ein Bastelprojekt das falsche Risiko.
+Secure Boot v2 and flash encryption: prepared, but **off by default**. Once
+burned in it is irreversible, and a device that can no longer be reflashed is
+the wrong risk for a hobby project.
 
-### 8.3 Post-Mortem-Log
+### 8.3 Post-mortem log
 
-Ringpuffer im **RTC-RAM** (überlebt Soft-Reset und Deep-Sleep), gespiegelt nach
-NVS bei sauberem Shutdown:
+Ring buffer in **RTC RAM** (survives soft reset and deep sleep), mirrored to
+NVS on clean shutdown:
 
 ```
 [reset_reason] [uptime_s] [freq_mhz] [core_mv] [junction_c] [vr_c]
 [last_asic_evt] [desync_count] [hw_err_10min] [heap_free_min] [task_wm_min]
 ```
 
-Nach jedem unerwarteten Reboot steht in der UI **warum**. Heute rätselst du.
+After every unexpected reboot the UI shows **why**. Today you guess.
 
-### 8.4 Uhr
+### 8.4 Clock
 
-NTP mit mehreren Servern, und — wichtig — die Firmware rollt `ntime` nur im
-Fenster, das der Pool erlaubt, gemessen an der **Pool-Zeit aus dem
-Stratum-Job**, nicht an der lokalen Uhr. Eine falsch gestellte lokale Uhr darf
-nicht zu systematisch abgelehnten Shares führen.
+NTP with multiple servers, and — importantly — the firmware rolls `ntime` only
+within the window the pool allows, measured against the **pool time from the
+Stratum job**, not the local clock. A wrongly set local clock must not lead to
+systematically rejected shares.
 
 ---
 
-## 9. API-Fläche
+## 9. API Surface
 
-### 9.1 Nativ
+### 9.1 Native
 
 ```
-GET  /api/v1/state          vollständiger Zustand, ein Objekt
-GET  /api/v1/stream         WebSocket, Deltas, ~1 Hz
+GET  /api/v1/state          complete state, one object
+GET  /api/v1/stream         WebSocket, deltas, ~1 Hz
 POST /api/v1/operating-point  §7.1
-GET  /api/v1/history        Ringpuffer letzte 24 h, 1-Minuten-Auflösung
+GET  /api/v1/history        ring buffer last 24 h, 1-minute resolution
 GET  /api/v1/postmortem     §8.3
 GET  /metrics               Prometheus
-POST /api/v1/ota            signiertes Image
+POST /api/v1/ota            signed image
 ```
 
-Versioniert ab Tag 1. `/api/v1` bricht nie; Neues kommt unter `/api/v2`.
+Versioned from day 1. `/api/v1` never breaks; new things come under `/api/v2`.
 
-### 9.2 AxeOS-Kompatibilitätsschicht — nicht verhandelbar
+### 9.2 AxeOS compatibility layer — non-negotiable
 
 ```
-GET   /api/system/info      → aus /api/v1/state gemappt
+GET   /api/system/info      → mapped from /api/v1/state
 PATCH /api/system           → frequency, coreVoltage → operating-point
 POST  /api/system/restart
 GET   /api/swarm/info
 ```
 
-**Warum Pflicht:** WarpTune (`crates/tune/src/axeos.rs`), dein Dashboard, die
-Swarm-Tools, jeder Community-Skript — alle sprechen AxeOS. Eine Firmware, die
-das Ökosystem bricht, wird nicht benutzt, egal wie gut sie ist.
+**Why mandatory:** WarpTune (`crates/tune/src/axeos.rs`), your dashboard, the
+swarm tools, every community script — they all speak AxeOS. A firmware that
+breaks the ecosystem won't be used, no matter how good it is.
 
-Die Kompatibilitätsschicht meldet zusätzlich `smallCoreCount`,
-`sharesRejectedReasons` und (neu) `hashrateConfidence` — Felder, die WarpTune
-bereits optional liest bzw. sofort nutzen könnte.
+The compatibility layer additionally reports `smallCoreCount`,
+`sharesRejectedReasons` and (new) `hashrateConfidence` — fields that WarpTune
+already reads optionally or could use immediately.
 
-### 9.3 Authentifizierung
+### 9.3 Authentication
 
-Optionaler Token auf allen schreibenden Endpunkten, Default **aus** (sonst
-verlierst du jeden Bastler), aber im Setup-Wizard angeboten. Dass heute jeder im
-LAN ungefragt die VCore verstellen kann, ist keine Entscheidung, sondern eine
-Lücke.
+Optional token on all writing endpoints, default **off** (otherwise you lose
+every hobbyist), but offered in the setup wizard. That today anyone on the LAN
+can change the VCore unasked is not a decision but a gap.
 
-### 9.4 Web-UI
+### 9.4 Web UI
 
-Statisch, vorkomprimiert (brotli), Ziel < 120 KB, **keine externen Ressourcen**.
-Keine Google-Fonts, kein CDN. Ein Miner im Keller darf nicht davon abhängen,
-dass irgendwas aus dem Internet lädt.
+Static, pre-compressed (brotli), target < 120 KB, **no external resources**.
+No Google Fonts, no CDN. A miner in the basement must not depend on something
+loading from the internet.
 
-i18n von Anfang an mit CI-Guard gegen hartcodierte Strings — dieselbe Regel wie
-in WarpPool. Startsprachen: de, en. Weitere erst nach Muttersprachler-Review.
-
----
-
-## 10. Teststrategie
-
-### 10.1 Host (jeder Commit, Sekunden)
-
-- Unit-Tests `forge-core`, `forge-proto`, `forge-control`
-- **Property-Tests** (`proptest`): PLL-Löser (gelöste Frequenz immer innerhalb
-  Toleranz & Constraints), Frame-Roundtrip (encode∘decode = id), Job→Work
-  (Merkle-Root gegen unabhängige Referenzimplementierung)
-- **Fuzzing** (`cargo-fuzz`) auf dem V1-Parser und dem `RxDecoder`. Ziel: kein
-  Panic, kein Overflow, bei beliebigem Bytemüll.
-- Golden Frames: gepinnte Bytefolgen aus echter Hardware, gegen die der Encoder
-  geprüft wird
-
-### 10.2 Simulator-Integration (jeder Commit, Minuten)
-
-Die vollständige App-Logik gegen `forge-sim` im In-Process-Modus, mit
-virtueller Zeit (24 h Betrieb in ~2 s). Jedes Szenario aus §6.3 als Testfall.
-
-### 10.3 HIL (nightly + vor Release)
-
-Ein Gamma an einem Runner. Flash → Boot → Pool (lokaler WarpPool auf regtest) →
-mindestens ein akzeptierter Share → OTA-Zyklus → Rollback-Zyklus.
-
-Regel aus der WarpPool-Historie, die hier genauso gilt: **Positiv-Beleg statt
-Textmuster.** Der Test bestanden ist er, wenn ein Share *angekommen* ist, nicht
-wenn „accepted" im Log steht.
-
-### 10.4 Was NICHT getestet wird
-
-Echte Hashrate-Zahlen im Simulator. Der Sim behauptet Nonce-Raten, er verdient
-sie nicht. Alles, was „ist diese Frequenz wirklich schneller" beantwortet, geht
-nur über HIL und Feld.
+i18n from the start with a CI guard against hard-coded strings — the same rule
+as in WarpPool. Initial languages: de, en. Others only after native-speaker
+review.
 
 ---
 
-## 11. Meilensteine
+## 10. Test Strategy
 
-| # | Inhalt | Aufwand* | Abnahmekriterium |
+### 10.1 Host (every commit, seconds)
+
+- Unit tests `forge-core`, `forge-proto`, `forge-control`
+- **Property tests** (`proptest`): PLL solver (solved frequency always within
+  tolerance & constraints), frame round-trip (encode∘decode = id), job→work
+  (merkle root against an independent reference implementation)
+- **Fuzzing** (`cargo-fuzz`) on the V1 parser and the `RxDecoder`. Goal: no
+  panic, no overflow, on arbitrary byte garbage.
+- Golden frames: pinned byte sequences from real hardware, against which the
+  encoder is checked
+
+### 10.2 Simulator integration (every commit, minutes)
+
+The complete app logic against `forge-sim` in in-process mode, with virtual
+time (24 h of operation in ~2 s). Every scenario from §6.3 as a test case.
+
+### 10.3 HIL (nightly + before release)
+
+One Gamma on a runner. Flash → boot → pool (local WarpPool on regtest) →
+at least one accepted share → OTA cycle → rollback cycle.
+
+Rule from the WarpPool history that applies here just the same: **positive
+evidence instead of text patterns.** The test passes when a share has
+*arrived*, not when "accepted" appears in the log.
+
+### 10.4 What is NOT tested
+
+Real hashrate numbers in the simulator. The sim claims nonce rates, it doesn't
+earn them. Anything that answers "is this frequency really faster" only goes
+through HIL and the field.
+
+---
+
+## 11. Milestones
+
+| # | Content | Effort* | Acceptance criterion |
 |---|---|---|---|
-| ✅ M0 | *erledigt 2026-09-23:* Repo `~/code/dvb-WarpAxe`, Workspace, CI (fmt/clippy/test/no_std), GPLv3 | — | `cargo test` grün, `thumbv7em`-Build grün |
-| ✅ M1 | *erledigt 2026-09-23:* `crc`, `frame`, `decoder` (Ein-Byte-Resync, Desync-Zähler). Fuzzing bewusst durch proptest ersetzt (kein Nightly). | — | 50 Tests grün, gepusht |
-| ✅ M3 | *erledigt 2026-09-23:* `pll::solve` (integer, C-Orakel), `job`, `result`, `regs`, `chip::ChipProfile` + `InitStep` + `render()`, Profil `bm1370` als Daten. 80 Tests, Commit 05b0ccd. | — | Init-Sequenz reproduziert alle 12 kommentierten Wire-Frames in Reihenfolge |
-| 🔶 M2 | *Kern erledigt 2026-09-23:* `cmd`-Decoder, `SimChip`/`SimChain` (Registerfile, Zustandsautomat, Poisson-Nonces, 7 Chip-Faults), 19 Sim-Tests; Chip-ID-Vorhersage fällt end-to-end aus dem Sim. Dazu `board` (Watt/Grad/VR/Lüfter, Gamma aus WarpTune-Messwerten) und `warpaxe-axeos`: AxeOS-API über dem Sim mit `/sim/fault`. **Offen:** WarpTune-Livetest, PTY, record/replay | — | Commit 53bfaa4, 127 Tests |
-| **M0** | Repo, Toolchain, CI (host + xtensa build), `forge-core` Gerüst | 2–3 d | `cargo test` grün auf host, Image baut |
-| **M1** | Frame-Layer + CRC + Golden Frames + Fuzzing | 3–4 d | Roundtrip-Property grün, Fuzzer 1 h ohne Fund |
-| **M2** | `forge-sim` Grundfunktion (Init, Regs, Nonce-Erzeugung) | 4–5 d | Init-Sequenz aus esp-miner läuft gegen Sim durch |
-| **M3** | Chip-Profil BM1370 + PLL-Löser | 3 d | Leiter generierbar, alle Punkte lösbar, ±0,5 % |
-| **M4** | Stratum V1 (Parser, Job→Work, Submit) gegen Sim | 5–6 d | Sim „findet" Share → korrekter `mining.submit` |
-| **M5** | **Erster echter Share auf Gamma-Hardware** | 3–5 d | akzeptierter Share auf WarpPool regtest |
-| **M6** | Fehlerinjektion + Recovery-Pfade | 4–5 d | alle Szenarien §6.3 als Tests, keiner endet im Reboot |
-| **M7** | Betriebspunkt-Automat + Thermik + Anker/TTL | 5–7 d | Sim: Punkt wird gehalten, TTL-Rückfall funktioniert |
-| **M8** | API v1 + AxeOS-Kompat + WarpTune fährt das Gerät | 4–5 d | WarpTune tuned WarpForge ohne Codeänderung |
-| **M9** | OTA + Health-Gate + Post-Mortem | 4–5 d | absichtlich kaputtes Image → automatischer Rollback |
-| **M10** | Web-UI, i18n, Setup, Doku | 5–7 d | Gerät von null aufgesetzt ohne Terminal |
+| ✅ M0 | *done 2026-09-23:* repo `~/code/dvb-WarpAxe`, workspace, CI (fmt/clippy/test/no_std), GPLv3 | — | `cargo test` green, `thumbv7em` build green |
+| ✅ M1 | *done 2026-09-23:* `crc`, `frame`, `decoder` (single-byte resync, desync counter). Fuzzing deliberately replaced by proptest (no nightly). | — | 50 tests green, pushed |
+| ✅ M3 | *done 2026-09-23:* `pll::solve` (integer, C oracle), `job`, `result`, `regs`, `chip::ChipProfile` + `InitStep` + `render()`, profile `bm1370` as data. 80 tests, commit 05b0ccd. | — | Init sequence reproduces all 12 commented wire frames in order |
+| 🔶 M2 | *core done 2026-09-23:* `cmd` decoder, `SimChip`/`SimChain` (register file, state machine, Poisson nonces, 7 chip faults), 19 sim tests; chip-ID prediction falls out of the sim end-to-end. Plus `board` (watts/degrees/VR/fan, Gamma from WarpTune measurements) and `warpaxe-axeos`: AxeOS API on top of the sim with `/sim/fault`. **Open:** WarpTune live test, PTY, record/replay | — | commit 53bfaa4, 127 tests |
+| **M0** | Repo, toolchain, CI (host + xtensa build), `forge-core` skeleton | 2–3 d | `cargo test` green on host, image builds |
+| **M1** | Frame layer + CRC + golden frames + fuzzing | 3–4 d | round-trip property green, fuzzer 1 h without findings |
+| **M2** | `forge-sim` basic function (init, regs, nonce generation) | 4–5 d | init sequence from esp-miner runs through against sim |
+| **M3** | Chip profile BM1370 + PLL solver | 3 d | ladder generatable, all points solvable, ±0.5 % |
+| **M4** | Stratum V1 (parser, job→work, submit) against sim | 5–6 d | sim "finds" share → correct `mining.submit` |
+| **M5** | **First real share on Gamma hardware** | 3–5 d | accepted share on WarpPool regtest |
+| **M6** | Fault injection + recovery paths | 4–5 d | all scenarios §6.3 as tests, none ends in a reboot |
+| **M7** | Operating-point state machine + thermals + anchor/TTL | 5–7 d | sim: point is held, TTL fallback works |
+| **M8** | API v1 + AxeOS compat + WarpTune drives the device | 4–5 d | WarpTune tunes WarpForge without code change |
+| **M9** | OTA + health gate + post-mortem | 4–5 d | deliberately broken image → automatic rollback |
+| **M10** | Web UI, i18n, setup, docs | 5–7 d | device set up from zero without a terminal |
 
-\* konzentrierte Arbeitstage, nicht Kalendertage. Summe M0–M5 (erster Share):
-**~20–26 Tage**. Summe bis M10: **~45–55 Tage**.
+\* focused working days, not calendar days. Sum M0–M5 (first share):
+**~20–26 days**. Sum through M10: **~45–55 days**.
 
-Das ist ehrlich gerechnet und kein Wochenendprojekt. Der ehrlichste Satz dazu:
-Bis M5 ist alles Lernen und Risiko, ab M6 wird es erst besser als der Bestand.
+That is honestly calculated and no weekend project. The most honest sentence
+about it: up to M5 everything is learning and risk, only from M6 on does it
+become better than the existing code.
 
-**Der Ausstiegspunkt mit dem besten Verhältnis ist M2+M3.** Siehe Teil 2.
-
----
-
-## 12. Offene Entscheidungen
-
-### 12.1 BM1366 / BM1368 — ENTSCHIEDEN: nein (2026-09-22)
-
-**Oliver hat weder BM1366 noch BM1368 im Portfolio.** Mein ursprüngliches
-Argument „der Bestand ist da, also testbar" war schlicht falsch — die Miner-Liste
-enthält BM1370 (Bitaxe 602, BitForge Nano, NerdQAxe++, NerdOCTAXE-γ), BM1373
-(NerdAxe Gaia) und den Avalon Q. Kein einziger der alten Chips.
-
-Damit entfällt auch die abgeschwächte Empfehlung, die Registermaps als
-unbestätigte Profile einzuchecken: Profile, die niemand je gegen Hardware prüfen
-kann, sind keine Architekturprobe, sondern totes Gewicht mit einem
-Wartungsversprechen dran.
-
-**Konsequenz für das Design:** Die Behauptung „ein neuer Chip ist nur eine
-Tabelle" muss anders belegt werden — nämlich am BM1373, sobald der Gaia als
-zweites Profil dazukommt. Das ist der ehrlichere Test, weil beide Chips real
-vorhanden sind und beide gemessen werden können.
-
-### 12.2 Weitere offene Punkte
-
-- **Sv2 in der Firmware**: Noise NX auf dem S3 kostet RAM (secp256k1-Kontext).
-  Machbar, aber erst nach M8 bewerten. Kein Blocker für irgendwas.
-- **Name**: „WarpForge" ist geraten. Passt ins Schema, kollidiert aber
-  begrifflich mit Forge-OS (BitForge Nano), das WarpTune schon unterstützt.
-  Alternativen: WarpAxe, WarpCore (belegt), WarpSilicon.
-- **Lizenz**: AGPLv3 wie WarpPool? Bei Firmware ist AGPL schwach (keine
-  Netzwerkinteraktion im Sinne der Klausel). GPLv3 wäre passender, und
-  ESP-Miner-abgeleitete Registerdaten könnten ohnehin GPL-Pflichten auslösen —
-  **vor M0 klären**, nicht danach.
-- **Verhältnis zu ESP-Miner**: Eigenes Projekt oder irgendwann Upstream? Meine
-  Einschätzung: eigenes Projekt. Die Architekturentscheidungen (Rust, Sim,
-  Profil-als-Daten) sind nicht inkrementell einführbar.
-
+**The exit point with the best ratio is M2+M3.** See Part 2.
 
 ---
 
-## 13. Korrekturen und Befunde aus Stufe A (2026-09-23)
+## 12. Open Decisions
 
-Beim Start von Stufe A wurde ESP-Miner `v2.15.2rc0-17-g0c798de` geklont und
-`components/asic/` vollständig gelesen. Das Bild ist besser als in §3.1
-beschrieben, und einige Behauptungen dieses Dokuments waren falsch.
+### 12.1 BM1366 / BM1368 — DECIDED: no (2026-09-22)
 
-### 13.1 Was ich falsch hatte
+**Oliver has neither BM1366 nor BM1368 in the portfolio.** My original argument
+"the hardware is there, so it's testable" was simply wrong — the miner list
+contains BM1370 (Bitaxe 602, BitForge Nano, NerdQAxe++, NerdOCTAXE-γ), BM1373
+(NerdAxe Gaia) and the Avalon Q. Not a single one of the old chips.
 
-| Behauptung im Doc | Tatsächlich |
+That also eliminates the weakened recommendation to check in the register maps
+as unconfirmed profiles: profiles that nobody can ever verify against hardware
+are not an architecture proof but dead weight with a maintenance promise
+attached.
+
+**Consequence for the design:** The claim "a new chip is just a table" has to be
+proven differently — namely on the BM1373, as soon as the Gaia is added as the
+second profile. That is the more honest test, because both chips actually exist
+and both can be measured.
+
+### 12.2 Further open points
+
+- **Sv2 in the firmware**: Noise NX on the S3 costs RAM (secp256k1 context).
+  Feasible, but evaluate only after M8. Not a blocker for anything.
+- **Name**: "WarpForge" is a guess. Fits the scheme, but collides conceptually
+  with Forge-OS (BitForge Nano), which WarpTune already supports.
+  Alternatives: WarpAxe, WarpCore (taken), WarpSilicon.
+- **License**: AGPLv3 like WarpPool? For firmware, AGPL is weak (no network
+  interaction in the sense of the clause). GPLv3 would be more fitting, and
+  ESP-Miner-derived register data could trigger GPL obligations anyway —
+  **clarify before M0**, not after.
+- **Relationship to ESP-Miner**: own project or upstream at some point? My
+  assessment: own project. The architecture decisions (Rust, sim,
+  profile-as-data) cannot be introduced incrementally.
+
+
+---
+
+## 13. Corrections and Findings from Stage A (2026-09-23)
+
+At the start of Stage A, ESP-Miner `v2.15.2rc0-17-g0c798de` was cloned and
+`components/asic/` read completely. The picture is better than described in
+§3.1, and some claims in this document were wrong.
+
+### 13.1 What I had wrong
+
+| Claim in the doc | Actually |
 |---|---|
-| §3.1 „`bm1366.c`, `bm1368.c`, `bm1370.c` — dreimal derselbe Code" | Es gibt inzwischen `asic_common.c` (Chip-Zählung, `receive_work`, Difficulty-Maske, Timeout-Rechnung), `pll.c` (gemeinsamer Löser) und `frequency_transition_bmXX.c`. Die Chip-Dateien halten nur noch Init-Sequenz, Response-Struct und Nonce-Layout. Die Kritik gilt abgeschwächt: die Init-Sequenzen *sind* noch Code, nicht Daten. |
-| §7.1 „Rampen-Ordnung … ESP-Miner rampt nicht" | ESP-Miner rampt die **Frequenz** in 6,25-MHz-Schritten mit 100 ms Pause (`do_frequency_transition`). Was fehlt, ist die *Koordination mit der Spannung* — die wird separat im Power-Management gesetzt. Der offene Punkt bleibt, ist aber enger. |
-| §3.3 „PLL: lösen statt Tabelle" als Neuerung | `pll_get_parameters()` **löst** bereits: refdiv 1–2, postdiv1/2 1–7, Constraint `postdiv1 > postdiv2`, fbdiv-Fenster pro Chip (BM1370: 160–239), Prioritäten *kleinste Abweichung → niedrigste VCO → kleinstes postdiv-Produkt*. Was fehlt: die *erreichte* Frequenz wird geloggt, aber nicht als API-Wert gemeldet. Der Rust-Löser wird gegen den C-Löser verifiziert, nicht neu erfunden. |
-| §12.2 „BM1373 unbekannt" | `bm1373.c` existiert (552 Zeilen). Und der Test-Harness (`bm13xx_test_harness.c`) ist im Kern schon ein Mini-Simulator: fängt TX-Pakete ab, liefert gequeue'te Responses. Nur ohne Physik, ohne Fehlerinjektion, ohne Zeit. |
+| §3.1 "`bm1366.c`, `bm1368.c`, `bm1370.c` — the same code three times" | There is now `asic_common.c` (chip counting, `receive_work`, difficulty mask, timeout calculation), `pll.c` (shared solver) and `frequency_transition_bmXX.c`. The chip files only hold the init sequence, response struct and nonce layout now. The criticism applies in weakened form: the init sequences *are* still code, not data. |
+| §7.1 "ramp ordering … ESP-Miner doesn't ramp" | ESP-Miner ramps the **frequency** in 6.25 MHz steps with a 100 ms pause (`do_frequency_transition`). What's missing is the *coordination with the voltage* — that is set separately in power management. The open point remains, but is narrower. |
+| §3.3 "PLL: solve instead of table" as a novelty | `pll_get_parameters()` already **solves**: refdiv 1–2, postdiv1/2 1–7, constraint `postdiv1 > postdiv2`, fbdiv window per chip (BM1370: 160–239), priorities *smallest deviation → lowest VCO → smallest postdiv product*. What's missing: the *achieved* frequency is logged but not reported as an API value. The Rust solver is verified against the C solver, not reinvented. |
+| §12.2 "BM1373 unknown" | `bm1373.c` exists (552 lines). And the test harness (`bm13xx_test_harness.c`) is at its core already a mini simulator: intercepts TX packets, delivers queued responses. Just without physics, without fault injection, without time. |
 
-### 13.2 BM1373 ist ein anderes Wire-Format, kein Profil-Diff
+### 13.2 BM1373 is a different wire format, not a profile diff
 
-Aus den Defines in `bm1373.c` (Register-Namen intern „BM1372"):
+From the defines in `bm1373.c` (register names internally "BM1372"):
 
 | | BM1370 | BM1373 |
 |---|---|---|
-| Chip-ID auf dem Bus | `0x1370` | `0x1372`, Alias `0x1373` |
-| Chip-ID-Antwort | 11 Bytes | **9 Bytes** |
-| Nonce-/Register-Antwort | 11 Bytes | 11 Bytes (gleiches Struct) |
-| Max. Baud | 1 MBaud | **3 MBaud** |
-| Adress-Stride | `256 / n` | **`0x10` fest**, Command-Address-Shift 2 |
-| Schreib-Wiederholung | keine | 3× mit 50 ms |
-| Init-Schritte | ~20 | mehr, mit Soft-Reset-Register `0xA8` = `0xF00701F0` |
-| HCN | berechnet (`hcn_max − 2·134` Errata) | Konstante `0x1EB5` („S21 Pro") |
-| PLL fbdiv | 160–239 | 160–239 (gleich) |
-| Nonce-Layout | job\_id `(id&0xf0)>>1`, asic `nonce>>17`, core `nonce>>25 &0x7f`, small `id&0x0f` | **identisch** |
+| Chip ID on the bus | `0x1370` | `0x1372`, alias `0x1373` |
+| Chip-ID response | 11 bytes | **9 bytes** |
+| Nonce/register response | 11 bytes | 11 bytes (same struct) |
+| Max. baud | 1 MBaud | **3 MBaud** |
+| Address stride | `256 / n` | **`0x10` fixed**, command address shift 2 |
+| Write repetition | none | 3× with 50 ms |
+| Init steps | ~20 | more, with soft-reset register `0xA8` = `0xF00701F0` |
+| HCN | computed (`hcn_max − 2·134` errata) | constant `0x1EB5` ("S21 Pro") |
+| PLL fbdiv | 160–239 | 160–239 (same) |
+| Nonce layout | job\_id `(id&0xf0)>>1`, asic `nonce>>17`, core `nonce>>25 &0x7f`, small `id&0x0f` | **identical** |
 
-Konsequenz für `ChipProfile`: Es braucht neben den Registerwerten auch
+Consequence for `ChipProfile`: besides the register values it also needs
 `chip_id_reply_len`, `address_stride: Fixed(u8) | Divided`, `write_retries`
-und `hcn: Computed | Fixed(u32)`. Das ist noch als Daten abbildbar — aber
-das Profil-Format wird davon bestimmt, nicht nur vom BM1370.
+and `hcn: Computed | Fixed(u32)`. That is still representable as data — but
+the profile format is determined by it, not only by the BM1370.
 
-**Core-Zahlen — recherchiert 2026-09-23, Ergebnis: keine der beiden Zahlen ist belegt.**
+**Core counts — researched 2026-09-23, result: neither of the two numbers is proven.**
 
-| Quelle | `small_cores` | Herkunft |
+| Source | `small_cores` | Origin |
 |---|---|---|
-| ESP-Miner `device_config.h` | 6725 | PR #1890 (22.08.2026), **kein Wort zur Herleitung**, seither unverändert |
-| NerdOS `bm1373.cpp` (BitMaker `develop`) | 6860 | `#define BM1373_SMALL_CORE_COUNT 6860` — **mit `TODO` markiert** |
-| Naja-Duo-Werksmessung im PR #1890 | ~7000 | 4579 GH/s, 2 Chips, 327 MHz, 2022 Nonces (±2 %) |
-| **Gaia, Chipzähler via NerdOS, 1 h bei 400 MHz** | **~6945** | `hashRate_1h` 2778 GH/s, nonce-basiert, ±2–3 % |
+| ESP-Miner `device_config.h` | 6725 | PR #1890 (2026-08-22), **not a word on the derivation**, unchanged since |
+| NerdOS `bm1373.cpp` (BitMaker `develop`) | 6860 | `#define BM1373_SMALL_CORE_COUNT 6860` — **marked with `TODO`** |
+| Naja Duo factory measurement in PR #1890 | ~7000 | 4579 GH/s, 2 chips, 327 MHz, 2022 nonces (±2 %) |
+| **Gaia, chip counter via NerdOS, 1 h at 400 MHz** | **~6945** | `hashRate_1h` 2778 GH/s, nonce-based, ±2–3 % |
 
-`small_cores` ist bei keinem BM13xx eine Strukturzahl (BM1366: 894 auf 112 Cores),
-sondern ein *gemessener* Effektivwert. Beide Firmware-Zahlen sind Platzhalter.
-Die Messung am Gaia favorisiert 6860 gegenüber 6725, kann 6860 von ~6950 aber
-nicht trennen. **Auflösung auf < 1 %:** einen Tag bei fester Frequenz, dann
-`hashRate_1d` — oder in Stufe B direkt `TOTAL_COUNT` (0x8C) über ein bekanntes
-Intervall lesen, das zählt Hashes exakt. Der Profilwert für den BM1373 bekommt
-das Attribut `#[src("measured Gaia 2026-xx-xx")]`, nicht eine der beiden Zahlen.
+`small_cores` is not a structural number on any BM13xx (BM1366: 894 on 112
+cores) but a *measured* effective value. Both firmware numbers are placeholders.
+The measurement on the Gaia favors 6860 over 6725, but cannot separate 6860 from
+~6950. **Resolution to < 1 %:** one day at fixed frequency, then `hashRate_1d` —
+or in Stage B read `TOTAL_COUNT` (0x8C) directly over a known interval, which
+counts hashes exactly. The profile value for the BM1373 gets the attribute
+`#[src("measured Gaia 2026-xx-xx")]`, not one of the two numbers.
 
-**Domains:** BitMaker (X, Gaia-Launch): *„Now all 8 domains are active!"* Der
-BM1373 hat **8 Domains**; ESP-Miner konfiguriert `hash_domains = 4` und gleicht
-mit `domain_hashrate_scale = 2.0` aus — liest also 4 Zähler und verdoppelt.
-Das Profil braucht `domains = 8` und alle acht Zählerregister.
+**Domains:** BitMaker (X, Gaia launch): *"Now all 8 domains are active!"* The
+BM1373 has **8 domains**; ESP-Miner configures `hash_domains = 4` and
+compensates with `domain_hashrate_scale = 2.0` — i.e. reads 4 counters and
+doubles. The profile needs `domains = 8` and all eight counter registers.
 
-Für Stufe A (BM1370) ist das alles irrelevant; für WarpTune heute harmlos
-(2 % zu niedrige Erwartung lässt das Gerät *besser* aussehen, kein Fehlurteil).
+For Stage A (BM1370) all of this is irrelevant; for WarpTune today harmless
+(a 2 % too-low expectation makes the device look *better*, no misjudgment).
 
-Beide Chips: `core_count = 128`, `hash_domains = 4`. BM1370 stock
-525 MHz @ 1150 mV, BM1373 stock 327 MHz @ 1000 mV (ESP-Miner; NerdOS-Gaia: 350 @ 940).
+Both chips: `core_count = 128`, `hash_domains = 4`. BM1370 stock
+525 MHz @ 1150 mV, BM1373 stock 327 MHz @ 1000 mV (ESP-Miner; NerdOS Gaia: 350 @ 940).
 
-### 13.3 Befund: die RX-CRC deckt die Flag-Bits ab
+### 13.3 Finding: the RX CRC covers the flag bits
 
-Beim Bau des Frame-Layers ist eine Annahme geplatzt und hat sich zu einer
-Erkenntnis gewandelt. Das letzte Byte einer Chip-Antwort ist
-`flags:3 | crc:5`. ESP-Miner prüft `crc5(alle 9 Bytes) == 0`. Diese
-Eigenschaft gilt für einen CRC nur, wenn **nichts** zwischen den Daten und
-den CRC-Bits steht — die 3 Flag-Bits müssen also Teil dessen sein, worüber
-der Chip seinen CRC rechnet. Für TX-Frames (letztes Byte `000 | crc:5`)
-gilt die Eigenschaft *nicht*, weil dort drei Null-Bits dazwischen stehen.
+While building the frame layer an assumption burst and turned into an insight.
+The last byte of a chip response is `flags:3 | crc:5`. ESP-Miner checks
+`crc5(all 9 bytes) == 0`. That property holds for a CRC only if **nothing**
+sits between the data and the CRC bits — so the 3 flag bits must be part of
+what the chip computes its CRC over. For TX frames (last byte `000 | crc:5`)
+the property does *not* hold, because three zero bits sit in between there.
 
-Belegt am einzigen RX-Vektor aus einem `bm1370.c`-Kommentar
-(`AA 55 13 68 00 00 00 00 00 00 0F`, die Chip-ID-Antwort eines BM1368):
+Proven on the only RX vector from a `bm1370.c` comment
+(`AA 55 13 68 00 00 00 00 00 00 0F`, the chip-ID response of a BM1368):
 
 ```
-crc5(8 Bytes)                = 0x0C   ← nicht der Wire-Wert
-crc5(8 Bytes + 3 Flag-Bits)  = 0x0F   ← der Wire-Wert
-crc5(alle 9 Bytes)           = 0x00   ← ESP-Miners Prüfung geht auf
+crc5(8 bytes)                = 0x0C   ← not the wire value
+crc5(8 bytes + 3 flag bits)  = 0x0F   ← the wire value
+crc5(all 9 bytes)            = 0x00   ← ESP-Miner's check works out
 ```
 
-Das ergibt eine **überprüfbare Vorhersage** für den Gamma:
+That yields a **verifiable prediction** for the Gamma:
 
 ```
 Read Register 0x00  →  AA 55 13 70 00 00 00 00 00 00 10
 ```
 
-Das ist der erste Test, der in Stufe B am echten Gerät zu laufen hat. Stimmt
-das letzte Byte nicht, ist die Flag-Bit-Regel falsch und `verify5` mit ihr.
+That is the first test that has to run on the real device in Stage B. If the
+last byte doesn't match, the flag-bit rule is wrong and `verify5` with it.
 
-Im Code: `crc::response_tag(payload, flags)` baut den Wert, den der
-Simulator ins letzte Byte schreibt; `crc::verify5` prüft empfangene
-Antworten; `frame::encode_response` / `frame::decode_response` sind das
-Paar, das Simulator und Firmware verbindet. Ein proptest pinnt, dass jede
-so gebaute Antwort verifiziert.
+In code: `crc::response_tag(payload, flags)` builds the value the simulator
+writes into the last byte; `crc::verify5` checks received responses;
+`frame::encode_response` / `frame::decode_response` are the pair that connects
+simulator and firmware. A proptest pins that every response built this way
+verifies.
 
-### 13.4 Namens- und Lizenzentscheid
+### 13.4 Name and license decision
 
-Repo: `~/code/dvb-WarpAxe`, Crates `warpaxe-core` und `warpaxe-sim`.
-**GPL-3.0-or-later**, weil Init-Sequenzen, Registerwerte und Test-Vektoren
-wörtlich aus ESP-Miner (GPLv3) stammen. „WarpForge" ist damit nur noch der
-Name dieses Notizordners.
+Repo: `~/code/dvb-WarpAxe`, crates `warpaxe-core` and `warpaxe-sim`.
+**GPL-3.0-or-later**, because init sequences, register values and test vectors
+come verbatim from ESP-Miner (GPLv3). "WarpForge" is thus only the name of this
+notes folder now.
 
-### 13.5 PLL-Löser: Zahlen statt Behauptungen (2026-09-23)
+### 13.5 PLL solver: numbers instead of claims (2026-09-23)
 
-`pll::solve` ist fertig und gegen einen `f32`-Port von `pll_get_parameters()`
-auf jedem Viertel-MHz von 50 bis 1200 in beiden Divider-Fenstern geprüft —
-identische Lösung, Ties eingeschlossen. Ergebnisse, die für WarpTune
-unmittelbar relevant sind:
+`pll::solve` is done and checked against an `f32` port of `pll_get_parameters()`
+on every quarter MHz from 50 to 1200 in both divider windows — identical
+solution, ties included. Results that are immediately relevant for WarpTune:
 
-| Ziel | fb | ref | pd1/pd2 | tatsächlich | Register 0x08 |
+| Target | fb | ref | pd1/pd2 | actual | Register 0x08 |
 |---|---|---|---|---|---|
-| 525 (Gamma Stock) | 168 | 2 | 4/1 | 525,000 | `40 A8 02 30` |
-| 600 | 192 | 2 | 4/1 | 600,000 | `50 C0 02 30` (VCO = 2400 → Scale-Bit) |
-| **640 (Gamma hand-tuned)** | 205 | 2 | 4/1 | **640,625** | `50 CD 02 30` |
-| 690 | 221 | 2 | 4/1 | 690,625 | `50 DD 02 30` |
+| 525 (Gamma stock) | 168 | 2 | 4/1 | 525.000 | `40 A8 02 30` |
+| 600 | 192 | 2 | 4/1 | 600.000 | `50 C0 02 30` (VCO = 2400 → scale bit) |
+| **640 (Gamma hand-tuned)** | 205 | 2 | 4/1 | **640.625** | `50 CD 02 30` |
+| 690 | 221 | 2 | 4/1 | 690.625 | `50 DD 02 30` |
 
-**496 von 601 ganzzahligen MHz-Zielen zwischen 100 und 700 liegen nicht auf
-dem PLL-Raster.** Der Gamma läuft seit Wochen auf 640,625 MHz, nicht auf
-640 — jede J/TH-Rechnung in `ladder.rs`, die 640 annimmt, ist um 0,1 %
-daneben. Klein, aber systematisch, und ein Argument dafür, dass die
-Firmware die *erreichte* Frequenz melden muss (`frequencyActual` aus §9.2).
+**496 of 601 integer MHz targets between 100 and 700 do not lie on the PLL
+grid.** The Gamma has been running at 640.625 MHz for weeks, not at 640 — every
+J/TH calculation in `ladder.rs` that assumes 640 is off by 0.1 %. Small, but
+systematic, and an argument that the firmware must report the *achieved*
+frequency (`frequencyActual` from §9.2).
 
-**BM1373-Auffälligkeit** (gleiches fb-Fenster 160–239): Zwischen 320 und
-380 MHz zwingt das Fenster den Löser auf `refdiv = 1` mit VCO 4,8–5,7 GHz,
-während 300/350/400 MHz bei ~2,1 GHz liegen. Ob das Silizium die hohe VCO
-verträgt, ist unbekannt. Es passt aber dazu, dass NerdOS 350 als Stock
-nimmt (VCO 2,1 GHz) und ESP-Miners 327 als 326,786 aufgelöst wird. Frage
-für Stufe 2.
+**BM1373 peculiarity** (same fb window 160–239): Between 320 and 380 MHz the
+window forces the solver to `refdiv = 1` with VCO 4.8–5.7 GHz, while 300/350/400
+MHz lie at ~2.1 GHz. Whether the silicon tolerates the high VCO is unknown. But
+it fits that NerdOS takes 350 as stock (VCO 2.1 GHz) and ESP-Miner's 327 is
+resolved as 326.786. Question for Stage 2.
 
-### 13.6 Der Simulator trifft WarpTune (2026-09-23, spät)
+### 13.6 The simulator meets WarpTune (2026-09-23, late)
 
-`warpaxe-axeos` serviert einen Bitaxe Gamma über HTTP aus `SimChain` +
-`Board`. WarpTunes `probe` liest ihn als *„BM1370 board 602 Gamma, 1128 GH/s
-of 1071 expected, 15,5 J/TH"* — ohne eine Zeile Änderung an WarpTune.
+`warpaxe-axeos` serves a Bitaxe Gamma over HTTP from `SimChain` + `Board`.
+WarpTune's `probe` reads it as *"BM1370 board 602 Gamma, 1128 GH/s of 1071
+expected, 15.5 J/TH"* — without a single line of change to WarpTune.
 
-**Erster Live-Lauf: die Leiter rührte sich nicht.** Heartbeat:
-`up blocked: VIN 5.00 V < 5.01`. Das Board-Modell meldete exakt die
-Nominalspannung; WarpTunes VIN-Guard (existiert, weil ein zum Nominalwert
-absackendes Netzteil ein Warnzeichen ist) hielt den Simulator für ein
-defektes Netzteil — korrekt. Fix: PSU-Überhöhung 0,15 V, Sag 12 mV/A
-→ 5,11 V unter Last (Commit `8dd1370`).
+**First live run: the ladder didn't move.** Heartbeat:
+`up blocked: VIN 5.00 V < 5.01`. The board model reported exactly the nominal
+voltage; WarpTune's VIN guard (exists because a PSU sagging to nominal is a
+warning sign) took the simulator for a defective PSU — correctly. Fix: PSU
+overshoot 0.15 V, sag 12 mV/A → 5.11 V under load (commit `8dd1370`).
 
-Das ist der Simulator-Zweck in Gegenrichtung: **Ein Regler mit echten
-Guards findet die Stellen, an denen das Modell zu ideal ist.** Jede
-solche Stelle ist ein Parameter, den man am echten Gerät messen sollte.
+That is the simulator's purpose in the opposite direction: **A regulator with
+real guards finds the spots where the model is too ideal.** Every such spot is a
+parameter one should measure on the real device.
 
-**Lehre zur Zeit:** `settle_s` (45), `judge_after_s` (600) und
-`startup_s` (60) sind in WarpTune nicht konfigurierbar. Ein Leiterschritt
-braucht also ≥ 10 Minuten Wandzeit, egal wie schnell der Simulator seine
-Physik rechnet (`--time-scale` beschleunigt nur das Gerät). Für
-Regressionstests, die in Sekunden laufen sollen, bräuchte WarpTune einen
-Testhaken, der die Limits setzt — oder der Regulator wird direkt gegen
-`Device::tick()` getrieben, ohne HTTP und ohne Wanduhr. Letzteres ist die
-saubere Variante: `regulator.rs` ist „pure decision logic, no I/O", und
-`Device` liefert `Sample`-kompatible Zahlen. Das wäre der nächste
-sinnvolle Schritt auf der WarpTune-Seite.
+**Lesson on time:** `settle_s` (45), `judge_after_s` (600) and `startup_s` (60)
+are not configurable in WarpTune. A ladder step therefore needs ≥ 10 minutes of
+wall time, no matter how fast the simulator computes its physics
+(`--time-scale` only accelerates the device). For regression tests that should
+run in seconds, WarpTune would need a test hook that sets the limits — or the
+Regulator is driven directly against `Device::tick()`, without HTTP and without
+a wall clock. The latter is the clean variant: `regulator.rs` is "pure decision
+logic, no I/O", and `Device` delivers `Sample`-compatible numbers. That would be
+the next sensible step on the WarpTune side.
 
-### 13.7 Der Beweis (2026-09-23, 08:38–08:44)
+### 13.7 The proof (2026-09-23, 08:38–08:44)
 
-WarpTune live gegen `warpaxe-axeos`, Sim auf 600 MHz, VR-Tod darüber
-(Beleg: `02-Demo-WarpTune-vs-Sim-2026-09-23.txt`):
+WarpTune live against `warpaxe-axeos`, sim at 600 MHz, VR death above it
+(evidence: `02-Demo-WarpTune-vs-Sim-2026-09-23.txt`):
 
-- **Power-Collapse-Guard** feuert 20 s nach dem Schritt auf 625, *innerhalb*
-  des Settle-Fensters — die Lücke vom 22.09. ist geschlossen.
-- **Dead-Chip-Guard** erkennt `coreVoltageActual 0` über drei Ticks und
-  löst den Restart aus; der Sim kommt wieder hoch.
-- **Fund:** Das Step-Memory behandelt den Kollaps-Punkt als Loch, nicht als
-  Decke — nach dem Restart „skipping 625 (unstable); up 600→650", zweiter
-  Kollaps, zweiter Restart. Auf Hardware: zwei VR-Tode, bevor der Regler
-  aufgibt. Vorschlag an die WarpPool-Session: Collapse/Dead-Chip bei X →
-  alle Schritte ≥ X für die Hold-Dauer sperren.
+- **Power-collapse guard** fires 20 s after the step to 625, *inside* the
+  settle window — the gap from 09-22 is closed.
+- **Dead-chip guard** detects `coreVoltageActual 0` over three ticks and
+  triggers the restart; the sim comes back up.
+- **Finding:** The step memory treats the collapse point as a hole, not as a
+  ceiling — after the restart "skipping 625 (unstable); up 600→650", second
+  collapse, second restart. On hardware: two VR deaths before the regulator
+  gives up. Proposal to the WarpPool session: collapse/dead chip at X → block
+  all steps ≥ X for the hold duration.
 
-Damit ist die Kernbehauptung von `01-Nutzen-fuer-WarpTune.md` eingelöst:
-Der Simulator ist ein Testgerät, gegen das der Regulator laufen kann, das
-sich falsch verhält, und das Fehler findet, die im Feld Hardware kosten.
+With that, the core claim of `01-Benefit-for-WarpTune.md` is fulfilled: the
+simulator is a test device the Regulator can run against, that misbehaves, and
+that finds errors that cost hardware in the field.
 
-### 13.8 Die Regressionssuite (2026-09-23, Commit 9278ebf)
+### 13.8 The regression suite (2026-09-23, commit 9278ebf)
 
-Auf Olivers Go: `crates/scenarios/` in WarpAxe treibt WarpTunes
-`Regulator` **in-process** gegen `Device` — kein HTTP, keine Wanduhr,
-`Limits` per Struct-Literal verkürzt. Fünf Feldfehler als Tests, **40 ms**
-für alle: gesunder Aufstieg; VR-Tod im Settle-Fenster mit Decke (pinnt
-dvb-WarpPool 1c80963); Chip-Hang mit Leistung; Sensor auf 0 → keine
-Writes; Duplikat-Nonces blockieren. Paket ist vom Workspace abgekoppelt
-(Path-Dep auf dvb-WarpPool); Lauf: `cargo test --manifest-path
-crates/scenarios/Cargo.toml`. Sobald dvb-WarpPool die Decke taggt: git-Dep
-mit festem `rev` + eigener CI-Job.
+On Oliver's go: `crates/scenarios/` in WarpAxe drives WarpTune's `Regulator`
+**in-process** against `Device` — no HTTP, no wall clock, `Limits` shortened via
+struct literal. Five field failures as tests, **40 ms** for all: healthy ascent;
+VR death in the settle window with ceiling (pins dvb-WarpPool 1c80963); chip
+hang with power; sensor at 0 → no writes; duplicate nonces block. Package is
+decoupled from the workspace (path dep on dvb-WarpPool); run: `cargo test --manifest-path
+crates/scenarios/Cargo.toml`. As soon as dvb-WarpPool tags the ceiling: git dep
+with fixed `rev` + own CI job.
 
-Der Live-Rerun mit `--seed 5` gegen das neue Binary bestätigte den Fix
-unabhängig davon über HTTP (ein Restart, keine zweite Kletterei; Beleg im
-Demo-File).
+The live rerun with `--seed 5` against the new binary independently confirmed
+the fix over HTTP (one restart, no second climb; evidence in the demo file).
 
-**Damit ist Stufe A über das Ziel hinaus erfüllt.** Was das Entscheidungs-Doc
-als Stufe-A-Ertrag versprach — „der Simulator als Testgerät für den
-Regulator" — existiert, hat am ersten Tag einen Reglerfehler gefunden, und
-der Fehler ist als Test festgenagelt, bevor er gefixt gemerged wurde.
+**With that, Stage A is fulfilled beyond its goal.** What the decision doc
+promised as the Stage A yield — "the simulator as a test device for the
+Regulator" — exists, found a regulator bug on the first day, and the bug is
+nailed down as a test before it was merged fixed.
 
-### 13.9 Der Avalon-Block (2026-09-23, auf Olivers Go)
+### 13.9 The Avalon block (2026-09-23, on Oliver's go)
 
-`warpaxe-sim::avalon::AvalonQ` modelliert den Q als MM-Controller (kein
-Chip-Sim): drei Work-Modes mit den Messwerten vom 11.09., Moduswechsel =
-Hashboard-Reinit (55 W Standby, `GHSspd` 0 für 120 s, 60 s Rampe), echtes
-900-s-Fenster für `MHS 15m`, `STATE[1]` immer, kein `coreVoltageActual`.
-`warpaxe-cgminer` spricht das cgminer-Protokoll auf TCP 4028; WarpTunes
-eigener `AvalonClient` liest und schreibt den emulierten Q **unverändert**
-(Test grün).
+`warpaxe-sim::avalon::AvalonQ` models the Q as an MM controller (no chip sim):
+three work modes with the measurements from 09-11, mode change = hashboard
+reinit (55 W standby, `GHSspd` 0 for 120 s, 60 s ramp), real 900-s window for
+`MHS 15m`, `STATE[1]` always, no `coreVoltageActual`. `warpaxe-cgminer` speaks
+the cgminer protocol on TCP 4028; WarpTune's own `AvalonClient` reads and writes
+the emulated Q **unchanged** (test green).
 
-Die Szenarien mit den *echten* Avalon-Limits (settle 180, judge 900,
-collapse-hold 300) lieferten drei Funde — der Pfad, den WarpTune „noch nie
-live gesehen" hatte:
+The scenarios with the *real* Avalon limits (settle 180, judge 900, collapse-hold
+300) delivered three findings — the path WarpTune had "never seen live":
 
-| | Fund | Vorschlag |
+| | Finding | Proposal |
 |---|---|---|
-| **A** | Gesunder Standard→Super-Wechsel wird bei 900 s mit 86 % verurteilt, weil `MHS 15m` den ~180-s-Reinit enthält → urgent down → nächster Reinit → Eco. **Kaskade auf gesundem Gerät.** | `judge_after_s = settle_s + 900` für Avalon: Fenster liegt dann hinter dem Reinit |
-| **B** | Kollaps wird erkannt (Dead-Chip-Hashrate-Zweig +270 s, vor dem 300-s-Power-Hold), Restore belebt — dann A. | mit A erledigt |
-| **C** | Verweigertes `ascset` wird alle 240 s endlos wiederholt, Stufe nie markiert. | nach 2–3 Fehlverifikationen markieren wie instabil |
+| **A** | Healthy Standard→Super change is condemned at 900 s with 86 %, because `MHS 15m` contains the ~180-s reinit → urgent down → next reinit → Eco. **Cascade on a healthy device.** | `judge_after_s = settle_s + 900` for Avalon: the window then lies behind the reinit |
+| **B** | Collapse is detected (dead-chip hashrate branch +270 s, before the 300-s power hold), restore revives — then A. | done with A |
+| **C** | Refused `ascset` is repeated endlessly every 240 s, step never marked. | after 2–3 failed verifications mark as unstable |
 
-Die drei Szenarien liegen als `#[ignore]`-Tests mit dem Fund als
-Begründung vor; sie werden scharf, sobald WarpTune die Punkte ändert.
-Modellannahmen, die man anzweifeln darf: Reinit 120 + Rampe 60 s
-(„1–3 min" laut WarpPool-Session), Standby 55 W.
+The three scenarios exist as `#[ignore]` tests with the finding as justification;
+they go live as soon as WarpTune changes the points. Model assumptions one may
+doubt: reinit 120 + ramp 60 s ("1–3 min" according to the WarpPool session),
+standby 55 W.
 
-**Nachtrag, selber Abend:** A und B sind in WarpTune gefixt (`83faac4`:
-Share-Zähler als zweite Stimme beim dringlichen Abstieg, Share-Fenster ab
-`settle_s`, Avalon-Judge bei `settle + 900`) und live bei Oliver. Das Modell
-wurde auf cgminers echtes Verhalten umgestellt — `MHS 15m` ist ein
-exponentiell abklingender Mittelwert (τ 900 s), kein Fenster — was
-Szenario A *strenger* macht; der Fix hält trotzdem. C war ein Artefakt
-meines Harness: Der echte Runner schaltet nach 12 unverifizierten Ticks
-die Live-Steuerung ab (`live_off`) und schreibt nie ein zweites Mal; nach
-dem Nachbau dieses Pfads bestätigt der Test genau das. **Alle 14 Szenarien
-grün**, keine `#[ignore]` mehr. Offen (Olivers Entscheidung): ob `live_off`
-bei einem verweigerten `ascset` zu hart ist.
+**Addendum, same evening:** A and B are fixed in WarpTune (`83faac4`: share
+counter as a second voice on the urgent descent, share window from `settle_s`,
+Avalon judge at `settle + 900`) and live at Oliver's. The model was switched to
+cgminer's real behavior — `MHS 15m` is an exponentially decaying average
+(τ 900 s), not a window — which makes scenario A *stricter*; the fix holds
+regardless. C was an artifact of my harness: the real runner switches off live
+control after 12 unverified ticks (`live_off`) and never writes a second time;
+after rebuilding this path the test confirms exactly that. **All 14 scenarios
+green**, no more `#[ignore]`. Open (Oliver's decision): whether `live_off` on a
+refused `ascset` is too harsh.
 
-## 14. Transport: USB-C und LAN neben WLAN (Wunsch von Oliver, 2026-09-23)
+## 14. Transport: USB-C and LAN alongside WLAN (request from Oliver, 2026-09-23)
 
-**ENTSCHIEDEN (Oliver, 2026-09-23): Standard ist die USB-Bridge (14.6, Weg 2).**
-Der Miner ist USB-NCM-Gerät; ein Linux-Host daneben brückt USB auf LAN.
-LAN direkt am Miner (W5500) und Miner-als-USB-Host (14.6, Weg 1) sind
-Optionen, kein Standard.
+**DECIDED (Oliver, 2026-09-23): the default is the USB bridge (14.6, path 2).**
+The miner is a USB-NCM device; a Linux host next to it bridges USB to LAN.
+LAN directly on the miner (W5500) and miner-as-USB-host (14.6, path 1) are
+options, not the default.
 
-**Frage:** Kann WarpAxe die USB-C-Buchse der Bitaxe-/NerdAxe-Hardware als
-Datenschnittstelle nutzen, und geht LAN?
+**Question:** Can WarpAxe use the USB-C socket of the Bitaxe/NerdAxe hardware as
+a data interface, and does LAN work?
 
-### 14.1 Was die Hardware hergibt
+### 14.1 What the hardware offers
 
 | Board | MCU | USB-C | LAN |
 |---|---|---|---|
-| Bitaxe Gamma 601/602 | ESP32-S3-WROOM-1 | ja, D+/D- direkt an GPIO20/GPIO19 (kein Bridge-Chip, keine Serienwiderstände, kein ESD-Schutz) — **im Schaltplan geprüft, s. 14.5** | nein |
-| NerdQAxe+/++ | ESP32-S3 | ja, wie oben | nein |
-| NerdAxe Gaia | ESP32-S3 (Bitronics nennt „ESP-Miner-Version“, 2.4-GHz-WLAN only) | ja | nein |
+| Bitaxe Gamma 601/602 | ESP32-S3-WROOM-1 | yes, D+/D- directly on GPIO20/GPIO19 (no bridge chip, no series resistors, no ESD protection) — **checked in the schematic, see 14.5** | no |
+| NerdQAxe+/++ | ESP32-S3 | yes, as above | no |
+| NerdAxe Gaia | ESP32-S3 (Bitronics calls it "ESP-Miner version", 2.4-GHz WLAN only) | yes | no |
 
-Der ESP32-S3 hat **einen** USB-Full-Speed-PHY (12 Mbit/s), der per Mux
-entweder am `USB_SERIAL_JTAG` (Werkszustand: Flashen, Konsole) oder am
-`USB_OTG`-Controller hängt. Einen Ethernet-MAC hat der S3 **nicht**
-(anders als der alte ESP32). LAN heißt darum immer: externer Chip per SPI
-(W5500, KSZ8851SNL, DM9051 — alle mit `esp_eth`-Treiber im IDF) und damit
-eine **Board-Revision oder ein Hat**. Die aktuellen Boards haben dafür
-keinen Header; nur Testpads.
+The ESP32-S3 has **one** USB full-speed PHY (12 Mbit/s), which via a mux hangs
+either on `USB_SERIAL_JTAG` (factory state: flashing, console) or on the
+`USB_OTG` controller. The S3 does **not** have an Ethernet MAC (unlike the old
+ESP32). LAN therefore always means: external chip via SPI (W5500, KSZ8851SNL,
+DM9051 — all with `esp_eth` driver in the IDF) and thus a **board revision or a
+hat**. The current boards have no header for it; only test pads.
 
-### 14.2 USB-C als Netzwerk: CDC-NCM
+### 14.2 USB-C as network: CDC-NCM
 
-Das IDF liefert `esp_tinyusb` mit den Klassen CDC-ACM, MSC, HID, DFU,
-**ECM/NCM/RNDIS**. Mit NCM erscheint der Miner am Host als
-Netzwerkkarte: macOS und Linux nativ, Windows ab 11 ohne Treiber, ältere
-Windows über RNDIS. Das IDF-Beispiel `examples/peripherals/usb/device/tusb_ncm`
-(S2/S3/P4) macht genau das, nur andersherum (ESP als WLAN-Dongle). Wir
-drehen es um:
+The IDF ships `esp_tinyusb` with the classes CDC-ACM, MSC, HID, DFU,
+**ECM/NCM/RNDIS**. With NCM the miner appears on the host as a network card:
+macOS and Linux natively, Windows from 11 without a driver, older Windows via
+RNDIS. The IDF example `examples/peripherals/usb/device/tusb_ncm` (S2/S3/P4)
+does exactly that, only the other way round (ESP as WLAN dongle). We turn it
+around:
 
 ```
 [Host]  usb0: 192.168.7.1/30  ←USB-C→  [WarpAxe] usbnet: 192.168.7.2
 ```
 
-- Der Miner betreibt auf dem USB-Netif einen **DHCP-Server** (wie der
-  Wi-Fi-AP-Modus), Adresse aus einem link-lokalen /30 oder /24, damit
-  mehrere Miner an einem Hub nicht kollidieren (Präfix aus der MAC).
-- **AxeOS-API, Web-UI und Stratum laufen unverändert** — es ist nur ein
-  weiteres `esp_netif`. WarpTune sieht `http://192.168.7.2/api/system/info`.
-  Keine Sonderpfade, kein zweites Protokoll.
-- **Stratum über USB:** liegt der Pool auf dem Host (WarpPool auf Mac,
-  Umbrel, Hetzner-Gateway), erreicht der Miner ihn über die USB-Adresse
-  direkt — **ohne WLAN, ohne NAT**. Pool im Internet → Host muss
-  forwarden (macOS Internet-Sharing, Linux `ip_forward` + NAT); das ist
-  Host-Konfiguration, nicht unsere.
-- **Fallback-Priorität:** USB-Netif, wenn Link da; sonst WLAN. Beide
-  gleichzeitig ist erlaubt; Stratum nimmt die Route mit dem Pool.
-- **Kosten:** NCM belegt den OTG-Controller. `USB_SERIAL_JTAG` ist dann
-  im Betrieb weg: Konsole läuft über CDC-ACM als zweites Interface
-  (Composite NCM + ACM ist bei TinyUSB Standard), **Flashen bleibt**,
-  weil der ROM-Bootloader im Download-Modus (BOOT gedrückt) den PHY
-  selbst zurückmuxt. Das ist zu testen, bevor es Gerät Nr. 1 trifft —
-  ein Brick-Pfad wäre hier fatal. Bis dahin: Kconfig-Schalter,
-  Default WLAN + Serial-JTAG wie heute.
-- **Strom:** VBUS ist am Gamma **nicht angeschlossen** (s. 14.5). USB-C
-  liefert dem Board keinerlei Energie, auch nicht der Logik; ohne
-  Netzteil am Hohlstecker ist der ESP32 tot, auch zum Flashen. Umgekehrt
-  kann der Miner den Host-Port nie belasten. Für WarpAxe heißt das: der
-  USB-Link ist reine Datenstrecke, kein Power-Zustand, den die Firmware
-  unterscheiden müsste.
+- The miner runs a **DHCP server** on the USB netif (like the Wi-Fi AP mode),
+  address from a link-local /30 or /24, so that multiple miners on one hub don't
+  collide (prefix from the MAC).
+- **AxeOS API, web UI and Stratum run unchanged** — it is just another
+  `esp_netif`. WarpTune sees `http://192.168.7.2/api/system/info`. No special
+  paths, no second protocol.
+- **Stratum over USB:** if the pool sits on the host (WarpPool on Mac, Umbrel,
+  Hetzner gateway), the miner reaches it directly via the USB address —
+  **without WLAN, without NAT**. Pool on the internet → host must forward (macOS
+  Internet Sharing, Linux `ip_forward` + NAT); that is host configuration, not
+  ours.
+- **Fallback priority:** USB netif if link is up; otherwise WLAN. Both at the
+  same time is allowed; Stratum takes the route with the pool.
+- **Cost:** NCM occupies the OTG controller. `USB_SERIAL_JTAG` is then gone
+  during operation: console runs over CDC-ACM as a second interface (composite
+  NCM + ACM is standard with TinyUSB), **flashing remains**, because the ROM
+  bootloader in download mode (BOOT pressed) muxes the PHY back itself. That
+  has to be tested before it hits device no. 1 — a brick path would be fatal
+  here. Until then: Kconfig switch, default WLAN + Serial-JTAG as today.
+- **Power:** VBUS is **not connected** on the Gamma (see 14.5). USB-C supplies
+  the board with no energy whatsoever, not even for the logic; without a PSU on
+  the barrel jack the ESP32 is dead, even for flashing. Conversely the miner can
+  never load the host port. For WarpAxe that means: the USB link is a pure data
+  path, no power state the firmware would have to distinguish.
 
-### 14.3 Die schlichte Variante: CDC-ACM mit Zeilenprotokoll
+### 14.3 The simple variant: CDC-ACM with a line protocol
 
-Wenn NCM zu viel ist: Serial-JTAG bleibt, wie es ist, und WarpAxe spricht
-auf der Konsole ein **JSON-Lines-Protokoll** (`{"cmd":"info"}` →
-`{"hashrate":…}`), dasselbe Vokabular wie die native API aus §9.1. Host-
-seitig braucht das ein Tool oder einen WarpTune-Transport für
-`/dev/tty.usbmodem*`. Vorteil: null Risiko am USB-Stack, funktioniert
-sofort. Nachteil: WarpTune braucht einen zweiten Transport, Stratum geht
-nicht darüber. **Das ist der Notnagel, nicht das Ziel.**
+If NCM is too much: Serial-JTAG stays as it is, and WarpAxe speaks a
+**JSON-Lines protocol** on the console (`{"cmd":"info"}` → `{"hashrate":…}`),
+the same vocabulary as the native API from §9.1. Host-side this needs a tool or
+a WarpTune transport for `/dev/tty.usbmodem*`. Advantage: zero risk on the USB
+stack, works immediately. Disadvantage: WarpTune needs a second transport,
+Stratum doesn't go over it. **That is the stopgap, not the goal.**
 
-### 14.4 Was es für WarpAxe bedeutet
+### 14.4 What it means for WarpAxe
 
-1. **Architektur jetzt:** die Netzwerkschicht ist `esp_netif`-agnostisch.
-   Kein Code darf „WLAN“ annehmen — weder der Not-Aus (§7, „darf nicht
-   von WLAN abhängen“) noch die Reconnect-Logik noch die UI-Anzeige
-   „Signalstärke“. Netifs sind eine Liste: `wifi`, `usb`, später `eth`.
-2. **Stufe B (Firmware, BM1370):** WLAN + NCM/ACM-Composite als Kconfig-
-   Option, Default aus. Erster HIL-Test: Flashen nach NCM-Betrieb.
-3. **LAN:** erst, wenn es ein Board mit W5500 gibt. Softwareseitig ist es
-   dann ein weiterer `esp_netif` (`esp_eth` + SPI), ~1 Tag.
-4. **Simulator:** die Szenarien brauchen nichts Neues — der AxeOS-Emulator
-   ist bereits „nur eine IP“. Ein PTY-Transport für die ACM-Variante
-   (§13.9-Restliste) würde §14.3 host-testbar machen.
+1. **Architecture now:** the network layer is `esp_netif`-agnostic. No code may
+   assume "WLAN" — neither the emergency stop (§7, "must not depend on WLAN")
+   nor the reconnect logic nor the UI display "signal strength". Netifs are a
+   list: `wifi`, `usb`, later `eth`.
+2. **Stage B (firmware, BM1370):** WLAN + NCM/ACM composite as a Kconfig option,
+   default off. First HIL test: flashing after NCM operation.
+3. **LAN:** only once there is a board with a W5500. Software-side it is then
+   another `esp_netif` (`esp_eth` + SPI), ~1 day.
+4. **Simulator:** the scenarios need nothing new — the AxeOS emulator is already
+   "just an IP". A PTY transport for the ACM variant (§13.9 leftover list) would
+   make §14.3 host-testable.
 
-**Entschieden:** NCM (14.2) ist das Ziel, ACM (14.3) nur wenn der
-Flash-Rückweg auf Hardware nicht sauber ist. LAN am Miner bleibt offen,
-bis ein Board es hat; der Standardweg ins LAN ist die USB-Bridge (14.6).
+**Decided:** NCM (14.2) is the goal, ACM (14.3) only if the flash way-back on
+hardware isn't clean. LAN on the miner remains open until a board has it; the
+default way into the LAN is the USB bridge (14.6).
 
-### 14.5 Schaltplan-Prüfung Bitaxe Gamma (2026-09-23, `bitaxeorg/bitaxeGamma` main, `esp32.kicad_sch`)
+### 14.5 Schematic check Bitaxe Gamma (2026-09-23, `bitaxeorg/bitaxeGamma` main, `esp32.kicad_sch`)
 
-Netzliste aus dem KiCad-Quelltext extrahiert (eigener S-Expression-Parser,
-Pins über Symbol-Transformation, Wire-Segmente inkl. T-Abzweige geprüft;
-die `no_connect`-Marker lagen exakt auf den berechneten Pin-Positionen,
-was die Transformation validiert):
+Netlist extracted from the KiCad source (own S-expression parser, pins via
+symbol transformation, wire segments incl. T-junctions checked; the
+`no_connect` markers sat exactly on the computed pin positions, which validates
+the transformation):
 
-| J5 USB-C-Pin | Netz |
+| J5 USB-C pin | Net |
 |---|---|
-| A6, B6 D+ | → U4 Pin 14 `GPIO20/USB_D+`, direkt, nichts dazwischen |
-| A7, B7 D- | → U4 Pin 13 `GPIO19/USB_D-`, direkt |
+| A6, B6 D+ | → U4 pin 14 `GPIO20/USB_D+`, direct, nothing in between |
+| A7, B7 D- | → U4 pin 13 `GPIO19/USB_D-`, direct |
 | A4, B4 VBUS | **no_connect** |
-| A5 CC1, B5 CC2 | **offen** — keine 5,1-kΩ-Pulldowns auf dem Board |
+| A5 CC1, B5 CC2 | **open** — no 5.1-kΩ pulldowns on the board |
 | A8, B8 SBU | no_connect |
-| A1, B1, S1 | GND + Shield |
+| A1, B1, S1 | GND + shield |
 
-Auf dem ESP32-Blatt gibt es nur einen einzigen Widerstand (R16 10k, EN-Pullup),
-keine Dioden, keine ESD-Bausteine, keinen USB-UART-Chip. Der 3V3-LDO
-(RT9080) hängt am 5V-Netz des Netzteils, nicht an VBUS.
+On the ESP32 sheet there is only a single resistor (R16 10k, EN pullup), no
+diodes, no ESD devices, no USB-UART chip. The 3V3 LDO (RT9080) hangs on the 5V
+net of the PSU, not on VBUS.
 
-**Folgen:**
+**Consequences:**
 
-1. **Native USB bestätigt.** CDC-NCM/ACM über `USB_OTG` ist hardwareseitig
-   möglich; nichts auf dem Board steht dem im Weg.
-2. **Keine CC-Pulldowns → C-zu-C-Kabel unzuverlässig.** Ein echter USB-C-
-   Host-Port erkennt ohne Rd kein Gerät und schaltet D+/D- meist gar nicht
-   durch. Für den Dauerbetrieb als Datenstrecke also: **USB-A-zu-C-Kabel**
-   oder ein Hub mit A-Ports. Das gehört in die Doku, sonst „geht nicht“.
-3. **Kein ESD-Schutz auf D+/D-.** Für eine ständig gesteckte Verbindung
-   im Betrieb ein Hinweis, kein Blocker; der S3 hat internen Schutz.
-4. **VBUS unbeschaltet** — siehe Strom-Absatz in 14.2.
+1. **Native USB confirmed.** CDC-NCM/ACM over `USB_OTG` is possible on the
+   hardware side; nothing on the board stands in the way.
+2. **No CC pulldowns → C-to-C cable unreliable.** A real USB-C host port
+   detects no device without Rd and usually doesn't even switch D+/D- through.
+   For continuous operation as a data path therefore: **USB-A-to-C cable** or a
+   hub with A ports. That belongs in the docs, otherwise "doesn't work".
+3. **No ESD protection on D+/D-.** For a permanently plugged connection during
+   operation a note, not a blocker; the S3 has internal protection.
+4. **VBUS unconnected** — see the power paragraph in 14.2.
 
-NerdQAxe/Gaia (Pmaxsd) sind nicht mit Quellen geprüft; die Boards sind
-geschlossen (nur Gerber/Firmware öffentlich). Annahme bleibt „gleiche
-S3-Standardbeschaltung“, bis ein Gerät am Tisch liegt.
+NerdQAxe/Gaia (Pmaxsd) are not checked against sources; the boards are closed
+(only Gerber/firmware public). The assumption remains "same standard S3
+wiring" until a device is on the bench.
 
-### 14.6 USB ↔ LAN rein in Software? (Frage Oliver, 2026-09-23)
+### 14.6 USB ↔ LAN purely in software? (question from Oliver, 2026-09-23)
 
-Ja, zwei Wege — einer auf dem Miner, einer auf einem Host daneben.
+Yes, two paths — one on the miner, one on a host next to it.
 
-**Weg 1: Miner als USB-Host, USB-Ethernet-Adapter am USB-C.**
-Der ESP32-S3 kann USB-Host (OTG). Espressif liefert in `esp-iot-solution`
-die Komponenten `iot_usbh_ecm` und `iot_usbh_rndis` (S2/S3/P4), die ein
-CDC-ECM- bzw. RNDIS-Gerät als `esp_netif` einhängen — gebaut für
-4G-Sticks, funktioniert aber mit jedem Adapter, der die Klasse spricht.
-Für WarpAxe wäre das ein weiteres Netif, wie in 14.4 vorgesehen. Haken:
+**Path 1: miner as USB host, USB-Ethernet adapter on the USB-C.**
+The ESP32-S3 can do USB host (OTG). Espressif ships in `esp-iot-solution` the
+components `iot_usbh_ecm` and `iot_usbh_rndis` (S2/S3/P4), which mount a
+CDC-ECM or RNDIS device as `esp_netif` — built for 4G sticks, but works with any
+adapter that speaks the class. For WarpAxe that would be another netif, as
+foreseen in 14.4. Catches:
 
-- **VBUS ist am Gamma nicht angeschlossen (14.5).** Der Miner kann den
-  Adapter nicht versorgen. Es braucht einen Adapter mit eigener
-  Stromeinspeisung (Bauart „OTG-Ethernet mit Power-In“ für Chromecast /
-  Pi Zero) oder einen fremdversorgten Hub. Normale Adapter bleiben tot.
-- **Der Adapter-Chip muss ECM/NCM/RNDIS können.** RTL8153-basierte
-  Adapter haben eine ECM-Konfiguration; ASIX AX88772 (u. a. Apples
-  Adapter) spricht nur Vendor-Protokoll und fällt raus. Das heißt: eine
-  kurze Positivliste getesteter Adapter, sonst Support-Hölle.
-- Host-Stack kostet RAM auf dem S3 und belegt denselben PHY → Serial-JTAG
-  weg, wie bei NCM-Device.
+- **VBUS is not connected on the Gamma (14.5).** The miner cannot power the
+  adapter. It needs an adapter with its own power input (the "OTG Ethernet with
+  power-in" type for Chromecast / Pi Zero) or an externally powered hub. Normal
+  adapters stay dead.
+- **The adapter chip must speak ECM/NCM/RNDIS.** RTL8153-based adapters have an
+  ECM configuration; ASIX AX88772 (Apple's adapter among others) speaks only a
+  vendor protocol and is out. That means: a short positive list of tested
+  adapters, otherwise support hell.
+- Host stack costs RAM on the S3 and occupies the same PHY → Serial-JTAG gone,
+  as with NCM device.
 
-Ergebnis: geht, ist aber eine Bastelstrecke mit Hardware-Abhängigkeiten,
-die wir nicht kontrollieren.
+Result: works, but it is a tinkering path with hardware dependencies we don't
+control.
 
-**Weg 2: Miner als USB-NCM-Gerät (14.2), ein Linux-Host brückt auf LAN.**
-Pi Zero 2 / Pi 4 / Umbrel-Box als USB-Host, `usb0` und `eth0` in einer
-Layer-2-Bridge (`systemd-networkd`: ein `Bridge=`-Eintrag, kein NAT,
-kein Routing). Der Miner bekommt seine IP vom Heim-DHCP wie jedes
-LAN-Gerät, WLAN aus, WarpTune und der Pool sehen ihn genau wie heute.
-Mehrere Miner an einem Hub, jeder ein `usbN`, alle in derselben Bridge.
-Kabel: USB-A-zu-C wegen der fehlenden CC-Pulldowns (14.5).
+**Path 2: miner as USB-NCM device (14.2), a Linux host bridges to LAN.**
+Pi Zero 2 / Pi 4 / Umbrel box as USB host, `usb0` and `eth0` in a layer-2
+bridge (`systemd-networkd`: one `Bridge=` entry, no NAT, no routing). The miner
+gets its IP from the home DHCP like any LAN device, WLAN off, WarpTune and the
+pool see it exactly as today. Multiple miners on one hub, each a `usbN`, all in
+the same bridge. Cable: USB-A-to-C because of the missing CC pulldowns (14.5).
 
-- Miner-seitig **null Zusatzcode** gegenüber 14.2.
-- Host-seitig Standard-Linux, ~10 Zeilen Konfiguration; Doku-Aufgabe.
-- Auf dem Mac: Internet-Sharing oder eine Bridge über `ifconfig bridge`
-  — geht, ist aber nichts für Dauerbetrieb.
+- Miner-side **zero additional code** compared to 14.2.
+- Host-side standard Linux, ~10 lines of configuration; documentation task.
+- On the Mac: Internet Sharing or a bridge via `ifconfig bridge` — works, but
+  nothing for continuous operation.
 
-**Entschieden (Oliver, 2026-09-23): Weg 2 ist der Standard („USB-Bridge“).**
-Weg 1 wird Option hinter einem Kconfig-Schalter, erst wenn ein bestimmter
-Adapter mit Power-In als tauglich vermessen ist. Beides braucht 14.2
-als Unterbau; nichts davon ändert die Architekturentscheidung aus 14.4.
+**Decided (Oliver, 2026-09-23): path 2 is the default ("USB bridge").**
+Path 1 becomes an option behind a Kconfig switch, only once a specific adapter
+with power-in has been measured as suitable. Both need 14.2 as the foundation;
+none of it changes the architecture decision from 14.4.
 
-Daraus folgt für die Meilensteine:
+From that follows for the milestones:
 
-- **Stufe B (Firmware BM1370):** NCM-Device + CDC-ACM-Konsole als
-  Composite, Kconfig-Schalter, Default aus, bis der Flash-Rückweg auf
-  Hardware belegt ist. Danach Default an.
-- **Doku „USB-Bridge“:** Rezept für Pi Zero 2 / Pi 4 / Umbrel-Box
-  (`systemd-networkd`: `br0` mit `eth0` + `usb*`, Miner-Seite DHCP-Client
-  auf dem USB-Netif), Hub-Betrieb mit mehreren Minern, Kabelhinweis
-  USB-A-zu-C (14.5). Gehört zum Release von Stufe B, nicht danach.
-- **HIL-Testfall:** Miner ohne WLAN-Zugangsdaten, nur USB an einer
-  Bridge, muss booten, DHCP holen, Pool erreichen und per AxeOS-API
-  antworten. Das ist der Abnahmetest für den Transport.
+- **Stage B (firmware BM1370):** NCM device + CDC-ACM console as composite,
+  Kconfig switch, default off until the flash way-back is proven on hardware.
+  Then default on.
+- **Docs "USB bridge":** recipe for Pi Zero 2 / Pi 4 / Umbrel box
+  (`systemd-networkd`: `br0` with `eth0` + `usb*`, miner side DHCP client on the
+  USB netif), hub operation with multiple miners, cable note USB-A-to-C (14.5).
+  Belongs to the Stage B release, not after.
+- **HIL test case:** miner without WLAN credentials, USB only on a bridge, must
+  boot, obtain DHCP, reach the pool and answer via the AxeOS API. That is the
+  acceptance test for the transport.

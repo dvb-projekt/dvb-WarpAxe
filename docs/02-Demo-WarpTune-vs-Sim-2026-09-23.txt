@@ -1,15 +1,15 @@
-# Demo: WarpTune live gegen warpaxe-axeos — 2026-09-23
+# Demo: WarpTune live against warpaxe-axeos — 2026-09-23
 
-Sim: Bitaxe Gamma (BM1370), --seed 5 --time-scale 30, Start 600 MHz @ 1200 mV, Board-Fault SilentVrShutdown above 600 MHz.
-WarpTune: run --live, Config siehe unten. Beide Guards vom 22.09. (power-collapse, dead-chip) feuern; Fund: Leiter überspringt den Kollaps-Punkt und klettert darüber.
+Sim: Bitaxe Gamma (BM1370), --seed 5 --time-scale 30, start 600 MHz @ 1200 mV, board fault SilentVrShutdown above 600 MHz.
+WarpTune: run --live, config see below. Both guards from 22.09. (power-collapse, dead-chip) fire; finding: the ladder skips the collapse point and climbs above it.
 
-## Ergebnis
+## Result
 ```
 === t0 08:38:09 ===
 point:    600 MHz @ 1200 mV (actual 1189 mV)
 power:    21.0 W, VIN 5.10 V, 4.19 A
 hash:     1347 GH/s of 1224 GH/s expected, error ?, 15.6 J/TH
-=== t1 08:44:10 — WarpTune beendet ===
+=== t1 08:44:10 — WarpTune stopped ===
 === Journal ===
 kinds: {'decision': 6, 'heartbeat': 6, 'restart': 2, 'start': 1, 'step_bad': 3, 'write': 7, 'write_verified': 6}
 06:38:09 start          
@@ -43,7 +43,7 @@ kinds: {'decision': 6, 'heartbeat': 6, 'restart': 2, 'start': 1, 'step_bad': 3, 
 06:43:09 restart        chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
 06:43:12 write_verified 
 06:44:09 write          restore on shutdown
-=== Sim-Wahrheit ===
+=== Sim truth ===
   {'restarts': 2, 'chip_running': True, 'effective_freq_hz': 600000000, 'chip_pll_freq_hz': 600000000}
   API: f=600 V=1200 actual=1189 P=21.0 hr=953 uptime=1827
 --- run.log ---
@@ -83,16 +83,16 @@ thermal_r_c_per_w = 1.75
 live = true
 ```
 
-## Rerun gegen den Decken-Fix (WarpTune-Binary 08:46, dvb-WarpPool 1c80963)
+## Rerun against the ceiling fix (WarpTune binary 08:46, dvb-WarpPool 1c80963)
 
-Erwartung der WarpPool-Session: collapse bei 625 → zurück 600 → ein dead-chip restart → kein 'skipping', kein zweiter Restart.
+Expectation of the WarpPool session: collapse at 625 → back to 600 → one dead-chip restart → no 'skipping', no second restart.
 
 ```
 === t0 08:47:24 — tune binary: Sep 23 08:46, dvb-warppool-tune 1.32.0 ===
 point:    600 MHz @ 1200 mV (actual 1189 mV)
 power:    21.0 W, VIN 5.10 V, 4.19 A
 hash:     1350 GH/s of 1224 GH/s expected, error ?, 15.5 J/TH
-=== t1 08:53:25 — WarpTune beendet ===
+=== t1 08:53:25 — WarpTune stopped ===
 === Journal ===
 kinds: {'decision': 3, 'heartbeat': 4, 'restart': 1, 'start': 1, 'step_bad': 4, 'write': 4, 'write_verified': 3}
 06:47:24 start          
@@ -115,7 +115,7 @@ kinds: {'decision': 3, 'heartbeat': 4, 'restart': 1, 'start': 1, 'step_bad': 4, 
 06:49:24 restart        chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
 06:49:26 write_verified 
 06:53:24 write          restore on shutdown
-=== Sim-Wahrheit ===
+=== Sim truth ===
   {'restarts': 1, 'chip_running': True, 'effective_freq_hz': 600000000, 'chip_pll_freq_hz': 600000000}
   API: f=600 V=1200 actual=1189 P=21.0 hr=1374 uptime=7230
 --- run.log ---
