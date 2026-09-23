@@ -1,0 +1,29 @@
+# Regulator scenarios: WarpTune's `Regulator` driven in-process against the
+# simulated device. Deliberately NOT a member of the WarpAxe workspace —
+# the empty [workspace] table below detaches it — because it depends on
+# dvb-WarpPool by path, which the Forgejo CI does not have. Run it with:
+#
+#   cargo test --manifest-path crates/scenarios/Cargo.toml
+#
+# Once dvb-WarpPool tags a release with the ceiling fix, the path can turn
+# into a git dependency with a fixed `rev` and a CI job of its own.
+
+[package]
+name = "warpaxe-scenarios"
+description = "WarpTune's regulator against the WarpAxe simulator, in-process: field failures as sub-second tests."
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+warpaxe-core = { path = "../core" }
+warpaxe-sim = { path = "../sim" }
+warpaxe-axeos = { path = "../axeos" }
+warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
+serde_json = "1"
