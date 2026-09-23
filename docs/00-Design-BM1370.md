@@ -1017,9 +1017,9 @@ a data interface, and does LAN work?
 | Board | MCU | USB-C | LAN |
 |---|---|---|---|
 | Bitaxe Gamma 601/602 | ESP32-S3-WROOM-1 | yes, D+/D- directly on GPIO20/GPIO19 (no bridge chip, no series resistors, no ESD protection) — **checked in the schematic, see 14.5** | no |
-| NerdQAxe+/++ | ESP32-S3 | yes, as above | no |
-| NerdAxe Gaia | ESP32-S3 (Bitronics calls it "ESP-Miner version", 2.4-GHz WLAN only) | yes | no |
-| NerdAxe Gamma (Bitmaker, `BitMaker-hub/NerdAxe`, KiCad open) | LilyGO T-Display-S3 module (ESP32-S3R8, 16 MB flash, 8 MB PSRAM) plugged onto a BM1370 carrier | on the module, not the carrier: native S3 USB; per LilyGO VBUS powers the module's 3V3 rail (CC pulldowns to verify in LilyGO's schematic) — so unlike the Bitaxe Gamma the ESP32 runs from USB alone | no |
+| NerdQAxe+/++, NerdOctaxe-γ, Q1370 (Pmaxsd; `shufps/qaxe`, KiCad open for the QAxe line) | **LilyGO T-Display-S3 dev board** plugged onto the carrier (schematic: one `T-Display-S3` symbol, four 12-pin headers, no USB socket on the carrier) | on the LilyGO module: native S3 USB on GPIO19/20; **VBUS powers the module** (diode-ORed with the carrier's 5 V); **CC open** on LilyGO's board too → USB-A-to-C cable | no |
+| NerdAxe Gaia = firmware board `Q1373`, **4 × BM1373** (Pmaxsd) | LilyGO T-Display-S3, as above | as above | no |
+| NerdAxe Gamma (Bitmaker, `BitMaker-hub/NerdAxe`, KiCad open; firmware board `nerdaxegamma` in Pmaxsd's tree) | LilyGO T-Display-S3 on a BM1370 carrier | as above | no |
 
 The ESP32-S3 has **one** USB full-speed PHY (12 Mbit/s), which via a mux hangs
 either on `USB_SERIAL_JTAG` (factory state: flashing, console) or on the
@@ -1129,14 +1129,14 @@ NerdQAxe/Gaia (Pmaxsd) are not checked against sources; the boards are closed
 (only Gerber/firmware public). The assumption remains "same standard S3
 wiring" until a device is on the bench.
 
-**Two hardware classes, then (2026-09-23, after Oliver pointed at the NerdAxe Gamma):**
-the Bitaxe Gamma and Pmaxsd's boards (NerdQAxe, Octaxe, Gaia) carry an
-ESP32-S3 module on the main PCB with a bare USB-C socket wired as 14.5
-shows; Bitmaker's NerdAxe Gamma carries a complete LilyGO T-Display-S3
-dev board, whose USB-C is LilyGO's design (powered, presumably with CC).
-WarpAxe treats both the same at the netif level; the differences are
-which USB-C variant powers the MCU and whether C-to-C cables work — a
-documentation matter per board, not a code path.
+**Two hardware classes (corrected 2026-09-23 after Oliver's pointer):**
+the Bitaxe Gamma has an ESP32-S3-WROOM-1 on its own PCB with a bare USB-C
+socket (14.5). **Every Nerd device — NerdAxe Gamma, NerdQAxe+/++,
+NerdOctaxe-γ, Q1370, Gaia/Q1373 — carries a complete LilyGO T-Display-S3
+dev board** as its controller; the carrier has no USB socket at all. In
+Oliver's portfolio the Bitaxe is the exception, the T-Display-S3 the
+rule. WarpAxe treats both the same at the netif level; what differs is
+in 14.7.
 
 ### 14.6 USB ↔ LAN purely in software? (question from Oliver, 2026-09-23)
 
@@ -1192,3 +1192,47 @@ From that follows for the milestones:
 - **HIL test case:** miner without WLAN credentials, USB only on a bridge, must
   boot, obtain DHCP, reach the pool and answer via the AxeOS API. That is the
   acceptance test for the transport.
+
+### 14.7 The Nerd family's controller: LilyGO T-Display-S3 (2026-09-23)
+
+Sources: `shufps/qaxe` (NerdQAxe++ `pi.kicad_sch`: symbol `bitaxe:T-Display-S3`,
+`3d/T-Display-S3.STEP`, carrier 5 V → 1N5819 → module 5 V pin, no USB
+on the carrier), `shufps/ESP-Miner-NerdQAxePlus` (`main/displays/displayDriver.h`,
+one driver for every board; `main/boards/` has `nerdaxegamma`,
+`nerdoctaxegamma`, `nerdqaxeplus`, `nerdqaxeplus2`, `q1370`, `q1373`,
+`nerdhaxegamma`, `nerdeko`, `nerdqx`), LilyGO `schematic/T_Display_S3.pdf`
+(read from the rendered page).
+
+| Item | Fact |
+|---|---|
+| SoC | ESP32-S3R8, bare chip, 8 MB OPI PSRAM; flash W25Q128 16 MB (Bitaxe: WROOM-1 module) |
+| USB-C | D+/D- → GPIO19/20 native; VBUS → TP4065 charger and → 1N5819 → +5 V → AP2112K 3V3. **The ESP32 runs from USB alone**, flashing needs no PSU. |
+| CC pins | **open, no pulldowns** (pin A5 CC unwired in LilyGO's schematic). Same caveat as the Bitaxe: **USB-A-to-C cable**, C-to-C is unreliable. |
+| Display | ST7789, 170 × 320, 8-bit i80 bus, 6.5 MHz pixel clock; backlight AW9364 on GPIO38; LCD power GPIO15; data GPIO39–42, 45–48; WR GPIO8, RD GPIO9, CS GPIO6, DC GPIO7, RST GPIO5 |
+| Buttons | GPIO0 (boot), GPIO14 |
+| Battery | TP4065 charger, Q4 power path; "battery power must set IO15 HIGH" — irrelevant on a miner, but IO15 is display power |
+| Free GPIO to the carrier | GPIO1, 2, 3, 10, 11, 12, 13, 16, 17, 18, 21, 43 (U0TXD), 44 (U0RXD) — that is the whole pin budget for ASIC UART, reset, I2C, fan, VR enable |
+
+**Consequences for WarpAxe:**
+
+1. **Stage B targets the T-Display-S3 first**, not a generic S3 devkit: it
+   is the controller of every Nerd device, and a bare T-Display-S3 on the
+   desk is the Nerd hardware minus the ASIC. The NCM/flash-back proof of
+   14.2 runs on it as-is, no PSU, no ASIC.
+2. **Display support is not optional** for the Nerd class. The IDF ships
+   the pieces (`esp_lcd_panel_st7789` over an i80 bus, LVGL optional);
+   Pmaxsd's driver header is the pin reference. A blank screen on a
+   NerdQAxe would read as "dead".
+3. **Pin budget:** 13 GPIOs reach the carrier. The board profile (§3) must
+   carry the pin map per board; the Bitaxe uses different GPIOs for the
+   same functions.
+4. **Gaia = Q1373 = 4 × BM1373**, 4- or 6-phase VR, not a single chip:
+   the BM1373 profile and the chain driver's `expected_chips` need to
+   say 4, and the small-cores question (13.x) is a 4-chip measurement.
+5. **Devkit to buy:** LilyGO T-Display-S3 (lilygo.cc or AliExpress; the
+   non-touch variant, 16 MB). An ESP32-S3-DevKitC covers only the Bitaxe
+   class and adds nothing the T-Display-S3 lacks for the USB proof.
+6. **Test bed:** with the Nerd family on T-Display-S3, the NerdAxe Gamma
+   (single BM1370, KiCad open, same controller as Oliver's other devices)
+   is the better first target than the Bitaxe Gamma; the Bitaxe stays
+   the second, for the WROOM/bare-socket class.
