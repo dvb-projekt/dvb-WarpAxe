@@ -36,7 +36,7 @@ CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
 CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=16
 # DWC2 in slave/IRQ mode: buffer-DMA mode is the usual suspect when OUT
 # transfers stall on the S3.
-CONFIG_TINYUSB_MODE_SLAVE=y
+CONFIG_TINYUSB_MODE_DMA=y
 # TinyUSB driver logs (level 2) feed the on-display ring buffer.
 CONFIG_TINYUSB_DEBUG_LEVEL=1
 # The transmit path (netif → TinyUSB sync send) runs on the tcpip thread.

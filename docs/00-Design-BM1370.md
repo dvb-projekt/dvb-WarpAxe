@@ -1289,3 +1289,25 @@ Findings that go into the real firmware:
    "unchanged" segments unless `--no-skip`.
 7. SPIFFS on the NerdMiner keeps old config versions; the newest copy is
    the last one in flash order.
+8. Correction (Oliver, 2026-09-23): the Bitaxe Gamma does have a display —
+   a monochrome 128 × 32 SSD1306 OLED on I²C (SDA GPIO47, SCL GPIO48),
+   plugged onto header J3 of the schematic. The board profile therefore
+   carries a display kind: ST7789 over the i80 bus (Nerd class) or SSD1306
+   over I²C (Bitaxe), with one status layer above both.
+
+### 14.9 Stage-B firmware skeleton on the NerdMiner (2026-09-23, evening)
+
+`firmware/warpaxe` runs on the T-Display-S3: USB-NCM with DHCP, config in
+NVS with AxeOS field names, `/api/system/info`, `PATCH /api/system`,
+restart, **OTA over USB into the other slot** (1.2 MB received in 2 s,
+back on the new partition 13 s later), display with log tail and last
+crash, core dump summary in the API, a 30 s USB-Serial/JTAG window after
+a crash, and both flash-back paths (HTTP and a `B` on the CDC port).
+Wi-Fi station is coded but not yet exercised. Stratum and the chain
+driver on the UART are the next two steps.
+
+Two more traps for the record: TinyUSB must drive the DWC2 in **DMA
+mode**; slave mode stalls the NCM IN direction after ~14 KB and never
+recovers. And a handler that runs on the TinyUSB task (the CDC receive
+callback) must not uninstall TinyUSB itself; the reboot-to-bootloader
+runs on a task of its own.

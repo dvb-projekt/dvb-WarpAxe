@@ -24,6 +24,9 @@ esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ct
 /// Send one Ethernet frame to the host, blocking up to 100 ms.
 esp_err_t wa_usb_send(void *buffer, uint16_t len);
 
+/// Route stdout (and so ESP_LOG) to the CDC-ACM port. Non-blocking writes.
+esp_err_t wa_usb_console_to_cdc(void);
+
 /// Enumerated and configured by a host.
 bool wa_usb_mounted(void);
 

@@ -7,6 +7,7 @@
 #include "esp_core_dump.h"
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
 #include "tinyusb.h"
@@ -18,21 +19,32 @@ static const char *TAG = "wa_usb";
 
 static void free_tx(void *buffer, void *ctx)
 {
-    (void)buffer;
     (void)ctx;
-    // Synchronous sends: nothing of ours to release.
+    // Asynchronous sends: `buffer` is the copy wa_usb_send() made.
+    free(buffer);
 }
 
 // A 'B' on the console port reboots into the ROM download mode: the
 // flash-back path without a finger on BOOT and without an IP address.
+static void bootloader_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(100));
+    wa_reboot_to_bootloader();
+}
+
 static void cdc_rx(int itf, cdcacm_event_t *event)
 {
+    (void)event;
     uint8_t buf[64];
     size_t n = 0;
     if (tinyusb_cdcacm_read(itf, buf, sizeof buf, &n) == ESP_OK) {
         for (size_t i = 0; i < n; i++) {
             if (buf[i] == 'B') {
-                wa_reboot_to_bootloader();
+                // This callback runs on the TinyUSB task; the reboot path
+                // uninstalls TinyUSB, so it must run elsewhere.
+                xTaskCreate(bootloader_task, "wa_boot", 4096, NULL, 5, NULL);
+                return;
             }
         }
     }
@@ -101,7 +113,19 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len)
     if (!tud_mounted()) {
         return ESP_ERR_INVALID_STATE; // no host: drop, never touch the driver
     }
-    return tinyusb_net_send_sync(buffer, len, NULL, pdMS_TO_TICKS(100));
+    // Asynchronous: the caller (lwIP's tcpip thread) must never wait for
+    // the TinyUSB task. The copy lives until TinyUSB has taken it into an
+    // NTB (free_tx) or dropped it because no NTB was free.
+    void *copy = malloc(len);
+    if (!copy) {
+        return ESP_ERR_NO_MEM;
+    }
+    memcpy(copy, buffer, len);
+    esp_err_t err = tinyusb_net_send_async(copy, len, copy);
+    if (err != ESP_OK) {
+        free(copy);
+    }
+    return err;
 }
 
 bool wa_usb_mounted(void)
@@ -234,4 +258,9 @@ int wa_coredump_log(void)
     free(sum);
     esp_core_dump_image_erase();
     return 1;
+}
+
+esp_err_t wa_usb_console_to_cdc(void)
+{
+    return esp_tusb_init_console(TINYUSB_CDC_ACM_0);
 }
