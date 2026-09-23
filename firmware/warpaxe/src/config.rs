@@ -80,6 +80,18 @@ pub fn get() -> Config {
     CONFIG.lock().unwrap().clone().unwrap_or_default()
 }
 
+impl Config {
+    /// The config as the API may show it: secrets replaced by a marker
+    /// that says whether one is set. Never return the real ones.
+    pub fn redacted(&self) -> Config {
+        let mut c = self.clone();
+        let mask = |v: &String| if v.is_empty() { String::new() } else { "***".into() };
+        c.wifi_pass = mask(&self.wifi_pass);
+        c.stratum_pass = mask(&self.stratum_pass);
+        c
+    }
+}
+
 /// Apply a JSON object of AxeOS-named fields, persist, return the result.
 pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     let mut cur = serde_json::to_value(get())?;
@@ -90,7 +102,15 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
             }
         }
     }
-    let cfg: Config = serde_json::from_value(cur)?;
+    let mut cfg: Config = serde_json::from_value(cur)?;
+    // A masked secret coming back in a PATCH means "keep what you have".
+    let old = get();
+    if cfg.wifi_pass == "***" {
+        cfg.wifi_pass = old.wifi_pass;
+    }
+    if cfg.stratum_pass == "***" {
+        cfg.stratum_pass = old.stratum_pass;
+    }
     save(&cfg)?;
     Ok(cfg)
 }

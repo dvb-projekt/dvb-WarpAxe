@@ -71,7 +71,7 @@ pub fn v1_state() -> serde_json::Value {
         },
         "http_hits": diag::HTTP_HITS.load(Ordering::Relaxed),
         "last_crash": diag::last_crash(),
-        "config": config::get(),
+        "config": config::get().redacted(),
     })
 }
 
@@ -135,8 +135,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) => match config::patch(&v) {
                 Ok(cfg) => {
-                    log::info!("config patched: {}", v);
-                    reply_json(req, 200, &serde_json::to_value(cfg).unwrap_or_default())
+                    log::info!("config patched: {:?}", v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()));
+                    reply_json(req, 200, &serde_json::to_value(cfg.redacted()).unwrap_or_default())
                 }
                 Err(e) => reply_json(req, 400, &json!({"error": e.to_string()})),
             },
