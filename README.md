@@ -47,6 +47,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo build -p warpaxe-core --target thumbv7em-none-eabihf   # proves no_std
 ```
 
+The regulator scenarios (WarpTune's `Regulator` in-process against the
+simulated devices, `crates/scenarios/`) are a separate package with a git
+dependency on dvb-WarpPool pinned to a commit:
+
+```bash
+cargo test --manifest-path crates/scenarios/Cargo.toml
+```
+
 ## Design
 
 The design document and the decision record live outside this repo, in

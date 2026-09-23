@@ -1,12 +1,13 @@
 # Regulator scenarios: WarpTune's `Regulator` driven in-process against the
 # simulated device. Deliberately NOT a member of the WarpAxe workspace —
-# the empty [workspace] table below detaches it — because it depends on
-# dvb-WarpPool by path, which the Forgejo CI does not have. Run it with:
+# the empty [workspace] table below detaches it — so that its dependency
+# on dvb-WarpPool (a git dependency pinned to a commit) never affects the
+# core/sim/axeos/cgminer build. Run it with:
 #
 #   cargo test --manifest-path crates/scenarios/Cargo.toml
 #
-# Once dvb-WarpPool tags a release with the ceiling fix, the path can turn
-# into a git dependency with a fixed `rev` and a CI job of its own.
+# CI runs it as the `scenarios` job. Bump the `rev` deliberately when
+# dvb-WarpPool changes its regulator; a tag replaces it at v1.33.0.
 
 [package]
 name = "warpaxe-scenarios"
@@ -26,6 +27,10 @@ warpaxe-core = { path = "../core" }
 warpaxe-sim = { path = "../sim" }
 warpaxe-axeos = { path = "../axeos" }
 warpaxe-cgminer = { path = "../cgminer" }
-warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
+# Pinned to a commit on git.warppool.org, never a branch: a regulator
+# change over there must not turn these scenarios red unannounced. To
+# test against a local dvb-WarpPool working tree instead, replace with
+#   warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
+warppool-tune = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", rev = "ba144bf0feddc58c1ada4b3ec383dfe0ec717950" }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time"] }

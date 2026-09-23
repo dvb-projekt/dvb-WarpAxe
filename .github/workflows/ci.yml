@@ -51,3 +51,18 @@ jobs:
         run: |
           rustup target add thumbv7em-none-eabihf
           cargo build -p warpaxe-core --target thumbv7em-none-eabihf
+
+  # WarpTune's regulator against the simulator, in-process. A separate
+  # package (detached from the workspace) with a git dependency on
+  # dvb-WarpPool pinned to a commit — see crates/scenarios/Cargo.toml.
+  scenarios:
+    name: Regulator scenarios
+    runs-on: ubuntu-latest
+    steps:
+      - uses: https://github.com/actions/checkout@v7
+      - uses: https://github.com/dtolnay/rust-toolchain@stable
+      - uses: https://github.com/Swatinem/rust-cache@v2
+        with:
+          workspaces: crates/scenarios
+      - name: Scenarios
+        run: cargo test --manifest-path crates/scenarios/Cargo.toml
