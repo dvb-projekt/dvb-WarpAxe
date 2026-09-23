@@ -19,4 +19,6 @@
 pub mod crc;
 pub mod decoder;
 pub mod frame;
+pub mod job;
 pub mod pll;
+pub mod result;
