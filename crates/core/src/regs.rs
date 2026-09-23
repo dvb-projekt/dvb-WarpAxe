@@ -309,11 +309,11 @@ mod tests {
     /// 1 chip, 2040 small / 128 cores, 65536 versions, 525 MHz.
     /// midstates = 2048/128 = 16; serial_versions = 4096;
     /// serial_nonces = 2³²/128 = 33 554 432; full = 4096·33 554 432/525e6
-    /// = 261.8 s → 261 796 ms; at 100 % that is the timeout.
+    /// = 261 788 ms; at 100 % that is the timeout.
     #[test]
     fn job_timeout_matches_the_c_formula() {
         let ms = job_timeout_ms(525_000_000, 1, 2040, 128, 65536, 1000, 500);
-        assert_eq!(ms, 261_796);
+        assert_eq!(ms, 261_788);
         assert_eq!(
             job_timeout_ms(0, 1, 2040, 128, 65536, 1000, 500),
             500,
