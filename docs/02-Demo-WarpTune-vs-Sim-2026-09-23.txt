@@ -1,0 +1,125 @@
+# Demo: WarpTune live gegen warpaxe-axeos — 2026-09-23
+
+Sim: Bitaxe Gamma (BM1370), --seed 5 --time-scale 30, Start 600 MHz @ 1200 mV, Board-Fault SilentVrShutdown above 600 MHz.
+WarpTune: run --live, Config siehe unten. Beide Guards vom 22.09. (power-collapse, dead-chip) feuern; Fund: Leiter überspringt den Kollaps-Punkt und klettert darüber.
+
+## Ergebnis
+```
+=== t0 08:38:09 ===
+point:    600 MHz @ 1200 mV (actual 1189 mV)
+power:    21.0 W, VIN 5.10 V, 4.19 A
+hash:     1347 GH/s of 1224 GH/s expected, error ?, 15.6 J/TH
+=== t1 08:44:10 — WarpTune beendet ===
+=== Journal ===
+kinds: {'decision': 6, 'heartbeat': 6, 'restart': 2, 'start': 1, 'step_bad': 3, 'write': 7, 'write_verified': 6}
+06:38:09 start          
+06:38:09 heartbeat      cool: temp 59.2 ≤ target 70.0 − 2.0; up dwell 1/3 [f=600.0 V=1200.0 P=21.0 hr=1347 act=? temp=59.2]
+06:38:19 heartbeat      cool: temp 60.3 ≤ target 70.0 − 2.0; up dwell 2/3 [f=600.0 V=1200.0 P=21.0 hr=1309 act=? temp=60.3]
+06:38:29 decision       cool: temp 60.3 ≤ target 70.0 − 2.0; up 600→625 MHz, predicted 23.7 W of 26.5 W allowed [f=600.0 V=1200.0 P=21.0 hr=1263 act=? temp=60.3]
+06:38:29 write          cool: temp 60.3 ≤ target 70.0 − 2.0; up 600→625 MHz, predicted 23.7 W of 26.5 W allowed
+06:38:31 write_verified 
+06:38:39 heartbeat      point changed 600→625 MHz @ 1200→1250 mV: settling 45s, judged after 600s [f=625.0 V=1250.0 P=3.0 hr=614 act=? temp=29.8]
+06:38:49 step_bad       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:38:49 decision       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent) [f=625.0 V=1250.0 P=3.0 hr=0 act=? temp=29.6]
+06:38:49 write          power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:38:51 write_verified 
+06:38:59 heartbeat      point changed 625→600 MHz @ 1250→1200 mV: settling 45s, judged after 600s [f=600.0 V=1200.0 P=3.0 hr=0 act=? temp=29.6]
+06:39:09 step_bad       power collapse: 3.00 W is under 30 % of the 21.0 W 600 MHz @ 1200 mV should draw, and this is the last point that ran
+06:40:09 decision       chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart [f=600.0 V=1200.0 P=3.0 hr=0 act=? temp=29.6]
+06:40:09 write          chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:40:09 restart        chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:40:11 write_verified 
+06:41:29 decision       cool: temp 60.3 ≤ target 70.0 − 2.0; skipping 625 MHz (unstable); up 600→650 MHz, predicted 23.5 W of 26.5 W allowed [f=600.0 V=1200.0 P=21.0 hr=1290 act=? temp=60.3]
+06:41:29 write          cool: temp 60.3 ≤ target 70.0 − 2.0; skipping 625 MHz (unstable); up 600→650 MHz, predicted 23.5 W of 26.5 W allowed
+06:41:31 write_verified 
+06:41:39 heartbeat      point changed 600→650 MHz @ 1200→1220 mV: settling 45s, judged after 600s [f=650.0 V=1220.0 P=3.0 hr=673 act=? temp=29.8]
+06:41:49 step_bad       power collapse: 3.00 W is under 30 % of the 23.5 W 650 MHz @ 1220 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:41:49 decision       power collapse: 3.00 W is under 30 % of the 23.5 W 650 MHz @ 1220 mV should draw: back to 600 MHz @ 1200 mV (urgent) [f=650.0 V=1220.0 P=3.0 hr=0 act=? temp=29.6]
+06:41:49 write          power collapse: 3.00 W is under 30 % of the 23.5 W 650 MHz @ 1220 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:41:51 write_verified 
+06:41:59 heartbeat      point changed 650→600 MHz @ 1220→1200 mV: settling 45s, judged after 600s [f=600.0 V=1200.0 P=3.0 hr=0 act=? temp=29.6]
+06:43:09 decision       chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart [f=600.0 V=1200.0 P=3.0 hr=0 act=? temp=29.6]
+06:43:09 write          chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:43:09 restart        chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:43:12 write_verified 
+06:44:09 write          restore on shutdown
+=== Sim-Wahrheit ===
+  {'restarts': 2, 'chip_running': True, 'effective_freq_hz': 600000000, 'chip_pll_freq_hz': 600000000}
+  API: f=600 V=1200 actual=1189 P=21.0 hr=953 uptime=1827
+--- run.log ---
+2026-09-23T06:38:09.621193Z  WARN dvb_warppool_tune: dvb-WarpTune LIVE for ["127.0.0.1:8811"]: these miners WILL be written to; every other miner stays dry-run. Decisions go to sim-journal.jsonl
+2026-09-23T06:38:09.622407Z  WARN warppool_tune::runner: LIVE: this miner will be written to; restore point 600 MHz @ 1200 mV host="127.0.0.1:8811"
+2026-09-23T06:40:09.769678Z  WARN warppool_tune::runner: device restart requested — chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart host="127.0.0.1:8811"
+2026-09-23T06:43:09.998358Z  WARN warppool_tune::runner: device restart requested — chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart host="127.0.0.1:8811"
+```
+
+## Config
+```toml
+# WarpTune against warpaxe-axeos — isolated: own bind port, own journal, no real miners.
+[sidecar]
+bind = "127.0.0.1:8799"
+journal = "sim-journal.jsonl"
+dry_run = true
+
+[defaults]
+mode = "max"
+target_temp_c = 70
+max_watts = 30
+thermal_r_c_per_w = 1.75
+ladder_cap_mhz = 690
+tick_secs = 2
+decide_secs = 10
+
+[[miner]]
+host = "127.0.0.1:8811"
+worker = "simgamma"
+allow_board = ["602"]
+mode = "max"
+beyond_spec = true
+ladder_cap_mhz = 690
+target_temp_c = 70
+max_watts = 30
+thermal_r_c_per_w = 1.75
+live = true
+```
+
+## Rerun gegen den Decken-Fix (WarpTune-Binary 08:46, dvb-WarpPool 1c80963)
+
+Erwartung der WarpPool-Session: collapse bei 625 → zurück 600 → ein dead-chip restart → kein 'skipping', kein zweiter Restart.
+
+```
+=== t0 08:47:24 — tune binary: Sep 23 08:46, dvb-warppool-tune 1.32.0 ===
+point:    600 MHz @ 1200 mV (actual 1189 mV)
+power:    21.0 W, VIN 5.10 V, 4.19 A
+hash:     1350 GH/s of 1224 GH/s expected, error ?, 15.5 J/TH
+=== t1 08:53:25 — WarpTune beendet ===
+=== Journal ===
+kinds: {'decision': 3, 'heartbeat': 4, 'restart': 1, 'start': 1, 'step_bad': 4, 'write': 4, 'write_verified': 3}
+06:47:24 start          
+06:47:24 heartbeat      cool: temp 59.4 ≤ target 70.0 − 2.0; up dwell 1/3 [f=600.0 V=1200.0 P=21.0 hr=1343 temp=59.4]
+06:47:34 heartbeat      cool: temp 60.3 ≤ target 70.0 − 2.0; up dwell 2/3 [f=600.0 V=1200.0 P=21.0 hr=1310 temp=60.3]
+06:47:44 decision       cool: temp 60.3 ≤ target 70.0 − 2.0; up 600→625 MHz, predicted 23.7 W of 26.5 W allowed [f=600.0 V=1200.0 P=21.0 hr=1263 temp=60.3]
+06:47:44 write          cool: temp 60.3 ≤ target 70.0 − 2.0; up 600→625 MHz, predicted 23.7 W of 26.5 W allowed
+06:47:46 write_verified 
+06:47:54 heartbeat      point changed 600→625 MHz @ 1200→1250 mV: settling 45s, judged after 600s [f=625.0 V=1250.0 P=3.0 hr=614 temp=29.8]
+06:48:04 step_bad       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:48:04 step_bad       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:48:04 step_bad       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:48:04 decision       power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent) [f=625.0 V=1250.0 P=3.0 hr=0 temp=29.6]
+06:48:04 write          power collapse: 3.00 W is under 30 % of the 23.7 W 625 MHz @ 1250 mV should draw: back to 600 MHz @ 1200 mV (urgent)
+06:48:06 write_verified 
+06:48:14 heartbeat      point changed 625→600 MHz @ 1250→1200 mV: settling 45s, judged after 600s [f=600.0 V=1200.0 P=3.0 hr=0 temp=29.6]
+06:48:24 step_bad       power collapse: 3.00 W is under 30 % of the 21.0 W 600 MHz @ 1200 mV should draw, and this is the last point that ran
+06:49:24 decision       chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart [f=600.0 V=1200.0 P=3.0 hr=0 temp=29.6]
+06:49:24 write          chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:49:24 restart        chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart
+06:49:26 write_verified 
+06:53:24 write          restore on shutdown
+=== Sim-Wahrheit ===
+  {'restarts': 1, 'chip_running': True, 'effective_freq_hz': 600000000, 'chip_pll_freq_hz': 600000000}
+  API: f=600 V=1200 actual=1189 P=21.0 hr=1374 uptime=7230
+--- run.log ---
+2026-09-23T06:47:24.571417Z  WARN dvb_warppool_tune: dvb-WarpTune LIVE for ["127.0.0.1:8811"]: these miners WILL be written to; every other miner stays dry-run. Decisions go to sim-journal.jsonl
+2026-09-23T06:47:24.572512Z  WARN warppool_tune::runner: LIVE: this miner will be written to; restore point 600 MHz @ 1200 mV host="127.0.0.1:8811"
+2026-09-23T06:49:24.739525Z  WARN warppool_tune::runner: device restart requested — chip not hashing (core voltage output 0 mV for 3 ticks): back to stock 600 MHz @ 1200 mV and restart host="127.0.0.1:8811"
+```
