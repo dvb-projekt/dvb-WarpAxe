@@ -35,6 +35,64 @@ fn set_step(s: &'static str) {
 }
 
 fn draw(d: &mut display::Display) {
+    match d {
+        display::Display::Lcd(l) => draw_lcd(l),
+        display::Display::Oled(o) => draw_oled(o),
+    }
+}
+
+/// Four lines of 21 characters on the Bitaxe OLED.
+fn draw_oled(d: &mut display::Oled) {
+    let cfg = config::get();
+    let n = net::state();
+    let st = stratum::state();
+    let m = miner::state();
+    let b = board::state();
+    d.clear();
+    d.text(0, 0, 1, &format!("WARPAXE {}", cfg.hostname));
+    let step = *STEP.lock().unwrap();
+    let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_else(|| "-".into());
+    d.text(
+        0,
+        8,
+        1,
+        &format!("{ip} {}", if step == "RUN" { "" } else { step }),
+    );
+    let temp = b.temp_c.map(|t| format!("{t:.0}C")).unwrap_or_default();
+    let power = b.power_w.map(|p| format!("{p:.0}W")).unwrap_or_default();
+    d.text(
+        0,
+        16,
+        1,
+        &format!(
+            "{}X{} {:.0}GH {temp} {power}",
+            m.chips,
+            m.frequency_hz / 1_000_000,
+            m.hashrate_ghs
+        ),
+    );
+    let pool = if st.authorized {
+        "OK"
+    } else if st.connected {
+        "CONN"
+    } else {
+        "OFF"
+    };
+    d.text(
+        0,
+        24,
+        1,
+        &format!(
+            "SH {}/{} {} {pool}",
+            st.shares_accepted, st.shares_rejected, m.phase
+        ),
+    );
+    if d.flush().is_err() {
+        log::warn!("oled flush failed");
+    }
+}
+
+fn draw_lcd(d: &mut display::Lcd) {
     use display::*;
     let cfg = config::get();
     let n = net::state();
@@ -131,8 +189,14 @@ fn main() {
         log::error!("config init failed: {e}");
     }
 
+    set_step("BOARD BUS");
+    board::init_bus(
+        peripherals.i2c0,
+        peripherals.pins.gpio47,
+        peripherals.pins.gpio48,
+    );
     set_step("DISPLAY");
-    let mut d = display::Display::new().ok();
+    let mut d = display::Display::new();
     let crashed = diag::log_core_dump();
     if let Some(mut d) = d.take() {
         std::thread::Builder::new()
@@ -204,12 +268,7 @@ fn main() {
     set_step("STRATUM");
     stratum::start();
     set_step("BOARD");
-    board::start(
-        peripherals.i2c0,
-        peripherals.pins.gpio47,
-        peripherals.pins.gpio48,
-        peripherals.pins.gpio1,
-    );
+    board::start(peripherals.pins.gpio1);
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

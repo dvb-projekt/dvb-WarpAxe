@@ -29,7 +29,7 @@ pub const ORANGE: u16 = 0xFD20;
 pub const GREY: u16 = 0x8410;
 pub const NAVY: u16 = 0x0010;
 
-pub struct Display {
+pub struct Lcd {
     panel: tusb::esp_lcd_panel_handle_t,
     /// 64-byte aligned, in PSRAM, never freed: the i80 DMA wants alignment.
     fb: &'static mut [u8],
@@ -54,9 +54,9 @@ fn gpio_out(pin: i32, level: bool) {
 
 // The panel handle is only ever used from the one thread that owns the
 // Display; the raw pointer is what stops the compiler from seeing that.
-unsafe impl Send for Display {}
+unsafe impl Send for Lcd {}
 
-impl Display {
+impl Lcd {
     pub fn new() -> Result<Self, sys::EspError> {
         gpio_out(PIN_PWR, true);
         gpio_out(PIN_RD, true);
@@ -107,7 +107,7 @@ impl Display {
         // PSRAM-aligned variant is the prime suspect for the black screen.
         let len = WIDTH * HEIGHT * 2;
         let fb: &'static mut [u8] = Box::leak(vec![0u8; len].into_boxed_slice());
-        let mut d = Display { panel, fb };
+        let mut d = Lcd { panel, fb };
         d.clear(BLACK);
         d.flush()?;
         gpio_out(PIN_BACKLIGHT, true);
@@ -182,5 +182,59 @@ impl Display {
             ));
         }
         Ok(())
+    }
+}
+
+/// The Bitaxe's SSD1306 on the board's I²C bus.
+pub struct Oled(warpaxe_board::ssd1306::Ssd1306<crate::board::SharedI2c>);
+
+impl Oled {
+    pub fn new(bus: crate::board::SharedI2c, addr: u8) -> Result<Self, String> {
+        let mut d = warpaxe_board::ssd1306::Ssd1306::new(bus, addr);
+        d.init().map_err(|e| format!("{e:?}"))?;
+        Ok(Oled(d))
+    }
+    pub fn clear(&mut self) {
+        self.0.clear();
+    }
+    pub fn text(&mut self, x: usize, y: usize, scale: usize, text: &str) {
+        self.0.text(x, y, scale, text);
+    }
+    pub fn flush(&mut self) -> Result<(), String> {
+        self.0.flush().map_err(|e| format!("{e:?}"))
+    }
+}
+
+/// Whichever display the board profile names.
+pub enum Display {
+    Lcd(Lcd),
+    Oled(Oled),
+}
+
+impl Display {
+    /// The profile's display, or `None` when it is absent or failed.
+    pub fn new() -> Option<Self> {
+        use warpaxe_board::profile::Display as Kind;
+        match crate::board::profile().display {
+            Kind::St7789I80 => match Lcd::new() {
+                Ok(l) => Some(Display::Lcd(l)),
+                Err(e) => {
+                    log::error!("display: st7789 failed: {e}");
+                    None
+                }
+            },
+            Kind::Ssd1306 { addr } => match crate::board::i2c().map(|b| Oled::new(b, addr)) {
+                Some(Ok(o)) => Some(Display::Oled(o)),
+                Some(Err(e)) => {
+                    log::error!("display: ssd1306 failed: {e}");
+                    None
+                }
+                None => {
+                    log::error!("display: ssd1306 named but no i2c bus");
+                    None
+                }
+            },
+            Kind::None => None,
+        }
     }
 }

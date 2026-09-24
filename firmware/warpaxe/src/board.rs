@@ -86,9 +86,16 @@ pub fn reset_chain(low_ms: u32, release_ms: u32) {
     }
 }
 
-/// The bus shared by regulator and sensor.
+/// The bus shared by regulator, sensor and display.
 #[derive(Clone)]
-struct SharedI2c(Arc<Mutex<I2cDriver<'static>>>);
+pub struct SharedI2c(Arc<Mutex<I2cDriver<'static>>>);
+
+static BUS: Mutex<Option<SharedI2c>> = Mutex::new(None);
+
+/// The board's I²C bus, once [`init_bus`] created it.
+pub fn i2c() -> Option<SharedI2c> {
+    BUS.lock().unwrap().clone()
+}
 
 impl I2c for SharedI2c {
     type Error = EspError;
@@ -100,10 +107,9 @@ impl I2c for SharedI2c {
     }
 }
 
-/// Bring the board up for the configured profile: reset line, I²C,
-/// regulator at the configured core voltage, sensor, then the sampling
-/// and fan task. Returns once the chain may be started.
-pub fn start(i2c0: I2C0, sda: Gpio47, scl: Gpio48, reset: Gpio1) {
+/// Pick the profile from the config and create its I²C bus, before
+/// anything (the display first) needs it.
+pub fn init_bus(i2c0: I2C0, sda: Gpio47, scl: Gpio48) {
     let cfg = config::get();
     let profile = Profile::by_name(&cfg.board_model).unwrap_or_else(|| {
         log::warn!(
@@ -120,7 +126,24 @@ pub fn start(i2c0: I2C0, sda: Gpio47, scl: Gpio48, reset: Gpio1) {
         s.fan_auto = cfg.autofanspeed;
     });
     log::info!("board: profile {}", profile.name);
+    let Some(pins) = profile.i2c else {
+        return;
+    };
+    match I2cDriver::new(i2c0, sda, scl, &I2cConfig::new().baudrate(Hertz(pins.hz))) {
+        Ok(b) => *BUS.lock().unwrap() = Some(SharedI2c(Arc::new(Mutex::new(b)))),
+        Err(e) => {
+            log::error!("board: i2c failed: {e}");
+            update(|s| s.last_error = format!("i2c: {e}"));
+        }
+    }
+}
 
+/// Bring the board up: reset line, regulator at the configured core
+/// voltage, sensor, then the sampling and fan task. Returns once the
+/// chain may be started.
+pub fn start(reset: Gpio1) {
+    let cfg = config::get();
+    let profile = profile();
     if profile.asic_reset.is_some() {
         match PinDriver::output(reset) {
             Ok(mut p) => {
@@ -130,17 +153,8 @@ pub fn start(i2c0: I2C0, sda: Gpio47, scl: Gpio48, reset: Gpio1) {
             Err(e) => log::error!("board: reset pin failed: {e}"),
         }
     }
-
-    let Some(pins) = profile.i2c else {
+    let Some(bus) = i2c() else {
         return;
-    };
-    let bus = match I2cDriver::new(i2c0, sda, scl, &I2cConfig::new().baudrate(Hertz(pins.hz))) {
-        Ok(b) => SharedI2c(Arc::new(Mutex::new(b))),
-        Err(e) => {
-            log::error!("board: i2c failed: {e}");
-            update(|s| s.last_error = format!("i2c: {e}"));
-            return;
-        }
     };
 
     let mut vr = profile.vr.map(|c| Tps546::new(bus.clone(), c));

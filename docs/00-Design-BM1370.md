@@ -1391,8 +1391,19 @@ first on the list for the Gamma: the TPS546 init sequence against a
 real part, the diode reading, the fan PID with a real fan, and the
 overheat stop.
 
-Open: SSD1306 driver for the Bitaxe display (profile already names
-it); the Nerd carriers' pins are not in any source we have (the
+SSD1306 (same day): `warpaxe_board::ssd1306` drives the Bitaxe's 128×32
+OLED at 0x3C over the shared bus — init sequence for a 32-row module,
+frame buffer of four pages, the shared 5×7 font (moved from the
+firmware into the crate), mirror commands for a module mounted the
+other way round. The firmware's `Display` is now an enum over the
+ST7789 LCD and the OLED, chosen by the profile; the OLED shows four
+lines: hostname, IP and boot step, chips × MHz, hashrate, chip
+temperature and power, then shares, chain phase and pool state. The
+board's I²C bus is created before the display so both can use it.
+Checked on the devkit: the LCD path unchanged. The OLED path is
+untested until the Gamma; orientation may need `set_mirror`.
+
+Open: the Nerd carriers' pins are not in any source we have (the
 T-Display-S3 exposes 13 GPIOs to the carrier, §14.6), so no Nerd
 profile yet; profiles with I²C pins other than 47/48 need the pin
 mapping in `main.rs` generalised.

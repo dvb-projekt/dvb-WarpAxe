@@ -11,9 +11,11 @@
 
 pub mod emc2101;
 pub mod fan;
+pub mod font;
 pub mod i2c;
 pub mod pmbus;
 pub mod profile;
+pub mod ssd1306;
 pub mod tps546;
 
 pub use i2c::I2c;
