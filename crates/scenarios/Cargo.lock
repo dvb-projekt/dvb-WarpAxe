@@ -1544,8 +1544,8 @@ dependencies = [
 
 [[package]]
 name = "warppool-tune"
-version = "1.32.0"
-source = "git+https://git.warppool.org/dvb-projekt/dvb-WarpPool.git?rev=ba144bf0feddc58c1ada4b3ec383dfe0ec717950#ba144bf0feddc58c1ada4b3ec383dfe0ec717950"
+version = "1.33.0"
+source = "git+https://git.warppool.org/dvb-projekt/dvb-WarpPool.git?tag=v1.33.0#a4830f538152bf199959dce2ad75b2658b8c54c9"
 dependencies = [
  "anyhow",
  "axum",
