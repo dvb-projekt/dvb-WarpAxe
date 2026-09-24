@@ -57,7 +57,8 @@ pub struct Job {
 /// hashes handed over (ESP-Miner `reverse_32bit_words`).
 pub fn reverse_32bit_words(h: &[u8; 32]) -> [u8; 32] {
     let mut out = [0u8; 32];
-    for (i, w) in h.chunks_exact(4).enumerate() {
+    let (words, _) = h.as_chunks::<4>();
+    for (i, w) in words.iter().enumerate() {
         out[i * 4..i * 4 + 4].copy_from_slice(&[w[3], w[2], w[1], w[0]]);
     }
     out

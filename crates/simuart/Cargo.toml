@@ -12,4 +12,4 @@ workspace = true
 [dependencies]
 warpaxe-core = { path = "../core" }
 warpaxe-sim = { path = "../sim" }
-serialport = "4"
+serialport = { version = "4", default-features = false }
