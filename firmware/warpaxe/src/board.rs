@@ -121,8 +121,8 @@ pub fn init_bus(i2c0: I2C0, sda: Gpio47, scl: Gpio48) {
     *PROFILE.lock().unwrap() = Some(profile);
     update(|s| {
         s.board = profile.name.into();
-        s.has_vr = profile.vr.is_some();
-        s.has_thermal = profile.thermal.is_some();
+        s.has_vr = profile.tps546().is_some();
+        s.has_thermal = profile.emc2101().is_some();
         s.fan_auto = cfg.autofanspeed;
     });
     log::info!("board: profile {}", profile.name);
@@ -153,19 +153,32 @@ pub fn start(reset: Gpio1) {
             Err(e) => log::error!("board: reset pin failed: {e}"),
         }
     }
+    if profile.vr_unsupported() {
+        log::error!(
+            "board: {} names a regulator this firmware cannot drive yet; the chain stays unpowered",
+            profile.name
+        );
+        update(|s| s.last_error = "regulator not supported yet".into());
+        return;
+    }
     let Some(bus) = i2c() else {
         return;
     };
 
-    let mut vr = profile.vr.map(|c| Tps546::new(bus.clone(), c));
+    let mut vr = profile.tps546().map(|c| Tps546::new(bus.clone(), c));
     if let Some(vr) = vr.as_mut() {
         match vr.init() {
             Ok(status) => {
                 log::info!("board: TPS546 up, status {status:#06x}");
                 update(|s| s.vr_status = status);
-                let volts = profile.vout_for_core_mv(cfg.core_voltage);
+                let mv = if profile.init_core_mv > cfg.core_voltage {
+                    profile.init_core_mv
+                } else {
+                    cfg.core_voltage
+                };
+                let volts = profile.vout_for_core_mv(mv);
                 match vr.set_vout(volts) {
-                    Ok(()) => log::info!("board: core {} mV", cfg.core_voltage),
+                    Ok(()) => log::info!("board: core {mv} mV"),
                     Err(e) => log::error!("board: set_vout {volts} V failed: {e:?}"),
                 }
             }
@@ -180,7 +193,7 @@ pub fn start(reset: Gpio1) {
     }
     let vr = vr.filter(|_| state().has_vr);
 
-    let mut thermal = profile.thermal.map(|c| Emc2101::new(bus.clone(), c));
+    let mut thermal = profile.emc2101().map(|c| Emc2101::new(bus.clone(), c));
     if let Some(t) = thermal.as_mut() {
         match t.init().and_then(|()| t.set_fan_percent(100)) {
             Ok(()) => log::info!("board: EMC2101 up, fan 100 %"),

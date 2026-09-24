@@ -61,6 +61,11 @@ impl<I: I2c> Ssd1306<I> {
         self.command(&[if x { 0xA0 } else { 0xA1 }, if y { 0xC0 } else { 0xC8 }])
     }
 
+    /// Inverse video: lit background, dark text.
+    pub fn set_invert(&mut self, on: bool) -> Result<(), Error<I::Error>> {
+        self.command(&[if on { 0xA7 } else { 0xA6 }])
+    }
+
     /// Everything off.
     pub fn clear(&mut self) {
         self.fb = [0; WIDTH * PAGES];

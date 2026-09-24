@@ -186,22 +186,40 @@ impl Lcd {
 }
 
 /// The Bitaxe's SSD1306 on the board's I²C bus.
-pub struct Oled(warpaxe_board::ssd1306::Ssd1306<crate::board::SharedI2c>);
+pub struct Oled {
+    panel: warpaxe_board::ssd1306::Ssd1306<crate::board::SharedI2c>,
+    flip: Option<bool>,
+    invert: Option<bool>,
+}
 
 impl Oled {
     pub fn new(bus: crate::board::SharedI2c, addr: u8) -> Result<Self, String> {
-        let mut d = warpaxe_board::ssd1306::Ssd1306::new(bus, addr);
-        d.init().map_err(|e| format!("{e:?}"))?;
-        Ok(Oled(d))
+        let mut panel = warpaxe_board::ssd1306::Ssd1306::new(bus, addr);
+        panel.init().map_err(|e| format!("{e:?}"))?;
+        Ok(Oled {
+            panel,
+            flip: None,
+            invert: None,
+        })
+    }
+    /// Apply the config's orientation when it changed; live, so a
+    /// PATCH of `flipscreen` / `invertscreen` shows on the next draw.
+    pub fn orient(&mut self, flip: bool, invert: bool) {
+        if self.flip != Some(flip) && self.panel.set_mirror(flip, flip).is_ok() {
+            self.flip = Some(flip);
+        }
+        if self.invert != Some(invert) && self.panel.set_invert(invert).is_ok() {
+            self.invert = Some(invert);
+        }
     }
     pub fn clear(&mut self) {
-        self.0.clear();
+        self.panel.clear();
     }
     pub fn text(&mut self, x: usize, y: usize, scale: usize, text: &str) {
-        self.0.text(x, y, scale, text);
+        self.panel.text(x, y, scale, text);
     }
     pub fn flush(&mut self) -> Result<(), String> {
-        self.0.flush().map_err(|e| format!("{e:?}"))
+        self.panel.flush().map_err(|e| format!("{e:?}"))
     }
 }
 

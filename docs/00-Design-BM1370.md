@@ -1403,7 +1403,41 @@ board's I²C bus is created before the display so both can use it.
 Checked on the devkit: the LCD path unchanged. The OLED path is
 untested until the Gamma; orientation may need `set_mirror`.
 
-Open: the Nerd carriers' pins are not in any source we have (the
+Nerd profiles (same day, from NerdOS `main/boards/*.cpp` on
+`develop`, `components/bm1397/serial.cpp`, `boards/drivers/i2c_master.cpp`
+and `drivers/nerdaxe/TPS546.h`): every Nerd carrier has the chain UART
+on GPIO17/18, I²C on SDA 44 / SCL 43, the chain reset on GPIO1 (Q1370
+and Q1373 put it on an FXL6408 expander instead), the ST7789 on the
+module.
+
+| Profile | Chips | Regulator | Thermal | Defaults | Limits |
+|---|---|---|---|---|---|
+| `nerdaxe-gamma` | 1 × BM1370, 5 V | TPS546, NerdOS window (VIN on/off 4.8/4.5, UV warn 5.8, OV fault 6.0, VOUT 1–3 V) — **driver exists** | EMC2101, same diode tuning as the Bitaxe — **driver exists** | 515 MHz / 1150 mV, `flipscreen` true in NerdOS | 25 W, +5 W offset |
+| `nerdqaxe-plusplus` | 4 × BM1370, 12 V | TPS53647, 3 phases, enable GPIO10, LDO GPIO13 | TMP1075 (+ EMC2302 fans) | 600 MHz / 1150 mV, up at 1200 mV | 100 W |
+| `nerdoctaxe-gamma` | 8 × BM1370, 12 V | TPS53667 6 phases (or TPS53647 4, by a detect pin) | TMP1075 + EMC2302 | 700 MHz / 1210 mV | 300 W |
+| `q1370` | 4 × BM1370, 12 V | TPS53647 4 phases behind the FXL6408 (reset 0, VR 1, LDO 2) | EMC2302 | 600 MHz / 1150 mV, up at 1200 mV | 150 W |
+| `q1373` (Gaia) | 4 × BM1373, 12 V | TPS53647 4 or TPS53667 6 phases (expander pin 6) | TMP1075 + EMC2302 | 425 MHz / 1010 mV, up at 1050 mV | 180 W |
+
+The profile type now says what a board has even where this crate has
+no driver (`Vr::Tps5364x`, `Thermal::Tmp1075Emc2302`); on such a board
+the firmware reports the profile and leaves the chain unpowered instead
+of guessing. So the NerdAxe Gamma is drivable today with what exists;
+the multi-chip Nerds need four more drivers: TPS53647/53667 (PMBus,
+multi-phase, NerdOS `TPS53647.cpp`), TMP1075, EMC2302, FXL6408. The
+BM1373 chip profile for the Gaia is a separate open item (§13).
+
+OLED orientation: `flipscreen` (mirror both axes) and `invertscreen`
+(inverse video), AxeOS/NerdOS names, live on the next draw. ESP-Miner
+drives the same panel through LVGL with swapped axes and inverted
+colour, so its flags do not map to raw SSD1306 commands; the Gamma
+test settles the default with one PATCH.
+
+Backup: `tools/flash-backup.sh <name> [port] [out-dir]` reads the whole
+flash (size from the chip) to CloudDocs `WarpForge-Firmware/backups`
+with a `.sha256` and a RESTORE.txt (`esptool write_flash 0 <image>`);
+refuses to overwrite, checks the image length. First step on the Gamma.
+
+Open: the Nerd multi-chip drivers named above; are not in any source we have (the
 T-Display-S3 exposes 13 GPIOs to the carrier, §14.6), so no Nerd
 profile yet; profiles with I²C pins other than 47/48 need the pin
 mapping in `main.rs` generalised.

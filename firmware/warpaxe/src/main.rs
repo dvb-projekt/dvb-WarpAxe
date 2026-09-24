@@ -48,6 +48,7 @@ fn draw_oled(d: &mut display::Oled) {
     let st = stratum::state();
     let m = miner::state();
     let b = board::state();
+    d.orient(cfg.flipscreen, cfg.invertscreen);
     d.clear();
     d.text(0, 0, 1, &format!("WARPAXE {}", cfg.hostname));
     let step = *STEP.lock().unwrap();

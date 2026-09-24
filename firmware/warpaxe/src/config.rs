@@ -31,6 +31,10 @@ pub struct Config {
     pub core_voltage: u16,
     pub fanspeed: u8,
     pub autofanspeed: bool,
+    /// OLED mounted the other way round (AxeOS/NerdOS name).
+    pub flipscreen: bool,
+    /// OLED inverse video (AxeOS name).
+    pub invertscreen: bool,
     /// Chips on the chain; 0 = discover.
     #[serde(rename = "asicCount")]
     pub asic_count: u8,
@@ -51,6 +55,8 @@ impl Default for Config {
             core_voltage: 1150,
             fanspeed: 100,
             autofanspeed: true,
+            flipscreen: false,
+            invertscreen: false,
             asic_count: 0,
         }
     }
