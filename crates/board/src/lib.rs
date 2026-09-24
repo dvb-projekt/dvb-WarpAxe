@@ -19,4 +19,4 @@ pub mod ssd1306;
 pub mod tps546;
 
 pub use i2c::I2c;
-pub use profile::{Profile, Thermal, Vr, BITAXE_GAMMA, T_DISPLAY_S3_DEVKIT};
+pub use profile::{Asic, Profile, Thermal, Vr, BITAXE_GAMMA, T_DISPLAY_S3_DEVKIT};

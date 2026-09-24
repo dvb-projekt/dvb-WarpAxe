@@ -51,6 +51,9 @@ pub struct Stats {
 pub struct RxDecoder {
     buf: [u8; RESPONSE_LEN],
     len: usize,
+    /// Bytes per frame right now: 11, or 9 while a BM1373 chain answers
+    /// the chip-id read.
+    frame_len: usize,
     dropped_since_frame: u32,
     stats: Stats,
 }
@@ -67,6 +70,7 @@ impl RxDecoder {
         RxDecoder {
             buf: [0; RESPONSE_LEN],
             len: 0,
+            frame_len: RESPONSE_LEN,
             dropped_since_frame: 0,
             stats: Stats {
                 frames: 0,
@@ -79,6 +83,17 @@ impl RxDecoder {
     /// Running totals.
     pub const fn stats(&self) -> Stats {
         self.stats
+    }
+
+    /// Expect frames of `len` bytes (9 or 11) from now on; anything
+    /// half-received is dropped. Chip-id replies of the BM1373 are 9
+    /// bytes, everything else 11.
+    pub fn set_frame_len(&mut self, len: usize) {
+        let len = len.clamp(crate::frame::SHORT_RESPONSE_LEN, RESPONSE_LEN);
+        if len != self.frame_len {
+            self.frame_len = len;
+            self.reset();
+        }
     }
 
     /// Bytes currently held that may still become a frame.
@@ -123,12 +138,12 @@ impl RxDecoder {
 
         self.buf[self.len] = byte;
         self.len += 1;
-        if self.len < RESPONSE_LEN {
+        if self.len < self.frame_len {
             return None;
         }
 
         // Window full and starts with the preamble: verify.
-        match decode_response(&self.buf) {
+        match decode_response(&self.buf[..self.frame_len]) {
             Ok(response) => {
                 let dropped_before = self.dropped_since_frame;
                 self.dropped_since_frame = 0;
@@ -175,7 +190,7 @@ impl RxDecoder {
     /// until the window starts with the preamble again or has fewer than
     /// two bytes. Every byte slid out counts as dropped.
     fn resync(&mut self) {
-        debug_assert_eq!(self.len, RESPONSE_LEN);
+        debug_assert_eq!(self.len, self.frame_len);
         let mut start = 1;
         while self.len - start >= 2 && self.buf[start..start + 2] != RX_PREAMBLE {
             start += 1;
@@ -196,7 +211,29 @@ impl RxDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::frame::{encode_response, FLAG_JOB};
+    use crate::frame::{encode_response, encode_short_response, FLAG_JOB, SHORT_RESPONSE_LEN};
+
+    #[test]
+    fn short_mode_decodes_nine_byte_chip_id_replies_then_returns_to_eleven() {
+        let mut d = RxDecoder::new();
+        d.set_frame_len(SHORT_RESPONSE_LEN);
+        let mut short = [0u8; SHORT_RESPONSE_LEN];
+        encode_short_response(&mut short, &[0x13, 0x72, 0x00, 0x10, 0, 0], 0x00);
+        let mut got = Vec::new();
+        d.push_slice(&short, |f| got.push(f));
+        assert_eq!(got.len(), 1);
+        assert_eq!(&got[0].response.payload[..4], &[0x13, 0x72, 0x00, 0x10]);
+        assert!(!got[0].response.is_job());
+        // Back to full frames: an eleven-byte job reply decodes whole.
+        d.set_frame_len(RESPONSE_LEN);
+        let mut full = [0u8; RESPONSE_LEN];
+        encode_response(&mut full, &[1, 2, 3, 4, 5, 6, 7, 8], FLAG_JOB);
+        got.clear();
+        d.push_slice(&full, |f| got.push(f));
+        assert_eq!(got.len(), 1);
+        assert!(got[0].response.is_job());
+        assert_eq!(d.stats().crc_failures, 0);
+    }
 
     fn frame_bytes(payload: [u8; 8], flags: u8) -> [u8; RESPONSE_LEN] {
         let mut b = [0u8; RESPONSE_LEN];

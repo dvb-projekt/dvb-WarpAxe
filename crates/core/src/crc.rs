@@ -74,10 +74,12 @@ pub fn response_tag(payload: &[u8; 8], flags: u8) -> u8 {
 /// True when `response_body` (everything after the `AA 55` preamble,
 /// last byte included) carries a CRC-5 that matches.
 ///
-/// This is the receiver-side check for chip responses: feeding all nine
-/// bytes through the register must leave it at zero. It is *not* the
-/// check for command frames — those are verified with
-/// `crc5(body) == trailing byte`.
+/// [`response_tag`] over a payload of any length (short chip-id replies).
+pub fn response_tag_slice(payload: &[u8], flags: u8) -> u8 {
+    crc5_bits(crc5(payload), flags, 3)
+}
+
+/// True when `response_body` (payload plus flags/CRC byte) checks out.
 pub fn verify5(response_body: &[u8]) -> bool {
     !response_body.is_empty() && crc5(response_body) == 0
 }

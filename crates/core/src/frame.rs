@@ -235,7 +235,35 @@ impl Response {
 /// Rejects wrong length, wrong preamble and bad CRC — the caller decides
 /// whether to resynchronise or count a `Desync`. Nothing here consumes
 /// a stream; feeding bytes one at a time is the decoder's job (M1, part 2).
+/// Length of the BM1373's chip-id reply: `AA 55` + 6 payload + flags:crc.
+pub const SHORT_RESPONSE_LEN: usize = 9;
+
+/// Encode a short (9-byte) chip-id reply: the six payload bytes are
+/// followed by the flags/CRC byte, as the BM1373 answers `CMD_READ 00`.
+pub fn encode_short_response(buf: &mut [u8; SHORT_RESPONSE_LEN], payload: &[u8; 6], flags: u8) {
+    buf[0..2].copy_from_slice(&RX_PREAMBLE);
+    buf[2..8].copy_from_slice(payload);
+    buf[8] = (flags & FLAG_MASK) | crate::crc::response_tag_slice(payload, flags);
+}
+
+/// Decode a response of either length: 11 bytes (jobs, register reads)
+/// or 9 (the BM1373 chip-id reply, whose six payload bytes are
+/// zero-padded to eight).
 pub fn decode_response(bytes: &[u8]) -> Result<Response, FrameError> {
+    if bytes.len() == SHORT_RESPONSE_LEN {
+        if bytes[0..2] != RX_PREAMBLE {
+            return Err(FrameError::BadPreamble);
+        }
+        if !verify5(&bytes[2..]) {
+            return Err(FrameError::BadCrc);
+        }
+        let mut payload = [0u8; 8];
+        payload[..6].copy_from_slice(&bytes[2..8]);
+        return Ok(Response {
+            payload,
+            flags: bytes[8] & FLAG_MASK,
+        });
+    }
     if bytes.len() != RESPONSE_LEN {
         return Err(FrameError::BadLength);
     }

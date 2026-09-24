@@ -6,6 +6,8 @@ use std::convert::Infallible;
 
 use warpaxe_chain::{Chain, Config, Error, Event, InitError, Phase, Uart, Work};
 use warpaxe_core::chip::bm1370::BM1370;
+use warpaxe_core::chip::bm1373::BM1373;
+use warpaxe_core::chip::ChipProfile;
 use warpaxe_core::regs::reg;
 use warpaxe_sim::chain::SimChain;
 use warpaxe_sim::chip::ChipState;
@@ -22,9 +24,9 @@ struct SimUart {
 }
 
 impl SimUart {
-    fn new(chips: u8, seed: u64) -> Self {
+    fn with(profile: &'static ChipProfile, chips: u8, seed: u64) -> Self {
         SimUart {
-            sim: SimChain::new(&BM1370, chips, seed),
+            sim: SimChain::new(profile, chips, seed),
             rx: VecDeque::new(),
             host_baud: 115_200,
             lost_to_baud: 0,
@@ -91,11 +93,14 @@ struct Bench {
 
 impl Bench {
     fn new(chips: u8, config: Config) -> Self {
-        let mut drv = Chain::new(&BM1370, config);
+        Self::with(&BM1370, chips, config)
+    }
+    fn with(profile: &'static ChipProfile, chips: u8, config: Config) -> Self {
+        let mut drv = Chain::new(profile, config);
         drv.start(0);
         Bench {
             drv,
-            uart: SimUart::new(chips, 7),
+            uart: SimUart::with(profile, chips, 7),
             now: 0,
             events: Vec::new(),
             works: 0,
@@ -427,4 +432,46 @@ fn needs_work_after_the_nonce_space_is_scanned() {
     let timeout = b.drv.work_timeout_us();
     assert!(timeout > 1_000_000, "{timeout}");
     assert!(b.drv.needs_work(b.now + timeout));
+}
+
+/// The BM1373 as NerdOS drives it: nine-byte chip-id replies, addresses
+/// in steps of 16, single-chip commands at address ÷ 4, the fixed hash
+/// counting number. Driver and simulator read the same reference, so
+/// this proves consistency, not the chip.
+#[test]
+fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
+    // The Gaia's stock ticket mask is 4096: a nonce every few seconds
+    // per chip. A low difficulty makes the attribution check quick.
+    let config = Config {
+        expected_chips: 4,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373)
+    };
+    let mut b = Bench::with(&BM1373, 4, config);
+    b.run_until_ready(20_000);
+    assert_eq!(b.drv.chip_count(), 4);
+    let addrs: Vec<u8> = b.drv.chips().iter().map(|c| c.address).collect();
+    assert_eq!(addrs, vec![0, 16, 32, 48]);
+    let sim_addrs: Vec<u8> = b.uart.sim.chips().iter().map(|c| c.address()).collect();
+    assert_eq!(sim_addrs, addrs);
+    assert_eq!(
+        b.uart.sim.totals().violations,
+        0,
+        "no chip saw a rule broken"
+    );
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+
+    b.mine_ms(10_000);
+    let sim_nonces = u64::from(b.uart.sim.totals().nonces);
+    assert!(
+        sim_nonces > 200,
+        "the simulated chain hashed: {sim_nonces} nonces"
+    );
+    let yielded = b.count(|e| matches!(e, Event::Nonce(_))) as u64;
+    assert_eq!(yielded, sim_nonces);
+    assert_eq!(b.drv.stats().unknown_chip, 0);
+    for i in 0..4u8 {
+        let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
+        assert!(n > 50, "chip {i} yielded only {n} nonces in 10 s");
+    }
 }

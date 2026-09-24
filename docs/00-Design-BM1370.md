@@ -1442,3 +1442,45 @@ T-Display-S3 exposes 13 GPIOs to the carrier, §14.6), so no Nerd
 profile yet; profiles with I²C pins other than 47/48 need the pin
 mapping in `main.rs` generalised.
 
+
+### 14.13 BM1373 chip profile (2026-09-24, pre-work for the Gaia)
+
+`crates/core/src/chip/bm1373.rs`, written from NerdOS's
+`BM1373::init()` (the firmware on the Gaia today), with ESP-Miner's
+`bm1373.c` as the second reference. Both agree on: chip id 0x1372 with
+0x1373 as alias, a nine-byte chip-id reply, a fixed chain address stride
+of 16, single-chip commands at address ÷ 4 while replies carry the full
+address, the PLL of the BM1370, the job-id encoding of the BM1370, and a
+fixed hash counting number 0x1EB5 in place of the computed one
+(ESP-Miner: "the generic BM13xx nonce-space calculation makes
+BM1372/BM1373 chips search overlapping work"). They disagree on the init
+sequence; NerdOS's was taken: the BM1370 sequence with the
+version-rolling mask written without the enable bit until the end, Misc
+Control `FF 00 C1 00`, no extra register writes. ESP-Miner's longer init
+(3 Mbaud, soft reset, core registers, a domain-end IO strength) is the
+fallback if this one does not bring a chain up. Counts and options are
+NerdOS's Q1373 class: 128 cores, 6860 small cores, 425 MHz / 1010 mV
+stock, ticket mask 4096, frequencies 250–550 MHz, voltages 980–1080 mV.
+
+What the chip needed beyond a profile: `ChipProfile` gained
+`chip_id_alias`, `address_stride`, `command_address_shift` and
+`hcn_fixed`, and addressing moved from static helpers to the profile
+(`chip_address`, `command_address`, `chip_index`, `is_chip_id`); the
+renderer binds per-chip writes to the shifted command address; a new
+`InitStep::VersionMaskNoEnable`; the stream decoder switches to nine-byte
+frames while a chain answers the chip-id read (`set_frame_len`, driven by
+the chain driver around `CountChips`) and back to eleven after; the
+simulator answers chip-id reads with nine-byte frames and accepts
+single-chip commands at the shifted address; `warpaxe-simuart --chip
+bm1373`. The board profile names its chip (`Asic`), and the firmware
+builds the chain from it (`board::chip()`), so `boardModel = q1373`
+selects the BM1373 without a rebuild.
+
+Checked: render test against NerdOS's `send6` list for four chips,
+decoder test for the nine-byte mode, and the chain driver against the
+simulator with four BM1373 (addresses 0/16/32/48, no rule violation, no
+CRC failure, every nonce attributed). That proves driver and simulator
+share one reading of the reference, not that the reading is right; the
+first Gaia session settles it, starting with the nine-byte chip-id reply
+and a single-chip read at address ÷ 4.
+

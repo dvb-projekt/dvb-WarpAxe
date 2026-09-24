@@ -50,7 +50,7 @@ pub fn system_info() -> serde_json::Value {
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
         "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
         "uptimeSeconds": diag::uptime_s(),
-        "asicCount": m.chips, "smallCoreCount": 2040, "ASICModel": "BM1370",
+        "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user,
         "isUsingFallbackStratum": false,

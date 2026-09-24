@@ -16,7 +16,10 @@
 //! reads a clock.
 
 use warpaxe_core::chip::ChipProfile;
-use warpaxe_core::frame::{encode_response, Group, Header, Op, FLAG_JOB, RESPONSE_LEN};
+use warpaxe_core::frame::{
+    encode_response, encode_short_response, Group, Header, Op, FLAG_JOB, RESPONSE_LEN,
+    SHORT_RESPONSE_LEN,
+};
 use warpaxe_core::job::{Job, JOB_LEN};
 use warpaxe_core::pll::PllWord;
 use warpaxe_core::regs::{self, reg};
@@ -205,7 +208,10 @@ impl SimChip {
         }
         match header.group() {
             Group::All => true,
-            Group::Single => header.op() == Op::SetAddress || chip_addr == self.address,
+            Group::Single => {
+                header.op() == Op::SetAddress
+                    || chip_addr == self.profile.command_address(self.address)
+            }
         }
     }
 
@@ -276,6 +282,11 @@ impl SimChip {
             // `[id_hi, id_lo, core_num, addr, 0, 0, 0, 0]` — the reference
             // driver logs bytes 4 and 5 of the frame as CORE_NUM and ADDR.
             let id = self.profile.chip_id.to_be_bytes();
+            if self.profile.chip_id_reply_len == SHORT_RESPONSE_LEN {
+                // BM1373: nine bytes, six of payload.
+                self.emit_short(&[id[0], id[1], 0x00, self.address, 0, 0], 0x00, out);
+                return;
+            }
             [id[0], id[1], 0x00, self.address, 0, 0, 0, 0]
         } else {
             let mut v = self.regs[usize::from(r)];
@@ -372,6 +383,12 @@ impl SimChip {
     fn rng_peek_chance(&self, per_mille: u16) -> bool {
         let mut r = self.rng.clone();
         r.chance_per_mille(per_mille)
+    }
+
+    fn emit_short(&mut self, payload: &[u8; 6], flags: u8, out: &mut Vec<u8>) {
+        let mut frame = [0u8; SHORT_RESPONSE_LEN];
+        encode_short_response(&mut frame, payload, flags);
+        out.extend_from_slice(&frame);
     }
 
     fn emit(&mut self, payload: &[u8; 8], flags: u8, out: &mut Vec<u8>) {

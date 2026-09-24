@@ -78,6 +78,14 @@ pub const fn version_mask(mask: u32) -> [u8; 4] {
     [0x90, 0x00, b[0], b[1]]
 }
 
+/// The same mask without the enable bit: `0x80 00` — the BM1373 gets
+/// it before enumeration and the enabled form after init (NerdOS).
+pub const fn version_mask_no_enable(mask: u32) -> [u8; 4] {
+    let mut b = version_mask(mask);
+    b[0] = 0x80;
+    b
+}
+
 /// The mask BIP 320 reserves for version rolling: bits 13..28.
 pub const BIP320_VERSION_MASK: u32 = 0x1fff_e000;
 

@@ -17,6 +17,7 @@ What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
 | Board layer (`src/board.rs`, `warpaxe-board`): profile from `boardModel`, TPS546 regulator, EMC2101 sensor and fan PID, overheat stop, sensor fields in the info | devkit profile verified (no I²C, nothing changed); Bitaxe Gamma profile written from ESP-Miner, untested on hardware |
 | Display by profile: ST7789 LCD (T-Display-S3) or SSD1306 OLED (Bitaxe, `warpaxe_board::ssd1306`, four status lines) | LCD path verified on the devkit; OLED untested until the Gamma |
 | Board profiles: `bitaxe-gamma`, `t-display-s3`, `nerdaxe-gamma`, `nerdqaxe-plusplus`, `nerdoctaxe-gamma`, `q1370`, `q1373` (config key `boardModel`, applied at boot) | Nerd multi-chip boards report their regulator as unsupported and leave the chain unpowered |
+| Chip by profile: `ASICModel`, `smallCoreCount` and the chain driver come from the board profile's chip (BM1370, or BM1373 for `q1373`) | devkit reports BM1370 as before |
 | `flipscreen` / `invertscreen` (OLED orientation, live on the next draw) | keys round-trip on the devkit; effect untested until the Gamma |
 | `tools/flash-backup.sh` (full flash image + sha256 + restore notes before the first WarpAxe flash) | script only, run it on the Gamma first |
 | `PATCH /api/system` with `coreVoltage` | persists; goes live through the regulator on a board that has one |

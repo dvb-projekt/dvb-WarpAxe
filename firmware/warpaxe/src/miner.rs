@@ -8,7 +8,6 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use warpaxe_chain::{Chain, Config as ChainConfig, Event, Phase};
-use warpaxe_core::chip::bm1370::BM1370;
 use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job};
 
@@ -79,9 +78,9 @@ fn run(mut uart: ChipUart) {
             expected_chips: cfg.asic_count,
             frequency_hz: cfg.frequency.saturating_mul(1_000_000),
             difficulty: pool_diff,
-            ..ChainConfig::for_profile(&BM1370)
+            ..ChainConfig::for_profile(board::chip())
         };
-        let mut chain = Chain::new(&BM1370, chain_cfg);
+        let mut chain = Chain::new(board::chip(), chain_cfg);
         chain.start(now_us());
         update(|s| {
             s.phase = "INIT".into();

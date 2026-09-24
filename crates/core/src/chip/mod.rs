@@ -17,6 +17,7 @@
 //! "byte 7 differs".
 
 pub mod bm1370;
+pub mod bm1373;
 
 use crate::frame::{Group, Op};
 use crate::pll::PllSpec;
@@ -45,8 +46,11 @@ pub enum InitStep {
         /// Register address.
         reg: u8,
     },
-    /// Write the BIP 320 version-rolling mask to every chip.
+    /// Write the BIP 320 version-rolling mask to every chip, enabled.
     VersionMask,
+    /// Write the version-rolling mask without the enable bit (BM1373
+    /// pre-enumeration, NerdOS).
+    VersionMaskNoEnable,
     /// Write the ticket mask for the profile's default difficulty.
     TicketMask,
     /// `CMD_INACTIVE` to the chain: stop forwarding, prepare addressing.
@@ -75,6 +79,17 @@ pub struct ChipProfile {
     pub chip_id: u16,
     /// Length of that reply on the wire (11 on BM1370, 9 on BM1373).
     pub chip_id_reply_len: usize,
+    /// A second chip id the same driver accepts (BM1373 answers 0x1372
+    /// or 0x1373); 0 = none.
+    pub chip_id_alias: u16,
+    /// Fixed chain address stride (BM1373: 16); 0 = `256 / chips`.
+    pub address_stride: u8,
+    /// Single-chip commands go to the chip's address shifted right by
+    /// this (BM1373: 2); replies carry the full address.
+    pub command_address_shift: u8,
+    /// A fixed hash counting number instead of the computed one
+    /// (BM1373: the S21 Pro stock value).
+    pub hcn_fixed: Option<u32>,
     /// Hash cores per chip.
     pub cores: u16,
     /// Small cores per chip: what the nominal hashrate multiplies by.
@@ -111,8 +126,12 @@ pub struct ChipProfile {
 }
 
 impl ChipProfile {
-    /// Chain address interval for `chip_count` chips: `256 / n`.
-    pub const fn address_interval(chip_count: u8) -> u8 {
+    /// Chain address interval for `chip_count` chips: the profile's
+    /// fixed stride, else `256 / n`.
+    pub const fn address_interval(&self, chip_count: u8) -> u8 {
+        if self.address_stride != 0 {
+            return self.address_stride;
+        }
         if chip_count == 0 {
             return 0;
         }
@@ -120,8 +139,36 @@ impl ChipProfile {
     }
 
     /// Chain address of chip `index` in a chain of `chip_count`.
-    pub const fn chip_address(chip_count: u8, index: u8) -> u8 {
-        index.wrapping_mul(Self::address_interval(chip_count))
+    pub const fn chip_address(&self, chip_count: u8, index: u8) -> u8 {
+        index.wrapping_mul(self.address_interval(chip_count))
+    }
+
+    /// The address a single-chip command carries for a chip at
+    /// `chip_address`.
+    pub const fn command_address(&self, chip_address: u8) -> u8 {
+        chip_address >> self.command_address_shift
+    }
+
+    /// Chip index for an address a reply carries, if it is one of the
+    /// `chip_count` chips.
+    pub fn chip_index(&self, chip_count: u8, address: u8) -> Option<usize> {
+        if chip_count == 0 {
+            return None;
+        }
+        if chip_count == 1 {
+            return (address == 0).then_some(0);
+        }
+        let interval = self.address_interval(chip_count);
+        if interval == 0 || !address.is_multiple_of(interval) {
+            return None;
+        }
+        let i = usize::from(address / interval);
+        (i < usize::from(chip_count)).then_some(i)
+    }
+
+    /// True for the profile's chip id or its alias.
+    pub const fn is_chip_id(&self, id: u16) -> bool {
+        id == self.chip_id || (self.chip_id_alias != 0 && id == self.chip_id_alias)
     }
 }
 
@@ -218,7 +265,7 @@ impl Render<'_> {
         Some(match step {
             InitStep::WriteAll { reg, value } => Rendered::write(Group::All, 0x00, reg, value),
             InitStep::WriteChip { reg, value } => {
-                Rendered::write(Group::Single, chip_addr, reg, value)
+                Rendered::write(Group::Single, p.command_address(chip_addr), reg, value)
             }
             InitStep::ReadAll { reg } => Rendered::two(Group::All, Op::Read, 0x00, reg),
             InitStep::VersionMask => Rendered::write(
@@ -226,6 +273,12 @@ impl Render<'_> {
                 0x00,
                 reg::VERSION_ROLLING,
                 version_mask(regs::BIP320_VERSION_MASK),
+            ),
+            InitStep::VersionMaskNoEnable => Rendered::write(
+                Group::All,
+                0x00,
+                reg::VERSION_ROLLING,
+                regs::version_mask_no_enable(regs::BIP320_VERSION_MASK),
             ),
             InitStep::TicketMask => Rendered::write(
                 Group::All,
@@ -241,7 +294,7 @@ impl Render<'_> {
                     self.sub = 0;
                     return None;
                 }
-                let addr = ChipProfile::chip_address(self.chip_count, self.sub);
+                let addr = p.chip_address(self.chip_count, self.sub);
                 self.sub += 1;
                 // Stay on this step: the caller must not advance.
                 return Some(Rendered::two(Group::Single, Op::SetAddress, addr, 0x00));
@@ -261,7 +314,7 @@ impl Iterator for Render<'_> {
                 Phase::Chain => (self.profile.init_chain, 0),
                 Phase::PerChip => (
                     self.profile.init_per_chip,
-                    ChipProfile::chip_address(self.chip_count, self.chip),
+                    self.profile.chip_address(self.chip_count, self.chip),
                 ),
                 Phase::Post => (self.profile.init_post, 0),
                 Phase::Done => return None,
@@ -311,6 +364,7 @@ impl Iterator for Render<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::chip::bm1370::BM1370;
     use crate::frame::encode_cmd;
 
     /// Render to wire frames (test helper; the firmware would send them).
@@ -336,15 +390,15 @@ mod tests {
     #[test]
     fn address_interval_splits_256_evenly() {
         assert_eq!(
-            ChipProfile::address_interval(1),
+            BM1370.address_interval(1),
             0,
             "256 does not fit a byte: 1 chip → interval 0 → address 0"
         );
-        assert_eq!(ChipProfile::address_interval(2), 128);
-        assert_eq!(ChipProfile::address_interval(4), 64);
-        assert_eq!(ChipProfile::address_interval(8), 32);
-        assert_eq!(ChipProfile::chip_address(4, 3), 192);
-        assert_eq!(ChipProfile::chip_address(1, 0), 0);
+        assert_eq!(BM1370.address_interval(2), 128);
+        assert_eq!(BM1370.address_interval(4), 64);
+        assert_eq!(BM1370.address_interval(8), 32);
+        assert_eq!(BM1370.chip_address(4, 3), 192);
+        assert_eq!(BM1370.chip_address(1, 0), 0);
     }
 
     /// The `bm1370.c` comment frames, in the order the init sends them,

@@ -602,6 +602,7 @@ impl Chain {
                         }
                         Some(Rendered::CountChips) => {
                             self.found = 0;
+                            self.decoder.set_frame_len(self.profile.chip_id_reply_len);
                             self.mode = Mode::Counting {
                                 until: now_us + self.config.count_window_us,
                             };
@@ -656,6 +657,8 @@ impl Chain {
     }
 
     fn finish_counting(&mut self, now_us: u64, on_event: &mut dyn FnMut(Event)) {
+        self.decoder
+            .set_frame_len(warpaxe_core::frame::RESPONSE_LEN);
         let found = self.found;
         if found == 0 {
             self.fail(InitError::NoChips, on_event);
@@ -667,7 +670,7 @@ impl Chain {
         }
         self.chip_count = found;
         for (i, c) in self.chips.iter_mut().enumerate().take(usize::from(found)) {
-            c.address = ChipProfile::chip_address(found, i as u8);
+            c.address = self.profile.chip_address(found, i as u8);
         }
         on_event(Event::Enumerated { count: found });
         // The list for the real count, resumed after the count marker:
@@ -717,12 +720,14 @@ impl Chain {
         uart: &mut U,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
-        let hcn = regs::hash_counting_number(
-            self.frequency_hz,
-            self.profile.cores,
-            u16::from(self.chip_count),
-            self.profile.hcn_errata,
-        );
+        let hcn = self.profile.hcn_fixed.unwrap_or_else(|| {
+            regs::hash_counting_number(
+                self.frequency_hz,
+                self.profile.cores,
+                u16::from(self.chip_count),
+                self.profile.hcn_errata,
+            )
+        });
         self.write_all(uart, reg::HASH_COUNTING_NUMBER, hcn.to_be_bytes())?;
         self.mode = Mode::Ready;
         if !self.init_done {
@@ -815,7 +820,7 @@ impl Chain {
         } else if matches!(self.mode, Mode::Counting { .. }) {
             // Chip-id reply: `[id_hi, id_lo, core_num, addr, 0, 0, 0, 0]`.
             let chip_id = u16::from_be_bytes([p[0], p[1]]);
-            if chip_id == self.profile.chip_id {
+            if self.profile.is_chip_id(chip_id) {
                 if usize::from(self.found) < MAX_CHIPS {
                     on_event(Event::ChipFound {
                         index: self.found,
@@ -837,19 +842,7 @@ impl Chain {
     }
 
     fn chip_index(&self, address: u8) -> Option<usize> {
-        let n = self.chip_count;
-        if n == 0 {
-            return None;
-        }
-        if n == 1 {
-            return (address == 0).then_some(0);
-        }
-        let interval = ChipProfile::address_interval(n);
-        if interval == 0 || !address.is_multiple_of(interval) {
-            return None;
-        }
-        let i = usize::from(address / interval);
-        (i < usize::from(n)).then_some(i)
+        self.profile.chip_index(self.chip_count, address)
     }
 
     fn on_nonce(&mut self, r: JobResult, now_us: u64, on_event: &mut dyn FnMut(Event)) {

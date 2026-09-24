@@ -17,7 +17,8 @@ use serde::Serialize;
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::fan::{FanPid, DEFAULT_MIN_PERCENT, DEFAULT_TARGET_C, SAMPLE_MS};
 use warpaxe_board::tps546::Tps546;
-use warpaxe_board::{I2c, Profile};
+use warpaxe_board::{Asic, I2c, Profile};
+use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, ChipProfile};
 
 use crate::config;
 
@@ -63,6 +64,14 @@ pub fn profile() -> &'static Profile {
         .lock()
         .unwrap()
         .unwrap_or(&warpaxe_board::T_DISPLAY_S3_DEVKIT)
+}
+
+/// The chip profile the board's chain is built from.
+pub fn chip() -> &'static ChipProfile {
+    match profile().asic {
+        Asic::Bm1370 => &BM1370,
+        Asic::Bm1373 => &BM1373,
+    }
 }
 
 /// True once a temperature limit was crossed: the miner must not run.

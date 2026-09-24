@@ -12,6 +12,16 @@
 
 use crate::{emc2101, tps546};
 
+/// The mining chip on the board; the firmware picks the
+/// `warpaxe_core` chip profile from it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Asic {
+    /// BM1370 (Bitaxe Gamma, NerdAxe Gamma, NerdQAxe++, Octaxe, Q1370).
+    Bm1370,
+    /// BM1373 (Q1373 / Gaia).
+    Bm1373,
+}
+
 /// The core-voltage regulator.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Vr {
@@ -78,6 +88,8 @@ pub struct I2cPins {
 pub struct Profile {
     /// AxeOS `boardVersion`-style name.
     pub name: &'static str,
+    /// The chip.
+    pub asic: Asic,
     /// Chips on the chain; 0 = discover.
     pub asic_count: u8,
     /// Chain UART, ESP side.
@@ -169,6 +181,7 @@ impl Profile {
 /// chip diode, SSD1306 on the same I²C, reset on GPIO1, UART 17/18.
 pub const BITAXE_GAMMA: Profile = Profile {
     name: "bitaxe-gamma",
+    asic: Asic::Bm1370,
     asic_count: 1,
     uart_tx: 17,
     uart_rx: 18,
@@ -201,6 +214,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
 /// display data lines here, so no I²C.
 pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     name: "t-display-s3",
+    asic: Asic::Bm1370,
     asic_count: 0,
     uart_tx: 17,
     uart_rx: 18,
@@ -238,6 +252,7 @@ const NERD_I2C: I2cPins = I2cPins {
 /// EMC2101 on the chip diode, 515 MHz / 1150 mV, 25 W, +5 W offset.
 pub const NERDAXE_GAMMA: Profile = Profile {
     name: "nerdaxe-gamma",
+    asic: Asic::Bm1370,
     asic_count: 1,
     uart_tx: 17,
     uart_rx: 18,
@@ -271,6 +286,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
 /// up at 1200 mV, 100 W. No regulator driver yet.
 pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     name: "nerdqaxe-plusplus",
+    asic: Asic::Bm1370,
     asic_count: 4,
     uart_tx: 17,
     uart_rx: 18,
@@ -344,6 +360,7 @@ pub const Q1370: Profile = Profile {
 /// BM1373 chip profile is still open.
 pub const Q1373: Profile = Profile {
     name: "q1373",
+    asic: Asic::Bm1373,
     asic_count: 4,
     asic_reset: None,
     vr: Vr::Tps5364x {
@@ -418,5 +435,10 @@ mod tests {
         assert!(!NERDAXE_GAMMA.vr_unsupported());
         assert!(NERDAXE_GAMMA.emc2101().is_some());
         assert_eq!(Q1373.asic_reset, None, "reset sits on the expander");
+        assert_eq!(Q1373.asic, Asic::Bm1373);
+        assert!(ALL
+            .iter()
+            .filter(|p| p.name != "q1373")
+            .all(|p| p.asic == Asic::Bm1370));
     }
 }

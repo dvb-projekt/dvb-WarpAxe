@@ -1,4 +1,4 @@
-//! `warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips 1] [--seed 7]`
+//! `warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips 1] [--seed 7] [--chip bm1370|bm1373]`
 //!
 //! Hardware-in-the-loop without the ASIC: the firmware on the board drives
 //! its UART exactly as it would drive a chain; on this side `SimChain`
@@ -12,6 +12,8 @@ use std::io::{Read, Write};
 use std::time::{Duration, Instant};
 
 use warpaxe_core::chip::bm1370::BM1370;
+use warpaxe_core::chip::bm1373::BM1373;
+use warpaxe_core::chip::ChipProfile;
 use warpaxe_sim::{ChipState, SimChain};
 
 const INITIAL_BAUD: u32 = 115_200;
@@ -32,8 +34,17 @@ fn main() {
     let port_name: String = arg("--port", String::new());
     let chips: u8 = arg("--chips", 1);
     let seed: u64 = arg("--seed", 7);
+    let chip_name: String = arg("--chip", "bm1370".to_string());
+    let profile: &'static ChipProfile = match chip_name.to_ascii_lowercase().as_str() {
+        "bm1370" => &BM1370,
+        "bm1373" => &BM1373,
+        other => {
+            eprintln!("unknown --chip {other}: bm1370 or bm1373");
+            std::process::exit(2);
+        }
+    };
     if port_name.is_empty() {
-        eprintln!("usage: warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips N] [--seed S]");
+        eprintln!("usage: warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips N] [--seed S] [--chip bm1370|bm1373]");
         eprintln!("ports seen:");
         for p in serialport::available_ports().unwrap_or_default() {
             eprintln!("  {}", p.port_name);
@@ -47,11 +58,11 @@ fn main() {
             eprintln!("cannot open {port_name}: {e}");
             std::process::exit(1);
         });
-    let mut chain = SimChain::new(&BM1370, chips, seed);
+    let mut chain = SimChain::new(profile, chips, seed);
     let mut baud = INITIAL_BAUD;
     eprintln!(
         "warpaxe-simuart: {chips} x {} on {port_name} at {baud} baud",
-        BM1370.name
+        profile.name
     );
 
     let mut buf = [0u8; 1024];
@@ -72,7 +83,7 @@ fn main() {
                         "quiet {:.1} s then traffic: chips reset",
                         last_rx.elapsed().as_secs_f32()
                     );
-                    chain = SimChain::new(&BM1370, chips, seed);
+                    chain = SimChain::new(profile, chips, seed);
                     if baud != INITIAL_BAUD {
                         baud = INITIAL_BAUD;
                         let _ = port.set_baud_rate(baud);
