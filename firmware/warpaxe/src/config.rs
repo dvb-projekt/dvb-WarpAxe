@@ -10,6 +10,9 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct Config {
     pub hostname: String,
+    /// Board profile name (`warpaxe_board::Profile::by_name`).
+    #[serde(rename = "boardModel")]
+    pub board_model: String,
     pub ssid: String,
     #[serde(rename = "wifiPass")]
     pub wifi_pass: String,
@@ -37,6 +40,7 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             hostname: "warpaxe".into(),
+            board_model: "t-display-s3".into(),
             ssid: String::new(),
             wifi_pass: String::new(),
             stratum_url: "pool.warppool.org".into(),

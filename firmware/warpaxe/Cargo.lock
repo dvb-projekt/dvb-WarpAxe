@@ -1479,10 +1479,15 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "warpaxe-board",
  "warpaxe-chain",
  "warpaxe-core",
  "warpaxe-stratum",
 ]
+
+[[package]]
+name = "warpaxe-board"
+version = "0.1.0"
 
 [[package]]
 name = "warpaxe-chain"

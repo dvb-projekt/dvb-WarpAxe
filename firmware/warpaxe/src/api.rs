@@ -12,7 +12,7 @@ use esp_idf_svc::io::{EspIOError, Read, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{config, diag, miner, net, stratum};
+use crate::{board, config, diag, miner, net, stratum};
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
@@ -29,13 +29,19 @@ pub fn system_info() -> serde_json::Value {
     let n = net::state();
     let m = miner::state();
     let st = stratum::state();
+    let b = board::state();
+    let profile = board::profile();
     json!({
-        "power": 0.0, "voltage": 0.0, "current": 0.0,
-        "temp": 0.0, "vrTemp": 0.0,
+        "boardVersion": b.board, "deviceModel": b.board,
+        "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
+        "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv.unwrap_or(0.0), "current": b.iout_ma.unwrap_or(0.0),
+        "temp": b.temp_c.unwrap_or(0.0), "vrTemp": b.vr_temp_c.unwrap_or(0),
+        "overheat_mode": b.overheat, "fanrpm": b.fan_rpm,
         "hashRate": m.hashrate_ghs, "expectedHashrate": 0.0,
         "bestDiff": "0", "bestSessionDiff": "0",
         "freeHeap": diag::free_heap(),
-        "coreVoltage": cfg.core_voltage, "coreVoltageActual": 0,
+        "coreVoltage": cfg.core_voltage,
+        "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
         "hostname": cfg.hostname,
@@ -51,7 +57,7 @@ pub fn system_info() -> serde_json::Value {
         "poolDifficulty": stratum::state().difficulty,
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "boardVersion": "t-display-s3", "runningPartition": running_partition(),
-        "fanspeed": cfg.fanspeed, "fanrpm": 0, "autofanspeed": cfg.autofanspeed,
+        "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
         "overheat_mode": 0,
         "resetReason": diag::reset_reason(),
     })
@@ -82,6 +88,7 @@ pub fn v1_state() -> serde_json::Value {
         "last_crash": diag::last_crash(),
         "stratum": stratum::state(),
         "miner": miner::state(),
+        "board": board::state(),
         "config": config::get().redacted(),
     })
 }
@@ -166,6 +173,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     );
                     if v.get("frequency").is_some() {
                         miner::request_frequency(cfg.frequency);
+                    }
+                    if v.get("coreVoltage").is_some() {
+                        board::request_core_mv(cfg.core_voltage);
                     }
                     reply_json(
                         req,

@@ -13,7 +13,7 @@ use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job};
 
 use crate::uart::ChipUart;
-use crate::{config, diag, stratum};
+use crate::{board, config, diag, stratum};
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinerState {
@@ -64,8 +64,17 @@ fn run(mut uart: ChipUart) {
     let epoch = Instant::now();
     let now_us = || epoch.elapsed().as_micros() as u64;
     loop {
+        if board::overheat() {
+            update(|s| s.phase = "OVERHEAT".into());
+            std::thread::sleep(Duration::from_secs(1));
+            continue;
+        }
         let cfg = config::get();
         let pool_diff = stratum::state().difficulty.max(1.0) as u32;
+        let profile = board::profile();
+        if profile.asic_reset.is_some() {
+            board::reset_chain(10, profile.reset_release_ms);
+        }
         let chain_cfg = ChainConfig {
             expected_chips: cfg.asic_count,
             frequency_hz: cfg.frequency.saturating_mul(1_000_000),
@@ -96,6 +105,9 @@ fn run(mut uart: ChipUart) {
         loop {
             let now = now_us();
             let mut events: Vec<Event> = Vec::new();
+            if board::overheat() {
+                break;
+            }
             if let Err(e) = chain.poll(&mut uart, now, &mut |e| events.push(e)) {
                 log::error!("miner: poll: {e}");
                 update(|s| s.last_error = e.to_string());

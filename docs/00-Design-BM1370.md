@@ -1344,3 +1344,56 @@ to the Stratum writer, accept/reject counted from the pool's answers.
 Without chips the driver reports `NoChips` and retries every 10 s; the
 rest of the firmware is unaffected. ESP-IDF's UART read returns
 `ESP_ERR_TIMEOUT` for "nothing pending" — mapped to zero bytes.
+
+### 14.12 Board layer: regulator, sensor, fan, profiles (2026-09-24, pre-work for point 4)
+
+WarpTune refuses to regulate a board that reports no temperature and no
+power (`regulator cannot use this device: telemetry lacks required
+field temp`), so point 4 needs the board around the chain before it
+needs anything else. Written from ESP-Miner's board table and drivers
+while the USB-UART adapter was in the post; nothing here has touched a
+real regulator yet.
+
+`crates/board` (`warpaxe-board`, `no_std`, over an `I2c` trait, tested
+against a scripted bus):
+
+| Module | What | Reference |
+|---|---|---|
+| `pmbus` | LINEAR11 / ULINEAR16 encode and decode, command codes | ESP-Miner `TPS546.c`, checked against its bit patterns (4.8 V = 0xCA66, 1.2 V at VOUT_MODE 0x17 = 614) |
+| `tps546` | device-id check (D24A/D24S), OPERATION off, ON_OFF_CONFIG 0x1B, the whole operating window (`TPS546_write_entire_config`), `set_vout` with the fault/warn/margin ratios and OPERATION on, `vin/vout/iout/temperature/status_word/clear_faults` | `TPS546_init`, `TPS546_write_entire_config`, `TPS546_set_vout` |
+| `emc2101` | part id 0x16/0x28, TACH input, fan driver in direct PWM mode (0x4A = 0x23), ideality 0x24 / beta 0x00 for the BM1370 diode, fan duty in 63 steps, tach → RPM (5 400 000 / count, 0xFFFF = stalled), external temperature 11-bit / 8 with open (0x3F8) and short (0x3FF) as faults | `EMC2101.c`, board table 600–603 |
+| `fan` | PID on the chip temperature, gains P 5 / I 0.1 / D 2, reverse action, 100 ms sample, output in [minFanSpeed, 100], Arduino-PID semantics (derivative on measurement, clamped integral) | `fan_controller_task.c` |
+| `profile` | `BITAXE_GAMMA` (UART 17/18, reset GPIO1 100/100 ms, I²C 47/48 at 100 kHz, TPS546 5 V window 1–2 V, one voltage domain, EMC2101 on the diode, SSD1306 at 0x3C, 525 MHz / 1150 mV, 5 V class, 40 W, +5 W board offset, chip 75/90 °C, regulator 105/145 °C) and `T_DISPLAY_S3_DEVKIT` (UART only) | `device_config.h` families and board rows |
+
+Firmware (`firmware/warpaxe/src/board.rs`): the profile comes from the
+config key `boardModel` (default `t-display-s3`); an unknown name falls
+back to the devkit profile. Boot order: reset pin low, I²C, TPS546 init
+and `set_vout` at the configured core voltage, EMC2101 init with fan
+100 %, then the chain is released from reset with the init timing; the
+miner pulls reset (10 ms / release) before every chain start, as
+ESP-Miner does on retry. A board task samples once a second (chip and
+regulator temperature, VIN, VOUT, IOUT, power = VOUT × IOUT + offset,
+tach) and runs the fan every 100 ms: PID when `autofanspeed`, else the
+configured duty, full fan without a reading. `PATCH /api/system` with
+`coreVoltage` goes live through the regulator; `frequency` already ramps
+the chain (§14.11). Over the profile's chip or regulator maximum the
+task switches the core voltage off, holds the fan at 100 %, and the
+miner stops in phase `OVERHEAT` until reboot (ESP-Miner's overheat
+mode). `/api/system/info` carries `temp`, `vrTemp`, `power`, `voltage`,
+`current`, `coreVoltageActual`, `fanspeed`, `fanrpm`, `nominalVoltage`,
+`maxPower`, `overheat_mode`, `boardVersion`; `/api/v1/state` has the
+raw board sample.
+
+Checked on the devkit (2026-09-24): profile `t-display-s3`, no I²C
+started, nothing else changed — Stratum authorised, USB and Wi-Fi up,
+`coreVoltage` PATCH persisted (no regulator to apply it to). Untested and
+first on the list for the Gamma: the TPS546 init sequence against a
+real part, the diode reading, the fan PID with a real fan, and the
+overheat stop.
+
+Open: SSD1306 driver for the Bitaxe display (profile already names
+it); the Nerd carriers' pins are not in any source we have (the
+T-Display-S3 exposes 13 GPIOs to the carrier, §14.6), so no Nerd
+profile yet; profiles with I²C pins other than 47/48 need the pin
+mapping in `main.rs` generalised.
+

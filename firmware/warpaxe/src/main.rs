@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! WarpAxe firmware, stage B: everything but the hashing.
 //!
 //! Boot order matters and is deliberate: diagnostics first (a crash in the
@@ -7,6 +8,7 @@
 //! Wi-Fi when configured), then the API.
 
 mod api;
+mod board;
 mod config;
 mod diag;
 mod display;
@@ -201,6 +203,13 @@ fn main() {
     };
     set_step("STRATUM");
     stratum::start();
+    set_step("BOARD");
+    board::start(
+        peripherals.i2c0,
+        peripherals.pins.gpio47,
+        peripherals.pins.gpio48,
+        peripherals.pins.gpio1,
+    );
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,
