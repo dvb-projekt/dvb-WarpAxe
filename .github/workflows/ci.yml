@@ -14,13 +14,13 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  # One job for the four host checks. The runner has capacity 1, so
+  # matrix jobs ran one after another anyway, each paying checkout,
+  # toolchain and cache restore again. Every step still runs after an
+  # earlier one failed, so one run shows every finding.
   rust:
-    name: Rust ${{ matrix.task }}
+    name: Rust checks
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        task: [fmt, clippy, test, no_std]
     steps:
       - uses: https://github.com/actions/checkout@v7
 
@@ -28,29 +28,27 @@ jobs:
         uses: https://github.com/dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: thumbv7em-none-eabihf
 
       - name: Cache cargo
         uses: https://github.com/Swatinem/rust-cache@v2
 
       - name: Format check
-        if: matrix.task == 'fmt'
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        if: matrix.task == 'clippy'
+        if: ${{ !cancelled() }}
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: Test
-        if: matrix.task == 'test'
+        if: ${{ !cancelled() }}
         run: cargo test --workspace --verbose
 
       # The core crate must build without std. thumbv7em has no std at
       # all, so a successful build there proves it — no ESP toolchain needed.
       - name: no_std build of warpaxe-core and warpaxe-chain
-        if: matrix.task == 'no_std'
-        run: |
-          rustup target add thumbv7em-none-eabihf
-          cargo build -p warpaxe-core -p warpaxe-chain --target thumbv7em-none-eabihf
+        if: ${{ !cancelled() }}
+        run: cargo build -p warpaxe-core -p warpaxe-chain --target thumbv7em-none-eabihf
 
   # WarpTune's regulator against the simulator, in-process. A separate
   # package (detached from the workspace) with a git dependency on
