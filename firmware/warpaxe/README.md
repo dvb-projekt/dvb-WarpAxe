@@ -14,6 +14,7 @@ What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
 | Config in NVS, AxeOS field names | `PATCH /api/system`, persists across restart |
 | `GET /api/system/info` (AxeOS shape, mining fields honest zeros), `GET /api/v1/state` | works |
 | `POST /api/system/restart` | works |
+| `PATCH /api/system` with `frequency` | works; the mining loop ramps the running chain to the new clock without a restart (WarpTune's write path) |
 | `POST /api/system/OTA` (raw app image; received into PSRAM, flashed on its own thread, reboot into the other slot) | works, ota_0 → ota_1 in 13 s |
 | Display: ST7789 status screen with the last log lines and the previous crash | works |
 | Crash handling: core dump to flash, summary in `/api/v1/state` and on screen, 30 s on USB-Serial/JTAG after a crash before USB OTG takes the PHY | works |

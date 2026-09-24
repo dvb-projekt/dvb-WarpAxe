@@ -141,7 +141,13 @@ impl Display {
         let mut row = 0;
         for i in first..count {
             let mut buf = [0u8; 56];
-            unsafe { tusb::wa_log_line(i as i32, buf.as_mut_ptr() as *mut core::ffi::c_char, buf.len()) };
+            unsafe {
+                tusb::wa_log_line(
+                    i as i32,
+                    buf.as_mut_ptr() as *mut core::ffi::c_char,
+                    buf.len(),
+                )
+            };
             let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
             let s = String::from_utf8_lossy(&buf[..end]).into_owned();
             self.text(4, y + row * 9, 1, color, &s);

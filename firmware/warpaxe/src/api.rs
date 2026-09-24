@@ -17,7 +17,10 @@ use crate::{config, diag, miner, net, stratum};
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
 fn mac_str(m: [u8; 6]) -> String {
-    format!("{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}", m[0], m[1], m[2], m[3], m[4], m[5])
+    format!(
+        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        m[0], m[1], m[2], m[3], m[4], m[5]
+    )
 }
 
 /// The AxeOS `/api/system/info` shape, as far as a tuner reads it.
@@ -83,7 +86,10 @@ pub fn v1_state() -> serde_json::Value {
     })
 }
 
-fn read_body(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>, max: usize) -> Result<Vec<u8>, EspIOError> {
+fn read_body(
+    req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+    max: usize,
+) -> Result<Vec<u8>, EspIOError> {
     let mut body = Vec::new();
     let mut buf = [0u8; 512];
     loop {
@@ -99,9 +105,20 @@ fn read_body(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection
     Ok(body)
 }
 
-fn reply_json(req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>, status: u16, v: &serde_json::Value) -> Result<(), EspIOError> {
+fn reply_json(
+    req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+    status: u16,
+    v: &serde_json::Value,
+) -> Result<(), EspIOError> {
     let body = v.to_string();
-    let mut r = req.into_response(status, None, &[("Content-Type", "application/json"), ("Access-Control-Allow-Origin", "*")])?;
+    let mut r = req.into_response(
+        status,
+        None,
+        &[
+            ("Content-Type", "application/json"),
+            ("Access-Control-Allow-Origin", "*"),
+        ],
+    )?;
     r.write_all(body.as_bytes())?;
     Ok(())
 }
@@ -143,8 +160,18 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) => match config::patch(&v) {
                 Ok(cfg) => {
-                    log::info!("config patched: {:?}", v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>()));
-                    reply_json(req, 200, &serde_json::to_value(cfg.redacted()).unwrap_or_default())
+                    log::info!(
+                        "config patched: {:?}",
+                        v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())
+                    );
+                    if v.get("frequency").is_some() {
+                        miner::request_frequency(cfg.frequency);
+                    }
+                    reply_json(
+                        req,
+                        200,
+                        &serde_json::to_value(cfg.redacted()).unwrap_or_default(),
+                    )
                 }
                 Err(e) => reply_json(req, 400, &json!({"error": e.to_string()})),
             },
@@ -185,7 +212,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         let n = image.len();
         log::info!("ota: {n} bytes received, flashing in background");
         let mut r = req.into_ok_response()?;
-        r.write_all(format!("ota: {n} bytes accepted, flashing, restarting when done\n").as_bytes())?;
+        r.write_all(
+            format!("ota: {n} bytes accepted, flashing, restarting when done\n").as_bytes(),
+        )?;
         r.flush()?;
         std::thread::Builder::new()
             .stack_size(16 * 1024)
@@ -229,7 +258,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     Ok(server)
 }
 
-fn bootloader(req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>) -> Result<(), EspIOError> {
+fn bootloader(
+    req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+) -> Result<(), EspIOError> {
     let mut r = req.into_ok_response()?;
     r.write_all(b"rebooting into ROM download mode; clear RTC_CNTL_OPTION1_REG before the reset that should start the app\n")?;
     r.flush()?;
@@ -247,7 +278,9 @@ fn flash_image(image: &[u8]) -> anyhow::Result<()> {
     let mut update = ota.initiate_update()?;
     log::info!("ota: writing {} bytes", image.len());
     for chunk in image.chunks(4096) {
-        update.write_all(chunk).map_err(|e| anyhow::anyhow!("write: {e:?}"))?;
+        update
+            .write_all(chunk)
+            .map_err(|e| anyhow::anyhow!("write: {e:?}"))?;
     }
     log::info!("ota: verifying");
     update.complete()?;

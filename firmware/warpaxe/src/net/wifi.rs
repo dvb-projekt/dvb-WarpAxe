@@ -9,7 +9,13 @@ use esp_idf_svc::hal::modem::Modem;
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi};
 
-pub fn start(modem: Modem, sysloop: EspSystemEventLoop, nvs: EspDefaultNvsPartition, ssid: String, pass: String) {
+pub fn start(
+    modem: Modem,
+    sysloop: EspSystemEventLoop,
+    nvs: EspDefaultNvsPartition,
+    ssid: String,
+    pass: String,
+) {
     std::thread::Builder::new()
         .stack_size(8192)
         .spawn(move || {
@@ -23,7 +29,11 @@ pub fn start(modem: Modem, sysloop: EspSystemEventLoop, nvs: EspDefaultNvsPartit
             let cfg = Configuration::Client(ClientConfiguration {
                 ssid: heapless::String::try_from(ssid.as_str()).unwrap_or_default(),
                 password: heapless::String::try_from(pass.as_str()).unwrap_or_default(),
-                auth_method: if pass.is_empty() { AuthMethod::None } else { AuthMethod::WPA2Personal },
+                auth_method: if pass.is_empty() {
+                    AuthMethod::None
+                } else {
+                    AuthMethod::WPA2Personal
+                },
                 ..Default::default()
             });
             if let Err(e) = wifi.set_configuration(&cfg) {
@@ -38,7 +48,10 @@ pub fn start(modem: Modem, sysloop: EspSystemEventLoop, nvs: EspDefaultNvsPartit
                 }
             };
             loop {
-                let up = wifi.start().and_then(|_| wifi.connect()).and_then(|_| wifi.wait_netif_up());
+                let up = wifi
+                    .start()
+                    .and_then(|_| wifi.connect())
+                    .and_then(|_| wifi.wait_netif_up());
                 match up {
                     Ok(()) => {
                         let ip = wifi

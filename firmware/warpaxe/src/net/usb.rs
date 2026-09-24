@@ -83,7 +83,13 @@ fn ip4(b: [u8; 4]) -> sys::esp_ip4_addr {
 pub fn start_usb() -> Result<(), EspError> {
     let mut host_mac = base_mac();
     host_mac[5] ^= 1;
-    unsafe { sys::esp!(tusb::wa_usb_start(host_mac.as_ptr(), Some(on_recv), null_mut())) }
+    unsafe {
+        sys::esp!(tusb::wa_usb_start(
+            host_mac.as_ptr(),
+            Some(on_recv),
+            null_mut()
+        ))
+    }
 }
 
 /// The netif with DHCP server behind the NCM link. `esp_netif_init` and
@@ -91,13 +97,15 @@ pub fn start_usb() -> Result<(), EspError> {
 pub fn start_netif() -> Result<(), EspError> {
     let mac = base_mac();
     unsafe {
-        let ip_info: &'static sys::esp_netif_ip_info_t = Box::leak(Box::new(sys::esp_netif_ip_info_t {
-            ip: ip4(IP),
-            netmask: ip4([255, 255, 255, 0]),
-            gw: ip4(IP),
-        }));
+        let ip_info: &'static sys::esp_netif_ip_info_t =
+            Box::leak(Box::new(sys::esp_netif_ip_info_t {
+                ip: ip4(IP),
+                netmask: ip4([255, 255, 255, 0]),
+                gw: ip4(IP),
+            }));
         let mut base: sys::esp_netif_inherent_config_t = core::mem::zeroed();
-        base.flags = sys::esp_netif_flags_ESP_NETIF_DHCP_SERVER | sys::esp_netif_flags_ESP_NETIF_FLAG_AUTOUP;
+        base.flags =
+            sys::esp_netif_flags_ESP_NETIF_DHCP_SERVER | sys::esp_netif_flags_ESP_NETIF_FLAG_AUTOUP;
         base.mac = mac;
         base.ip_info = ip_info;
         base.if_key = c"usb".as_ptr();

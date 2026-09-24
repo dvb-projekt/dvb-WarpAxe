@@ -10,7 +10,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use warpaxe_stratum::message::{authorize_request, configure_request, parse_subscribe_result, submit_request, subscribe_request, Notify, Request};
+use warpaxe_stratum::message::{
+    authorize_request, configure_request, parse_subscribe_result, submit_request,
+    subscribe_request, Notify, Request,
+};
 use warpaxe_stratum::{parse_line, Incoming, Job, Session};
 
 use crate::{config, diag};
@@ -79,7 +82,15 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
         *g += 1;
         *g
     };
-    let req = submit_request(id, &user, &job.job_id, &job.extranonce2_hex(), ntime, nonce, version_bits);
+    let req = submit_request(
+        id,
+        &user,
+        &job.job_id,
+        &job.extranonce2_hex(),
+        ntime,
+        nonce,
+        version_bits,
+    );
     if let Some(tx) = SUBMIT.lock().unwrap().as_ref() {
         if tx.send(req).is_ok() {
             update(|s| s.shares_sent += 1);
@@ -148,7 +159,11 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
     });
     {
         let mut w = &*stream;
-        for r in [configure_request(1, BIP320_MASK), subscribe_request(2, AGENT), authorize_request(3, user, pass)] {
+        for r in [
+            configure_request(1, BIP320_MASK),
+            subscribe_request(2, AGENT),
+            authorize_request(3, user, pass),
+        ] {
             w.write_all(r.to_line().as_bytes())?;
         }
         w.flush()?;
@@ -167,7 +182,10 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     if let Some(job_id) = req.params.get(1).and_then(|v| v.as_str()) {
                         pending.lock().unwrap().insert(req.id, job_id.to_string());
                     }
-                    if w.write_all(req.to_line().as_bytes()).and_then(|_| w.flush()).is_err() {
+                    if w.write_all(req.to_line().as_bytes())
+                        .and_then(|_| w.flush())
+                        .is_err()
+                    {
                         break;
                     }
                 }
@@ -188,7 +206,11 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
         match parse_line(&line) {
             Incoming::Response(r) => match r.id {
                 1 => {
-                    if let Some(m) = r.result.get("version-rolling.mask").and_then(|v| v.as_str()) {
+                    if let Some(m) = r
+                        .result
+                        .get("version-rolling.mask")
+                        .and_then(|v| v.as_str())
+                    {
                         let mask = u32::from_str_radix(m, 16).unwrap_or(0);
                         update(|s| s.version_mask = mask);
                         if let Some(s) = sess.as_mut() {
@@ -197,10 +219,15 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                         log::info!("stratum: version rolling mask {m}");
                     }
                 }
-                2 => match parse_subscribe_result(&r.result).and_then(|(e1, sz)| Session::new(&e1, sz).map(|s| (e1, s))) {
+                2 => match parse_subscribe_result(&r.result)
+                    .and_then(|(e1, sz)| Session::new(&e1, sz).map(|s| (e1, s)))
+                {
                     Some((e1, mut s)) => {
                         s.version_mask = state().version_mask;
-                        log::info!("stratum: subscribed, extranonce1 {e1}, extranonce2 size {}", s.extranonce2_size);
+                        log::info!(
+                            "stratum: subscribed, extranonce1 {e1}, extranonce2 size {}",
+                            s.extranonce2_size
+                        );
                         update(|st| {
                             st.subscribed = true;
                             st.extranonce1 = e1;
@@ -225,7 +252,10 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     if ok {
                         update(|s| s.shares_accepted += 1);
                     } else {
-                        let why = r.error.map(|e| e.to_string()).unwrap_or_else(|| "rejected".into());
+                        let why = r
+                            .error
+                            .map(|e| e.to_string())
+                            .unwrap_or_else(|| "rejected".into());
                         log::warn!("stratum: share {id} for {job_id} rejected: {why}");
                         update(|s| {
                             s.shares_rejected += 1;
@@ -263,12 +293,19 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     }
                 });
                 if started.elapsed() < Duration::from_secs(5) || clean {
-                    log::info!("stratum: job {} ntime {} clean {}", n.job_id, n.ntime, clean);
+                    log::info!(
+                        "stratum: job {} ntime {} clean {}",
+                        n.job_id,
+                        n.ntime,
+                        clean
+                    );
                 }
                 *NOTIFY.lock().unwrap() = Some((s.clone(), n));
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
-            Incoming::Unparsed(l) => log::warn!("stratum: unparsed line: {}", &l[..l.len().min(80)]),
+            Incoming::Unparsed(l) => {
+                log::warn!("stratum: unparsed line: {}", &l[..l.len().min(80)])
+            }
         }
     }
 }

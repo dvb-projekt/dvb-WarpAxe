@@ -70,7 +70,13 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
         },
         _ => Config::default(),
     };
-    log::info!("config: hostname={} wifi={:?} pool={}:{}", cfg.hostname, (!cfg.ssid.is_empty()).then_some(&cfg.ssid), cfg.stratum_url, cfg.stratum_port);
+    log::info!(
+        "config: hostname={} wifi={:?} pool={}:{}",
+        cfg.hostname,
+        (!cfg.ssid.is_empty()).then_some(&cfg.ssid),
+        cfg.stratum_url,
+        cfg.stratum_port
+    );
     *CONFIG.lock().unwrap() = Some(cfg);
     *NVS.lock().unwrap() = Some(nvs);
     Ok(())
@@ -85,7 +91,13 @@ impl Config {
     /// that says whether one is set. Never return the real ones.
     pub fn redacted(&self) -> Config {
         let mut c = self.clone();
-        let mask = |v: &String| if v.is_empty() { String::new() } else { "***".into() };
+        let mask = |v: &String| {
+            if v.is_empty() {
+                String::new()
+            } else {
+                "***".into()
+            }
+        };
         c.wifi_pass = mask(&self.wifi_pass);
         c.stratum_pass = mask(&self.stratum_pass);
         c

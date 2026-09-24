@@ -2,6 +2,7 @@
 //! nonces checked against the pool difficulty and submitted. One thread.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -34,6 +35,14 @@ pub struct MinerState {
 }
 
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
+/// Clock the API asked for (MHz); the loop applies it as a ramp without
+/// restarting the chain. 0 until the chain has started.
+static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
+
+/// A new clock from `PATCH /api/system`, applied live by the mining loop.
+pub fn request_frequency(mhz: u32) {
+    WANTED_MHZ.store(mhz, Ordering::Relaxed);
+}
 
 pub fn state() -> MinerState {
     STATE.lock().unwrap().clone().unwrap_or_default()
@@ -69,11 +78,16 @@ fn run(mut uart: ChipUart) {
             s.phase = "INIT".into();
             s.difficulty = pool_diff;
         });
-        log::info!("miner: chain start, target {} MHz, difficulty {pool_diff}", cfg.frequency);
+        log::info!(
+            "miner: chain start, target {} MHz, difficulty {pool_diff}",
+            cfg.frequency
+        );
 
         let mut jobs: HashMap<u32, Job> = HashMap::new();
         let mut seen_notify = 0u64;
         let mut applied_diff = pool_diff;
+        let mut applied_mhz = cfg.frequency;
+        WANTED_MHZ.store(cfg.frequency, Ordering::Relaxed);
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
         let mut last_phase = Phase::Idle;
@@ -89,7 +103,9 @@ fn run(mut uart: ChipUart) {
             for e in events {
                 match e {
                     Event::Nonce(f) => {
-                        let Some(job) = jobs.get(&f.work.serial) else { continue };
+                        let Some(job) = jobs.get(&f.work.serial) else {
+                            continue;
+                        };
                         let diff = hash_difficulty(&sha256d(&job.header(f.version, f.nonce)));
                         let chip_diff = f64::from(chain.difficulty());
                         hashes += chip_diff * 4_294_967_296.0;
@@ -105,9 +121,13 @@ fn run(mut uart: ChipUart) {
                             update(|s| s.low_diff += 1);
                         }
                     }
-                    Event::Ready => log::info!("miner: chain ready, {} chip(s)", chain.chip_count()),
+                    Event::Ready => {
+                        log::info!("miner: chain ready, {} chip(s)", chain.chip_count())
+                    }
                     Event::Enumerated { count } => log::info!("miner: {count} chip(s) answered"),
-                    Event::ChipCountMismatch { expected, found } => log::warn!("miner: expected {expected} chips, found {found}"),
+                    Event::ChipCountMismatch { expected, found } => {
+                        log::warn!("miner: expected {expected} chips, found {found}")
+                    }
                     Event::InitFailed(why) => {
                         log::warn!("miner: init failed: {why:?}");
                         update(|s| {
@@ -117,8 +137,12 @@ fn run(mut uart: ChipUart) {
                     }
                     Event::ChipSilent { index } => log::warn!("miner: chip {index} silent"),
                     Event::ChipBack { index } => log::info!("miner: chip {index} back"),
-                    Event::FrequencyApplied { hz } => log::info!("miner: clock {} MHz", hz / 1_000_000),
-                    Event::FrequencyUnreachable { hz } => log::warn!("miner: clock {hz} Hz unreachable"),
+                    Event::FrequencyApplied { hz } => {
+                        log::info!("miner: clock {} MHz", hz / 1_000_000)
+                    }
+                    Event::FrequencyUnreachable { hz } => {
+                        log::warn!("miner: clock {hz} Hz unreachable")
+                    }
                     _ => {}
                 }
             }
@@ -147,6 +171,22 @@ fn run(mut uart: ChipUart) {
                         applied_diff = want;
                         update(|s| s.difficulty = want);
                     }
+                }
+                let want_mhz = WANTED_MHZ.load(Ordering::Relaxed);
+                if want_mhz != applied_mhz && want_mhz > 0 {
+                    match chain.set_frequency(want_mhz.saturating_mul(1_000_000)) {
+                        Some(hz) => log::info!(
+                            "miner: ramp to {} MHz (PLL {} MHz)",
+                            want_mhz,
+                            hz / 1_000_000
+                        ),
+                        None => log::warn!(
+                            "miner: {} MHz has no PLL setting, keeping {} MHz",
+                            want_mhz,
+                            applied_mhz
+                        ),
+                    }
+                    applied_mhz = want_mhz;
                 }
                 // New notify, or the chips ran out of nonce space: fresh work.
                 let fresh = st.jobs_received != seen_notify;

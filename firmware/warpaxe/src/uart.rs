@@ -15,7 +15,14 @@ pub struct ChipUart {
 impl ChipUart {
     pub fn new(uart: UART1, tx: Gpio17, rx: Gpio18) -> Result<Self, EspError> {
         let cfg = Config::new().baudrate(Hertz(115_200));
-        let drv = UartDriver::new(uart, tx, rx, Option::<AnyIOPin>::None, Option::<AnyIOPin>::None, &cfg)?;
+        let drv = UartDriver::new(
+            uart,
+            tx,
+            rx,
+            Option::<AnyIOPin>::None,
+            Option::<AnyIOPin>::None,
+            &cfg,
+        )?;
         Ok(ChipUart { drv })
     }
 }

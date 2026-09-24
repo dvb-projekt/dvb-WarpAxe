@@ -39,7 +39,11 @@ fn draw(d: &mut display::Display) {
     d.clear(NAVY);
     d.text(4, 4, 2, WHITE, &format!("WARPAXE {}", cfg.hostname));
     let step = *STEP.lock().unwrap();
-    let (usb, col) = if n.usb_mounted { ("USB UP", GREEN) } else { ("USB -", ORANGE) };
+    let (usb, col) = if n.usb_mounted {
+        ("USB UP", GREEN)
+    } else {
+        ("USB -", ORANGE)
+    };
     d.text(4, 26, 2, col, &format!("{step}  {usb}"));
     d.text(
         4,
@@ -55,13 +59,49 @@ fn draw(d: &mut display::Display) {
         ),
     );
     let st = stratum::state();
-    let pool_state = if st.authorized { "AUTH" } else if st.connected { "CONN" } else { "OFF" };
-    d.text(4, 58, 1, GREY, &format!("POOL {} {}  DIFF {}  JOBS {}  {}", cfg.stratum_url, pool_state, st.difficulty, st.jobs_received, st.last_job_id));
+    let pool_state = if st.authorized {
+        "AUTH"
+    } else if st.connected {
+        "CONN"
+    } else {
+        "OFF"
+    };
+    d.text(
+        4,
+        58,
+        1,
+        GREY,
+        &format!(
+            "POOL {} {}  DIFF {}  JOBS {}  {}",
+            cfg.stratum_url, pool_state, st.difficulty, st.jobs_received, st.last_job_id
+        ),
+    );
     let m = miner::state();
-    d.text(4, 68, 1, WHITE, &format!("CHAIN {} {}x{}MHz {:.1}GH/S SH {}/{} N {}", m.phase, m.chips, m.frequency_hz / 1_000_000, m.hashrate_ghs, st.shares_accepted, st.shares_rejected, m.nonces));
+    d.text(
+        4,
+        68,
+        1,
+        WHITE,
+        &format!(
+            "CHAIN {} {}x{}MHz {:.1}GH/S SH {}/{} N {}",
+            m.phase,
+            m.chips,
+            m.frequency_hz / 1_000_000,
+            m.hashrate_ghs,
+            st.shares_accepted,
+            st.shares_rejected,
+            m.nonces
+        ),
+    );
     match diag::last_crash() {
         Some(c) => {
-            d.text(4, 78, 1, RED, &format!("LAST CRASH {}", &c[..c.len().min(46)]));
+            d.text(
+                4,
+                78,
+                1,
+                RED,
+                &format!("LAST CRASH {}", &c[..c.len().min(46)]),
+            );
             d.log_tail(88, 8, GREY);
         }
         None => d.log_tail(78, 9, GREY),
@@ -76,7 +116,11 @@ fn main() {
     esp_idf_svc::log::EspLogger::initialize_default();
     diag::start_log_capture();
     diag::mark_boot();
-    info!("{} boot, reset reason {}", api::VERSION, diag::reset_reason());
+    info!(
+        "{} boot, reset reason {}",
+        api::VERSION,
+        diag::reset_reason()
+    );
 
     let peripherals = Peripherals::take().expect("peripherals");
     let sysloop = EspSystemEventLoop::take().expect("event loop");
@@ -102,7 +146,10 @@ fn main() {
     let grace = diag::jtag_grace();
     if !grace.is_zero() {
         set_step("JTAG WINDOW");
-        info!("last run crashed (core dump shown: {crashed}); {} s on USB-Serial/JTAG before USB OTG", grace.as_secs());
+        info!(
+            "last run crashed (core dump shown: {crashed}); {} s on USB-Serial/JTAG before USB OTG",
+            grace.as_secs()
+        );
         std::thread::sleep(grace);
     }
 
@@ -135,7 +182,13 @@ fn main() {
     let cfg = config::get();
     if !cfg.ssid.is_empty() {
         set_step("WIFI");
-        net::wifi::start(peripherals.modem, sysloop.clone(), nvs.clone(), cfg.ssid.clone(), cfg.wifi_pass.clone());
+        net::wifi::start(
+            peripherals.modem,
+            sysloop.clone(),
+            nvs.clone(),
+            cfg.ssid.clone(),
+            cfg.wifi_pass.clone(),
+        );
     }
 
     set_step("API");
@@ -149,12 +202,19 @@ fn main() {
     set_step("STRATUM");
     stratum::start();
     set_step("CHAIN");
-    match uart::ChipUart::new(peripherals.uart1, peripherals.pins.gpio17, peripherals.pins.gpio18) {
+    match uart::ChipUart::new(
+        peripherals.uart1,
+        peripherals.pins.gpio17,
+        peripherals.pins.gpio18,
+    ) {
         Ok(u) => miner::start(u),
         Err(e) => log::error!("chain uart failed: {e}"),
     }
     set_step("RUN");
-    info!("running: http on usb {} and wifi when up", net::usb::ip_string());
+    info!(
+        "running: http on usb {} and wifi when up",
+        net::usb::ip_string()
+    );
     loop {
         std::thread::sleep(Duration::from_secs(5));
     }
