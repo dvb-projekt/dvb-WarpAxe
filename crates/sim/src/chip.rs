@@ -90,6 +90,8 @@ impl SimChip {
         self.nonce_address = bits;
     }
 
+    /// A chip fresh from reset. `index` seeds a distinct random stream
+    /// per chip.
     pub fn new(profile: &'static ChipProfile, seed: u64, index: u8) -> Self {
         SimChip {
             profile,

@@ -841,10 +841,6 @@ impl Chain {
         }
     }
 
-    fn chip_index(&self, address: u8) -> Option<usize> {
-        self.profile.chip_index(self.chip_count, address)
-    }
-
     fn on_nonce(&mut self, r: JobResult, now_us: u64, on_event: &mut dyn FnMut(Event)) {
         let Some(chip) = self
             .profile
