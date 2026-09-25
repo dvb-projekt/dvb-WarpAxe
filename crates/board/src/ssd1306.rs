@@ -66,6 +66,11 @@ impl<I: I2c> Ssd1306<I> {
         self.command(&[if on { 0xA7 } else { 0xA6 }])
     }
 
+    /// Panel on or off (sleep); the frame buffer is kept.
+    pub fn set_power(&mut self, on: bool) -> Result<(), Error<I::Error>> {
+        self.command(&[if on { 0xAF } else { 0xAE }])
+    }
+
     /// Everything off.
     pub fn clear(&mut self) {
         self.fb = [0; WIDTH * PAGES];

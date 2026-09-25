@@ -170,6 +170,10 @@ impl Lcd {
         }
     }
 
+    /// Backlight on or off; the panel keeps its content.
+    pub fn set_backlight(&mut self, on: bool) {
+        gpio_out(PIN_BACKLIGHT, on);
+    }
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
         unsafe {
             check!(tusb::esp_lcd_panel_draw_bitmap(
@@ -221,6 +225,9 @@ impl Oled {
     pub fn flush(&mut self) -> Result<(), String> {
         self.panel.flush().map_err(|e| format!("{e:?}"))
     }
+    pub fn set_power(&mut self, on: bool) {
+        let _ = self.panel.set_power(on);
+    }
 }
 
 /// Whichever display the board profile names.
@@ -229,7 +236,38 @@ pub enum Display {
     Oled(Oled),
 }
 
+/// Uptime second of the last thing that should wake the display:
+/// boot, a button press, a write on the API.
+static LAST_WAKE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static ASLEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Something happened the person wants to see: keep or bring the
+/// display on.
+pub fn touch() {
+    LAST_WAKE.store(
+        crate::diag::uptime_s(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+}
+
+pub fn last_wake() -> u64 {
+    u64::from(LAST_WAKE.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+pub fn asleep() -> bool {
+    ASLEEP.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 impl Display {
+    /// Panel dark (OLED off, LCD backlight off) or back on.
+    pub fn set_awake(&mut self, awake: bool) {
+        match self {
+            Display::Lcd(l) => l.set_backlight(awake),
+            Display::Oled(o) => o.set_power(awake),
+        }
+        ASLEEP.store(!awake, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// The profile's display, or `None` when it is absent or failed.
     pub fn new() -> Option<Self> {
         use warpaxe_board::profile::Display as Kind;

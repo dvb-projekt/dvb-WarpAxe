@@ -89,6 +89,7 @@ pub fn v1_state() -> serde_json::Value {
         "stratum": stratum::state(),
         "miner": miner::state(),
         "board": board::state(),
+        "display": json!({"asleep": crate::display::asleep(), "timeout_min": config::get().display_timeout}),
         "config": config::get().redacted(),
     })
 }
@@ -191,6 +192,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) => match config::patch(&v) {
                 Ok(cfg) => {
+                    crate::display::touch();
                     log::info!(
                         "config patched: {:?}",
                         v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())

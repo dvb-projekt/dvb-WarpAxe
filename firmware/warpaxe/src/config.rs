@@ -31,6 +31,10 @@ pub struct Config {
     pub core_voltage: u16,
     pub fanspeed: u8,
     pub autofanspeed: bool,
+    /// Minutes until the display goes dark (AxeOS name); 0 = never. A
+    /// button press or a write on the API brings it back.
+    #[serde(rename = "displayTimeout")]
+    pub display_timeout: u32,
     /// OLED mounted the other way round (AxeOS/NerdOS name).
     pub flipscreen: bool,
     /// OLED inverse video (AxeOS name).
@@ -59,6 +63,7 @@ impl Default for Config {
             core_voltage: 1150,
             fanspeed: 100,
             autofanspeed: true,
+            display_timeout: 30,
             flipscreen: false,
             invertscreen: false,
             asic_count: 0,

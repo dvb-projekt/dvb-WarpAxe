@@ -202,9 +202,30 @@ fn main() {
     if let Some(mut d) = d.take() {
         std::thread::Builder::new()
             .stack_size(8192)
-            .spawn(move || loop {
-                draw(&mut d);
-                std::thread::sleep(Duration::from_millis(500));
+            .spawn(move || {
+                // The boot button (GPIO0, active low) wakes the display.
+                unsafe {
+                    sys::gpio_set_direction(0, sys::gpio_mode_t_GPIO_MODE_INPUT);
+                    sys::gpio_set_pull_mode(0, sys::gpio_pull_mode_t_GPIO_PULLUP_ONLY);
+                }
+                display::touch();
+                let mut awake = true;
+                loop {
+                    if unsafe { sys::gpio_get_level(0) } == 0 {
+                        display::touch();
+                    }
+                    let timeout_s = u64::from(config::get().display_timeout) * 60;
+                    let idle = diag::uptime_s().saturating_sub(display::last_wake());
+                    let want_awake = timeout_s == 0 || idle < timeout_s;
+                    if want_awake != awake {
+                        awake = want_awake;
+                        d.set_awake(awake);
+                    }
+                    if awake {
+                        draw(&mut d);
+                    }
+                    std::thread::sleep(Duration::from_millis(500));
+                }
             })
             .expect("display thread");
     }
