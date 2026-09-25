@@ -245,7 +245,7 @@ static ASLEEP: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::ne
 /// display on.
 pub fn touch() {
     LAST_WAKE.store(
-        crate::diag::uptime_s(),
+        crate::diag::uptime_s() as u32,
         std::sync::atomic::Ordering::Relaxed,
     );
 }
