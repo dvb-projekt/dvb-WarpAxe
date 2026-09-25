@@ -136,7 +136,11 @@ fn run(mut uart: ChipUart) {
                                 f.work.serial, f.chip, f.core, f.version, job.version, f.nonce, f.ntime, diff, chain.difficulty()
                             )
                         });
-                        let chip_diff = f64::from(chain.difficulty());
+                        // The chips filter at the largest power of two at or
+                        // below the requested difficulty (the ticket mask), so
+                        // that is what each nonce is worth in hashes.
+                        let requested = chain.difficulty().max(1);
+                        let chip_diff = f64::from(1u32 << (31 - requested.leading_zeros()));
                         hashes += chip_diff * 4_294_967_296.0;
                         let want = stratum::state().difficulty.max(1.0);
                         update(|s| {
