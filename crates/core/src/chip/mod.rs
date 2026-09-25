@@ -166,6 +166,20 @@ impl ChipProfile {
         (i < usize::from(chip_count)).then_some(i)
     }
 
+    /// Chip index for the eight address bits a nonce carries (bits
+    /// 17..25): the chip's address plus whatever the chip puts in the
+    /// low bits, so the reference divides by `256 / chips` and does not
+    /// expect a multiple. A real BM1370 returned every value with bit
+    /// patterns below its address; the simulator returned the address.
+    pub fn chip_index_from_nonce(&self, chip_count: u8, address_bits: u8) -> Option<usize> {
+        if chip_count == 0 {
+            return None;
+        }
+        let interval = (256 / u16::from(chip_count)).max(1);
+        let i = usize::from(address_bits) / usize::from(interval);
+        (i < usize::from(chip_count)).then_some(i)
+    }
+
     /// True for the profile's chip id or its alias.
     pub const fn is_chip_id(&self, id: u16) -> bool {
         id == self.chip_id || (self.chip_id_alias != 0 && id == self.chip_id_alias)

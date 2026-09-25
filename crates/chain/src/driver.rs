@@ -846,7 +846,10 @@ impl Chain {
     }
 
     fn on_nonce(&mut self, r: JobResult, now_us: u64, on_event: &mut dyn FnMut(Event)) {
-        let Some(chip) = self.chip_index(r.asic_address) else {
+        let Some(chip) = self
+            .profile
+            .chip_index_from_nonce(self.chip_count, r.asic_address)
+        else {
             self.stats.unknown_chip += 1;
             on_event(Event::UnknownChip {
                 address: r.asic_address,

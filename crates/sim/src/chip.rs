@@ -72,6 +72,7 @@ pub struct SimChip {
     job_ends_us: u64,
     next_nonce_us: u64,
     baud: u32,
+    nonce_address: u8,
     rng: Pcg32,
     faults: Vec<Fault>,
     silent_until_us: u64,
@@ -82,6 +83,13 @@ pub struct SimChip {
 impl SimChip {
     /// A chip fresh from reset. `index` seeds a distinct random stream
     /// per chip so two chips on one chain do not move in lockstep.
+    /// The eight address bits this chip puts into its nonces: its index
+    /// times `256 / chips`, set by the chain (the reference divides the
+    /// bits by that interval; the chain address itself may differ).
+    pub fn set_nonce_address(&mut self, bits: u8) {
+        self.nonce_address = bits;
+    }
+
     pub fn new(profile: &'static ChipProfile, seed: u64, index: u8) -> Self {
         SimChip {
             profile,
@@ -93,6 +101,7 @@ impl SimChip {
             job_ends_us: 0,
             next_nonce_us: u64::MAX,
             baud: 115_200,
+            nonce_address: 0,
             rng: Pcg32::new(seed, u64::from(index) + 1),
             faults: Vec::new(),
             silent_until_us: 0,
@@ -361,7 +370,7 @@ impl SimChip {
             let core = self.rng.below(u32::from(self.profile.cores)) as u8;
             let small = self.rng.below(16) as u8;
             let vbits = (self.rng.next_u32() as u16) & mask16;
-            job_result_payload(job_id, low17, self.address, core, small, vbits)
+            job_result_payload(job_id, low17, self.nonce_address, core, small, vbits)
         };
         self.stats.nonces += 1;
         if self.silenced() {

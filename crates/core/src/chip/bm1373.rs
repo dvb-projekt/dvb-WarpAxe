@@ -184,6 +184,11 @@ mod tests {
         assert_eq!(BM1373.chip_index(4, 48), Some(3));
         assert_eq!(BM1373.chip_index(4, 64), None);
         assert_eq!(BM1373.chip_index(4, 8), None);
+        // Nonce address bits: 256/4 = 64 per chip, low bits free.
+        assert_eq!(BM1373.chip_index_from_nonce(4, 0x00), Some(0));
+        assert_eq!(BM1373.chip_index_from_nonce(4, 0x3F), Some(0));
+        assert_eq!(BM1373.chip_index_from_nonce(4, 0xC1), Some(3));
+        assert_eq!(BM1373.chip_index_from_nonce(1, 0xFF), Some(0));
         assert!(BM1373.is_chip_id(0x1372));
         assert!(BM1373.is_chip_id(0x1373));
         assert!(!BM1373.is_chip_id(0x1370));

@@ -31,6 +31,12 @@ pub struct MinerState {
     pub last_nonce_uptime_s: u64,
     pub init_failures: u32,
     pub last_error: String,
+    /// Jobs handed to the chain.
+    pub jobs_sent: u64,
+    /// The chain driver's own counters, for diagnosis.
+    pub chain_stats: String,
+    /// The last nonce with everything needed to re-hash it offline.
+    pub last_found: String,
 }
 
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
@@ -69,7 +75,11 @@ fn run(mut uart: ChipUart) {
             continue;
         }
         let cfg = config::get();
-        let pool_diff = stratum::state().difficulty.max(1.0) as u32;
+        let pool_diff = if cfg.asic_difficulty > 0 {
+            cfg.asic_difficulty
+        } else {
+            stratum::state().difficulty.max(1.0) as u32
+        };
         let profile = board::profile();
         if profile.asic_reset.is_some() {
             board::reset_chain(10, profile.reset_release_ms);
@@ -117,7 +127,15 @@ fn run(mut uart: ChipUart) {
                         let Some(job) = jobs.get(&f.work.serial) else {
                             continue;
                         };
-                        let diff = hash_difficulty(&sha256d(&job.header(f.version, f.nonce)));
+                        let header = job.header(f.version, f.nonce);
+                        let diff = hash_difficulty(&sha256d(&header));
+                        let hex: String = header.iter().map(|b| format!("{b:02x}")).collect();
+                        update(|s| {
+                            s.last_found = format!(
+                                "serial={} chip={} core={} version={:08x} job_version={:08x} nonce={:08x} ntime={:08x} diff={:.3} chip_diff={} header={hex}",
+                                f.work.serial, f.chip, f.core, f.version, job.version, f.nonce, f.ntime, diff, chain.difficulty()
+                            )
+                        });
                         let chip_diff = f64::from(chain.difficulty());
                         hashes += chip_diff * 4_294_967_296.0;
                         let want = stratum::state().difficulty.max(1.0);
@@ -176,7 +194,12 @@ fn run(mut uart: ChipUart) {
 
             if chain.accepting_work() {
                 let st = stratum::state();
-                let want = st.difficulty.max(1.0) as u32;
+                let forced = config::get().asic_difficulty;
+                let want = if forced > 0 {
+                    forced
+                } else {
+                    st.difficulty.max(1.0) as u32
+                };
                 if want != applied_diff {
                     if chain.set_difficulty(&mut uart, want).is_ok() {
                         applied_diff = want;
@@ -209,6 +232,7 @@ fn run(mut uart: ChipUart) {
                         }
                         match chain.submit(&mut uart, &job.work(), now) {
                             Ok(r) => {
+                                update(|s| s.jobs_sent += 1);
                                 jobs.insert(r.serial, job);
                                 if jobs.len() > 32 {
                                     let oldest = r.serial.wrapping_sub(32);
@@ -233,6 +257,7 @@ fn run(mut uart: ChipUart) {
                 s.chips = chain.chip_count();
                 s.frequency_hz = chain.frequency_hz();
                 let st = chain.stats();
+                s.chain_stats = format!("{st:?}");
                 s.stale = st.stale_local;
                 s.duplicates = st.duplicates;
                 s.desyncs = st.desyncs;

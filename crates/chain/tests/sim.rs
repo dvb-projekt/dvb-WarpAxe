@@ -346,9 +346,10 @@ fn garbage_nonces_land_in_the_counters_not_at_the_pool() {
     b.mine_ms(5_000);
     let s = *b.drv.stats();
     let sent = u64::from(b.uart.sim.totals().nonces);
-    // A garbage payload has a random address (1 in 256 hits chip 0) and a
-    // random job id (16 slots, of which one or two are live).
-    assert!(s.unknown_chip > 0, "{s:?}");
+    // A garbage payload has a random address (with one chip every value
+    // maps to it, as on the real BM1370) and a random job id (16 slots,
+    // of which one or two are live): it lands as stale or duplicate.
+    assert!(s.stale_local + s.duplicates > 0, "{s:?}");
     assert!(
         s.nonces + s.unknown_chip + s.stale_local + s.duplicates == sent,
         "{s:?} vs {sent}"

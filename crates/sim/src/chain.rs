@@ -32,7 +32,13 @@ impl SimChain {
     /// A chain of `n` chips of one profile, all in reset.
     pub fn new(profile: &'static ChipProfile, n: u8, seed: u64) -> Self {
         SimChain {
-            chips: (0..n).map(|i| SimChip::new(profile, seed, i)).collect(),
+            chips: (0..n)
+                .map(|i| {
+                    let mut c = SimChip::new(profile, seed, i);
+                    c.set_nonce_address(i.wrapping_mul((256 / u16::from(n.max(1))) as u8));
+                    c
+                })
+                .collect(),
             decoder: CmdDecoder::new(),
             now_us: 0,
             out: Vec::new(),

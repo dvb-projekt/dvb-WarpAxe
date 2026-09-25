@@ -1518,3 +1518,54 @@ Wiring for the record (T-Display-S3 seen from the back, USB-C down,
 right header from the top): 5 = GPIO18 ← adapter TXD, 6 = GPIO17 ←
 adapter RXD, 1/2 = GND. VCC open, the board stays on USB.
 
+
+### 14.15 First ASIC: Bitaxe Gamma 602 mines with WarpAxe (2026-09-25, PASSED)
+
+Full flash backup (`tools/flash-backup.sh`, 16 MB, checksum), erase,
+bootloader + partition table + app over the native USB-Serial/JTAG,
+config as an NVS image (`nvs_partition_gen`, namespace `warpaxe`, blob
+`config`: profile `bitaxe-gamma`, the hand-tuned 640 MHz / 1140 mV,
+worker `bitaxe602`, pool port 3333 — the 3336 AxeOS used speaks no
+plain-text Stratum). WarpTune's entry for the Gamma was set
+`enabled = false` first; it had still been regulating it live. Wi-Fi
+credentials were taken from the backup's AxeOS NVS by a script and sent
+with `PATCH /api/system` without ever being displayed: over USB alone
+the board has no route to the pool (the Mac does not bridge).
+
+Result: the pool accepts WarpAxe's shares. Chip enumerated, init, baud
+switch, PLL at 640.6 MHz, 1.31 TH/s by nonce count (AxeOS showed 1.29),
+22.9 W, chip 62 °C, regulator 62 °C, fan on the PID; 69 shares accepted,
+0 rejected in the first minutes, vardiff moved to 3568 after a burst at
+ticket-mask 1.
+
+Five findings, in the order they surfaced — every one invisible to the
+simulator because the simulator was written from the same reading of
+the reference:
+
+1. **TPS546 limits are ratios.** VOUT_OV/UV fault, warn and margin
+   limits are ratios of VOUT_COMMAND (1.25 = 125 %); as volts they are
+   out of range and the part NACKs the write. Init died at 0x40 with
+   readback 640 = 1.25. Also adopted: ESP-Miner's alert-response read
+   + 15 ms before the id check, and three tries per I²C transaction.
+2. **EMC2101 with the core rail off reads 0x3FE**, above the open-diode
+   code: the whole 0x3F8..=0x3FF range is a fault now (it had tripped
+   the overheat stop at 127.75 °C).
+3. **Chip index from a nonce is a division**, `bits / (256 / chips)`,
+   never "must be a multiple": a real chip fills the low bits, so with
+   one chip only 1 in 256 nonces had passed (`unknown_chip` 254 149).
+4. **`reverse_32bit_words` reverses the order of the eight words**
+   (`d[0] = s[7]`), not the bytes within a word — the byte swap within
+   words is `reverse_endianness_per_word`, which turns the stratum
+   `prevhash` into header order. Transcribed wrong at first; the chip
+   hashed a header with both hashes fully byte-reversed and no nonce
+   verified. Both the previous hash and the merkle root go to the chip
+   word-reversed; the header for the re-hash is the plain header order.
+5. **`chip_index` for one chip demanded address 0**; the fix above
+   covers it.
+
+Diagnostic knobs that paid for themselves and stay: `asicDifficulty`
+(ticket mask override, 1 = every nonce), `last_found` (nonce with the
+full 80-byte header for an offline re-hash), `chain_stats`, `vr_probe`,
+`GET /api/v1/log`. The offline re-hash over byte-order variants found
+finding 4 in one run.
+

@@ -38,6 +38,10 @@ pub struct Config {
     /// Chips on the chain; 0 = discover.
     #[serde(rename = "asicCount")]
     pub asic_count: u8,
+    /// Ticket-mask difficulty for the chips; 0 = follow the pool.
+    /// A diagnostic knob: 1 makes the chips report every nonce.
+    #[serde(rename = "asicDifficulty")]
+    pub asic_difficulty: u32,
 }
 
 impl Default for Config {
@@ -58,6 +62,7 @@ impl Default for Config {
             flipscreen: false,
             invertscreen: false,
             asic_count: 0,
+            asic_difficulty: 0,
         }
     }
 }

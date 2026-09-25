@@ -53,13 +53,27 @@ pub struct Job {
     pub clean_jobs: bool,
 }
 
-/// Reverse the bytes within each 32-bit word: how the BM13xx wants
-/// hashes handed over (ESP-Miner `reverse_32bit_words`).
-pub fn reverse_32bit_words(h: &[u8; 32]) -> [u8; 32] {
+/// Swap the bytes within each 32-bit word: how a stratum `prevhash`
+/// becomes header order (ESP-Miner `reverse_endianness_per_word`).
+pub fn reverse_endianness_per_word(h: &[u8; 32]) -> [u8; 32] {
     let mut out = [0u8; 32];
     let (words, _) = h.as_chunks::<4>();
     for (i, w) in words.iter().enumerate() {
         out[i * 4..i * 4 + 4].copy_from_slice(&[w[3], w[2], w[1], w[0]]);
+    }
+    out
+}
+
+/// Reverse the order of the eight 32-bit words, bytes within a word
+/// untouched: how the BM13xx wants the previous hash and the merkle
+/// root handed over, and how the reference rebuilds the header from
+/// what it sent (ESP-Miner `reverse_32bit_words`: `d[0] = s[7] …`). A
+/// Gamma's nonces only verified once this was a word reversal and not,
+/// as first transcribed, a byte swap within the words.
+pub fn reverse_32bit_words(h: &[u8; 32]) -> [u8; 32] {
+    let mut out = [0u8; 32];
+    for i in 0..8 {
+        out[i * 4..i * 4 + 4].copy_from_slice(&h[(7 - i) * 4..(7 - i) * 4 + 4]);
     }
     out
 }
@@ -101,7 +115,7 @@ impl Job {
             extranonce2: extranonce2.to_vec(),
             coinbase,
             merkle_root: h,
-            prev_hash: reverse_32bit_words(&prev_stratum),
+            prev_hash: reverse_endianness_per_word(&prev_stratum),
             version: hex_u32(&n.version)?,
             nbits: hex_u32(&n.nbits)?,
             ntime: hex_u32(&n.ntime)?,
@@ -117,8 +131,11 @@ impl Job {
             starting_nonce: 0,
             nbits: self.nbits,
             ntime: self.ntime,
+            // Both hashes go to the chip with the word order reversed
+            // (ESP-Miner reverse_32bit_words); the chip hashes them back in
+            // header order.
             merkle_root: reverse_32bit_words(&self.merkle_root),
-            prev_block_hash: self.prev_hash,
+            prev_block_hash: reverse_32bit_words(&self.prev_hash),
             version: self.version,
         }
     }

@@ -91,16 +91,22 @@ fn chip_work_follows_esp_miner_byte_orders() {
     let session = Session::new(v["extranonce1"].as_str().unwrap(), 4).unwrap();
     let job = Job::build(&session, &notify(), &[0, 0, 0, 0]).unwrap();
     let w = job.work();
-    // prev hash: header order, unchanged.
-    assert_eq!(w.prev_block_hash, job.prev_hash);
-    // merkle root: every 32-bit word byte-swapped.
+    // Both hashes: the eight 32-bit words in reverse order, bytes within
+    // a word untouched (ESP-Miner reverse_32bit_words, d[0] = s[7]). A
+    // real BM1370's nonces verify against the header only with this.
     for i in 0..8 {
-        let a = &job.merkle_root[i * 4..i * 4 + 4];
-        let b = &w.merkle_root[i * 4..i * 4 + 4];
-        assert_eq!(b, &[a[3], a[2], a[1], a[0]]);
+        assert_eq!(
+            &w.prev_block_hash[i * 4..i * 4 + 4],
+            &job.prev_hash[(7 - i) * 4..(7 - i) * 4 + 4]
+        );
+        assert_eq!(
+            &w.merkle_root[i * 4..i * 4 + 4],
+            &job.merkle_root[(7 - i) * 4..(7 - i) * 4 + 4]
+        );
     }
-    assert_eq!(w.starting_nonce, 0);
-    assert_eq!(w.version, 0x2000_0000);
+    assert_eq!(w.version, job.version);
+    assert_eq!(w.ntime, job.ntime);
+    assert_eq!(w.nbits, job.nbits);
 }
 
 #[test]
