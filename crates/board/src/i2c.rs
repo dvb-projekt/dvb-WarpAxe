@@ -9,6 +9,12 @@ pub trait I2c {
     fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Self::Error>;
     /// Write `wr` to `addr`, then read `rd` after a repeated start.
     fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), Self::Error>;
+    /// Read `rd` from `addr` with no command byte (the SMBus alert
+    /// response address, for one). Default: a write of nothing, then
+    /// the read.
+    fn read(&mut self, addr: u8, rd: &mut [u8]) -> Result<(), Self::Error> {
+        self.write_read(addr, &[], rd)
+    }
 }
 
 /// A driver error: the bus failed, or the device answered but is not

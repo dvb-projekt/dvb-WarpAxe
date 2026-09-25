@@ -114,7 +114,10 @@ impl<I: I2c> Emc2101<I> {
         let msb = self.read(REG_EXTERNAL_TEMP_MSB)?;
         let lsb = self.read(REG_EXTERNAL_TEMP_LSB)?;
         let raw = (u16::from_be_bytes([msb, lsb]) >> 5) as i16;
-        if raw == TEMP_FAULT_OPEN || raw == TEMP_FAULT_SHORT {
+        // 0x3F8 is the open-diode code, 0x3FF the short; anything from
+        // 127 °C up is one of them or an unpowered chip's diode, never a
+        // temperature (seen 0x3FE on a Gamma with the core rail off).
+        if (TEMP_FAULT_OPEN..=TEMP_FAULT_SHORT).contains(&raw) {
             return Err(Error::SensorFault);
         }
         // 11-bit two's complement, 0.125 °C per LSB.

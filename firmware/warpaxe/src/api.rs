@@ -56,7 +56,7 @@ pub fn system_info() -> serde_json::Value {
         "isUsingFallbackStratum": false,
         "poolDifficulty": stratum::state().difficulty,
         "stratumConnected": stratum::state().authorized,
-        "version": VERSION, "boardVersion": "t-display-s3", "runningPartition": running_partition(),
+        "version": VERSION, "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
         "overheat_mode": 0,
         "resetReason": diag::reset_reason(),
@@ -154,6 +154,30 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     server.fn_handler("/api/system/info", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         reply_json(req, 200, &system_info())
+    })?;
+
+    // The captured IDF log ring (what the display's log tail shows),
+    // oldest first, one line each.
+    server.fn_handler("/api/v1/log", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let count = unsafe { esp_idf_svc::sys::tusb::wa_log_count() } as usize;
+        let mut out = String::new();
+        for i in 0..count {
+            let mut buf = [0u8; 160];
+            unsafe {
+                esp_idf_svc::sys::tusb::wa_log_line(
+                    i as i32,
+                    buf.as_mut_ptr() as *mut core::ffi::c_char,
+                    buf.len(),
+                )
+            };
+            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+            out.push_str(&String::from_utf8_lossy(&buf[..end]));
+            out.push('\n');
+        }
+        let mut r = req.into_response(200, None, &[("Content-Type", "text/plain")])?;
+        r.write_all(out.as_bytes())?;
+        Ok::<(), anyhow::Error>(())
     })?;
 
     server.fn_handler("/api/v1/state", Method::Get, |req| {

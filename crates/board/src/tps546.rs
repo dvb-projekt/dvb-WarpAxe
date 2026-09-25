@@ -8,6 +8,9 @@ use crate::pmbus::{self as pm, f32_to_linear11, f32_to_ulinear16, i32_to_linear1
 
 /// I²C address of the TPS546.
 pub const ADDR: u8 = 0x24;
+/// SMBus alert response address: reading it makes an alerting device
+/// answer with its own address and drop the alert.
+pub const ALERT_RESPONSE_ADDR: u8 = 0x0C;
 const OPERATION_OFF: u8 = 0x00;
 const OPERATION_ON: u8 = 0x80;
 /// ON_OFF_CONFIG: DELAY | POLARITY | CMD | PU — the OPERATION command
@@ -82,7 +85,10 @@ const OT_FAULT_RESPONSE: u8 = 0xFF; // wait for cooling, retry
 const TON_RISE_MS: i32 = 3;
 const TON_MAX_FAULT_RESPONSE: u8 = 0x3B;
 const PIN_DETECT_OVERRIDE: u16 = 0xFFFF; // use pin values
-                                         // VOUT limits as multiples of VOUT_COMMAND.
+                                         // VOUT fault, warn and margin limits. The TPS546 takes them as ratios
+                                         // of VOUT_COMMAND (1.25 = 125 %), written in the VOUT_MODE format like a
+                                         // voltage; a limit written as absolute volts is out of range and the
+                                         // part NACKs it (found on a Gamma: 0x40 refused, readback 640 = 1.25).
 const OV_FAULT: f32 = 1.25;
 const OV_WARN: f32 = 1.16;
 const MARGIN_HIGH: f32 = 1.10;
@@ -96,6 +102,8 @@ pub struct Tps546<I> {
     cfg: Config,
     /// From VOUT_MODE at init; ULINEAR16 exponent.
     vout_exp: i32,
+    /// The last PMBus command sent, for a failure report.
+    last_cmd: u8,
 }
 
 impl<I: I2c> Tps546<I> {
@@ -105,6 +113,7 @@ impl<I: I2c> Tps546<I> {
             bus,
             cfg,
             vout_exp: -9,
+            last_cmd: 0,
         }
     }
 
@@ -113,29 +122,76 @@ impl<I: I2c> Tps546<I> {
         self.bus
     }
 
+    /// The PMBus command code of the last transaction: after an error,
+    /// the one that failed.
+    pub fn last_command(&self) -> u8 {
+        self.last_cmd
+    }
+
     fn read_byte(&mut self, cmd: u8) -> Result<u8, Error<I::Error>> {
+        self.last_cmd = cmd;
         let mut b = [0u8; 1];
         self.bus.write_read(ADDR, &[cmd], &mut b)?;
         Ok(b[0])
     }
 
     fn read_word(&mut self, cmd: u8) -> Result<u16, Error<I::Error>> {
+        self.last_cmd = cmd;
         let mut b = [0u8; 2];
         self.bus.write_read(ADDR, &[cmd], &mut b)?;
         Ok(u16::from_le_bytes(b))
     }
 
     fn write_byte(&mut self, cmd: u8, v: u8) -> Result<(), Error<I::Error>> {
+        self.last_cmd = cmd;
         Ok(self.bus.write(ADDR, &[cmd, v])?)
     }
 
     fn write_word(&mut self, cmd: u8, v: u16) -> Result<(), Error<I::Error>> {
+        self.last_cmd = cmd;
         let [lo, hi] = v.to_le_bytes();
         Ok(self.bus.write(ADDR, &[cmd, lo, hi])?)
     }
 
     fn write_ulinear16(&mut self, cmd: u8, volts: f32) -> Result<(), Error<I::Error>> {
         self.write_word(cmd, f32_to_ulinear16(volts, self.vout_exp))
+    }
+
+    /// Read the SMBus alert response address: a device holding ALERT
+    /// answers with its address and releases the line. ESP-Miner does
+    /// this before the id check, then waits 15 ms; a NACK (nobody
+    /// alerting) is the normal answer and comes back as the bus error.
+    pub fn alert_response(&mut self) -> Result<u8, Error<I::Error>> {
+        let mut b = [0u8; 1];
+        self.bus.read(ALERT_RESPONSE_ADDR, &mut b)?;
+        Ok(b[0])
+    }
+
+    /// Raw word read, for diagnostics.
+    pub fn read_register(&mut self, cmd: u8) -> Result<u16, Error<I::Error>> {
+        self.read_word(cmd)
+    }
+
+    /// Raw word write, for diagnostics.
+    pub fn write_register(&mut self, cmd: u8, v: u16) -> Result<(), Error<I::Error>> {
+        self.write_word(cmd, v)
+    }
+
+    /// IC_DEVICE_ID as a block read: six bytes after the length byte.
+    pub fn device_id(&mut self) -> Result<[u8; 6], Error<I::Error>> {
+        let mut id = [0u8; 7];
+        self.bus.write_read(ADDR, &[pm::IC_DEVICE_ID], &mut id)?;
+        if id[0] != 6 {
+            return Err(Error::BadLength);
+        }
+        let mut out = [0u8; 6];
+        out.copy_from_slice(&id[1..]);
+        Ok(out)
+    }
+
+    /// VOUT_MODE, the one-byte register every PMBus part answers.
+    pub fn vout_mode(&mut self) -> Result<u8, Error<I::Error>> {
+        self.read_byte(pm::VOUT_MODE)
     }
 
     /// Check the device id, stop conversion, write the whole config.
@@ -178,7 +234,7 @@ impl<I: I2c> Tps546<I> {
         self.write_ulinear16(pm::VOUT_COMMAND, c.vout_command)?;
         self.write_ulinear16(pm::VOUT_MAX, c.vout_max)?;
         self.write_ulinear16(pm::VOUT_MIN, c.vout_min)?;
-        self.write_vout_limits(c.vout_command)?;
+        self.write_vout_limits()?;
         self.write_word(pm::IOUT_OC_WARN_LIMIT, f32_to_linear11(c.iout_oc_warn))?;
         self.write_word(pm::IOUT_OC_FAULT_LIMIT, f32_to_linear11(c.iout_oc_fault))?;
         self.write_byte(pm::IOUT_OC_FAULT_RESPONSE, IOUT_OC_FAULT_RESPONSE)?;
@@ -195,14 +251,16 @@ impl<I: I2c> Tps546<I> {
         self.read_word(pm::STATUS_WORD)
     }
 
-    /// The fault/warn/margin window around a new VOUT_COMMAND.
-    fn write_vout_limits(&mut self, vout: f32) -> Result<(), Error<I::Error>> {
-        self.write_ulinear16(pm::VOUT_OV_FAULT_LIMIT, vout * OV_FAULT)?;
-        self.write_ulinear16(pm::VOUT_OV_WARN_LIMIT, vout * OV_WARN)?;
-        self.write_ulinear16(pm::VOUT_MARGIN_HIGH, vout * MARGIN_HIGH)?;
-        self.write_ulinear16(pm::VOUT_MARGIN_LOW, vout * MARGIN_LOW)?;
-        self.write_ulinear16(pm::VOUT_UV_WARN_LIMIT, vout * UV_WARN)?;
-        self.write_ulinear16(pm::VOUT_UV_FAULT_LIMIT, vout * UV_FAULT)
+    /// The fault/warn/margin window, as ratios of VOUT_COMMAND; the
+    /// part scales them itself, so they are rewritten unchanged after a
+    /// new VOUT_COMMAND (as ESP-Miner does).
+    fn write_vout_limits(&mut self) -> Result<(), Error<I::Error>> {
+        self.write_ulinear16(pm::VOUT_OV_FAULT_LIMIT, OV_FAULT)?;
+        self.write_ulinear16(pm::VOUT_OV_WARN_LIMIT, OV_WARN)?;
+        self.write_ulinear16(pm::VOUT_MARGIN_HIGH, MARGIN_HIGH)?;
+        self.write_ulinear16(pm::VOUT_MARGIN_LOW, MARGIN_LOW)?;
+        self.write_ulinear16(pm::VOUT_UV_WARN_LIMIT, UV_WARN)?;
+        self.write_ulinear16(pm::VOUT_UV_FAULT_LIMIT, UV_FAULT)
     }
 
     /// Set the output and turn conversion on; 0 turns it off. Outside
@@ -215,7 +273,7 @@ impl<I: I2c> Tps546<I> {
             return Err(Error::OutOfRange);
         }
         self.write_ulinear16(pm::VOUT_COMMAND, volts)?;
-        self.write_vout_limits(volts)?;
+        self.write_vout_limits()?;
         self.write_byte(pm::OPERATION, OPERATION_ON)
     }
 
@@ -299,8 +357,8 @@ mod tests {
         assert_eq!(find(pm::VOUT_COMMAND), Some(vec![0x66, 0x02]));
         // VIN_ON 4.8 V as LINEAR11 0xCA66.
         assert_eq!(find(pm::VIN_ON), Some(vec![0x66, 0xCA]));
-        // OV fault 1.25 × 1.2 = 1.5 V = 768.
-        assert_eq!(find(pm::VOUT_OV_FAULT_LIMIT), Some(vec![0x00, 0x03]));
+        // OV fault ratio 1.25 = 640 = 0x0280, what a Gamma reads back.
+        assert_eq!(find(pm::VOUT_OV_FAULT_LIMIT), Some(vec![0x80, 0x02]));
         assert_eq!(find(pm::OT_FAULT_LIMIT), Some(vec![145, 0]));
         assert_eq!(find(pm::IOUT_OC_FAULT_RESPONSE), Some(vec![0xC0]));
         assert_eq!(find(pm::PIN_DETECT_OVERRIDE), Some(vec![0xFF, 0xFF]));

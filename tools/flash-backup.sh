@@ -22,7 +22,7 @@ set -euo pipefail
 name=${1:?usage: flash-backup.sh <name> [port] [out-dir]}
 port=${2:-}
 out=${3:-"$HOME/Library/Mobile Documents/com~apple~CloudDocs/Bitcoin/Claude/WarpForge-Firmware/backups"}
-esptool="python3 -m esptool"
+esptool=${ESPTOOL:-"python3 -m esptool"}
 
 if [[ -z $port ]]; then
     ports=(/dev/cu.usbmodem*)

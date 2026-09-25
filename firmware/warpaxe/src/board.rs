@@ -41,6 +41,8 @@ pub struct BoardState {
     /// Mining stopped and the regulator switched off; stays until reboot.
     pub overheat: bool,
     pub last_error: String,
+    /// What the regulator answered to each probe at boot.
+    pub vr_probe: String,
 }
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
@@ -106,13 +108,31 @@ pub fn i2c() -> Option<SharedI2c> {
     BUS.lock().unwrap().clone()
 }
 
+/// ESP-Miner's policy: three tries, 10 ms apart.
+fn retry(mut f: impl FnMut() -> Result<(), EspError>) -> Result<(), EspError> {
+    let mut last = Ok(());
+    for i in 0..3 {
+        if i > 0 {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        last = f();
+        if last.is_ok() {
+            return last;
+        }
+    }
+    last
+}
+
 impl I2c for SharedI2c {
     type Error = EspError;
     fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), EspError> {
-        self.0.lock().unwrap().write(addr, bytes, BLOCK)
+        retry(|| self.0.lock().unwrap().write(addr, bytes, BLOCK))
     }
     fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), EspError> {
-        self.0.lock().unwrap().write_read(addr, wr, rd, BLOCK)
+        retry(|| self.0.lock().unwrap().write_read(addr, wr, rd, BLOCK))
+    }
+    fn read(&mut self, addr: u8, rd: &mut [u8]) -> Result<(), EspError> {
+        retry(|| self.0.lock().unwrap().read(addr, rd, BLOCK))
     }
 }
 
@@ -176,7 +196,47 @@ pub fn start(reset: Gpio1) {
 
     let mut vr = profile.tps546().map(|c| Tps546::new(bus.clone(), c));
     if let Some(vr) = vr.as_mut() {
-        match vr.init() {
+        // ESP-Miner's prelude: clear a pending SMBus alert, give the
+        // part 15 ms, and retry the id check a few times.
+        match vr.alert_response() {
+            Ok(a) => log::info!("board: SMBus alert response {a:#04x}"),
+            Err(_) => log::info!("board: no SMBus alert pending"),
+        }
+        std::thread::sleep(Duration::from_millis(15));
+        // Probe the part step by step so a failure says where.
+        let probe = format!(
+            "vout_mode={:?} status={:?} id={:?}",
+            vr.vout_mode(),
+            vr.status_word(),
+            vr.device_id()
+        );
+        log::info!("board: TPS546 probe {probe}");
+        update(|s| s.vr_probe = probe);
+        let mut result = vr.init();
+        for attempt in 1..5 {
+            if result.is_ok() {
+                break;
+            }
+            log::warn!("board: TPS546 init attempt {attempt} failed: {result:?}");
+            std::thread::sleep(Duration::from_millis(3));
+            result = vr.init();
+        }
+        if let Err(e) = &result {
+            let cmd = vr.last_command();
+            log::error!("board: TPS546 init failed at command {cmd:#04x}: {e:?}");
+            // Busy or refused? Read it back, write it again after a pause,
+            // and try the next register in the list.
+            std::thread::sleep(Duration::from_millis(100));
+            let rd = vr.read_register(cmd);
+            let wr_again = vr.write_register(cmd, 0x0280);
+            let wr_next = vr.write_register(0x42, 0x02C7);
+            let st = vr.status_word();
+            let post = format!(
+                " init=Err({e:?}) at cmd {cmd:#04x}; after 100 ms: read={rd:?} write_again={wr_again:?} write_0x42={wr_next:?} status={st:?}"
+            );
+            update(|s| s.vr_probe.push_str(&post));
+        }
+        match result {
             Ok(status) => {
                 log::info!("board: TPS546 up, status {status:#06x}");
                 update(|s| s.vr_status = status);
@@ -263,7 +323,14 @@ fn run(
             let mut rpm = 0;
             if let Some(t) = thermal.as_mut() {
                 match t.external_temp_c() {
-                    Ok(c) => temp = Some(c),
+                    Ok(c) => {
+                        temp = Some(c);
+                        update(|s| {
+                            if s.last_error.starts_with("temp:") {
+                                s.last_error.clear();
+                            }
+                        });
+                    }
                     Err(e) => {
                         temp = None;
                         update(|s| s.last_error = format!("temp: {e:?}"));
