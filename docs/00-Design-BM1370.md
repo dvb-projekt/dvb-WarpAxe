@@ -1484,3 +1484,37 @@ share one reading of the reference, not that the reading is right; the
 first Gaia session settles it, starting with the nine-byte chip-id reply
 and a single-chip read at address ÷ 4.
 
+
+### 14.14 Point 3 on hardware: the chain over a real UART (2026-09-25, PASSED)
+
+Setup: NerdMiner V2 (T-Display-S3) as devkit, chain UART on GPIO17/18
+to a DSD TECH USB-UART adapter at 3.3 V (`/dev/cu.usbserial-0001`),
+`warpaxe-simuart --chips 1` behind it. Result: enumeration, address,
+the whole init, the baud switch to 1 Mbaud, the PLL ramp to 525 MHz,
+work dispatch and nonce replies all pass over the wire — 13 000 nonces
+in the first half minute with zero stale, duplicate, desync or silent
+counts, and a live `PATCH frequency` ramps the simulated chip to 500
+and 400 MHz (the nonce rate follows, 400/525). Every nonce is rejected
+by the board's own re-hash (`low_diff`), as it must be: the simulator's
+nonces are synthetic, nothing reaches the pool.
+
+Two findings the in-process simulator could not show:
+
+1. **Baud switch clipped the switch frame.** The firmware changed the
+   UART rate right after queuing the FAST_UART write; the ESP-IDF UART
+   is asynchronous, so the frame's tail left at the new rate and no
+   chip followed. Fix in `uart.rs`: `wait_tx_done`, 20 ms for the chips
+   to reconfigure, then `change_baudrate`. The in-process `SimUart` is
+   synchronous, which is why 13 tests never saw it.
+2. **The serial simulator reset on silence.** It treated three seconds
+   of quiet followed by traffic as a board restart; a real chip forgets
+   nothing when idle, and a board legitimately waits seconds for its
+   first pool job after init. Now: at the fast rate, two seconds of
+   undecodable bytes mean the board restarted (it talks at 115 200
+   again); at the initial rate the old quiet-then-traffic rule stays,
+   since nothing but init happens there.
+
+Wiring for the record (T-Display-S3 seen from the back, USB-C down,
+right header from the top): 5 = GPIO18 ← adapter TXD, 6 = GPIO17 ←
+adapter RXD, 1/2 = GND. VCC open, the board stays on USB.
+

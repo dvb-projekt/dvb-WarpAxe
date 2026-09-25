@@ -14,6 +14,7 @@ What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
 | Config in NVS, AxeOS field names | `PATCH /api/system`, persists across restart |
 | `GET /api/system/info` (AxeOS shape, mining fields honest zeros), `GET /api/v1/state` | works |
 | `POST /api/system/restart` | works |
+| Chain over the real UART (GPIO17/18 → USB-UART adapter → `warpaxe-simuart`) | **passes**: init, baud switch, PLL ramp, work, nonces, live frequency PATCH; design doc §14.14 |
 | Board layer (`src/board.rs`, `warpaxe-board`): profile from `boardModel`, TPS546 regulator, EMC2101 sensor and fan PID, overheat stop, sensor fields in the info | devkit profile verified (no I²C, nothing changed); Bitaxe Gamma profile written from ESP-Miner, untested on hardware |
 | Display by profile: ST7789 LCD (T-Display-S3) or SSD1306 OLED (Bitaxe, `warpaxe_board::ssd1306`, four status lines) | LCD path verified on the devkit; OLED untested until the Gamma |
 | Board profiles: `bitaxe-gamma`, `t-display-s3`, `nerdaxe-gamma`, `nerdqaxe-plusplus`, `nerdoctaxe-gamma`, `q1370`, `q1373` (config key `boardModel`, applied at boot) | Nerd multi-chip boards report their regulator as unsupported and leave the chain unpowered |

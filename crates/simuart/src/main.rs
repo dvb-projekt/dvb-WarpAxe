@@ -20,6 +20,11 @@ const INITIAL_BAUD: u32 = 115_200;
 /// Silence this long while addressed, then traffic, means the board
 /// restarted its chain: start the chips over.
 const RESET_GAP: Duration = Duration::from_secs(3);
+/// At the fast rate, bytes that decode to nothing for this long mean the
+/// board restarted and talks at the initial rate again: start over.
+/// (Silence alone is not a restart: a real chip waits for work without
+/// forgetting anything, and a board waits seconds for its first pool job.)
+const GARBAGE_WINDOW: Duration = Duration::from_secs(2);
 
 fn arg<T: std::str::FromStr>(name: &str, default: T) -> T {
     let args: Vec<String> = std::env::args().collect();
@@ -70,6 +75,7 @@ fn main() {
     let mut last_rx = Instant::now();
     let mut last_report = Instant::now();
     let mut nonces_at_report = 0u32;
+    let mut garbage_since: Option<Instant> = None;
     loop {
         // Bytes from the board.
         match port.read(&mut buf) {
@@ -78,19 +84,32 @@ fn main() {
                     .chips()
                     .iter()
                     .all(|c| c.state() == ChipState::Addressed);
-                if addressed && last_rx.elapsed() > RESET_GAP {
+                // At the initial rate the board is still initialising: a
+                // pause then traffic is a restart.
+                if baud == INITIAL_BAUD && addressed && last_rx.elapsed() > RESET_GAP {
                     eprintln!(
-                        "quiet {:.1} s then traffic: chips reset",
+                        "quiet {:.1} s then traffic at {baud} baud: chips reset",
                         last_rx.elapsed().as_secs_f32()
                     );
                     chain = SimChain::new(profile, chips, seed);
-                    if baud != INITIAL_BAUD {
-                        baud = INITIAL_BAUD;
-                        let _ = port.set_baud_rate(baud);
-                    }
                 }
                 last_rx = Instant::now();
+                let before = chain.totals();
                 chain.feed(&buf[..n]);
+                let after = chain.totals();
+                if baud != INITIAL_BAUD {
+                    let decoded = after.commands != before.commands || after.jobs != before.jobs;
+                    if decoded {
+                        garbage_since = None;
+                    } else if garbage_since.get_or_insert(Instant::now()).elapsed() > GARBAGE_WINDOW
+                    {
+                        eprintln!("undecodable bytes at {baud} baud for {GARBAGE_WINDOW:?}: board restarted, chips reset");
+                        chain = SimChain::new(profile, chips, seed);
+                        baud = INITIAL_BAUD;
+                        let _ = port.set_baud_rate(baud);
+                        garbage_since = None;
+                    }
+                }
             }
             Ok(_) => {}
             Err(e) if e.kind() == std::io::ErrorKind::TimedOut => {}

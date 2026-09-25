@@ -50,6 +50,13 @@ impl Uart for ChipUart {
     }
 
     fn set_baud(&mut self, baud: u32) -> Result<(), EspError> {
+        // The frame that told the chips to switch is still in the TX
+        // FIFO: let it leave at the old rate, give the chips a moment to
+        // reconfigure, only then move. Found on the devkit with the
+        // simulator behind a USB-UART adapter: without the wait the
+        // frame's tail went out at the new rate and no chip followed.
+        self.drv.wait_tx_done(esp_idf_svc::hal::delay::BLOCK)?;
+        std::thread::sleep(std::time::Duration::from_millis(20));
         self.drv.change_baudrate(Hertz(baud)).map(|_| ())
     }
 }
