@@ -27,7 +27,10 @@ pub struct MinerState {
     pub duplicates: u64,
     pub desyncs: u64,
     pub silent_chips: u8,
+    /// 10-minute window.
     pub hashrate_ghs: f64,
+    /// Last 30 s bucket.
+    pub hashrate_now_ghs: f64,
     pub last_nonce_uptime_s: u64,
     pub init_failures: u32,
     pub last_error: String,
@@ -75,10 +78,15 @@ fn run(mut uart: ChipUart) {
             continue;
         }
         let cfg = config::get();
+        // The chips filter at the profile's default ticket mask (256 on a
+        // BM1370) regardless of the pool difficulty: enough nonces for a
+        // steady hashrate estimate, the pool threshold is applied on the
+        // re-hash before a submit. asicDifficulty overrides both.
+        let chip_cap = board::chip().default_difficulty;
         let pool_diff = if cfg.asic_difficulty > 0 {
             cfg.asic_difficulty
         } else {
-            stratum::state().difficulty.max(1.0) as u32
+            (stratum::state().difficulty.max(1.0) as u32).min(chip_cap)
         };
         let profile = board::profile();
         if profile.asic_reset.is_some() {
@@ -108,6 +116,7 @@ fn run(mut uart: ChipUart) {
         WANTED_MHZ.store(cfg.frequency, Ordering::Relaxed);
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
+        let mut buckets: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
 
@@ -202,7 +211,7 @@ fn run(mut uart: ChipUart) {
                 let want = if forced > 0 {
                     forced
                 } else {
-                    st.difficulty.max(1.0) as u32
+                    (st.difficulty.max(1.0) as u32).min(chip_cap)
                 };
                 if want != applied_diff {
                     if chain.set_difficulty(&mut uart, want).is_ok() {
@@ -252,8 +261,24 @@ fn run(mut uart: ChipUart) {
 
             let elapsed = (epoch.elapsed() - hashes_since).as_secs_f64();
             if elapsed >= 30.0 {
-                let ghs = hashes / elapsed / 1e9;
-                update(|s| s.hashrate_ghs = ghs);
+                // One 30 s bucket into a 10-minute window: at a ticket mask
+                // of 256 a BM1370 yields about a nonce a second, so the
+                // window holds ~600 samples and the estimate is steady.
+                let now_s = epoch.elapsed().as_secs_f64();
+                buckets.push_back((now_s, hashes));
+                while buckets.front().is_some_and(|(t, _)| now_s - *t > 600.0) {
+                    buckets.pop_front();
+                }
+                let sum: f64 = buckets.iter().map(|(_, h)| *h).sum();
+                let span = buckets
+                    .front()
+                    .map_or(elapsed, |(t, _)| (now_s - *t).max(elapsed));
+                let ghs_10m = sum / span / 1e9;
+                let ghs_now = hashes / elapsed / 1e9;
+                update(|s| {
+                    s.hashrate_ghs = ghs_10m;
+                    s.hashrate_now_ghs = ghs_now;
+                });
                 hashes = 0.0;
                 hashes_since = epoch.elapsed();
             }
