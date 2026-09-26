@@ -61,9 +61,10 @@ pub fn start(
                             .map(|i| i.ip.to_string())
                             .ok();
                         log::info!("wifi: connected, ip {ip:?}");
-                        super::set_wifi(true, ip, None);
+                        super::set_wifi(true, ip.clone(), rssi());
                         while wifi.is_connected().unwrap_or(false) {
                             std::thread::sleep(Duration::from_secs(2));
+                            super::set_wifi(true, ip.clone(), rssi());
                         }
                         log::warn!("wifi: link lost");
                         super::set_wifi(false, None, None);
@@ -78,4 +79,12 @@ pub fn start(
             }
         })
         .expect("wifi thread");
+}
+
+/// Signal strength of the associated AP in dBm, as AxeOS reports `wifiRSSI`.
+fn rssi() -> Option<i32> {
+    let mut info = esp_idf_svc::sys::wifi_ap_record_t::default();
+    // SAFETY: plain out-parameter; only called while the station is connected.
+    let err = unsafe { esp_idf_svc::sys::esp_wifi_sta_get_ap_info(&mut info) };
+    (err == esp_idf_svc::sys::ESP_OK).then_some(info.rssi as i32)
 }
