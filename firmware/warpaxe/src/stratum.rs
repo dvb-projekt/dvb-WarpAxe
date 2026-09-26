@@ -268,7 +268,14 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                         update(|s| {
                             s.shares_rejected += 1;
                             *s.reject_reasons.entry(why.clone()).or_insert(0) += 1;
-                            s.last_reject = why;
+                            // Which job the pool refused, against the newest
+                            // notify: tells a late old-block share from a
+                            // rebuild of the wrong job.
+                            s.last_reject = format!(
+                                "{why} job={job_id} newest={} clean_ago={}s",
+                                s.last_job_id,
+                                diag::uptime_s().saturating_sub(s.last_clean_uptime_s)
+                            );
                             if stale {
                                 let since = diag::uptime_s().saturating_sub(s.last_clean_uptime_s);
                                 let b = if since < 2 {
@@ -306,15 +313,7 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     continue;
                 };
                 let clean = n.clean_jobs;
-                update(|st| {
-                    st.jobs_received += 1;
-                    st.last_job_id = n.job_id.clone();
-                    st.last_job_uptime_s = diag::uptime_s();
-                    if clean {
-                        st.clean_jobs += 1;
-                        st.last_clean_uptime_s = diag::uptime_s();
-                    }
-                });
+                let job_id = n.job_id.clone();
                 if started.elapsed() < Duration::from_secs(5) || clean {
                     log::info!(
                         "stratum: job {} ntime {} clean {}",
@@ -323,7 +322,21 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                         clean
                     );
                 }
+                // Publish the job BEFORE the counters: the miner treats a
+                // counter change as "new work is there" and builds from
+                // NOTIFY at once; the other order let it rebuild the old
+                // block's job and mark the new notify as seen (stale shares
+                // 5-30 s after every clean).
                 *NOTIFY.lock().unwrap() = Some((s.clone(), n));
+                update(|st| {
+                    st.jobs_received += 1;
+                    st.last_job_id = job_id;
+                    st.last_job_uptime_s = diag::uptime_s();
+                    if clean {
+                        st.clean_jobs += 1;
+                        st.last_clean_uptime_s = diag::uptime_s();
+                    }
+                });
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
             Incoming::Unparsed(l) => {
