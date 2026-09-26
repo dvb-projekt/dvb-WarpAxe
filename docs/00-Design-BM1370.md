@@ -1569,3 +1569,62 @@ full 80-byte header for an offline re-hash), `chain_stats`, `vr_probe`,
 `GET /api/v1/log`. The offline re-hash over byte-order variants found
 finding 4 in one run.
 
+
+### 14.16 Running under WarpTune, and the stale-share race (2026-09-26)
+
+WarpTune regulates the Gamma live since 06:40 UTC (entry `live = true`,
+`allow_board = ["bitaxe-gamma"]`). The hand-tuned 640 MHz maps to the
+ladder's top step (650 MHz is the nearest step), so WarpTune holds the
+hand point and would only step down on heat — which is the intent: the
+hand point is the validated ceiling. Every decision so far is "cool".
+
+**Stale shares after a block change.** The reject counter showed
+`stale share` 5–30 s after a `clean_jobs` notify, although every submit
+was on a job built from the newest notify (`submit_age_hist` all in
+bucket 0). The stratum thread bumped `jobs_received` / `clean_jobs`
+*before* storing the new job in `NOTIFY`, with a log line in between.
+The miner loop reads a counter change as "new work is there": when it
+landed in that window it retired everything correctly, then rebuilt the
+*old* block's job from `NOTIFY` and marked the new notify as seen. The
+chips kept hashing the old block until the nonce space ran out. Fix
+(cf2d1b6): publish `NOTIFY` first, then the counters. Result against
+pool v1.33.0: 1555 accepted, 1 rejected over 36 block changes in 6 h;
+the one reject is a share already in flight when the notify arrived
+(`clean_ago=0s`). The pool's `RETIRED_JOB_SECS` (v1.34.0) books those
+too. `last_reject` now carries `job=… newest=… clean_ago=…`, which is
+what separated the two cases without a pool log.
+
+Earlier steps of the same hunt, kept because they are correct on their
+own: retire the old block's work before a round's nonces are looked at
+(ce988d3), and the stale-after-clean histogram plus reject reasons
+(ac4acb8).
+
+**Hashrate estimator.** The 10-minute window keyed its 30 s buckets by
+their end, so the span missed the oldest bucket: +5 % on a full window,
+up to 2x right after boot (c08ea71, now keyed by start). The clock also
+started at chain init, so the PLL ramp read as a slow first bucket; it
+now starts with the first job (cbf1a32). Both matter to WarpTune, which
+steps down urgently when the firmware hashrate falls below 90 % of the
+expected value and the pool's share vote is not there yet — as after
+every reboot. Steady state now: 1.26–1.29 TH/s by nonce count, AxeOS
+showed 1.29 at the same point.
+
+**Smaller items.** `wifiRSSI` from `esp_wifi_sta_get_ap_info` every 2 s
+(183a776, -62 dBm here). `overheat_mode` appeared twice in the
+`json!` of `/api/system/info` and the constant 0 won, so an overheat
+was invisible to a tuner; it now reports 0/1 like AxeOS (34aeffd).
+`bestDiff` (all-time, in NVS, written only when it rises) and
+`bestSessionDiff` as numbers like current ESP-Miner (ca3ae04); the u64
+sits behind a mutex because Xtensa has no 64-bit atomics.
+
+**Web UI** at `/` (34aeffd): one static page over the JSON API — status
+tiles, settings (clock and voltage, fan, display with the flip box,
+pool, network), restart. Only changed fields go into the `PATCH`;
+passwords are never shown and an empty field keeps the stored one.
+English and German for now; the other six languages and a native-speaker
+review come before any public release.
+
+For comparison with AxeOS at the same hand point: fan 99 % at 63.5 °C
+chip under AxeOS, 100 % at 62–63 °C under WarpAxe with the same PID
+target (60 °C) — the fan runs flat out on this board at 640 MHz either
+way.
