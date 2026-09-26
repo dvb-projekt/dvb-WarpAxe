@@ -1,7 +1,6 @@
 //! HTTP API. Two faces on one server: the AxeOS-compatible routes a tuner
 //! already speaks (`/api/system/info`, `PATCH /api/system`, restart, OTA)
-//! and WarpAxe's own `/api/v1/*`. No hashing yet, so the mining fields
-//! are honest zeros.
+//! and WarpAxe's own `/api/v1/*`, plus a small web UI at `/`.
 
 use std::sync::atomic::Ordering;
 use std::time::Duration;
@@ -13,6 +12,9 @@ use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
 use crate::{board, config, diag, miner, net, stratum};
+
+/// The web UI: one static page on top of the JSON API.
+const UI: &str = include_str!("ui/index.html");
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
@@ -36,7 +38,7 @@ pub fn system_info() -> serde_json::Value {
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv.unwrap_or(0.0), "current": b.iout_ma.unwrap_or(0.0),
         "temp": b.temp_c.unwrap_or(0.0), "vrTemp": b.vr_temp_c.unwrap_or(0),
-        "overheat_mode": b.overheat, "fanrpm": b.fan_rpm,
+        "overheat_mode": u8::from(b.overheat), "fanrpm": b.fan_rpm,
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) / 1e9,
         "bestDiff": "0", "bestSessionDiff": "0",
@@ -60,7 +62,6 @@ pub fn system_info() -> serde_json::Value {
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
-        "overheat_mode": 0,
         "resetReason": diag::reset_reason(),
     })
 }
@@ -142,15 +143,15 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     server.fn_handler("/", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
-        let cfg = config::get();
-        let n = net::state();
-        let html = format!(
-            "<!doctype html><title>{h}</title><body style=\"font-family:system-ui;background:#0b1020;color:#eee;padding:2em\"><h1>WarpAxe</h1><p>{v} on {h}, up {u} s, last reset: {r}</p><p>USB {usb} &middot; Wi-Fi {wifi}</p><p><a href=/api/system/info style=color:#8cf>/api/system/info</a> &middot; <a href=/api/v1/state style=color:#8cf>/api/v1/state</a></p></body>",
-            h = cfg.hostname, v = VERSION, u = diag::uptime_s(), r = diag::reset_reason(),
-            usb = n.usb_ip.unwrap_or_else(|| "down".into()), wifi = n.wifi_ip.unwrap_or_else(|| "down".into())
-        );
-        let mut r = req.into_response(200, None, &[("Content-Type", "text/html")])?;
-        r.write_all(html.as_bytes())?;
+        let mut r = req.into_response(
+            200,
+            None,
+            &[
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Cache-Control", "no-cache"),
+            ],
+        )?;
+        r.write_all(UI.as_bytes())?;
         Ok::<(), EspIOError>(())
     })?;
 
