@@ -122,6 +122,7 @@ fn run(mut uart: ChipUart) {
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
         let mut buckets: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();
+        let mut counting = false;
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
 
@@ -268,6 +269,14 @@ fn run(mut uart: ChipUart) {
                         }
                         match chain.submit(&mut uart, &job.work(), now) {
                             Ok(r) => {
+                                if !counting {
+                                    // Hashrate time starts with the first
+                                    // job, not with chain init: the PLL ramp
+                                    // would read as a slow first bucket.
+                                    counting = true;
+                                    hashes = 0.0;
+                                    hashes_since = epoch.elapsed();
+                                }
                                 update(|s| s.jobs_sent += 1);
                                 jobs.insert(r.serial, (job, st.jobs_received, diag::uptime_s()));
                                 if jobs.len() > 32 {
@@ -283,7 +292,7 @@ fn run(mut uart: ChipUart) {
             }
 
             let elapsed = (epoch.elapsed() - hashes_since).as_secs_f64();
-            if elapsed >= 30.0 {
+            if counting && elapsed >= 30.0 {
                 // One 30 s bucket into a 10-minute window: at a ticket mask
                 // of 256 a BM1370 yields about a nonce a second, so the
                 // window holds ~600 samples and the estimate is steady.
