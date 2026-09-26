@@ -6,7 +6,7 @@
 //! ```
 //!
 //! Speaks the cgminer API: `estats`, `summary`, `pools`, `devs`,
-//! `version`, `ascset|0,workmode,n`. Point a tuner's Avalon path at it.
+//! `version`, `ascset|0,workmode,set,n` / `get`. Point a tuner's Avalon path at it.
 
 #![forbid(unsafe_code)]
 

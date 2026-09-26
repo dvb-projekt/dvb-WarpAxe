@@ -50,7 +50,7 @@ pub fn read_request(stream: &mut TcpStream) -> Option<(String, Option<String>)> 
             .map(str::to_string);
         Some((cmd, param))
     } else {
-        // Plain text: `estats` or `ascset|0,workmode,2`.
+        // Plain text: `estats` or `ascset|0,workmode,set,2`.
         let mut it = text.splitn(2, '|');
         let cmd = it.next()?.trim().to_string();
         let param = it.next().map(|p| p.trim().to_string());
@@ -134,7 +134,10 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("WORKMODE[0]"));
-        let v = ask(addr, r#"{"command":"ascset","parameter":"0,workmode,2"}"#);
+        let v = ask(
+            addr,
+            r#"{"command":"ascset","parameter":"0,workmode,set,2"}"#,
+        );
         assert_eq!(v["STATUS"][0]["STATUS"], "S");
         assert_eq!(dev.lock().unwrap().mode().index, 2);
         let v = ask(addr, "summary\n");

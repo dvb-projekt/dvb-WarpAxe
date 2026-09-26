@@ -5,7 +5,8 @@
 //! the outside world three **work modes** and the cgminer API. Nothing
 //! here simulates an A3197S; this is the controller and the board as a
 //! tuner sees them — the `MM ID0:Summary` token string, `summary`,
-//! `pools`, `devs`, `version`, and the one write, `ascset|0,workmode,n`.
+//! `pools`, `devs`, `version`, and the one write, `ascset|0,workmode,set,n`
+//! (plus `0,workmode,get`).
 //!
 //! What matters for a regulator, and what this models:
 //!
@@ -261,7 +262,7 @@ impl AvalonQ {
         }
     }
 
-    /// `ascset|0,workmode,n`. Returns whether the MM accepted it.
+    /// `ascset|0,workmode,set,n`. Returns whether the MM accepted it.
     pub fn set_workmode(&mut self, n: u8) -> bool {
         self.sets.push(n);
         if self.faults.contains(&AvalonFault::RefuseWorkmode) || n > 2 {
@@ -508,17 +509,27 @@ impl AvalonQ {
         })
     }
 
-    /// `ascset` with its parameter (`0,workmode,2`).
+    /// `ascset` with its parameter, as the real MM 25052801 answers it
+    /// (measured 2026-09-26): `workmode` takes a verb, `set,<n>` or `get`;
+    /// the bare `0,workmode,<n>` is refused with code 120.
     pub fn ascset(&mut self, parameter: &str) -> serde_json::Value {
         let parts: Vec<&str> = parameter.split(',').map(str::trim).collect();
-        let ok = match parts.as_slice() {
-            ["0", "workmode", n] => n.parse::<u8>().is_ok_and(|n| self.set_workmode(n)),
-            _ => false,
-        };
-        if ok {
-            serde_json::json!({"STATUS": Self::status("S", "ASC 0 set OK", 119), "id": 1})
-        } else {
-            serde_json::json!({"STATUS": Self::status("E", "ASC 0 set failed: invalid or refused", 120), "id": 1})
+        let err = |msg: &str| serde_json::json!({"STATUS": Self::status("E", &format!("ASC 0 set failed: {msg}"), 120), "id": 1});
+        match parts.as_slice() {
+            ["0", "workmode"] => err("missing workmode setting"),
+            ["0", "workmode", "get"] => serde_json::json!({
+                "STATUS": Self::status("I", &format!("ASC 0 set info: workmode {}", self.mode().index), 118),
+                "id": 1
+            }),
+            ["0", "workmode", "set", n] => {
+                if n.parse::<u8>().is_ok_and(|n| self.set_workmode(n)) {
+                    serde_json::json!({"STATUS": Self::status("S", "ASC 0 set OK", 119), "id": 1})
+                } else {
+                    err("invalid or refused")
+                }
+            }
+            ["0", "workmode", ..] => err("workmode unknown argument"),
+            _ => err("invalid or refused"),
         }
     }
 
@@ -605,10 +616,49 @@ mod tests {
     fn refuse_workmode_answers_e_and_changes_nothing() {
         let mut q = AvalonQ::settled(0, 23.0, 1);
         q.inject(AvalonFault::RefuseWorkmode);
-        let r = q.ascset("0,workmode,2");
+        let r = q.ascset("0,workmode,set,2");
         assert_eq!(r["STATUS"][0]["STATUS"], "E");
         assert_eq!(q.mode().index, 0);
         assert!(q.hashing());
+    }
+
+    #[test]
+    fn workmode_takes_a_verb_like_the_real_mm() {
+        let mut q = AvalonQ::settled(0, 23.0, 1);
+        let code = |v: &serde_json::Value| {
+            (
+                v["STATUS"][0]["STATUS"].as_str().unwrap().to_string(),
+                v["STATUS"][0]["Code"].as_u64().unwrap(),
+                v["STATUS"][0]["Msg"].as_str().unwrap().to_string(),
+            )
+        };
+        assert_eq!(
+            code(&q.ascset("0,workmode,1")),
+            (
+                "E".into(),
+                120,
+                "ASC 0 set failed: workmode unknown argument".into()
+            )
+        );
+        assert_eq!(
+            code(&q.ascset("0,workmode,help")),
+            (
+                "E".into(),
+                120,
+                "ASC 0 set failed: workmode unknown argument".into()
+            )
+        );
+        assert_eq!(code(&q.ascset("0,workmode")).0, "E");
+        assert_eq!(q.mode().index, 0, "bare forms change nothing");
+        assert_eq!(
+            code(&q.ascset("0,workmode,get")),
+            ("I".into(), 118, "ASC 0 set info: workmode 0".into())
+        );
+        assert_eq!(
+            code(&q.ascset("0,workmode,set,1")),
+            ("S".into(), 119, "ASC 0 set OK".into())
+        );
+        assert_eq!(q.mode().index, 1);
     }
 
     #[test]
