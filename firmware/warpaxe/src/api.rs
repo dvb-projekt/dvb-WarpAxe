@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use esp_idf_svc::http::server::{Configuration, EspHttpServer, Request};
 use esp_idf_svc::http::Method;
-use esp_idf_svc::io::{EspIOError, Read, Write};
+use esp_idf_svc::io::{EspIOError, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
@@ -41,7 +41,7 @@ pub fn system_info() -> serde_json::Value {
         "overheat_mode": u8::from(b.overheat), "fanrpm": b.fan_rpm,
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) / 1e9,
-        "bestDiff": "0", "bestSessionDiff": "0",
+        "bestDiff": config::best_diff(), "bestSessionDiff": m.best_session_diff,
         "freeHeap": diag::free_heap(),
         "coreVoltage": cfg.core_voltage,
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),

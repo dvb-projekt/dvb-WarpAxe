@@ -111,7 +111,7 @@ const T = {
     restarting: "Restarting…", offline: "Miner not reachable",
     hashrate: "Hashrate (10 min)", expected: "expected", temp: "Chip temperature", vrTemp: "VR temperature", power: "Power",
     efficiency: "Efficiency", clock: "Clock / core", fanNow: "Fan", shares: "Shares accepted / rejected", poolDiff: "Pool difficulty",
-    phase: "Chain", wifi: "Wi-Fi signal", uptime: "Uptime", connected: "connected", notConnected: "not connected",
+    best: "Best difficulty (since boot / all-time)", phase: "Chain", wifi: "Wi-Fi signal", uptime: "Uptime", connected: "connected", notConnected: "not connected",
     overheat: "OVERHEAT: chain switched off", days: "d"
   },
   de: {
@@ -127,7 +127,7 @@ const T = {
     restarting: "Startet neu …", offline: "Miner nicht erreichbar",
     hashrate: "Hashrate (10 Min.)", expected: "erwartet", temp: "Chiptemperatur", vrTemp: "Temperatur Spannungsregler", power: "Leistung",
     efficiency: "Effizienz", clock: "Takt / Kern", fanNow: "Lüfter", shares: "Shares angenommen / abgelehnt", poolDiff: "Pool-Difficulty",
-    phase: "Chain", wifi: "WLAN-Signal", uptime: "Laufzeit", connected: "verbunden", notConnected: "nicht verbunden",
+    best: "Beste Difficulty (seit Start / gesamt)", phase: "Chain", wifi: "WLAN-Signal", uptime: "Laufzeit", connected: "verbunden", notConnected: "nicht verbunden",
     overheat: "ÜBERHITZUNG: Chain abgeschaltet", days: "T"
   }
 };
@@ -157,6 +157,13 @@ function upt(s) {
   const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
   return (d ? d + " " + t("days") + " " : "") + h + " h " + m + " min";
 }
+function sfx(v) {
+  if (v == null || isNaN(v)) return "–";
+  const u = ["", "k", "M", "G", "T", "P", "E"];
+  let i = 0;
+  while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
+  return fmt(v, i ? 2 : 0) + (u[i] ? " " + u[i] : "");
+}
 function tile(k, v, cls) {
   return `<div class="tile"><div class="k">${t(k)}</div><div class="v ${cls || ""}">${v}</div></div>`;
 }
@@ -181,6 +188,7 @@ async function refresh() {
     tile("fanNow", `${fmt(i.fanspeed)} <small>% · ${fmt(i.fanrpm)} rpm</small>`) +
     tile("shares", `${fmt(i.sharesAccepted)} / ${fmt(i.sharesRejected)}`) +
     tile("poolDiff", `${fmt(i.poolDifficulty)} <small>${pool}</small>`) +
+    tile("best", `${sfx(i.bestSessionDiff)} <small>/ ${sfx(i.bestDiff)}</small>`) +
     tile("phase", i.chainPhase) +
     tile("wifi", i.wifiRSSI ? `${i.wifiRSSI} <small>dBm</small>` : "–") +
     tile("uptime", `<small>${upt(i.uptimeSeconds)}</small>`);

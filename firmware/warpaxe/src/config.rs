@@ -98,8 +98,35 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
         cfg.stratum_port
     );
     *CONFIG.lock().unwrap() = Some(cfg);
+    *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
     *NVS.lock().unwrap() = Some(nvs);
     Ok(())
+}
+
+/// All-time best nonce difficulty, kept across reboots (AxeOS `bestDiff`).
+/// A mutex, not an atomic: Xtensa has no 64-bit atomics.
+static BEST_DIFF: Mutex<u64> = Mutex::new(0);
+const BEST_KEY: &str = "bestdiff";
+
+pub fn best_diff() -> u64 {
+    *BEST_DIFF.lock().unwrap()
+}
+
+/// Record a nonce difficulty; writes NVS only when the all-time best rises,
+/// which after the first hours is rare.
+pub fn raise_best_diff(diff: u64) {
+    {
+        let mut best = BEST_DIFF.lock().unwrap();
+        if *best >= diff {
+            return;
+        }
+        *best = diff;
+    }
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_u64(BEST_KEY, diff) {
+            log::warn!("config: storing best diff: {e}");
+        }
+    }
 }
 
 pub fn get() -> Config {

@@ -2,7 +2,7 @@
 //! crash, the reason for the last reset, and a window on USB-Serial/JTAG
 //! after a panic so the board can always be reflashed.
 
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::AtomicU32;
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::sys::{self as sys, tusb};

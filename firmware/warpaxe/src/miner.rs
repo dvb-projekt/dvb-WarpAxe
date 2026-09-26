@@ -43,6 +43,8 @@ pub struct MinerState {
     /// Submits by job age in notifies: 0, 1, 2, 3+.
     pub submit_age_hist: [u32; 4],
     pub last_submit_age: String,
+    /// Best nonce difficulty since boot (AxeOS `bestSessionDiff`).
+    pub best_session_diff: u64,
 }
 
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
@@ -170,7 +172,9 @@ fn run(mut uart: ChipUart) {
                         update(|s| {
                             s.nonces += 1;
                             s.last_nonce_uptime_s = diag::uptime_s();
+                            s.best_session_diff = s.best_session_diff.max(diff as u64);
                         });
+                        config::raise_best_diff(diff as u64);
                         if diff >= want {
                             // How old the stratum job is at submit time, in
                             // notifies and seconds: a pool keeps only a few

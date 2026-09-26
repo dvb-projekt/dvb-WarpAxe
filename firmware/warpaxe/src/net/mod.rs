@@ -36,9 +36,3 @@ pub(crate) fn set_wifi(connected: bool, ip: Option<String>, rssi: Option<i32>) {
     s.wifi_ip = ip;
     s.wifi_rssi = rssi;
 }
-
-/// Where a browser or tuner reaches this board, USB first.
-pub fn primary_ip() -> String {
-    let s = state();
-    s.usb_ip.or(s.wifi_ip).unwrap_or_else(|| "-".into())
-}
