@@ -287,8 +287,11 @@ fn run(mut uart: ChipUart) {
                 // One 30 s bucket into a 10-minute window: at a ticket mask
                 // of 256 a BM1370 yields about a nonce a second, so the
                 // window holds ~600 samples and the estimate is steady.
+                // Buckets are keyed by their START, so the span covers every
+                // bucket in the sum (keyed by end, it missed the oldest one:
+                // +5 % on a full window, 2x right after boot).
                 let now_s = epoch.elapsed().as_secs_f64();
-                buckets.push_back((now_s, hashes));
+                buckets.push_back((now_s - elapsed, hashes));
                 while buckets.front().is_some_and(|(t, _)| now_s - *t > 600.0) {
                     buckets.pop_front();
                 }
