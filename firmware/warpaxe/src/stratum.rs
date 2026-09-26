@@ -35,6 +35,10 @@ pub struct StratumState {
     pub last_job_id: String,
     pub last_job_uptime_s: u64,
     pub clean_jobs: u64,
+    /// Uptime second of the last notify with clean_jobs.
+    pub last_clean_uptime_s: u64,
+    /// Stale rejects by seconds since the last clean_jobs: <2, <5, <30, more.
+    pub stale_after_clean_hist: [u32; 4],
     pub reconnects: u64,
     pub last_error: String,
     pub shares_sent: u64,
@@ -260,10 +264,24 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                             .map(|e| e.to_string())
                             .unwrap_or_else(|| "rejected".into());
                         log::warn!("stratum: share {id} for {job_id} rejected: {why}");
+                        let stale = why.contains("stale");
                         update(|s| {
                             s.shares_rejected += 1;
                             *s.reject_reasons.entry(why.clone()).or_insert(0) += 1;
                             s.last_reject = why;
+                            if stale {
+                                let since = diag::uptime_s().saturating_sub(s.last_clean_uptime_s);
+                                let b = if since < 2 {
+                                    0
+                                } else if since < 5 {
+                                    1
+                                } else if since < 30 {
+                                    2
+                                } else {
+                                    3
+                                };
+                                s.stale_after_clean_hist[b] += 1;
+                            }
                         });
                     }
                 }
@@ -294,6 +312,7 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                     st.last_job_uptime_s = diag::uptime_s();
                     if clean {
                         st.clean_jobs += 1;
+                        st.last_clean_uptime_s = diag::uptime_s();
                     }
                 });
                 if started.elapsed() < Duration::from_secs(5) || clean {

@@ -115,6 +115,7 @@ fn run(mut uart: ChipUart) {
         // serial -> (job, notify count when built, uptime s when built)
         let mut jobs: HashMap<u32, (Job, u64, u64)> = HashMap::new();
         let mut seen_notify = 0u64;
+        let mut seen_clean = stratum::state().clean_jobs;
         let mut applied_diff = pool_diff;
         let mut applied_mhz = cfg.frequency;
         WANTED_MHZ.store(cfg.frequency, Ordering::Relaxed);
@@ -129,6 +130,15 @@ fn run(mut uart: ChipUart) {
             let mut events: Vec<Event> = Vec::new();
             if board::overheat() {
                 break;
+            }
+            // A new block (clean_jobs) retires everything before this
+            // round's nonces are looked at: whatever the chip still returns
+            // for the old block is stale at the pool, not worth a submit.
+            let clean_now = stratum::state().clean_jobs;
+            if clean_now != seen_clean {
+                seen_clean = clean_now;
+                chain.retire_all();
+                jobs.clear();
             }
             if let Err(e) = chain.poll(&mut uart, now, &mut |e| events.push(e)) {
                 log::error!("miner: poll: {e}");

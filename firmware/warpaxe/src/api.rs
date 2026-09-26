@@ -50,7 +50,7 @@ pub fn system_info() -> serde_json::Value {
         "wifiRSSI": n.wifi_rssi.unwrap_or(0),
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
         "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
-        "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
+        "staleAfterCleanHist": st.stale_after_clean_hist, "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
         "uptimeSeconds": diag::uptime_s(),
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
