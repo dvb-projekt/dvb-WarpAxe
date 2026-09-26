@@ -40,6 +40,9 @@ pub struct MinerState {
     pub chain_stats: String,
     /// The last nonce with everything needed to re-hash it offline.
     pub last_found: String,
+    /// Submits by job age in notifies: 0, 1, 2, 3+.
+    pub submit_age_hist: [u32; 4],
+    pub last_submit_age: String,
 }
 
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
@@ -109,7 +112,8 @@ fn run(mut uart: ChipUart) {
             cfg.frequency
         );
 
-        let mut jobs: HashMap<u32, Job> = HashMap::new();
+        // serial -> (job, notify count when built, uptime s when built)
+        let mut jobs: HashMap<u32, (Job, u64, u64)> = HashMap::new();
         let mut seen_notify = 0u64;
         let mut applied_diff = pool_diff;
         let mut applied_mhz = cfg.frequency;
@@ -133,7 +137,7 @@ fn run(mut uart: ChipUart) {
             for e in events {
                 match e {
                     Event::Nonce(f) => {
-                        let Some(job) = jobs.get(&f.work.serial) else {
+                        let Some((job, job_seq, job_t)) = jobs.get(&f.work.serial) else {
                             continue;
                         };
                         let header = job.header(f.version, f.nonce);
@@ -157,8 +161,17 @@ fn run(mut uart: ChipUart) {
                             s.last_nonce_uptime_s = diag::uptime_s();
                         });
                         if diff >= want {
+                            // How old the stratum job is at submit time, in
+                            // notifies and seconds: a pool keeps only a few
+                            // recent jobs, older ones come back "stale".
+                            let age_n = stratum::state().jobs_received.saturating_sub(*job_seq);
+                            let age_s = diag::uptime_s().saturating_sub(*job_t);
                             stratum::submit(job, f.ntime, f.nonce, f.version ^ job.version);
-                            update(|s| s.shares_sent += 1);
+                            update(|s| {
+                                s.shares_sent += 1;
+                                s.submit_age_hist[(age_n as usize).min(3)] += 1;
+                                s.last_submit_age = format!("{age_n} notifies, {age_s} s");
+                            });
                         } else {
                             update(|s| s.low_diff += 1);
                         }
@@ -246,7 +259,7 @@ fn run(mut uart: ChipUart) {
                         match chain.submit(&mut uart, &job.work(), now) {
                             Ok(r) => {
                                 update(|s| s.jobs_sent += 1);
-                                jobs.insert(r.serial, job);
+                                jobs.insert(r.serial, (job, st.jobs_received, diag::uptime_s()));
                                 if jobs.len() > 32 {
                                     let oldest = r.serial.wrapping_sub(32);
                                     jobs.retain(|k, _| k.wrapping_sub(oldest) < 64);

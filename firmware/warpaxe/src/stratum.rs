@@ -40,6 +40,9 @@ pub struct StratumState {
     pub shares_sent: u64,
     pub shares_accepted: u64,
     pub shares_rejected: u64,
+    /// Reject reasons the pool gave, with counts (AxeOS
+    /// `sharesRejectedReasons`).
+    pub reject_reasons: std::collections::BTreeMap<String, u32>,
     pub last_reject: String,
 }
 
@@ -259,6 +262,7 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
                         log::warn!("stratum: share {id} for {job_id} rejected: {why}");
                         update(|s| {
                             s.shares_rejected += 1;
+                            *s.reject_reasons.entry(why.clone()).or_insert(0) += 1;
                             s.last_reject = why;
                         });
                     }
