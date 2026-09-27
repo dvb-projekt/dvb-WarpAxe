@@ -171,6 +171,18 @@ impl Canvas<'_> {
         }
     }
 
+    /// A sprite of RGB565 (big-endian) + 8-bit alpha per pixel.
+    pub fn sprite(&mut self, x: i32, y: i32, w: i32, h: i32, data: &[u8]) {
+        for r in 0..h {
+            for col in 0..w {
+                let i = ((r * w + col) * 3) as usize;
+                if let Some(px) = data.get(i..i + 3) {
+                    self.blend(x + col, y + r, u16::from_be_bytes([px[0], px[1]]), px[2]);
+                }
+            }
+        }
+    }
+
     /// Text with the pen on the baseline at `y`; returns its width.
     pub fn text(&mut self, f: &Font, x: i32, y: i32, c: u16, s: &str, align: Align) -> i32 {
         let w = f.width(s);

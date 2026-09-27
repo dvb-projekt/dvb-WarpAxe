@@ -81,15 +81,33 @@ def bits(im):
     return bytes(out)
 
 
+def badge(width=66):
+    """The wordmark small for the LCD header: RGB565 big-endian plus an
+    8-bit alpha per pixel, so it sits on any background."""
+    mark = Image.open(SRC).convert("RGBA")
+    mark = mark.crop(mark.getbbox())
+    h = round(mark.height * width / mark.width)
+    mark = mark.resize((width, h), Image.LANCZOS)
+    out = bytearray()
+    for r, g, b, a in mark.get_flattened_data():
+        v = ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)
+        out += v.to_bytes(2, "big") + bytes([a])
+    return width, h, bytes(out), mark
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     l, o = lcd(), oled()
     (OUT / "lcd_320x170.rgb565").write_bytes(rgb565(l))
     (OUT / "oled_128x32.bits").write_bytes(bits(o))
+    bw, bh, bdata, bimg = badge()
+    (OUT / f"badge_{bw}x{bh}.rgb565a").write_bytes(bdata)
+    print(f"badge {bw}x{bh}")
     if "--preview" in sys.argv:
         d = Path(sys.argv[sys.argv.index("--preview") + 1])
         l.resize((960, 510), Image.NEAREST).save(d / "splash-lcd.png")
         o.convert("L").resize((512, 128), Image.NEAREST).save(d / "splash-oled.png")
+        bimg.resize((bw * 4, bh * 4), Image.NEAREST).save(d / "badge.png")
 
 
 if __name__ == "__main__":

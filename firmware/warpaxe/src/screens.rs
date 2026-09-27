@@ -512,11 +512,20 @@ fn clock_text() -> Option<String> {
     clock::local_hm().map(|(h, m)| format!("{h:02}:{m:02}"))
 }
 
+static BADGE: &[u8] = include_bytes!("splash/badge_66x20.rgb565a");
+static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
+
+/// The wordmark top left of every page, the page title after it.
+fn badge(c: &mut Canvas) {
+    c.sprite(9, 2, 66, 20, BADGE);
+}
+
 fn page_head(c: &mut Canvas, title: &str, n: usize) {
+    badge(c);
     c.text(
         &LABEL10,
-        12,
-        18,
+        82,
+        17,
         gfx::PLASMA,
         &title.to_uppercase(),
         Align::Left,
@@ -555,9 +564,10 @@ fn cockpit(c: &mut Canvas) {
     let b = board::state();
     let n = net::state();
     let p = board::profile();
+    badge(c);
     c.text(
         &LABEL10,
-        12,
+        82,
         16,
         family_color(),
         &p.model.to_uppercase(),
@@ -1237,7 +1247,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
 
 // ------------------------------------------------------------------ OLED
 
-const OLED_SLIDES: usize = 8;
+const OLED_SLIDES: usize = 9;
 
 fn oled_text(o: &mut Oled, x: i32, y: i32, s: &str) {
     o.text(x.max(0) as usize, y.max(0) as usize, 1, s);
@@ -1253,6 +1263,18 @@ fn oled_slide(o: &mut Oled, i: usize) {
     let st = stratum::state();
     let b = board::state();
     let n = net::state();
+    if i == 8 {
+        // The wordmark, with model and version as on the splash.
+        o.bitmap(SPLASH_OLED);
+        let line = format!(
+            "{} {}",
+            board::profile().model.to_uppercase(),
+            env!("CARGO_PKG_VERSION")
+        );
+        let line: String = line.chars().take(21).collect();
+        oled_center(o, 23, &line);
+        return;
+    }
     if i >= 5 {
         let (a, b2) = match i {
             5 => (
