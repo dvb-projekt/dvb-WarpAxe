@@ -23,4 +23,4 @@ pub mod tps53647;
 pub mod tps546;
 
 pub use i2c::I2c;
-pub use profile::{Asic, Profile, Thermal, Vr, BITAXE_GAMMA, T_DISPLAY_S3_DEVKIT};
+pub use profile::{Asic, Profile, Thermal, Vr, VrAlt, BITAXE_GAMMA, T_DISPLAY_S3_DEVKIT};

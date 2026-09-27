@@ -39,6 +39,18 @@ pub struct Config {
     pub flipscreen: bool,
     /// OLED inverse video (AxeOS name).
     pub invertscreen: bool,
+    /// Fan PWM inverted, for fans that read duty backwards (NerdOS name).
+    pub invertfanpolarity: bool,
+    /// Lowest duty the fan PID may choose, % (AxeOS name).
+    #[serde(rename = "minFanSpeed")]
+    pub min_fan_speed: u8,
+    /// Chip temperature the fan PID holds, °C; 0 = the board's default
+    /// (NerdOS name).
+    #[serde(rename = "pidTargetTemp")]
+    pub pid_target_temp: u8,
+    /// Chip temperature that switches the core voltage off, °C; 0 = the
+    /// board's default (NerdOS name).
+    pub overheat_temp: u8,
     /// Chips on the chain; 0 = discover.
     #[serde(rename = "asicCount")]
     pub asic_count: u8,
@@ -66,6 +78,10 @@ impl Default for Config {
             display_timeout: 30,
             flipscreen: false,
             invertscreen: false,
+            invertfanpolarity: false,
+            min_fan_speed: 25,
+            pid_target_temp: 0,
+            overheat_temp: 0,
             asic_count: 0,
             asic_difficulty: 0,
         }

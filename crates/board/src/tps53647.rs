@@ -108,6 +108,9 @@ pub struct Config {
     pub imax: u8,
     /// IOUT over-current warning and fault (both the same), A.
     pub ifault: u16,
+    /// Added to the regulator-side TMP1075: NerdOS adds 8 °C for the
+    /// Octaxe's six-phase part to correct the sensor's placement.
+    pub vr_temp_offset_c: i8,
 }
 
 impl Config {
@@ -117,6 +120,7 @@ impl Config {
         phases: 3,
         imax: 90,
         ifault: 95,
+        vr_temp_offset_c: 0,
     };
     /// NerdQAxe+: TPS53647, 2 phases, 60 A, fault 55 A.
     pub const NERDQAXE_PLUS: Config = Config {
@@ -124,6 +128,7 @@ impl Config {
         phases: 2,
         imax: 60,
         ifault: 55,
+        vr_temp_offset_c: 0,
     };
     /// NerdOctaxe-γ with the six-phase part (VR_DETECT GPIO3 high).
     pub const NERDOCTAXE_GAMMA_6P: Config = Config {
@@ -131,6 +136,7 @@ impl Config {
         phases: 6,
         imax: 240,
         ifault: 235,
+        vr_temp_offset_c: 8,
     };
     /// NerdOctaxe-γ with the four-phase part (VR_DETECT low).
     pub const NERDOCTAXE_GAMMA_4P: Config = Config {
@@ -138,6 +144,7 @@ impl Config {
         phases: 4,
         imax: 180,
         ifault: 160,
+        vr_temp_offset_c: 0,
     };
     /// Q1370: TPS53647, 4 phases, 123 A, fault 160 A (fault above
     /// IMAX as NerdOS has it).
@@ -146,6 +153,7 @@ impl Config {
         phases: 4,
         imax: 123,
         ifault: 160,
+        vr_temp_offset_c: 0,
     };
     /// Q1373 with the four-phase part (expander pin 6 high): IMAX from
     /// the 48.7 kΩ Rmon formula = 122 A, fault 160 A.
@@ -154,6 +162,7 @@ impl Config {
         phases: 4,
         imax: 122,
         ifault: 160,
+        vr_temp_offset_c: 0,
     };
     /// Q1373 with the six-phase part (expander pin 6 low): IMAX from
     /// the 33.2 kΩ Rmon formula = 179 A, fault 6 × 40 A.
@@ -162,6 +171,7 @@ impl Config {
         phases: 6,
         imax: 179,
         ifault: 240,
+        vr_temp_offset_c: 0,
     };
 }
 

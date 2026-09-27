@@ -30,12 +30,10 @@ pub enum Vr {
     /// TPS546D24A over PMBus, driver in [`crate::tps546`].
     Tps546(tps546::Config),
     /// TPS53647 (up to 4 phases) or TPS53667 (6 phases) over PMBus,
-    /// the Nerd multi-chip boards; driver in [`crate::tps53647`], not
-    /// yet wired into the firmware. `enable`/`ldo_enable` are ESP
-    /// GPIOs, or expander pins when `via_expander`. Boards that carry
-    /// either part (Octaxe, Q1373) list the default here; the firmware
-    /// must swap in the other [`tps53647::Config`] after reading the
-    /// detect pin.
+    /// the Nerd multi-chip boards; driver in [`crate::tps53647`].
+    /// `enable`/`ldo_enable` are ESP GPIOs, or expander pins when
+    /// `via_expander`. Boards that carry either part (Octaxe, Q1373)
+    /// name the other one in `alt` with the pin that tells.
     Tps5364x {
         /// Part, phases and current limits.
         regulator: tps53647::Config,
@@ -45,7 +43,22 @@ pub enum Vr {
         ldo_enable: Option<u8>,
         /// Pins are on an FXL6408 I²C expander, not the ESP.
         via_expander: bool,
+        /// The other regulator population and the pin that selects it.
+        alt: Option<VrAlt>,
     },
+}
+
+/// A board populated with either of two regulators: `regulator` applies
+/// when `pin` reads `level` (ESP GPIO read with pull-down, or an
+/// expander input when the regulator's pins are on the expander).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct VrAlt {
+    /// The detect pin.
+    pub pin: u8,
+    /// The level that selects `regulator`.
+    pub level: bool,
+    /// Part, phases and current limits for that population.
+    pub regulator: tps53647::Config,
 }
 
 /// The chip temperature source and fan output.
@@ -140,6 +153,11 @@ pub struct Profile {
     pub vr_throttle_c: f32,
     /// Regulator temperature at which mining stops, °C.
     pub vr_max_c: f32,
+    /// Added to the board temperature sensors: NerdOS adds 3 °C on the
+    /// Q13xx carriers, whose sensors sit beside the chips.
+    pub temp_offset_c: f32,
+    /// Chip temperature the fan PID holds (NerdOS `m_pidSettings[0]`).
+    pub fan_target_c: f32,
 }
 
 impl Profile {
@@ -171,12 +189,6 @@ impl Profile {
             Thermal::Emc2101(c) => Some(c),
             _ => None,
         }
-    }
-
-    /// True when the profile names a regulator the firmware does not
-    /// drive yet: the chain must stay unpowered.
-    pub fn vr_unsupported(&self) -> bool {
-        matches!(self.vr, Vr::Tps5364x { .. })
     }
 
     /// VOUT to command for a core voltage in mV.
@@ -220,6 +232,8 @@ pub const BITAXE_GAMMA: Profile = Profile {
     max_temp_c: 90.0,
     vr_throttle_c: 105.0,
     vr_max_c: 145.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 60.0,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -249,6 +263,8 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     max_temp_c: 90.0,
     vr_throttle_c: 105.0,
     vr_max_c: 145.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 60.0,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -292,6 +308,8 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     max_temp_c: 90.0,
     vr_throttle_c: 105.0,
     vr_max_c: 145.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 60.0,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -312,6 +330,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
         enable: 10,
         ldo_enable: Some(13),
         via_expander: false,
+        alt: None,
     },
     voltage_domains: 1,
     thermal: Thermal::Tmp1075Emc2302,
@@ -322,10 +341,14 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     nominal_voltage_v: 12,
     max_power_w: 100,
     power_offset_w: 0.0,
-    throttle_temp_c: 75.0,
-    max_temp_c: 90.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // NerdOS: CONFIG_OVERHEAT_TEMP 70 °C for the chips and, on the
+    // second fan channel, for the regulator; no throttle step.
+    throttle_temp_c: 70.0,
+    max_temp_c: 70.0,
+    vr_throttle_c: 70.0,
+    vr_max_c: 70.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 55.0,
 };
 
 /// NerdOctaxe-γ: eight BM1370 on 12 V, TPS53667 six-phase (or TPS53647
@@ -339,6 +362,12 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
         enable: 10,
         ldo_enable: Some(13),
         via_expander: false,
+        // VR_DETECT GPIO3 with pull-down: low (or unfitted) = TPS53647.
+        alt: Some(VrAlt {
+            pin: 3,
+            level: false,
+            regulator: tps53647::Config::NERDOCTAXE_GAMMA_4P,
+        }),
     },
     default_frequency_mhz: 700,
     default_core_mv: 1210,
@@ -359,11 +388,14 @@ pub const Q1370: Profile = Profile {
         enable: 1,
         ldo_enable: Some(2),
         via_expander: true,
+        alt: None,
     },
     default_frequency_mhz: 600,
     default_core_mv: 1150,
     init_core_mv: 1200,
     max_power_w: 150,
+    temp_offset_c: 3.0,
+    fan_target_c: 55.0,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -381,11 +413,19 @@ pub const Q1373: Profile = Profile {
         enable: 1,
         ldo_enable: Some(2),
         via_expander: true,
+        // Expander pin 6: low = six-phase TPS53667.
+        alt: Some(VrAlt {
+            pin: crate::fxl6408::q13xx::PHASE_DETECT,
+            level: false,
+            regulator: tps53647::Config::Q1373_6P,
+        }),
     },
     default_frequency_mhz: 425,
     default_core_mv: 1010,
     init_core_mv: 1050,
     max_power_w: 180,
+    temp_offset_c: 3.0,
+    fan_target_c: 60.0,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -437,9 +477,8 @@ mod tests {
     }
 
     #[test]
-    fn nerd_boards_without_a_driver_say_so() {
+    fn nerd_boards_carry_a_tps5364x_and_the_board_details() {
         for p in [&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &Q1370, &Q1373] {
-            assert!(p.vr_unsupported(), "{}", p.name);
             assert!(p.tps546().is_none());
             let vr = p.tps53647().unwrap();
             assert!((1..=6).contains(&vr.phases), "{}", p.name);
@@ -453,7 +492,27 @@ mod tests {
             assert_eq!(p.i2c, Some(NERD_I2C));
             assert_eq!(p.nominal_voltage_v, 12);
         }
-        assert!(!NERDAXE_GAMMA.vr_unsupported());
+        assert_eq!(Q1370.temp_offset_c, 3.0);
+        assert_eq!(Q1370.fan_target_c, 55.0);
+        assert_eq!(NERDQAXE_PLUSPLUS.fan_target_c, 55.0);
+        assert_eq!(NERDOCTAXE_GAMMA.fan_target_c, 55.0);
+        for p in [&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &Q1370, &Q1373] {
+            assert_eq!((p.max_temp_c, p.vr_max_c), (70.0, 70.0), "{}", p.name);
+        }
+        assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().vr_temp_offset_c, 8);
+        assert_eq!(Q1373.temp_offset_c, 3.0);
+        assert_eq!(BITAXE_GAMMA.temp_offset_c, 0.0);
+        let alt = |p: &Profile| match p.vr {
+            Vr::Tps5364x { alt, .. } => alt,
+            _ => None,
+        };
+        assert_eq!(alt(&NERDOCTAXE_GAMMA).unwrap().regulator.phases, 4);
+        assert_eq!(alt(&Q1373).unwrap().regulator.phases, 6);
+        assert_eq!(alt(&NERDQAXE_PLUSPLUS), None);
+        assert_eq!(
+            alt(&NERDOCTAXE_GAMMA).unwrap().regulator.vr_temp_offset_c,
+            0
+        );
         assert!(NERDAXE_GAMMA.tps53647().is_none());
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().phases, 6);
         assert_eq!(Q1373.tps53647().unwrap().phases, 4);

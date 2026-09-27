@@ -191,11 +191,7 @@ fn main() {
     }
 
     set_step("BOARD BUS");
-    board::init_bus(
-        peripherals.i2c0,
-        peripherals.pins.gpio47,
-        peripherals.pins.gpio48,
-    );
+    board::init_bus(peripherals.i2c0);
     set_step("DISPLAY");
     let mut d = display::Display::new();
     let crashed = diag::log_core_dump();
@@ -290,7 +286,7 @@ fn main() {
     set_step("STRATUM");
     stratum::start();
     set_step("BOARD");
-    board::start(peripherals.pins.gpio1);
+    board::start();
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

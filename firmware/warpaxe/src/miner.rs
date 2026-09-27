@@ -192,7 +192,8 @@ fn run(mut uart: ChipUart) {
                         }
                     }
                     Event::Ready => {
-                        log::info!("miner: chain ready, {} chip(s)", chain.chip_count())
+                        log::info!("miner: chain ready, {} chip(s)", chain.chip_count());
+                        board::chain_ready();
                     }
                     Event::Enumerated { count } => log::info!("miner: {count} chip(s) answered"),
                     Event::ChipCountMismatch { expected, found } => {
