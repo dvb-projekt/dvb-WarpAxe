@@ -106,6 +106,9 @@ pub struct I2cPins {
 pub struct Profile {
     /// AxeOS `boardVersion`-style name.
     pub name: &'static str,
+    /// The board's name as its maker writes it, for people (NerdOS
+    /// `deviceModel` spelling); `name` is the id tools match on.
+    pub model: &'static str,
     /// The chip.
     pub asic: Asic,
     /// Chips on the chain; 0 = discover.
@@ -219,6 +222,7 @@ impl Profile {
 /// chip diode, SSD1306 on the same I²C, reset on GPIO1, UART 17/18.
 pub const BITAXE_GAMMA: Profile = Profile {
     name: "bitaxe-gamma",
+    model: "Bitaxe Gamma",
     asic: Asic::Bm1370,
     asic_count: 1,
     uart_tx: 17,
@@ -259,6 +263,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
 /// display data lines here, so no I²C.
 pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     name: "t-display-s3",
+    model: "T-Display-S3",
     asic: Asic::Bm1370,
     asic_count: 0,
     uart_tx: 17,
@@ -304,6 +309,7 @@ const NERD_I2C: I2cPins = I2cPins {
 /// EMC2101 on the chip diode, 515 MHz / 1150 mV, 25 W, +5 W offset.
 pub const NERDAXE_GAMMA: Profile = Profile {
     name: "nerdaxe-gamma",
+    model: "NerdAxe Gamma",
     asic: Asic::Bm1370,
     asic_count: 1,
     uart_tx: 17,
@@ -345,6 +351,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
 /// up at 1200 mV, 100 W.
 pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     name: "nerdqaxe-plusplus",
+    model: "NerdQAxe++",
     asic: Asic::Bm1370,
     asic_count: 4,
     uart_tx: 17,
@@ -393,6 +400,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
 /// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W.
 pub const NERDOCTAXE_GAMMA: Profile = Profile {
     name: "nerdoctaxe-gamma",
+    model: "NerdOCTAXE-γ",
     asic_count: 8,
     vr: Vr::Tps5364x {
         regulator: tps53647::Config::NERDOCTAXE_GAMMA_6P,
@@ -428,6 +436,7 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
 /// 150 W. Expander driver: [`crate::fxl6408`].
 pub const Q1370: Profile = Profile {
     name: "q1370",
+    model: "Q1370",
     asic_count: 4,
     asic_reset: None,
     vr: Vr::Tps5364x {
@@ -459,6 +468,7 @@ pub const Q1370: Profile = Profile {
 /// 1050 mV, 180 W. Expander driver: [`crate::fxl6408`].
 pub const Q1373: Profile = Profile {
     name: "q1373",
+    model: "Q1373",
     asic: Asic::Bm1373,
     asic_count: 4,
     asic_reset: None,
@@ -557,6 +567,7 @@ mod tests {
         assert_eq!(Q1370.fan_target_c, 55.0);
         assert_eq!(NERDQAXE_PLUSPLUS.fan_target_c, 55.0);
         assert_eq!(NERDQAXE_PLUSPLUS.abs_max_frequency_mhz, 800);
+        assert_eq!(NERDQAXE_PLUSPLUS.model, "NerdQAxe++");
         assert!(
             NERDOCTAXE_GAMMA.frequency_options.is_empty(),
             "not inherited"

@@ -185,7 +185,7 @@ async function refresh() {
   let i;
   try { i = await (await fetch("/api/system/info", {cache: "no-store"})).json(); }
   catch (e) { $("#sub").innerHTML = `<span class="bad">${t("offline")}</span>`; return; }
-  $("#sub").textContent = `${i.hostname} · ${i.ASICModel} × ${i.asicCount} · ${i.boardVersion} · ${i.version}`;
+  $("#sub").textContent = `${i.hostname} · ${i.ASICModel} × ${i.asicCount} · ${i.boardName || i.boardVersion} · ${i.version}`;
   const ths = i.hashRate / 1000, exp = i.expectedHashrate / 1000;
   const eff = i.hashRate > 0 ? i.power / (i.hashRate / 1000) : null;
   const tc = i.temp >= 70 ? "bad" : i.temp >= 65 ? "warn" : "";

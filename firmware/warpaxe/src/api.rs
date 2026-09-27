@@ -34,12 +34,13 @@ pub fn system_info() -> serde_json::Value {
     let b = board::state();
     let profile = board::profile();
     json!({
-        "boardVersion": b.board, "deviceModel": b.board,
+        "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv.unwrap_or(0.0), "current": b.iout_ma.unwrap_or(0.0),
         "temp": b.temp_c.unwrap_or(0.0), "vrTemp": b.vr_temp_c.unwrap_or(0),
         "overheat_mode": u8::from(b.overheat), "fanrpm": b.fan_rpm,
         "fanrpm2": b.fan2_rpm, "fanspeed2": b.fan2_pct, "vrPart": b.vr_part,
+        "fans": nerd_fans(&cfg, profile, &b),
         "invertfanpolarity": u8::from(cfg.invertfanpolarity), "minFanSpeed": cfg.min_fan_speed,
         "pidTargetTemp": if cfg.pid_target_temp > 0 { u32::from(cfg.pid_target_temp) } else { profile.fan_target_c.round() as u32 },
         "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.max_temp_c.round() as u32 },
@@ -68,6 +69,53 @@ pub fn system_info() -> serde_json::Value {
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
         "resetReason": diag::reset_reason(),
     })
+}
+
+/// NerdOS's `fans` array on the two-channel Nerd boards, the place a
+/// tuner reads the shutdown and fan-target temperatures from: channel 0
+/// on the chips, channel 1 on the regulator. Other boards leave it out,
+/// so a tuner keeps its stock-firmware defaults for them.
+fn nerd_fans(
+    cfg: &config::Config,
+    p: &warpaxe_board::Profile,
+    b: &board::BoardState,
+) -> serde_json::Value {
+    if p.thermal != warpaxe_board::Thermal::Tmp1075Emc2302 {
+        return json!([]);
+    }
+    let chip_limit = if cfg.overheat_temp > 0 {
+        u32::from(cfg.overheat_temp)
+    } else {
+        p.max_temp_c.round() as u32
+    };
+    let target = if cfg.pid_target_temp > 0 {
+        u32::from(cfg.pid_target_temp)
+    } else {
+        p.fan_target_c.round() as u32
+    };
+    json!([
+        {"label": "M2", "mode": if cfg.autofanspeed { 2 } else { 0 },
+         "overheatTemp": chip_limit, "pid": {"targetTemp": target},
+         "rpm": b.fan_rpm, "speedPerc": b.fan_pct},
+        {"label": "M1", "mode": if cfg.autofanspeed { 3 } else { 0 },
+         "overheatTemp": p.vr_max_c.round() as u32, "pid": {"targetTemp": 65},
+         "rpm": b.fan2_rpm.unwrap_or(0), "speedPerc": b.fan2_pct.unwrap_or(0)},
+    ])
+}
+
+/// NerdOS `GET /api/v2/settings`: the board's own clock and voltage
+/// choices, where a tuner looks for them.
+fn settings_v2() -> Option<serde_json::Value> {
+    let p = board::profile();
+    if p.frequency_options.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "deviceModel": p.name,
+        "defaultFrequency": p.default_frequency_mhz, "defaultCoreVoltage": p.default_core_mv,
+        "absMinCoreVoltage": p.abs_min_core_mv, "absMaxCoreVoltage": p.abs_max_core_mv,
+        "frequencyOptions": p.frequency_options, "voltageOptions": p.voltage_options,
+    }))
 }
 
 /// NerdOS `/api/system/asic`, for boards whose stock firmware publishes
@@ -200,6 +248,13 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         Ok::<(), EspIOError>(())
     })?;
 
+    server.fn_handler("/api/v2/settings", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        match settings_v2() {
+            Some(v) => reply_json(req, 200, &v),
+            None => reply_json(req, 404, &json!({"error": "no options for this board"})),
+        }
+    })?;
     server.fn_handler("/api/system/asic", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         match asic_options() {

@@ -33,6 +33,8 @@ pub struct Lcd {
     panel: tusb::esp_lcd_panel_handle_t,
     /// 64-byte aligned, in PSRAM, never freed: the i80 DMA wants alignment.
     fb: &'static mut [u8],
+    flip: bool,
+    invert: bool,
 }
 
 macro_rules! check {
@@ -107,7 +109,12 @@ impl Lcd {
         // PSRAM-aligned variant is the prime suspect for the black screen.
         let len = WIDTH * HEIGHT * 2;
         let fb: &'static mut [u8] = Box::leak(vec![0u8; len].into_boxed_slice());
-        let mut d = Lcd { panel, fb };
+        let mut d = Lcd {
+            panel,
+            fb,
+            flip: false,
+            invert: false,
+        };
         d.clear(BLACK);
         d.flush()?;
         gpio_out(PIN_BACKLIGHT, true);
@@ -167,6 +174,25 @@ impl Lcd {
                 }
             }
             cx += (crate::font::W + 1) * scale;
+        }
+    }
+
+    /// `flipscreen` / `invertscreen` on the ST7789: 180° is both mirror
+    /// axes reversed (the 170-line window sits centred in the 240-line
+    /// memory, so the 35-line gap stays); the panel's colours are
+    /// inverted by default, so `invert` switches that off.
+    pub fn orient(&mut self, flip: bool, invert: bool) {
+        if flip != self.flip {
+            let rc = unsafe { tusb::esp_lcd_panel_mirror(self.panel, flip, !flip) };
+            if rc == sys::ESP_OK {
+                self.flip = flip;
+            }
+        }
+        if invert != self.invert {
+            let rc = unsafe { tusb::esp_lcd_panel_invert_color(self.panel, !invert) };
+            if rc == sys::ESP_OK {
+                self.invert = invert;
+            }
         }
     }
 

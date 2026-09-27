@@ -96,6 +96,7 @@ fn draw_oled(d: &mut display::Oled) {
 fn draw_lcd(d: &mut display::Lcd) {
     use display::*;
     let cfg = config::get();
+    d.orient(cfg.flipscreen, cfg.invertscreen);
     let n = net::state();
     d.clear(NAVY);
     d.text(4, 4, 2, WHITE, &format!("WARPAXE {}", cfg.hostname));
