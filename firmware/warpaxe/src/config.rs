@@ -43,6 +43,29 @@ pub struct Config {
     pub fallback_pass: String,
     #[serde(rename = "fallbackStratumTLS")]
     pub fallback_tls: u8,
+    /// Stratum protocol of the main pool (AxeOS name): "SV1" or "SV2".
+    #[serde(rename = "stratumProtocol")]
+    pub stratum_protocol: String,
+    /// The Sv2 pool's authority public key, Base58Check as pools publish
+    /// it; empty = the pool is not verified (only without RequireAuth).
+    #[serde(rename = "stratumV2AuthorityPubkey")]
+    pub stratum_v2_authority_pubkey: String,
+    /// Channel kind (AxeOS name). WarpAxe opens extended channels only;
+    /// the value is kept for tools that read it.
+    #[serde(rename = "stratumV2ChannelType")]
+    pub stratum_v2_channel_type: String,
+    /// Connect to the Sv2 pool only when its certificate verifies
+    /// against the authority key.
+    #[serde(rename = "stratumV2RequireAuth")]
+    pub stratum_v2_require_auth: bool,
+    #[serde(rename = "fallbackStratumProtocol")]
+    pub fallback_protocol: String,
+    #[serde(rename = "fallbackStratumV2AuthorityPubkey")]
+    pub fallback_v2_authority_pubkey: String,
+    #[serde(rename = "fallbackStratumV2ChannelType")]
+    pub fallback_v2_channel_type: String,
+    #[serde(rename = "fallbackStratumV2RequireAuth")]
+    pub fallback_v2_require_auth: bool,
     /// Set the clock by NTP (AxeOS name); the history and log show real
     /// times once it is set.
     #[serde(rename = "useNTP")]
@@ -147,6 +170,14 @@ impl Default for Config {
             fallback_user: String::new(),
             fallback_pass: "x".into(),
             fallback_tls: 0,
+            stratum_protocol: "SV1".into(),
+            stratum_v2_authority_pubkey: String::new(),
+            stratum_v2_channel_type: "extended".into(),
+            stratum_v2_require_auth: true,
+            fallback_protocol: "SV1".into(),
+            fallback_v2_authority_pubkey: String::new(),
+            fallback_v2_channel_type: "extended".into(),
+            fallback_v2_require_auth: true,
             use_ntp: true,
             ntp_server: "pool.ntp.org".into(),
             timezone: "CET-1CEST,M3.5.0,M10.5.0/3".into(),
@@ -257,6 +288,15 @@ pub fn get() -> Config {
 impl Config {
     /// The config as the API may show it: secrets replaced by a marker
     /// that says whether one is set. Never return the real ones.
+    /// The main pool speaks Stratum V2.
+    pub fn sv2(&self) -> bool {
+        is_sv2(&self.stratum_protocol)
+    }
+    /// The fallback pool speaks Stratum V2.
+    pub fn fallback_sv2(&self) -> bool {
+        is_sv2(&self.fallback_protocol)
+    }
+
     pub fn redacted(&self) -> Config {
         let mut c = self.clone();
         let mask = |v: &String| {
@@ -358,6 +398,12 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             cfg.stratum_port = stock.u16("stratumport").unwrap_or(cfg.stratum_port);
             cfg.stratum_pass = stock.str("stratumpass").unwrap_or_else(|| "x".into());
             cfg.stratum_tls = u8::from(stock.u16("stratumtls") == Some(1));
+            // NerdOS keys; AxeOS stores its Sv2 settings under other names.
+            if stock.u16("sv2_proto") == Some(1) {
+                cfg.stratum_protocol = "SV2".into();
+            }
+            cfg.stratum_v2_authority_pubkey = stock.str("sv2_auth_pk").unwrap_or_default();
+            cfg.stratum_v2_require_auth = stock.u16("sv2_reqauth") != Some(0);
             took.push("pool");
         }
     }
@@ -368,6 +414,11 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             cfg.fallback_port = stock.u16("fbstratumport").unwrap_or(cfg.fallback_port);
             cfg.fallback_pass = stock.str("fbstratumpass").unwrap_or_else(|| "x".into());
             cfg.fallback_tls = u8::from(stock.u16("fbstratumtls") == Some(1));
+            if stock.u16("fbsv2_proto") == Some(1) {
+                cfg.fallback_protocol = "SV2".into();
+            }
+            cfg.fallback_v2_authority_pubkey = stock.str("fbsv2_authpk").unwrap_or_default();
+            cfg.fallback_v2_require_auth = stock.u16("fbsv2_reqauth") != Some(0);
             took.push("fallback");
         }
     }
@@ -383,4 +434,9 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
         }
     }
     took
+}
+
+/// "SV2" (any case) or the NerdOS number 1 means Stratum V2.
+pub fn is_sv2(protocol: &str) -> bool {
+    protocol.trim().eq_ignore_ascii_case("sv2") || protocol.trim() == "1"
 }

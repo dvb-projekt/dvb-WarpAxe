@@ -89,6 +89,9 @@ pub fn system_info() -> serde_json::Value {
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user, "stratumTLS": cfg.stratum_tls, "fallbackStratumTLS": cfg.fallback_tls, "stratumTLSActive": st.tls,
+        "stratumProtocol": cfg.stratum_protocol, "stratumV2AuthorityPubkey": cfg.stratum_v2_authority_pubkey, "stratumV2ChannelType": cfg.stratum_v2_channel_type, "stratumV2RequireAuth": cfg.stratum_v2_require_auth,
+        "fallbackStratumProtocol": cfg.fallback_protocol, "fallbackStratumV2AuthorityPubkey": cfg.fallback_v2_authority_pubkey, "fallbackStratumV2ChannelType": cfg.fallback_v2_channel_type, "fallbackStratumV2RequireAuth": cfg.fallback_v2_require_auth,
+        "stratumProtocolActive": if st.sv2 { "SV2" } else { "SV1" },
         "isUsingFallbackStratum": st.using_fallback, "activePool": st.pool,
         "useFallbackStratum": cfg.use_fallback, "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
         "poolDifficulty": st.difficulty,
@@ -235,6 +238,48 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
 
 /// The app slot this boot runs from; it cannot change until the next
 /// boot, so it is read once (each `EspOta` also logs its drop).
+/// The pool protocol fields as tools send them: AxeOS strings ("SV1",
+/// "SV2") or NerdOS numbers (0, 1). Numbers become strings, anything
+/// else is refused; an authority key must parse.
+fn pool_refuse(v: &mut serde_json::Value) -> Option<String> {
+    for k in ["stratumProtocol", "fallbackStratumProtocol"] {
+        let Some(p) = v.get(k).cloned() else {
+            continue;
+        };
+        let norm = match &p {
+            serde_json::Value::Number(n) => match n.as_u64() {
+                Some(0) => "SV1",
+                Some(1) => "SV2",
+                _ => return Some(format!("{k}: 0 (V1) or 1 (V2)")),
+            },
+            serde_json::Value::String(s) if s.eq_ignore_ascii_case("sv1") => "SV1",
+            serde_json::Value::String(s) if s.eq_ignore_ascii_case("sv2") => "SV2",
+            _ => return Some(format!("{k}: SV1 or SV2")),
+        };
+        if let Some(o) = v.as_object_mut() {
+            o.insert(k.into(), serde_json::Value::String(norm.into()));
+        }
+    }
+    for k in [
+        "stratumV2AuthorityPubkey",
+        "fallbackStratumV2AuthorityPubkey",
+    ] {
+        if let Some(key) = v.get(k).and_then(|x| x.as_str()) {
+            if !key.trim().is_empty() && warpaxe_sv2::authority_key_from_b58(key).is_err() {
+                return Some(format!("{k}: not a valid Sv2 authority key (Base58Check)"));
+            }
+        }
+    }
+    for k in ["stratumV2ChannelType", "fallbackStratumV2ChannelType"] {
+        if let Some(t) = v.get(k).and_then(|x| x.as_str()) {
+            if t != "extended" {
+                log::warn!("config: {k} {t:?} noted; WarpAxe opens extended channels");
+            }
+        }
+    }
+    None
+}
+
 fn running_partition() -> String {
     static SLOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
     SLOT.get_or_init(|| {
@@ -386,7 +431,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                 let why = limits_refuse(&v).unwrap_or_default();
                 reply_json(req, 400, &json!({ "error": why }))
             }
-            Ok(v) => match config::patch(&v) {
+            Ok(mut v) => match pool_refuse(&mut v)
+                .map_or_else(|| config::patch(&v), |why| Err(anyhow::anyhow!(why)))
+            {
                 Ok(cfg) => {
                     crate::display::touch();
                     log::info!(

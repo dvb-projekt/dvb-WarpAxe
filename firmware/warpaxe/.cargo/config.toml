@@ -12,3 +12,11 @@ build-std = ["std", "panic_abort"]
 [env]
 MCU = "esp32s3"
 ESP_IDF_VERSION = "v5.3.3"
+# C code in crates (secp256k1-sys for Stratum V2) must be built with the
+# ESP32-S3 wrapper: the generic xtensa-esp-elf-gcc defaults to big-endian
+# and the link fails with "compiled for a big endian system".
+CC_xtensa_esp32s3_espidf = "xtensa-esp32s3-elf-gcc"
+AR_xtensa_esp32s3_espidf = "xtensa-esp32s3-elf-ar"
+# Like every ESP-IDF object: calls may cross the flash mapping
+# ("dangerous relocation: call8: call target out of range" otherwise).
+CFLAGS_xtensa_esp32s3_espidf = "-mlongcalls"

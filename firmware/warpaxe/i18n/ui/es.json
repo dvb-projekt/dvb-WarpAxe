@@ -170,7 +170,7 @@
   "sugg_s": "Se propone al pool tras iniciar sesión; 0 = no proponer nada. Se aplica en la próxima conexión",
   "jobInterval": "Intervalo de jobs (ms)",
   "job_s": "Trabajo nuevo al menos con esta frecuencia; 0 = automático. Nunca más tarde de lo que necesitan los chips",
-  "xp_later": "Más adelante: TLS, Stratum V2 y la tasa de version rolling de los chips.",
+  "xp_later": "Más adelante: la tasa de version rolling de los chips.",
   "display": "Pantalla",
   "display_hint": "La pantalla del minero.",
   "flipscreen": "Girar pantalla 180°",
@@ -221,5 +221,15 @@
   "resume": "Reanudar",
   "download": "Descargar",
   "restarting": "Reiniciando…",
-  "days": "d"
+  "days": "d",
+  "stratumProtocol": "Protocolo",
+  "fallbackStratumProtocol": "Protocolo",
+  "proto_main_s": "Stratum V2 siempre va cifrado y necesita su propio puerto (WarpPool: 3336). El interruptor TLS solo se aplica a V1.",
+  "proto_s": "Stratum V2 siempre va cifrado y necesita su propio puerto. El interruptor TLS solo se aplica a V1.",
+  "stratumV2AuthorityPubkey": "Clave de autoridad Sv2 del pool",
+  "fallbackStratumV2AuthorityPubkey": "Clave de autoridad Sv2 del pool",
+  "auth_s": "La clave pública tal como la publica el pool (Base58). El certificado del pool se verifica con ella.",
+  "stratumV2RequireAuth": "Exigir autenticación del pool",
+  "fallbackStratumV2RequireAuth": "Exigir autenticación del pool",
+  "reqauth_s": "Conectar solo si el certificado del pool se puede verificar. Desactivado: sin clave se confía en el pool tal cual."
 }

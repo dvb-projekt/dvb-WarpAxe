@@ -170,7 +170,7 @@
   "sugg_s": "Proposée au pool après la connexion ; 0 = aucune. Prend effet à la prochaine connexion",
   "jobInterval": "Intervalle des jobs (ms)",
   "job_s": "Nouveau travail au moins à cette fréquence ; 0 = automatique. Jamais plus tard que les puces n'en ont besoin",
-  "xp_later": "Plus tard : TLS, Stratum V2 et le taux de version rolling des puces.",
+  "xp_later": "Plus tard : le taux de version rolling des puces.",
   "display": "Écran",
   "display_hint": "L'écran du mineur.",
   "flipscreen": "Pivoter l'écran de 180°",
@@ -221,5 +221,15 @@
   "resume": "Reprendre",
   "download": "Télécharger",
   "restarting": "Redémarrage…",
-  "days": "j"
+  "days": "j",
+  "stratumProtocol": "Protocole",
+  "fallbackStratumProtocol": "Protocole",
+  "proto_main_s": "Stratum V2 est toujours chiffré et utilise son propre port (WarpPool : 3336). L'interrupteur TLS ne concerne que V1.",
+  "proto_s": "Stratum V2 est toujours chiffré et utilise son propre port. L'interrupteur TLS ne concerne que V1.",
+  "stratumV2AuthorityPubkey": "Clé d'autorité Sv2 du pool",
+  "fallbackStratumV2AuthorityPubkey": "Clé d'autorité Sv2 du pool",
+  "auth_s": "La clé publique telle que le pool la publie (Base58). Le certificat du pool est vérifié avec elle.",
+  "stratumV2RequireAuth": "Exiger l'authentification du pool",
+  "fallbackStratumV2RequireAuth": "Exiger l'authentification du pool",
+  "reqauth_s": "Se connecter uniquement si le certificat du pool peut être vérifié. Désactivé : sans clé, le pool est accepté tel quel."
 }

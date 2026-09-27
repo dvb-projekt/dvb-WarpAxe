@@ -1,6 +1,6 @@
 [package]
 name = "warpaxe"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["dvb-projekt <oliver-mai@gmx.de>"]
@@ -36,6 +36,7 @@ warpaxe-core = { path = "../../crates/core" }
 warpaxe-chain = { path = "../../crates/chain" }
 warpaxe-board = { path = "../../crates/board" }
 warpaxe-stratum = { path = "../../crates/stratum" }
+warpaxe-sv2 = { path = "../../crates/sv2" }
 
 [build-dependencies]
 embuild = "0.33"

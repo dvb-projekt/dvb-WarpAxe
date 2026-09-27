@@ -170,7 +170,7 @@
   "sugg_s": "ログイン後にプールへ提案します。0 = 提案しない。次回接続時から適用",
   "jobInterval": "ジョブ間隔 (ms)",
   "job_s": "少なくともこの間隔で新しいジョブを取得。0 = 自動。チップが必要とするより遅くはなりません",
-  "xp_later": "今後対応: TLS、Stratum V2、チップのバージョンローリング率。",
+  "xp_later": "今後対応: チップのバージョンローリング率。",
   "display": "ディスプレイ",
   "display_hint": "マイナー本体の画面。",
   "flipscreen": "画面を 180° 回転",
@@ -221,5 +221,15 @@
   "resume": "再開",
   "download": "ダウンロード",
   "restarting": "再起動中…",
-  "days": "日"
+  "days": "日",
+  "stratumProtocol": "プロトコル",
+  "fallbackStratumProtocol": "プロトコル",
+  "proto_main_s": "Stratum V2 は常に暗号化され、専用ポートを使います（WarpPool: 3336）。TLS の切替は V1 にのみ適用されます。",
+  "proto_s": "Stratum V2 は常に暗号化され、専用ポートを使います。TLS の切替は V1 にのみ適用されます。",
+  "stratumV2AuthorityPubkey": "プールの Sv2 認証鍵",
+  "fallbackStratumV2AuthorityPubkey": "プールの Sv2 認証鍵",
+  "auth_s": "プールが公開している公開鍵（Base58）。プールの証明書はこの鍵で検証されます。",
+  "stratumV2RequireAuth": "プール認証を必須にする",
+  "fallbackStratumV2RequireAuth": "プール認証を必須にする",
+  "reqauth_s": "プールの証明書を検証できる場合のみ接続します。オフ: 鍵がなければプールをそのまま信頼します。"
 }

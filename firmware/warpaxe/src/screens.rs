@@ -786,7 +786,7 @@ fn cockpit(c: &mut Canvas) {
     let host = st.pool.split(':').next().unwrap_or("").to_string();
     let w = c.text(&MONO11, 20, 160, gfx::MUTE, &host, Align::Left);
     let mut left_end = 20 + w;
-    if st.tls {
+    if st.tls || st.sv2 {
         lock_icon(c, 24 + w, 161, gfx::OK);
         left_end += 11;
     }
@@ -1037,10 +1037,11 @@ fn pool(c: &mut Canvas) {
     page_head(c, "Pool", 3);
     let w = c.text(&VAL12, 12, 46, gfx::FG, &st.pool, Align::Left);
     let mut x = 16 + w;
-    if st.tls {
+    if st.tls || st.sv2 {
         lock_icon(c, x, 46, gfx::OK);
         x += 11;
-        x += c.text(&LABEL11, x, 46, gfx::OK, "TLS", Align::Left) + 6;
+        let what = if st.sv2 { "V2" } else { "TLS" };
+        x += c.text(&LABEL11, x, 46, gfx::OK, what, Align::Left) + 6;
     }
     if st.using_fallback {
         c.text(

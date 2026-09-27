@@ -170,7 +170,7 @@
   "sugg_s": "Sugerida ao pool após o login; 0 = não sugerir. Vale a partir da próxima conexão",
   "jobInterval": "Intervalo de jobs (ms)",
   "job_s": "Trabalho novo pelo menos com essa frequência; 0 = automático. Nunca mais tarde do que os chips precisam",
-  "xp_later": "Em breve: TLS, Stratum V2 e a taxa de version rolling dos chips.",
+  "xp_later": "Em breve: a taxa de version rolling dos chips.",
   "display": "Tela",
   "display_hint": "A tela do minerador.",
   "flipscreen": "Girar tela 180°",
@@ -221,5 +221,15 @@
   "resume": "Continuar",
   "download": "Baixar",
   "restarting": "Reiniciando…",
-  "days": "d"
+  "days": "d",
+  "stratumProtocol": "Protocolo",
+  "fallbackStratumProtocol": "Protocolo",
+  "proto_main_s": "O Stratum V2 é sempre cifrado e usa uma porta própria (WarpPool: 3336). O interruptor TLS só vale para o V1.",
+  "proto_s": "O Stratum V2 é sempre cifrado e usa uma porta própria. O interruptor TLS só vale para o V1.",
+  "stratumV2AuthorityPubkey": "Chave de autoridade Sv2 do pool",
+  "fallbackStratumV2AuthorityPubkey": "Chave de autoridade Sv2 do pool",
+  "auth_s": "A chave pública tal como o pool a publica (Base58). O certificado do pool é verificado com ela.",
+  "stratumV2RequireAuth": "Exigir autenticação do pool",
+  "fallbackStratumV2RequireAuth": "Exigir autenticação do pool",
+  "reqauth_s": "Ligar apenas se o certificado do pool puder ser verificado. Desligado: sem chave, o pool é aceite tal como está."
 }
