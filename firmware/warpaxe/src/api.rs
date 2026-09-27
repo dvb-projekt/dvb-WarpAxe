@@ -78,11 +78,12 @@ pub fn system_info() -> serde_json::Value {
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
         "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
         "staleAfterCleanHist": st.stale_after_clean_hist, "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
-        "uptimeSeconds": diag::uptime_s(),
+        "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": cfg.use_ntp, "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user,
-        "isUsingFallbackStratum": false,
+        "isUsingFallbackStratum": st.using_fallback, "activePool": st.pool,
+        "useFallbackStratum": cfg.use_fallback, "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
         "poolDifficulty": stratum::state().difficulty,
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "runningPartition": running_partition(),
@@ -388,6 +389,13 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         let mut r = req.into_response(200, None, &[("Content-Type", "image/svg+xml")])?;
         r.write_all(include_bytes!("ui/assets/favicon.svg"))?;
         Ok::<(), EspIOError>(())
+    })?;
+    server.fn_handler("/api/system/wifi/scan", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        match crate::clock::wifi_scan() {
+            Ok(v) => reply_json(req, 200, &v),
+            Err(e) => reply_json(req, 409, &json!({ "error": e })),
+        }
     })?;
     server.fn_handler("/api/v1/history", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);

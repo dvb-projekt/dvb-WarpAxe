@@ -9,6 +9,7 @@
 
 mod api;
 mod board;
+mod clock;
 mod config;
 mod diag;
 mod display;
@@ -290,6 +291,7 @@ fn main() {
     set_step("BOARD");
     board::start();
     history::start();
+    clock::start();
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

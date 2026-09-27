@@ -90,6 +90,7 @@ pub fn json(span_s: u64) -> serde_json::Value {
     }
     json!({
         "interval": INTERVAL_S * bin as u64, "uptime": now, "span": span_s,
+        "unixNow": crate::clock::unix_now(),
         "t": t, "hashrate": hn, "hashrate10m": h10, "temp": tc, "vrTemp": tv, "power": pw,
     })
 }

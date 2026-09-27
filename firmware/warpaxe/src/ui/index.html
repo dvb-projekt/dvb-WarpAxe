@@ -114,7 +114,7 @@ en: {
   pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Connection", connected:"connected", disconnected:"not connected",
   accepted:"Accepted", reject_reasons:"Reject reasons", none:"none", last_reject:"Last reject", reconnects:"Reconnects", clean_jobs:"Block changes",
   pool_settings:"Pool settings", pool_hint:"Pool changes take effect after a restart.",
-  stratumURL:"Pool host", stratumPort:"Port", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
+  stratumURL:"Pool host", stratumPort:"Port", main_pool:"Main pool", fb_pool:"Fallback pool", useFallbackStratum:"Use a fallback pool", fb_s:"Switches after three failed attempts on the main pool and returns when it answers again", fallbackStratumURL:"Fallback host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (address.name)", fallbackStratumPassword:"Pool password", on_fallback:"Mining on the fallback pool", active_pool:"Active pool", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
   tuning:"Clock and voltage", tuning_hint_lim:"Board limits: up to {f} MHz, {lo}–{hi} mV. Applied immediately.", tuning_hint:"Applied immediately.",
   frequency:"Frequency (MHz)", coreVoltage:"Core voltage (mV)", options_hint:"Stock firmware steps: {a}–{b}, above up to {f}", measured:"Measured: {v} mV",
   tuner_note:"If WarpTune regulates this miner, it may change clock and voltage again.",
@@ -123,7 +123,7 @@ en: {
   pidTargetTemp:"Target chip temperature (°C)", overheat_temp:"Shutdown temperature (°C)", overheat_s:"Chips or regulator above it: core voltage off",
   minFanSpeed:"Lowest fan speed (%)", minFan_s:"Big fans may not start below about 25 %", fanspeed:"Fixed fan speed (%)", fanspeed_s:"Only without automatic control",
   display:"Display", display_hint:"The screen on the miner.", flipscreen:"Rotate screen 180°", invertscreen:"Invert colours", displayTimeout:"Screen off after (min, 0 = never)",
-  network:"Network", network_hint:"Network changes take effect after a restart.", hostname:"Hostname", ssid:"Wi-Fi name (SSID)", wifiPass:"Wi-Fi password",
+  network:"Network", network_hint:"Network changes take effect after a restart.", hostname:"Hostname", ssid:"Wi-Fi name (SSID)", wifiPass:"Wi-Fi password", scan:"Search again", scanning:"Searching…", found_nets:"Networks found", scan_fail:"Search not possible: ", useNTP:"Time by NTP", ntp_s:"Real clock times in the history and log", ntpServer:"NTP server",
   save:"Save", restart:"Restart", saving:"Saving…", saved:"Saved.", saved_restart:"Saved. Restart to apply pool or network changes.", nothing:"Nothing changed.", failed:"Failed: ",
   fw_update:"Firmware update", installed:"Installed", partition:"Active partition", drop:"Drop the firmware file (.bin) here or click", drop_s:"The web UI and its fonts are part of the firmware: one file, one update",
   start_update:"Start update", uploading:"Uploading… {p} %", flashing:"Written. The miner restarts — this page reloads in 45 s.",
@@ -148,7 +148,7 @@ de: {
   pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Verbindung", connected:"verbunden", disconnected:"nicht verbunden",
   accepted:"Angenommen", reject_reasons:"Ablehnungsgründe", none:"keine", last_reject:"Letzte Ablehnung", reconnects:"Neuverbindungen", clean_jobs:"Blockwechsel",
   pool_settings:"Pool-Einstellungen", pool_hint:"Pool-Änderungen gelten nach einem Neustart.",
-  stratumURL:"Pool-Host", stratumPort:"Port", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
+  stratumURL:"Pool-Host", stratumPort:"Port", main_pool:"Haupt-Pool", fb_pool:"Ausweich-Pool", useFallbackStratum:"Ausweich-Pool verwenden", fb_s:"Wechselt nach drei Fehlversuchen am Haupt-Pool und kehrt zurück, sobald er wieder antwortet", fallbackStratumURL:"Ausweich-Host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (Adresse.Name)", fallbackStratumPassword:"Pool-Passwort", on_fallback:"Minet über den Ausweich-Pool", active_pool:"Aktiver Pool", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
   tuning:"Takt und Spannung", tuning_hint_lim:"Board-Grenzen: bis {f} MHz, {lo}–{hi} mV. Wird sofort übernommen.", tuning_hint:"Wird sofort übernommen.",
   frequency:"Frequenz (MHz)", coreVoltage:"Kernspannung (mV)", options_hint:"Stufen der Hersteller-Firmware: {a}–{b}, darüber bis {f}", measured:"Gemessen: {v} mV",
   tuner_note:"Wenn WarpTune diesen Miner regelt, kann es Takt und Spannung wieder ändern.",
@@ -157,7 +157,7 @@ de: {
   pidTargetTemp:"Ziel-Chiptemperatur (°C)", overheat_temp:"Abschalttemperatur (°C)", overheat_s:"Chips oder Regler darüber: Kernspannung aus",
   minFanSpeed:"Mindestdrehzahl (%)", minFan_s:"Große Lüfter laufen darunter oft nicht an", fanspeed:"Feste Drehzahl (%)", fanspeed_s:"Nur ohne automatische Regelung",
   display:"Anzeige", display_hint:"Das Display am Gerät.", flipscreen:"Anzeige um 180° drehen", invertscreen:"Farben umkehren", displayTimeout:"Anzeige aus nach (Min., 0 = nie)",
-  network:"Netzwerk", network_hint:"Netzwerk-Änderungen gelten nach einem Neustart.", hostname:"Hostname", ssid:"WLAN-Name (SSID)", wifiPass:"WLAN-Passwort",
+  network:"Netzwerk", network_hint:"Netzwerk-Änderungen gelten nach einem Neustart.", hostname:"Hostname", ssid:"WLAN-Name (SSID)", wifiPass:"WLAN-Passwort", scan:"Neu suchen", scanning:"Suche …", found_nets:"Gefundene Netze", scan_fail:"Suche nicht möglich: ", useNTP:"Uhrzeit per NTP", ntp_s:"Echte Uhrzeiten im Verlauf und im Log", ntpServer:"NTP-Server",
   save:"Speichern", restart:"Neu starten", saving:"Speichere …", saved:"Gespeichert.", saved_restart:"Gespeichert. Für Pool- oder Netzwerk-Änderungen neu starten.", nothing:"Nichts geändert.", failed:"Fehler: ",
   fw_update:"Firmware-Update", installed:"Installiert", partition:"Aktive Partition", drop:"Firmware-Datei (.bin) hierher ziehen oder klicken", drop_s:"Oberfläche und Schriften sind in der Firmware enthalten — eine Datei, ein Update",
   start_update:"Update starten", uploading:"Lade hoch … {p} %", flashing:"Geschrieben. Der Miner startet neu — die Seite lädt in 45 s neu.",
@@ -229,6 +229,12 @@ function kpis(i) {
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   return `<div class="g4">${k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
+function clockLabels() {
+  const now = lang === "de" ? "jetzt" : "now";
+  if (!hist.unixNow) return `<span>−${span / 60} min</span><span>TH/s · °C</span><span>${now}</span>`;
+  const fmt = sec => new Date(sec * 1000).toLocaleTimeString(lang, {hour: "2-digit", minute: "2-digit"});
+  return `<span>${fmt(hist.unixNow - span)}</span><span>${fmt(hist.unixNow - span / 2)}</span><span>${fmt(hist.unixNow)}</span>`;
+}
 function nice(lo, hi, n) {
   if (!(hi > lo)) { hi = lo + 1; }
   const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
@@ -269,7 +275,7 @@ function chart() {
     <polyline points="${hl}" fill="none" stroke="#7B5CFF" stroke-width="2" vector-effect="non-scaling-stroke"/>
     ${tl ? `<polyline points="${tl}" fill="none" stroke="#00E0FF" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>` : ""}</svg>
   ${ta ? axis(ta, dT, "°C", "#00E0FF", "left") : ""}</div>
-  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px;padding:0 52px"><span>−${span / 60} min</span><span>TH/s${ta ? " · °C" : ""}</span><span>${lang === "de" ? "jetzt" : "now"}</span></div>`;
+  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px;padding:0 52px">${clockLabels()}</div>`;
 }
 function tbar(label, v, target, limit, max) {
   if (v == null) return "";
@@ -303,14 +309,15 @@ function dashboard() {
 }
 function worker(u) { u = String(u || ""); const [a, ...r] = u.split("."); return a.length > 14 ? a.slice(0, 6) + "…" + a.slice(-4) + (r.length ? "." + r.join(".") : "") : u; }
 function poolRows(i) {
-  return `<div class="row"><span class="mute">${t("server")}</span><span class="num" style="font-size:13px">${esc(i.stratumURL)}:${i.stratumPort}</span></div><div class="row"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(i.stratumUser))}</span></div><div class="row"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div><div class="row"><span class="mute">${t("connection")}</span><span class="${i.stratumConnected ? "ok" : "err"}">Stratum V1 · ${t(i.stratumConnected ? "connected" : "disconnected")}</span></div>`;
+  const fb = i.isUsingFallbackStratum;
+  return `<div class="row"><span class="mute">${t("server")}</span><span class="num" style="font-size:13px">${fb ? `<span class="warn">${esc(i.activePool)}</span>` : `${esc(i.stratumURL)}:${i.stratumPort}`}</span></div><div class="row"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(fb ? i.fallbackStratumUser : i.stratumUser))}</span></div><div class="row"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div><div class="row"><span class="mute">${t("connection")}</span><span class="${i.stratumConnected ? "ok" : "err"}">Stratum V1 · ${t(i.stratumConnected ? "connected" : "disconnected")}</span></div>`;
 }
 
 /* ---------- forms ---------- */
 const fld = (k, v, o = {}) => `<label class="f">${o.label || t(k)}<input name="${k}" type="${o.type || "text"}" value="${esc(v)}" ${o.min != null ? `min="${o.min}"` : ""} ${o.max != null ? `max="${o.max}"` : ""} ${o.type === "number" ? 'inputmode="numeric"' : ""} autocomplete="off">${o.hint ? `<small>${o.hint}</small>` : ""}</label>`;
-const tog = (k, on, s) => `<label class="t"><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
+const tog = (k, on, s, full) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
 const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
-const SECRET = ["stratumPassword", "wifiPass"];
+const SECRET = ["stratumPassword", "wifiPass", "fallbackStratumPassword"];
 function collect(form, cfg) {
   const body = {};
   for (const el of form.elements) {
@@ -336,9 +343,12 @@ const actions = (restart) => `<div class="actions">${restart ? `<button type="bu
 function poolPage() {
   const i = info, s = state?.stratum || {}, c = state?.config || {};
   const reasons = Object.entries(s.reject_reasons || {}).map(([m, n]) => `${esc(m)} × ${n}`).join("<br>") || t("none");
-  return `<div class="g2"><section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${poolRows(i)}<div class="row"><span class="mute">${t("accepted")}</span><span class="num">${nf(s.shares_accepted)} / ${nf(s.shares_rejected)} ${t("rejected")}</span></div><div class="row"><span class="mute">${t("clean_jobs")}</span><span class="num">${nf(s.clean_jobs)}</span></div><div class="row"><span class="mute">${t("reconnects")}</span><span class="num">${nf(s.reconnects)}</span></div></section>
+  const fbNote = i.isUsingFallbackStratum ? `<div class="note" style="margin-bottom:12px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">${t("on_fallback")}</b><span class="num mute">${esc(i.activePool)}</span></div>` : "";
+  return `<div class="g2"><section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${fbNote}${poolRows(i)}<div class="row"><span class="mute">${t("accepted")}</span><span class="num">${nf(s.shares_accepted)} / ${nf(s.shares_rejected)} ${t("rejected")}</span></div><div class="row"><span class="mute">${t("clean_jobs")}</span><span class="num">${nf(s.clean_jobs)}</span></div><div class="row"><span class="mute">${t("reconnects")}</span><span class="num">${nf(s.reconnects)}</span></div></section>
   <section class="card"><h2 style="margin-bottom:8px">${t("reject_reasons")}</h2><div class="num" style="font-size:13px;line-height:1.8">${reasons}</div>${s.last_reject ? `<div class="row" style="margin-top:12px"><span class="mute">${t("last_reject")}</span></div><div class="num dim" style="font-size:12px;word-break:break-all">${esc(s.last_reject)}</div>` : ""}</section></div>
-  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}), actions(true))}</form>`;
+  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) +
+    `<div style="grid-column:1/-1;height:1px;background:rgba(255,255,255,.06)"></div>` + tog("useFallbackStratum", c.useFallbackStratum, t("fb_s"), true) +
+    fld("fallbackStratumURL", c.fallbackStratumURL) + fld("fallbackStratumPort", c.fallbackStratumPort, {type: "number", min: 1, max: 65535}) + fld("fallbackStratumUser", c.fallbackStratumUser) + fld("fallbackStratumPassword", "", {type: "password", hint: t("keep_pw")}), actions(true))}</form>`;
 }
 function settingsPage() {
   const c = state?.config || {}, i = info, two = i.fanrpm2 != null;
@@ -349,8 +359,25 @@ function settingsPage() {
     `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
   sec(t("fan_temp"), t(two ? "fan_temp_hint_two" : "fan_temp_hint_one"), tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85}) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")})) +
   sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440})) +
-  sec(t("network"), t("network_hint"), fld("hostname", c.hostname) + fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")})) +
+  sec(t("network"), t("network_hint"), `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
+    fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")}) + fld("hostname", c.hostname) + `<div></div>` +
+    tog("useNTP", c.useNTP, t("ntp_s")) + fld("ntpServer", c.ntpServer)) +
   actions(true) + `</form>`;
+}
+
+let nets = null, scanning = false;
+function bars(r) { const n = r >= -60 ? 4 : r >= -70 ? 3 : r >= -80 ? 2 : 1; return `<span style="display:flex;align-items:flex-end;gap:2px;height:14px">${[0, 1, 2, 3].map(k => `<span style="width:3px;height:${4 + k * 3}px;border-radius:1px;background:${k < n ? "var(--ok)" : "rgba(255,255,255,.18)"}"></span>`).join("")}</span>`; }
+function netsHtml() {
+  if (scanning) return `<span class="dim" style="font-size:13px">${t("scanning")}</span>`;
+  if (typeof nets === "string") return `<span class="err" style="font-size:13px">${esc(nets)}</span>`;
+  if (!nets) return "";
+  const cur = state?.config?.ssid;
+  return nets.map(n => `<button type="button" data-ssid="${esc(n.ssid)}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;text-align:left;color:var(--fg);font:14px 'JetBrains Mono',monospace;${n.ssid === cur ? "background:rgba(123,92,255,.14);border:1px solid rgba(123,92,255,.4)" : "background:transparent;border:1px solid rgba(255,255,255,.06)"}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.ssid)}</span><span class="dim" style="font:12px Inter,sans-serif">${esc(n.authmode)}</span>${bars(n.rssi)}<span class="dim" style="font-size:12px;width:62px;text-align:right">${n.rssi} dBm</span></button>`).join("");
+}
+async function scan() {
+  scanning = true; const e = $("#nets"); if (e) e.innerHTML = netsHtml();
+  try { nets = (await get("/api/system/wifi/scan")).networks; } catch (err) { nets = t("scan_fail") + err.message; }
+  scanning = false; const e2 = $("#nets"); if (e2) e2.innerHTML = netsHtml();
 }
 
 /* ---------- system ---------- */
@@ -408,8 +435,8 @@ function render() {
   const editing = document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && v.contains(document.activeElement);
   if (editing) return; // never re-render a form under the cursor
   v.innerHTML = route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard();
-  const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword"]); };
-  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass"]); };
+  const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword"]); };
+  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass", "useNTP", "ntpServer"]); };
   if (route === "system") { wireSystem(); const e = $("#log"); if (e) e.scrollTop = e.scrollHeight; }
 }
 async function load(full) {
@@ -426,7 +453,8 @@ function go() {
 }
 document.addEventListener("click", e => {
   const s = e.target.closest("[data-span]"); if (s) { span = Number(s.dataset.span); load(false); return; }
-  const a = e.target.closest("[data-act]"); if (a) act(a.dataset.act);
+  const n = e.target.closest("[data-ssid]"); if (n) { const f = $("#sf input[name=ssid]"); if (f) { f.value = n.dataset.ssid; const p = $("#sf input[name=wifiPass]"); if (p) p.focus(); } return; }
+  const a = e.target.closest("[data-act]"); if (a) { if (a.dataset.act === "scan") scan(); else act(a.dataset.act); }
 });
 $("#lang").onchange = e => { lang = e.target.value; try { localStorage.setItem("lang", lang); } catch (err) {} render(); };
 window.addEventListener("hashchange", go);

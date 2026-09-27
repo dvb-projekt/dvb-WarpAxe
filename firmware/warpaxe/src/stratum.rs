@@ -5,6 +5,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -24,6 +25,8 @@ const BIP320_MASK: u32 = 0x1fff_e000;
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct StratumState {
     pub pool: String,
+    /// Connected (or trying) to the fallback pool.
+    pub using_fallback: bool,
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
@@ -112,8 +115,25 @@ pub fn start() {
         .expect("stratum thread");
 }
 
+/// Failures in a row on the main pool before the fallback takes over.
+const FAILS_BEFORE_FALLBACK: u32 = 3;
+/// A session shorter than this counts as a failure too.
+const SHORT_SESSION: Duration = Duration::from_secs(60);
+/// While on the fallback, how often the main pool is probed.
+const PRIMARY_PROBE: Duration = Duration::from_secs(300);
+
+/// The live stream while on the fallback, so the probe thread can end
+/// that session once the main pool answers again.
+static FALLBACK_STREAM: Mutex<Option<Arc<TcpStream>>> = Mutex::new(None);
+
 fn run() {
     let mut backoff = Duration::from_secs(3);
+    let mut fails: u32 = 0;
+    let mut on_fallback = false;
+    std::thread::Builder::new()
+        .stack_size(4096)
+        .spawn(probe_primary)
+        .ok();
     loop {
         let cfg = config::get();
         if cfg.stratum_url.is_empty() || cfg.stratum_user.is_empty() {
@@ -121,30 +141,97 @@ fn run() {
             std::thread::sleep(Duration::from_secs(10));
             continue;
         }
-        let pool = format!("{}:{}", cfg.stratum_url, cfg.stratum_port);
+        let fallback_ok =
+            cfg.use_fallback && !cfg.fallback_url.is_empty() && !cfg.fallback_user.is_empty();
+        if !fallback_ok {
+            on_fallback = false;
+        } else if !on_fallback && fails >= FAILS_BEFORE_FALLBACK {
+            log::warn!("stratum: main pool failed {fails} times, switching to the fallback");
+            on_fallback = true;
+            fails = 0;
+        }
+        let (pool, user, pass) = if on_fallback {
+            (
+                format!("{}:{}", cfg.fallback_url, cfg.fallback_port),
+                cfg.fallback_user.clone(),
+                cfg.fallback_pass.clone(),
+            )
+        } else {
+            (
+                format!("{}:{}", cfg.stratum_url, cfg.stratum_port),
+                cfg.stratum_user.clone(),
+                cfg.stratum_pass.clone(),
+            )
+        };
         update(|s| {
             s.pool = pool.clone();
+            s.using_fallback = on_fallback;
             s.connected = false;
             s.subscribed = false;
             s.authorized = false;
         });
-        match session(&pool, &cfg.stratum_user, &cfg.stratum_pass) {
-            Ok(()) => backoff = Duration::from_secs(3),
-            Err(e) => {
-                log::warn!("stratum: {e}");
-                update(|s| {
-                    s.last_error = e.to_string();
-                    s.connected = false;
-                    s.reconnects += 1;
-                });
-                std::thread::sleep(backoff);
-                backoff = (backoff * 2).min(Duration::from_secs(60));
+        let started = Instant::now();
+        let result = session(&pool, &user, &pass, on_fallback);
+        *FALLBACK_STREAM.lock().unwrap() = None;
+        if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
+            log::warn!("stratum: main pool answers again, leaving the fallback");
+            on_fallback = false;
+            fails = 0;
+            backoff = Duration::from_secs(3);
+            continue;
+        }
+        // Sessions only end with an error (a closed or broken
+        // connection). One that ran for a while was a working pool: start
+        // counting again. A connect failure or a session under a minute
+        // counts towards the fallback.
+        if let Err(e) = &result {
+            log::warn!("stratum: {e}");
+            update(|s| {
+                s.last_error = e.to_string();
+                s.connected = false;
+                s.reconnects += 1;
+            });
+        }
+        if started.elapsed() < SHORT_SESSION {
+            if !on_fallback {
+                fails += 1;
+            }
+            std::thread::sleep(backoff);
+            backoff = (backoff * 2).min(Duration::from_secs(60));
+        } else {
+            fails = 0;
+            backoff = Duration::from_secs(3);
+        }
+    }
+}
+
+static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
+
+/// While on the fallback: every few minutes, try a TCP connect to the main
+/// pool; when it answers, end the fallback session so `run` goes back.
+fn probe_primary() {
+    loop {
+        std::thread::sleep(PRIMARY_PROBE);
+        if !state().using_fallback {
+            continue;
+        }
+        let cfg = config::get();
+        let target = format!("{}:{}", cfg.stratum_url, cfg.stratum_port);
+        let reachable = target
+            .to_socket_addrs()
+            .ok()
+            .and_then(|mut a| a.next())
+            .is_some_and(|a| TcpStream::connect_timeout(&a, Duration::from_secs(5)).is_ok());
+        if reachable {
+            if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
+                BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
+                let _ = s.shutdown(std::net::Shutdown::Both);
             }
         }
     }
 }
 
-fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
+fn session(pool: &str, user: &str, pass: &str, fallback: bool) -> anyhow::Result<()> {
     let addr = pool
         .to_socket_addrs()?
         .next()
@@ -159,6 +246,9 @@ fn session(pool: &str, user: &str, pass: &str) -> anyhow::Result<()> {
     // this thread and written on a small writer thread (sockets are
     // full duplex; `&TcpStream` implements both).
     let stream = Arc::new(stream);
+    if fallback {
+        *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    }
     let mut reader = BufReader::new(&*stream);
     update(|s| {
         s.connected = true;

@@ -24,6 +24,24 @@ pub struct Config {
     pub stratum_user: String,
     #[serde(rename = "stratumPassword")]
     pub stratum_pass: String,
+    /// Switch to the fallback pool after repeated failures on the main one
+    /// (AxeOS/NerdOS name).
+    #[serde(rename = "useFallbackStratum")]
+    pub use_fallback: bool,
+    #[serde(rename = "fallbackStratumURL")]
+    pub fallback_url: String,
+    #[serde(rename = "fallbackStratumPort")]
+    pub fallback_port: u16,
+    #[serde(rename = "fallbackStratumUser")]
+    pub fallback_user: String,
+    #[serde(rename = "fallbackStratumPassword")]
+    pub fallback_pass: String,
+    /// Set the clock by NTP (AxeOS name); the history and log show real
+    /// times once it is set.
+    #[serde(rename = "useNTP")]
+    pub use_ntp: bool,
+    #[serde(rename = "ntpServer")]
+    pub ntp_server: String,
     /// Target ASIC clock, MHz (AxeOS name).
     pub frequency: u32,
     /// Core voltage, mV (AxeOS name).
@@ -71,6 +89,13 @@ impl Default for Config {
             stratum_port: 3333,
             stratum_user: String::new(),
             stratum_pass: "x".into(),
+            use_fallback: false,
+            fallback_url: String::new(),
+            fallback_port: 3333,
+            fallback_user: String::new(),
+            fallback_pass: "x".into(),
+            use_ntp: true,
+            ntp_server: "pool.ntp.org".into(),
             frequency: 525,
             core_voltage: 1150,
             fanspeed: 100,
@@ -173,6 +198,7 @@ impl Config {
         };
         c.wifi_pass = mask(&self.wifi_pass);
         c.stratum_pass = mask(&self.stratum_pass);
+        c.fallback_pass = mask(&self.fallback_pass);
         c
     }
 }
@@ -195,6 +221,9 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     }
     if cfg.stratum_pass == "***" {
         cfg.stratum_pass = old.stratum_pass;
+    }
+    if cfg.fallback_pass == "***" {
+        cfg.fallback_pass = old.fallback_pass;
     }
     save(&cfg)?;
     Ok(cfg)
