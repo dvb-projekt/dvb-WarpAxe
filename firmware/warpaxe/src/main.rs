@@ -15,6 +15,7 @@ mod diag;
 mod display;
 mod font;
 mod history;
+mod link;
 mod miner;
 mod net;
 mod stratum;

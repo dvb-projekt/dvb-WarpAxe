@@ -1,0 +1,177 @@
+//! The pool connection under the Stratum session: plain TCP or TLS.
+//!
+//! The session reads on its own thread and a writer thread sends shares,
+//! at the same time. A socket is full duplex, so plain TCP just shares the
+//! stream. An mbedTLS context is not safe to use from two threads at once
+//! (no MBEDTLS_THREADING_C in this build), so TLS runs on a non-blocking
+//! socket behind a mutex: the reader waits for data with `poll` outside the
+//! lock and holds it only for one record's read; the writer holds it for
+//! one write.
+
+use std::io::{self, Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::os::fd::AsRawFd;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
+
+use esp_idf_svc::sys;
+use esp_idf_svc::tls::{Config, EspTls, InternalSocket};
+
+/// No data from the pool for this long ends the session (as the plain
+/// socket's read timeout).
+const READ_TIMEOUT: Duration = Duration::from_secs(180);
+/// A write that cannot go out for this long counts as a broken link.
+const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
+
+pub enum Link {
+    Tcp(TcpStream),
+    Tls { tls: Mutex<SendTls>, fd: i32 },
+}
+
+/// `EspTls` is only `Send` with MBEDTLS_THREADING_C; every use here goes
+/// through the mutex, one thread at a time.
+pub struct SendTls(EspTls<InternalSocket>);
+unsafe impl Send for SendTls {}
+
+fn esp_io(e: sys::EspError) -> io::Error {
+    io::Error::other(e.to_string())
+}
+
+fn is_want(e: &sys::EspError) -> bool {
+    let c = e.code();
+    c == sys::ESP_TLS_ERR_SSL_WANT_READ || c == sys::ESP_TLS_ERR_SSL_WANT_WRITE
+}
+
+impl Link {
+    /// Connect to `host:port`; with `tls`, verify the pool's certificate
+    /// against the built-in CA bundle and its name against `host`.
+    pub fn connect(host: &str, port: u16, tls: bool) -> anyhow::Result<Link> {
+        if !tls {
+            let addr = (host, port)
+                .to_socket_addrs()?
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("dns: no address for {host}"))?;
+            log::info!("stratum: connecting to {host}:{port} ({addr})");
+            let s = TcpStream::connect_timeout(&addr, Duration::from_secs(10))?;
+            s.set_read_timeout(Some(READ_TIMEOUT))?;
+            if let Err(e) = s.set_nodelay(true) {
+                log::warn!("stratum: nodelay not set: {e}");
+            }
+            return Ok(Link::Tcp(s));
+        }
+        log::info!("stratum: connecting to {host}:{port} (TLS)");
+        let mut t = EspTls::new()?;
+        let mut cfg = Config::new();
+        cfg.common_name = Some(host);
+        cfg.timeout_ms = 10_000;
+        let hs = t
+            .connect(host, port, &cfg)
+            .map_err(|e| anyhow::anyhow!("tls handshake with {host}:{port}: {e}"))?;
+        drop(hs);
+        let mut fd: i32 = -1;
+        sys::esp!(unsafe { sys::esp_tls_get_conn_sockfd(t.context_handle(), &mut fd) })?;
+        unsafe {
+            let fl = sys::fcntl(fd, sys::F_GETFL as i32);
+            sys::fcntl(fd, sys::F_SETFL as i32, fl | sys::O_NONBLOCK as i32);
+            let one: i32 = 1;
+            sys::lwip_setsockopt(
+                fd,
+                sys::IPPROTO_TCP as i32,
+                sys::TCP_NODELAY as i32,
+                &one as *const i32 as *const core::ffi::c_void,
+                core::mem::size_of::<i32>() as u32,
+            );
+        }
+        log::info!("stratum: TLS up, certificate verified for {host}");
+        Ok(Link::Tls {
+            tls: Mutex::new(SendTls(t)),
+            fd,
+        })
+    }
+
+    /// End the connection from another thread; a blocked read returns.
+    pub fn shutdown(&self) {
+        let fd = match self {
+            Link::Tcp(s) => s.as_raw_fd(),
+            Link::Tls { fd, .. } => *fd,
+        };
+        unsafe {
+            sys::lwip_shutdown(fd, sys::SHUT_RDWR as i32);
+        }
+    }
+
+    pub fn send(&self, mut buf: &[u8]) -> io::Result<()> {
+        match self {
+            Link::Tcp(s) => {
+                let mut w = s;
+                w.write_all(buf)?;
+                w.flush()
+            }
+            Link::Tls { tls, fd } => {
+                let since = Instant::now();
+                while !buf.is_empty() {
+                    let r = tls.lock().unwrap().0.write(buf);
+                    match r {
+                        Ok(0) => return Err(io::ErrorKind::WriteZero.into()),
+                        Ok(n) => buf = &buf[n..],
+                        Err(e) if is_want(&e) => {
+                            if since.elapsed() > WRITE_TIMEOUT {
+                                return Err(io::ErrorKind::TimedOut.into());
+                            }
+                            wait(*fd, sys::POLLOUT as i16, 50);
+                        }
+                        Err(e) => return Err(esp_io(e)),
+                    }
+                }
+                Ok(())
+            }
+        }
+    }
+
+    pub fn recv(&self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            Link::Tcp(s) => {
+                let mut r = s;
+                r.read(buf)
+            }
+            Link::Tls { tls, fd } => {
+                let since = Instant::now();
+                loop {
+                    // Decrypted bytes may already wait inside mbedTLS with
+                    // nothing left on the socket: try a read first.
+                    let r = tls.lock().unwrap().0.read(buf);
+                    match r {
+                        Ok(n) => return Ok(n), // 0 = closed by the pool
+                        Err(e) if is_want(&e) => {}
+                        Err(e) => return Err(esp_io(e)),
+                    }
+                    if since.elapsed() > READ_TIMEOUT {
+                        return Err(io::ErrorKind::TimedOut.into());
+                    }
+                    wait(*fd, sys::POLLIN as i16, 1000);
+                }
+            }
+        }
+    }
+}
+
+/// Block until `fd` is ready for `events` or `ms` pass.
+fn wait(fd: i32, events: i16, ms: i32) {
+    let mut p = sys::pollfd {
+        fd,
+        events,
+        revents: 0,
+    };
+    unsafe {
+        sys::poll(&mut p, 1, ms);
+    }
+}
+
+/// `Read` over a shared link, for a `BufReader` on the session thread.
+pub struct LinkReader<'a>(pub &'a Link);
+
+impl Read for LinkReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.recv(buf)
+    }
+}

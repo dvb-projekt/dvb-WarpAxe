@@ -121,6 +121,7 @@ en: {
   accepted:"Accepted", reject_reasons:"Reject reasons", none:"none", last_reject:"Last reject", reconnects:"Reconnects", clean_jobs:"Block changes",
   pool_settings:"Pool settings", pool_hint:"Pool changes take effect after a restart.",
   stratumURL:"Pool host", stratumPort:"Port", main_pool:"Main pool", fb_pool:"Fallback pool", useFallbackStratum:"Use a fallback pool", fb_s:"Switches after three failed attempts on the main pool and returns when it answers again", fallbackStratumURL:"Fallback host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (address.name)", fallbackStratumPassword:"Pool password", on_fallback:"Mining on the fallback pool", active_pool:"Active pool", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
+  stratumTLS:"Encrypt main pool (TLS)", fallbackStratumTLS:"Encrypt fallback pool (TLS)", tls_main_s:"The pool must offer TLS on this port (WarpPool: 3334). Its certificate is checked.", tls_s:"The pool must offer TLS on this port. Its certificate is checked.",
   default:"default", current:"current", oc_hint:"Manufacturer steps.", oc_warn:"OC mode: free clock and voltage values and expert settings. Values outside the manufacturer's range can overheat or damage the miner.", oc_off:"Leave OC mode",
   tuning:"Clock and voltage", tuning_hint_lim:"Board limits: up to {f} MHz, {lo}–{hi} mV. Applied immediately.", tuning_hint:"Applied immediately.",
   frequency:"Frequency (MHz)", coreVoltage:"Core voltage (mV)", options_hint:"Stock firmware steps: {a}–{b}, above up to {f}", measured:"Measured: {v} mV",
@@ -160,6 +161,7 @@ de: {
   accepted:"Angenommen", reject_reasons:"Ablehnungsgründe", none:"keine", last_reject:"Letzte Ablehnung", reconnects:"Neuverbindungen", clean_jobs:"Blockwechsel",
   pool_settings:"Pool-Einstellungen", pool_hint:"Pool-Änderungen gelten nach einem Neustart.",
   stratumURL:"Pool-Host", stratumPort:"Port", main_pool:"Haupt-Pool", fb_pool:"Ausweich-Pool", useFallbackStratum:"Ausweich-Pool verwenden", fb_s:"Wechselt nach drei Fehlversuchen am Haupt-Pool und kehrt zurück, sobald er wieder antwortet", fallbackStratumURL:"Ausweich-Host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (Adresse.Name)", fallbackStratumPassword:"Pool-Passwort", on_fallback:"Minet über den Ausweich-Pool", active_pool:"Aktiver Pool", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
+  stratumTLS:"Haupt-Pool verschlüsseln (TLS)", fallbackStratumTLS:"Ausweich-Pool verschlüsseln (TLS)", tls_main_s:"Der Pool muss auf diesem Port TLS anbieten (WarpPool: 3334). Sein Zertifikat wird geprüft.", tls_s:"Der Pool muss auf diesem Port TLS anbieten. Sein Zertifikat wird geprüft.",
   default:"Standard", current:"aktuell", oc_hint:"Stufen des Herstellers.", oc_warn:"OC-Modus: freie Werte für Takt und Spannung sowie Experten-Einstellungen. Werte außerhalb der Herstellerangaben können den Miner überhitzen oder beschädigen.", oc_off:"OC-Modus beenden",
   tuning:"Takt und Spannung", tuning_hint_lim:"Board-Grenzen: bis {f} MHz, {lo}–{hi} mV. Wird sofort übernommen.", tuning_hint:"Wird sofort übernommen.",
   frequency:"Frequenz (MHz)", coreVoltage:"Kernspannung (mV)", options_hint:"Stufen der Hersteller-Firmware: {a}–{b}, darüber bis {f}", measured:"Gemessen: {v} mV",
@@ -326,7 +328,7 @@ function dashboard() {
 function worker(u) { u = String(u || ""); const [a, ...r] = u.split("."); return a.length > 14 ? a.slice(0, 6) + "…" + a.slice(-4) + (r.length ? "." + r.join(".") : "") : u; }
 function poolRows(i) {
   const fb = i.isUsingFallbackStratum;
-  return `<div class="row"><span class="mute">${t("server")}</span><span class="num" style="font-size:13px">${fb ? `<span class="warn">${esc(i.activePool)}</span>` : `${esc(i.stratumURL)}:${i.stratumPort}`}</span></div><div class="row"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(fb ? i.fallbackStratumUser : i.stratumUser))}</span></div><div class="row"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div><div class="row"><span class="mute">${t("connection")}</span><span class="${i.stratumConnected ? "ok" : "err"}">Stratum V1 · ${t(i.stratumConnected ? "connected" : "disconnected")}</span></div>`;
+  return `<div class="row"><span class="mute">${t("server")}</span><span class="num" style="font-size:13px">${fb ? `<span class="warn">${esc(i.activePool)}</span>` : `${esc(i.stratumURL)}:${i.stratumPort}`}</span></div><div class="row"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(fb ? i.fallbackStratumUser : i.stratumUser))}</span></div><div class="row"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div><div class="row"><span class="mute">${t("connection")}</span><span class="${i.stratumConnected ? "ok" : "err"}">Stratum V1${i.stratumTLSActive ? " · TLS" : ""} · ${t(i.stratumConnected ? "connected" : "disconnected")}</span></div>`;
 }
 
 /* ---------- forms ---------- */
@@ -337,14 +339,14 @@ const sel = (k, v, opts, def, o = {}) => { const list = [...new Set([...opts, v]
 /* AxeOS presets per chip (device_config.h), for boards whose profile
    brings none of its own. */
 const CHIP_PRESETS = {BM1370: {f: [400, 490, 525, 550, 600, 625, 690], v: [1000, 1060, 1100, 1150, 1200, 1250], df: 525, dv: 1150}, BM1373: {f: [327, 350, 375, 380, 400, 410], v: [1000, 1060, 1100, 1150, 1200, 1250], df: 327, dv: 1000}};
-const tog = (k, on, s, full) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
+const tog = (k, on, s, full, num) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${num ? 'data-num="1"' : ""} ${on ? "checked" : ""}></label>`;
 const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
 const SECRET = ["stratumPassword", "wifiPass", "fallbackStratumPassword"];
 function collect(form, cfg) {
   const body = {};
   for (const el of form.elements) {
     if (!el.name || !(el.name in cfg)) continue;
-    const v = el.type === "checkbox" ? el.checked : (el.type === "number" || el.dataset.num) ? Number(el.value) : el.value;
+    const v = el.type === "checkbox" ? (el.dataset.num ? Number(el.checked) : el.checked) : (el.type === "number" || el.dataset.num) ? Number(el.value) : el.value;
     if (SECRET.includes(el.name)) { if (v !== "") body[el.name] = v; continue; }
     if (v !== cfg[el.name]) body[el.name] = v;
   }
@@ -368,9 +370,9 @@ function poolPage() {
   const fbNote = i.isUsingFallbackStratum ? `<div class="note" style="margin-bottom:12px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">${t("on_fallback")}</b><span class="num mute">${esc(i.activePool)}</span></div>` : "";
   return `<div class="g2"><section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${fbNote}${poolRows(i)}<div class="row"><span class="mute">${t("accepted")}</span><span class="num">${nf(s.shares_accepted)} / ${nf(s.shares_rejected)} ${t("rejected")}</span></div><div class="row"><span class="mute">${t("clean_jobs")}</span><span class="num">${nf(s.clean_jobs)}</span></div><div class="row"><span class="mute">${t("reconnects")}</span><span class="num">${nf(s.reconnects)}</span></div></section>
   <section class="card"><h2 style="margin-bottom:8px">${t("reject_reasons")}</h2><div class="num" style="font-size:13px;line-height:1.8">${reasons}</div>${s.last_reject ? `<div class="row" style="margin-top:12px"><span class="mute">${t("last_reject")}</span></div><div class="num dim" style="font-size:12px;word-break:break-all">${esc(s.last_reject)}</div>` : ""}</section></div>
-  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) +
-    `<div style="grid-column:1/-1;height:1px;background:rgba(255,255,255,.06)"></div>` + tog("useFallbackStratum", c.useFallbackStratum, t("fb_s"), true) +
-    fld("fallbackStratumURL", c.fallbackStratumURL) + fld("fallbackStratumPort", c.fallbackStratumPort, {type: "number", min: 1, max: 65535}) + fld("fallbackStratumUser", c.fallbackStratumUser) + fld("fallbackStratumPassword", "", {type: "password", hint: t("keep_pw")}), actions(true))}</form>`;
+  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) + tog("stratumTLS", c.stratumTLS > 0, t("tls_main_s"), true, true) +
+    `<div style="grid-column:1/-1;height:1px;background:rgba(255,255,255,.06)"></div>` + `<div class="lbl" style="grid-column:1/-1">${t("fb_pool")}</div>` + tog("useFallbackStratum", c.useFallbackStratum, t("fb_s"), true) +
+    fld("fallbackStratumURL", c.fallbackStratumURL) + fld("fallbackStratumPort", c.fallbackStratumPort, {type: "number", min: 1, max: 65535}) + fld("fallbackStratumUser", c.fallbackStratumUser) + fld("fallbackStratumPassword", "", {type: "password", hint: t("keep_pw")}) + tog("fallbackStratumTLS", c.fallbackStratumTLS > 0, t("tls_s"), true, true), actions(true))}</form>`;
 }
 function settingsPage() {
   const c = state?.config || {}, i = info, two = i.fanrpm2 != null;
@@ -481,7 +483,7 @@ function render() {
   const editing = document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && v.contains(document.activeElement);
   if (editing) return; // never re-render a form under the cursor
   v.innerHTML = route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard();
-  const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword"]); };
+  const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword", "stratumTLS", "fallbackStratumTLS"]); };
   const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass", "useNTP", "ntpServer", "stratumSuggestedDifficulty"]); };
   const xp = $("#xp"); if (xp) xp.ontoggle = () => { xpOpen = xp.open; };
   if (route === "system") { wireSystem(); const e = $("#log"); if (e) e.scrollTop = e.scrollHeight; }

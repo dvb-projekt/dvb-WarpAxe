@@ -3,7 +3,7 @@
 //! attached); everything the API shows is in [`state`].
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -17,6 +17,7 @@ use warpaxe_stratum::message::{
 };
 use warpaxe_stratum::{parse_line, Incoming, Job, Session};
 
+use crate::link::{Link, LinkReader};
 use crate::{config, diag};
 
 const AGENT: &str = concat!("warpaxe/", env!("CARGO_PKG_VERSION"));
@@ -27,6 +28,8 @@ pub struct StratumState {
     pub pool: String,
     /// Connected (or trying) to the fallback pool.
     pub using_fallback: bool,
+    /// The live session runs over TLS.
+    pub tls: bool,
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
@@ -124,7 +127,7 @@ const PRIMARY_PROBE: Duration = Duration::from_secs(300);
 
 /// The live stream while on the fallback, so the probe thread can end
 /// that session once the main pool answers again.
-static FALLBACK_STREAM: Mutex<Option<Arc<TcpStream>>> = Mutex::new(None);
+static FALLBACK_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
 
 fn run() {
     let mut backoff = Duration::from_secs(3);
@@ -150,28 +153,34 @@ fn run() {
             on_fallback = true;
             fails = 0;
         }
-        let (pool, user, pass) = if on_fallback {
+        let (host, port, tls, user, pass) = if on_fallback {
             (
-                format!("{}:{}", cfg.fallback_url, cfg.fallback_port),
+                cfg.fallback_url.clone(),
+                cfg.fallback_port,
+                cfg.fallback_tls > 0,
                 cfg.fallback_user.clone(),
                 cfg.fallback_pass.clone(),
             )
         } else {
             (
-                format!("{}:{}", cfg.stratum_url, cfg.stratum_port),
+                cfg.stratum_url.clone(),
+                cfg.stratum_port,
+                cfg.stratum_tls > 0,
                 cfg.stratum_user.clone(),
                 cfg.stratum_pass.clone(),
             )
         };
+        let pool = format!("{host}:{port}");
         update(|s| {
             s.pool = pool.clone();
             s.using_fallback = on_fallback;
+            s.tls = tls;
             s.connected = false;
             s.subscribed = false;
             s.authorized = false;
         });
         let started = Instant::now();
-        let result = session(&pool, &user, &pass, on_fallback);
+        let result = session(&host, port, tls, &user, &pass, on_fallback);
         *FALLBACK_STREAM.lock().unwrap() = None;
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
             log::warn!("stratum: main pool answers again, leaving the fallback");
@@ -225,52 +234,48 @@ fn probe_primary() {
         if reachable {
             if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
                 BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
-                let _ = s.shutdown(std::net::Shutdown::Both);
+                s.shutdown();
             }
         }
     }
 }
 
-fn session(pool: &str, user: &str, pass: &str, fallback: bool) -> anyhow::Result<()> {
-    let addr = pool
-        .to_socket_addrs()?
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("dns: no address for {pool}"))?;
-    log::info!("stratum: connecting to {pool} ({addr})");
-    let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(10))?;
-    stream.set_read_timeout(Some(Duration::from_secs(180)))?;
-    if let Err(e) = stream.set_nodelay(true) {
-        log::warn!("stratum: nodelay not set: {e}");
-    }
-    // No try_clone: ESP-IDF has no dup(). A shared `TcpStream` is read on
-    // this thread and written on a small writer thread (sockets are
-    // full duplex; `&TcpStream` implements both).
-    let stream = Arc::new(stream);
+fn session(
+    host: &str,
+    port: u16,
+    tls: bool,
+    user: &str,
+    pass: &str,
+    fallback: bool,
+) -> anyhow::Result<()> {
+    // No try_clone: ESP-IDF has no dup(). The link is read on this thread
+    // and written on a small writer thread (see `link`).
+    let stream = Arc::new(Link::connect(host, port, tls)?);
     if fallback {
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
-    let mut reader = BufReader::new(&*stream);
+    let mut reader = BufReader::new(LinkReader(&stream));
     update(|s| {
         s.connected = true;
         s.last_error.clear();
     });
     {
-        let mut w = &*stream;
+        let mut hello = String::new();
         for r in [
             configure_request(1, BIP320_MASK),
             subscribe_request(2, AGENT),
             authorize_request(3, user, pass),
         ] {
-            w.write_all(r.to_line().as_bytes())?;
+            hello.push_str(&r.to_line());
         }
         // Ask for a share difficulty (AxeOS sends it right after
         // authorizing); the pool may ignore it.
         let suggest = config::get().suggested_difficulty;
         if suggest > 0 {
-            w.write_all(suggest_difficulty_request(4, suggest).to_line().as_bytes())?;
+            hello.push_str(&suggest_difficulty_request(4, suggest).to_line());
             log::info!("stratum: suggest difficulty {suggest}");
         }
-        w.flush()?;
+        stream.send(hello.as_bytes())?;
     }
     let pending: Arc<Mutex<HashMap<u64, String>>> = Arc::new(Mutex::new(HashMap::new()));
     let (tx, rx) = channel::<Request>();
@@ -281,15 +286,11 @@ fn session(pool: &str, user: &str, pass: &str, fallback: bool) -> anyhow::Result
         std::thread::Builder::new()
             .stack_size(6 * 1024)
             .spawn(move || {
-                let mut w = &*stream;
                 while let Ok(req) = rx.recv() {
                     if let Some(job_id) = req.params.get(1).and_then(|v| v.as_str()) {
                         pending.lock().unwrap().insert(req.id, job_id.to_string());
                     }
-                    if w.write_all(req.to_line().as_bytes())
-                        .and_then(|_| w.flush())
-                        .is_err()
-                    {
+                    if stream.send(req.to_line().as_bytes()).is_err() {
                         break;
                     }
                 }

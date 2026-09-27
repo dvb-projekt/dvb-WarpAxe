@@ -24,6 +24,11 @@ pub struct Config {
     pub stratum_user: String,
     #[serde(rename = "stratumPassword")]
     pub stratum_pass: String,
+    /// Stratum over TLS (AxeOS name): 0 = plain, 1 = TLS, the pool's
+    /// certificate checked against the built-in CA bundle. (AxeOS's 2 =
+    /// own certificate is not offered.)
+    #[serde(rename = "stratumTLS")]
+    pub stratum_tls: u8,
     /// Switch to the fallback pool after repeated failures on the main one
     /// (AxeOS/NerdOS name).
     #[serde(rename = "useFallbackStratum")]
@@ -36,6 +41,8 @@ pub struct Config {
     pub fallback_user: String,
     #[serde(rename = "fallbackStratumPassword")]
     pub fallback_pass: String,
+    #[serde(rename = "fallbackStratumTLS")]
+    pub fallback_tls: u8,
     /// Set the clock by NTP (AxeOS name); the history and log show real
     /// times once it is set.
     #[serde(rename = "useNTP")]
@@ -114,11 +121,13 @@ impl Default for Config {
             stratum_port: 3333,
             stratum_user: String::new(),
             stratum_pass: "x".into(),
+            stratum_tls: 0,
             use_fallback: false,
             fallback_url: String::new(),
             fallback_port: 3333,
             fallback_user: String::new(),
             fallback_pass: "x".into(),
+            fallback_tls: 0,
             use_ntp: true,
             ntp_server: "pool.ntp.org".into(),
             frequency: 525,

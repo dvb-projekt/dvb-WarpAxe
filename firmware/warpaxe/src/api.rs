@@ -85,7 +85,7 @@ pub fn system_info() -> serde_json::Value {
         "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": cfg.use_ntp, "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
-        "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user,
+        "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user, "stratumTLS": cfg.stratum_tls, "fallbackStratumTLS": cfg.fallback_tls, "stratumTLSActive": st.tls,
         "isUsingFallbackStratum": st.using_fallback, "activePool": st.pool,
         "useFallbackStratum": cfg.use_fallback, "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
         "poolDifficulty": stratum::state().difficulty,
@@ -212,6 +212,8 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         }
     }
     for (k, lo, hi) in [
+        ("stratumTLS", 0.0, 1.0),
+        ("fallbackStratumTLS", 0.0, 1.0),
         ("vrTargetTemp", 40.0, 90.0),
         ("pidTargetTemp", 35.0, 85.0),
         ("jobInterval", 100.0, 5000.0),
