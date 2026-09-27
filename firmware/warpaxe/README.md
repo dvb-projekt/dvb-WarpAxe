@@ -1,38 +1,39 @@
 # warpaxe (firmware)
 
-The WarpAxe firmware for ESP32-S3 miners, stage B. Rust `std` on ESP-IDF
-v5.3 (esp-idf-svc 0.51), TinyUSB through the shared C glue in
-`../components`. Runs today on the LilyGO T-Display-S3 (the controller of
-every Nerd miner); the Bitaxe Gamma follows with a board profile.
+The WarpAxe firmware for ESP32-S3 miners: Rust `std` on ESP-IDF v5.3
+(esp-idf-svc 0.51), TinyUSB through the shared C glue in `../components`.
+One image for every board; the board is configuration (`boardModel`),
+found on the first start or chosen once in the web UI. What it does for the
+user is in the [top-level README](../../README.md); this page is for working
+on the firmware.
 
-What works, verified on a NerdMiner V2 over USB-C only (no Wi-Fi):
+## Modules
 
-| Piece | State |
+| File | What it does |
 |---|---|
-| USB-C as CDC-NCM network adapter with DHCP server on 192.168.7.1/24, CDC-ACM console | works, 1.2 MB upload in 1.9 s |
-| Wi-Fi station when the config has an SSID (own thread, reconnects) | built, not yet exercised |
-| Config in NVS, AxeOS field names | `PATCH /api/system`, persists across restart |
-| `GET /api/system/info` (AxeOS shape, mining fields honest zeros), `GET /api/v1/state` | works |
-| `POST /api/system/restart` | works |
-| **Bitaxe Gamma 602 mines with WarpAxe** (2026-09-25): TPS546, EMC2101, fan PID, chain at 640.6 MHz, 1.31 TH/s, pool accepts shares; design doc §14.15 | **passes** |
-| Chain over the real UART (GPIO17/18 → USB-UART adapter → `warpaxe-simuart`) | **passes**: init, baud switch, PLL ramp, work, nonces, live frequency PATCH; design doc §14.14 |
-| Board layer (`src/board.rs`, `warpaxe-board`): profile from `boardModel`, TPS546 regulator, EMC2101 sensor and fan PID, overheat stop, sensor fields in the info | devkit profile verified (no I²C, nothing changed); Bitaxe Gamma profile written from ESP-Miner, untested on hardware |
-| Display by profile: ST7789 LCD (T-Display-S3) or SSD1306 OLED (Bitaxe, `warpaxe_board::ssd1306`, four status lines) | LCD path verified on the devkit; OLED untested until the Gamma |
-| Board profiles: `bitaxe-gamma`, `t-display-s3`, `nerdaxe-gamma`, `nerdqaxe-plusplus`, `nerdoctaxe-gamma`, `q1370`, `q1373` (config key `boardModel`, applied at boot) | Nerd multi-chip boards report their regulator as unsupported and leave the chain unpowered |
-| Chip by profile: `ASICModel`, `smallCoreCount` and the chain driver come from the board profile's chip (BM1370, or BM1373 for `q1373`) | devkit reports BM1370 as before |
-| `flipscreen` / `invertscreen` (OLED orientation, live on the next draw) | keys round-trip on the devkit; effect untested until the Gamma |
-| `tools/flash-backup.sh` (full flash image + sha256 + restore notes before the first WarpAxe flash) | script only, run it on the Gamma first |
-| `PATCH /api/system` with `coreVoltage` | persists; goes live through the regulator on a board that has one |
-| `PATCH /api/system` with `frequency` | works; the mining loop ramps the running chain to the new clock without a restart (WarpTune's write path) |
-| `POST /api/system/OTA` (raw app image; received into PSRAM, flashed on its own thread, reboot into the other slot) | works, ota_0 → ota_1 in 13 s |
-| Display: ST7789 status screen with the last log lines and the previous crash | works |
-| Crash handling: core dump to flash, summary in `/api/v1/state` and on screen, 30 s on USB-Serial/JTAG after a crash before USB OTG takes the PHY | works |
-| Flash-back: `GET /bootloader` or `POST /api/v1/bootloader`, or a `B` byte on the CDC port → ROM download mode with the PHY handed back | works |
-| Stratum V1 client (`crates/stratum` + `src/stratum.rs`): configure (version rolling), subscribe, authorize, notify → job with coinbase, merkle root and chip-ordered header fields; difficulty and mask tracking; reconnect with backoff; state in `/api/v1/state` and on the display | works against pool.warppool.org over Wi-Fi |
+| `main.rs` | Boot order: diagnostics, config, board, network, API, then pool and miner threads |
+| `config.rs` | One JSON document in NVS with the AxeOS field names; first-start import of the stock AxeOS/NerdOS settings |
+| `board.rs` | Board profile, I²C, regulator (TPS546, TPS53647/53667), sensors and fans (EMC2101, EMC2302, TMP1075), overheat stop, plausibility checks; first-start board detection (`warpaxe-board::detect`) |
+| `uart.rs`, `miner.rs` | Chain on UART1 (GPIO17 TX, GPIO18 RX): bring-up, work, nonces, shares, hashrate; frequency changes without a restart |
+| `stratum.rs`, `link.rs` | Pool client with main and fallback pool: Stratum V1 (optionally TLS) or Stratum V2 (`warpaxe-sv2`, Noise, extended channel) |
+| `net/` | USB-C as CDC-NCM network adapter (192.168.7.1) and the Wi-Fi station, as one list of interfaces |
+| `api.rs`, `ui/` | AxeOS-compatible API plus `/api/v1/*`; the web UI (one HTML file, eight languages) |
+| `update.rs` | Online update from the Forgejo releases: SHA-256 and BIP-340 signature against `RELEASE_KEY`, install only on a click |
+| `display.rs`, `screens.rs`, `gfx/`, `splash/` | ST7789 LCD (Nerd series, five pages, special screens) and SSD1306 OLED (Bitaxe, rotation); anti-aliased fonts from `tools/make-fonts.py` |
+| `display_i18n.rs` | Generated by `tools/i18n-apply.py`; do not edit |
+| `market.rs`, `clock.rs`, `history.rs` | Block data, fees and optional price for the Bitcoin page; SNTP and Wi-Fi scan; the dashboard's three-hour history |
+| `diag.rs` | Core dump summary, log ring, PSRAM thread stacks |
 
-| Chain driver (`warpaxe-chain`) on UART1, GPIO17 TX / GPIO18 RX, on its own miner thread: bring-up, retries every 10 s while no chip answers, work from Stratum (fresh extranonce2 per submission, retire on clean jobs), nonces checked against the pool difficulty with the host-side header hash, shares queued to the Stratum writer, accept/reject accounting, hashrate estimate; state in `/api/v1/state` and the AxeOS fields | runs; waits for chips (a USB-UART adapter to `warpaxe-simuart`, or an ASIC) |
+Texts: web-UI and display translations live in `i18n/`; run
+`python3 tools/i18n-apply.py` from the repo root after changing them. Every
+new or changed text gets a native-speaker review before a release.
 
-Not yet: board profiles, fan/VR/sensor drivers, Wi-Fi provisioning UI.
+## Looking at the display without a device
+
+`GET /api/v1/display/frame` returns the current frame (RGB565 or OLED
+bits; `tools/frame2png.py` turns it into a PNG), `POST /api/v1/display/key`
+presses a button and `POST /api/v1/display/demo` shows a special screen.
+`tools/display-preview` renders the same screens on the host.
 
 ## Hardware-in-the-loop without an ASIC
 
@@ -82,7 +83,7 @@ espflash save-image --chip esp32s3 --flash-size 16mb target/xtensa-esp32s3-espid
 curl -X POST --data-binary @/tmp/warpaxe.bin -H 'Expect:' http://192.168.7.1/api/system/OTA
 ```
 
-## Traps (all learned on 2026-09-23)
+## Traps
 
 - **TinyUSB must run the DWC2 in DMA mode** (`CONFIG_TINYUSB_MODE_DMA`).
   In slave mode the NCM IN path stalls after ~14 KB of traffic and never
@@ -95,3 +96,11 @@ curl -X POST --data-binary @/tmp/warpaxe.bin -H 'Expect:' http://192.168.7.1/api
   through `&TcpStream` instead.
 - The CDC console port (`/dev/cu.usbmodem…`, not the JTAG one) carries
   the logs once USB is up; reading it with a plain non-blocking open works.
+- mbedTLS must allocate from PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`):
+  with internal RAM, a TLS pool connection plus the online update's
+  download fragment the heap and the RSA check fails (-0x4290).
+- Thread stacks go to PSRAM (`diag::spawn_psram`); the OTA writer keeps an
+  internal stack because it writes flash, and the endpoint answers 503 when
+  that thread cannot start instead of failing silently.
+- f32 fields in serde-deserialised structs crashed the Xtensa LLVM backend;
+  the config uses f64.

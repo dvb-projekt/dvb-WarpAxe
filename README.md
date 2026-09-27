@@ -4,15 +4,15 @@
 
 <p align="center">
   <strong>Open-source Rust firmware for BM1370 Bitcoin miners</strong><br>
-  Bitaxe Gamma · NerdQAxe++ · Stratum V1 + TLS · AxeOS-compatible API · Online updates
+  Bitaxe Gamma · NerdQAxe++ · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-218%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-253%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.0-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.3-7B5CFF"></a>
 </p>
 
 ---
@@ -24,21 +24,23 @@ tools that talk to a Bitaxe keep working — including
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool), the
 clock-and-voltage regulator of dvb-WarpPool.
 
-What it adds on top: Stratum over **TLS** with a checked certificate, a
-**fallback pool** that hands back to the main pool on its own, **online
-updates** from the release page, a device display with **animated special
+What it adds on top: **Stratum V2** or Stratum V1 over **TLS**, each with
+the pool's certificate checked, a **fallback pool** that hands back to the
+main pool on its own, **signed online updates** from the release page, a
+**first start that finds the board by itself** and takes Wi-Fi and pool
+from the previous AxeOS/NerdOS settings, a device display with **animated special
 screens** (yes, a found block gets a warp jump), a regulator and sensor
 layer that rejects implausible readings instead of acting on them, and a
-web UI that is the same for the Bitaxe and the Nerd series and shows which
-one you are looking at.
+web UI in eight languages that is the same for the Bitaxe and the Nerd
+series and shows which one you are looking at.
 
 The chip protocol, the chain driver and the board drivers are `no_std`
 crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.0).** It mines 24/7 on one Bitaxe Gamma and one
-> NerdQAxe++ (Rev 6.1) under WarpTune. Other boards have a profile but have
+> **Status: early (v0.1.3).** It mines 24/7 on one Bitaxe Gamma and one
+> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune. Other boards have a profile but have
 > not run it — see [Supported boards](#supported-boards) before you flash.
 
 ## Screenshots
@@ -62,7 +64,7 @@ miner.
 
 <p align="center">
   <img src="docs/screenshots/web-pool.png" alt="Pool page with main and fallback pool, TLS switches" width="760"><br>
-  <em>Pool — main and fallback pool, each with its own TLS switch; reject reasons and the last reject for diagnosis.</em>
+  <em>Pool — main and fallback pool, each with protocol (Stratum V1 with optional TLS, or Stratum V2 with the pool's authority key); reject reasons and the last reject for diagnosis.</em>
 </p>
 
 ### Device display
@@ -97,6 +99,14 @@ back at any time with `GET /api/v1/display/frame`.
 - BM1370 chain driver: enumeration, baud switch, PLL solved (not looked up)
   and ramped, work dispatch, nonce attribution, stale and duplicate
   filtering, per-chip silence watchdog.
+- **Stratum V2** per pool: Noise handshake (secp256k1 + EllSwift,
+  ChaCha20-Poly1305), extended channel, the pool's certificate checked
+  against its authority key (Base58Check, as pools publish it). "Require
+  pool authentication" is on by default: without a key, or before the clock
+  is set by NTP, there is no connection. The TLS switch applies to V1 only;
+  V2 is always encrypted. The display shows "V2" with the lock. Settings
+  from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
+  the first start.
 - Stratum V1 with version rolling (BIP 310), `mining.suggest_difficulty`,
   optional **TLS** (esp-tls, built-in CA bundle, hostname checked).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
@@ -120,8 +130,9 @@ back at any time with `GET /api/v1/display/frame`.
 
 ### Web UI and API
 - One UI for every board, series colour and chip grid on the type plate;
-  English and German (more languages to come, each with a native-speaker
-  review).
+  English, German, Spanish, French, Italian, Brazilian Portuguese,
+  Japanese and Chinese, each reviewed by a native speaker (the device
+  display in the six Latin-script ones).
 - 1 h / 3 h history with hashrate and chip temperature, fan, power and pool
   cards, live log.
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
@@ -149,8 +160,12 @@ back at any time with `GET /api/v1/display/frame`.
   installs it. A release without a signature still installs for now and is
   marked as unsigned; that tolerance ends once every release carries one.
   Nothing installs by itself: an update restarts the miner.
+- Downloads are tried up to three times; the log names the address that
+  started an install, an upload or an update check, and the last install
+  (version and signature result) is kept across the restart.
 - Upload a `warpaxe.bin` in the web UI, or `curl --data-binary @warpaxe.bin
-  http://<miner>/api/system/OTA`.
+  http://<miner>/api/system/OTA` — a manual upload is your own image and is
+  not signature-checked.
 - The web UI and its fonts are part of the image: one file, one update.
 
 ## Supported boards
@@ -159,6 +174,7 @@ back at any time with `GET /api/v1/display/frame`.
 |---|---|---|---|
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ Rev 6.1 | 4× BM1370 | TPS53647 | **runs 24/7** |
+| NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 | recognised, not supported yet (chips stay off) |
 | NerdOctaxe Gamma | 8× BM1370 | TPS53667 | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
@@ -169,17 +185,22 @@ don't flash them unless you can recover the stock firmware over USB.
 
 ## Install
 
-**First install** is still a developer step: it needs a USB cable and the
-ESP toolchain, and the board model has to be set in the configuration
-before the first boot. A guided first install (board choice on first
-start) is on the list.
+**First install** still needs a USB cable and the ESP toolchain; after that
+the miner sets itself up:
 
 1. **Back up the stock firmware** — `tools/flash-backup.sh` reads the whole
    flash (16 MB) over USB, so you can always go back.
-2. Build and flash (see [Build from source](#build-from-source)); set
-   `boardModel` (`bitaxe-gamma`, `nerdqaxe-plusplus`, …), Wi-Fi and pool in
-   the configuration.
-3. Open the web UI at the miner's address — or, on boards with native USB,
+2. Flash WarpAxe over USB (see [Build from source](#build-from-source)) and
+   keep the settings partition: WarpAxe reads what AxeOS or NerdOS left
+   there.
+3. On the first start WarpAxe takes **Wi-Fi, pools and hostname** from the
+   previous firmware and finds the **board**: from the model AxeOS stored at
+   the factory, or from the chips that answer on the board's I²C bus
+   (read-only probes on pins that switch nothing). A Bitaxe Gamma starts
+   mining at once. For the Nerd boards the web UI asks once which board it
+   is — the NerdQAxe++ and the NerdOctaxe look alike on the bus — and the
+   chips stay off until you answer.
+4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
    network adapter).
 
@@ -187,7 +208,7 @@ start) is on the list.
 Install*, or upload `warpaxe.bin` from the
 [releases page](https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases).
 Every release carries `warpaxe.bin` (one image for all boards — the board is
-configuration) and `warpaxe.bin.sha256`.
+configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig`.
 
 ## Build from source
 
@@ -234,6 +255,7 @@ License) and `docs/brand` by `tools/make-fonts.py` and
 | `crates/chain` | the chain driver over a `Uart` trait — `no_std`, the code the firmware runs |
 | `crates/board` | regulators, sensors, fans, fan PID, OLED, board profiles over an `I2c` trait — `no_std`, tested against a scripted bus |
 | `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading, tested against a captured WarpPool session |
+| `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/sim`, `crates/simuart` | a simulated BM1370 chain and board with fault injection |
 | `crates/axeos`, `crates/cgminer` | AxeOS- and cgminer-compatible devices on top of the simulator, for testing tuners |
 | `crates/scenarios` | WarpTune's regulator in-process against the simulated devices (git dependency on dvb-WarpPool) |

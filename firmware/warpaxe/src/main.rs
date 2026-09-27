@@ -1,5 +1,5 @@
 #![recursion_limit = "512"]
-//! WarpAxe firmware, stage B: everything but the hashing.
+//! WarpAxe firmware: the ESP32-S3 side of the miner.
 //!
 //! Boot order matters and is deliberate: diagnostics first (a crash in the
 //! previous run is shown and, after a crash, the USB PHY stays on
