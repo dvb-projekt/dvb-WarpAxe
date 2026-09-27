@@ -69,6 +69,31 @@ pub struct Config {
     /// Chip temperature that switches the core voltage off, °C; 0 = the
     /// board's default (NerdOS name).
     pub overheat_temp: u8,
+    /// Fan PID gains (NerdOS names); the defaults are ESP-Miner's. f64:
+    /// deserializing an f32 trips the Xtensa LLVM backend.
+    #[serde(rename = "pidP")]
+    pub pid_p: f64,
+    #[serde(rename = "pidI")]
+    pub pid_i: f64,
+    #[serde(rename = "pidD")]
+    pub pid_d: f64,
+    /// Second fan output (regulator fan on the Nerd boards): automatic on
+    /// the regulator temperature, or a fixed duty.
+    #[serde(rename = "autofanspeed2")]
+    pub autofanspeed2: bool,
+    #[serde(rename = "manualFanSpeed2")]
+    pub manual_fan_speed2: u8,
+    /// Regulator temperature the second fan holds, °C; 0 = the default.
+    #[serde(rename = "vrTargetTemp")]
+    pub vr_target_temp: u8,
+    /// Share difficulty asked of the pool after authorizing
+    /// (`mining.suggest_difficulty`, AxeOS name); 0 = ask nothing.
+    #[serde(rename = "stratumSuggestedDifficulty")]
+    pub suggested_difficulty: u32,
+    /// Fresh work for the chips at least every this many ms (NerdOS
+    /// name); 0 = when their nonce space runs out. Never later than that.
+    #[serde(rename = "jobInterval")]
+    pub job_interval_ms: u16,
     /// Chips on the chain; 0 = discover.
     #[serde(rename = "asicCount")]
     pub asic_count: u8,
@@ -107,6 +132,16 @@ impl Default for Config {
             min_fan_speed: 25,
             pid_target_temp: 0,
             overheat_temp: 0,
+            // warpaxe_board::fan::{KP, KI, KD}, written out: 0.1f32 as
+            // f64 would show as 0.10000000149.
+            pid_p: 5.0,
+            pid_i: 0.1,
+            pid_d: 2.0,
+            autofanspeed2: true,
+            manual_fan_speed2: 100,
+            vr_target_temp: 0,
+            suggested_difficulty: 0,
+            job_interval_ms: 0,
             asic_count: 0,
             asic_difficulty: 0,
         }
@@ -120,7 +155,7 @@ const KEY: &str = "config";
 /// Load from NVS (or defaults) and remember the NVS handle for saves.
 pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     let nvs = EspNvs::new(part, "warpaxe", true)?;
-    let mut buf = vec![0u8; 2048];
+    let mut buf = vec![0u8; 4096];
     let cfg = match nvs.get_raw(KEY, &mut buf) {
         Ok(Some(bytes)) => match serde_json::from_slice::<Config>(bytes) {
             Ok(c) => c,

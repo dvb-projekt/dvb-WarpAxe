@@ -64,6 +64,11 @@ label.f input,label.f select{height:42px;padding:0 12px;border-radius:10px;borde
 label.f small{font-size:12px;color:var(--dim)}
 label.t{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;font-size:14px;cursor:pointer}
 label.t small{display:block;font-size:12px;color:var(--dim)}
+details.card>summary{list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+details.card>summary::-webkit-details-marker{display:none}
+details.card>summary h2::before{content:"▸ ";color:var(--dim)}
+details.card[open]>summary h2::before{content:"▾ "}
+details.card[open]>.form{margin-top:16px}
 label.t input{appearance:none;width:44px;height:24px;border-radius:12px;background:rgba(255,255,255,.15);position:relative;flex-shrink:0;cursor:pointer;transition:background .15s}
 label.t input::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--fg);transition:left .15s}
 label.t input:checked{background:var(--warp)}
@@ -122,6 +127,10 @@ en: {
   autofan:"Automatic fan control", autofan_s:"PID on the target temperature", invertfan:"Invert fan PWM", invertfan_s:"For fans that run opposite to the setting",
   pidTargetTemp:"Target chip temperature (°C)", overheat_temp:"Shutdown temperature (°C)", overheat_s:"Chips or regulator above it: core voltage off",
   minFanSpeed:"Lowest fan speed (%)", minFan_s:"Big fans may not start below about 25 %", fanspeed:"Fixed fan speed (%)", fanspeed_s:"Only without automatic control",
+  xp:"Expert", xp_hint:"Only change these if you know what they do.", autofanspeed2:"Automatic M1 fan control", autofan2_s:"PID on the regulator temperature", vrTargetTemp:"Target regulator temperature (°C)", manualFanSpeed2:"Fixed M1 fan speed (%)", fanspeed2_s:"Only without automatic M1 control",
+  pidP:"Fan PID P", pidI:"Fan PID I (per s)", pidD:"Fan PID D (s)", pid_def:"Default {v}; applies to both outputs",
+  stratumSuggestedDifficulty:"Suggested pool difficulty", sugg_s:"Asked of the pool after login; 0 = ask nothing. Applies on the next connection", jobInterval:"Job interval (ms)", job_s:"Fresh work at least this often; 0 = automatic. Never later than the chips need it",
+  xp_later:"Later: TLS, Stratum V2 and the chips' version-rolling rate.",
   display:"Display", display_hint:"The screen on the miner.", flipscreen:"Rotate screen 180°", invertscreen:"Invert colours", displayTimeout:"Screen off after (min, 0 = never)",
   network:"Network", network_hint:"Network changes take effect after a restart.", hostname:"Hostname", ssid:"Wi-Fi name (SSID)", wifiPass:"Wi-Fi password", scan:"Search again", scanning:"Searching…", found_nets:"Networks found", scan_fail:"Search not possible: ", useNTP:"Time by NTP", ntp_s:"Real clock times in the history and log", ntpServer:"NTP server",
   save:"Save", restart:"Restart", saving:"Saving…", saved:"Saved.", saved_restart:"Saved. Restart to apply pool or network changes.", nothing:"Nothing changed.", failed:"Failed: ",
@@ -156,6 +165,10 @@ de: {
   autofan:"Lüfter automatisch regeln", autofan_s:"PID auf die Zieltemperatur", invertfan:"Lüfter-PWM umkehren", invertfan_s:"Für Lüfter, die entgegen der Einstellung laufen",
   pidTargetTemp:"Ziel-Chiptemperatur (°C)", overheat_temp:"Abschalttemperatur (°C)", overheat_s:"Chips oder Regler darüber: Kernspannung aus",
   minFanSpeed:"Mindestdrehzahl (%)", minFan_s:"Große Lüfter laufen darunter oft nicht an", fanspeed:"Feste Drehzahl (%)", fanspeed_s:"Nur ohne automatische Regelung",
+  xp:"Experte", xp_hint:"Nur ändern, wenn klar ist, was es bewirkt.", autofanspeed2:"Lüfter M1 automatisch regeln", autofan2_s:"PID auf die Reglertemperatur", vrTargetTemp:"Ziel-Reglertemperatur (°C)", manualFanSpeed2:"Feste Drehzahl M1 (%)", fanspeed2_s:"Nur ohne automatische Regelung von M1",
+  pidP:"Lüfter-PID P", pidI:"Lüfter-PID I (pro s)", pidD:"Lüfter-PID D (s)", pid_def:"Standard {v}; gilt für beide Ausgänge",
+  stratumSuggestedDifficulty:"Vorgeschlagene Pool-Difficulty", sugg_s:"Wird dem Pool nach dem Login vorgeschlagen; 0 = keine. Gilt ab der nächsten Verbindung", jobInterval:"Job-Intervall (ms)", job_s:"Neue Arbeit mindestens so oft; 0 = automatisch. Nie später, als die Chips sie brauchen",
+  xp_later:"Später: TLS, Stratum V2 und die Version-Rolling-Rate der Chips.",
   display:"Anzeige", display_hint:"Das Display am Gerät.", flipscreen:"Anzeige um 180° drehen", invertscreen:"Farben umkehren", displayTimeout:"Anzeige aus nach (Min., 0 = nie)",
   network:"Netzwerk", network_hint:"Netzwerk-Änderungen gelten nach einem Neustart.", hostname:"Hostname", ssid:"WLAN-Name (SSID)", wifiPass:"WLAN-Passwort", scan:"Neu suchen", scanning:"Suche …", found_nets:"Gefundene Netze", scan_fail:"Suche nicht möglich: ", useNTP:"Uhrzeit per NTP", ntp_s:"Echte Uhrzeiten im Verlauf und im Log", ntpServer:"NTP-Server",
   save:"Speichern", restart:"Neu starten", saving:"Speichere …", saved:"Gespeichert.", saved_restart:"Gespeichert. Für Pool- oder Netzwerk-Änderungen neu starten.", nothing:"Nichts geändert.", failed:"Fehler: ",
@@ -314,7 +327,7 @@ function poolRows(i) {
 }
 
 /* ---------- forms ---------- */
-const fld = (k, v, o = {}) => `<label class="f">${o.label || t(k)}<input name="${k}" type="${o.type || "text"}" value="${esc(v)}" ${o.min != null ? `min="${o.min}"` : ""} ${o.max != null ? `max="${o.max}"` : ""} ${o.type === "number" ? 'inputmode="numeric"' : ""} autocomplete="off">${o.hint ? `<small>${o.hint}</small>` : ""}</label>`;
+const fld = (k, v, o = {}) => `<label class="f">${o.label || t(k)}<input name="${k}" type="${o.type || "text"}" value="${esc(v)}" ${o.min != null ? `min="${o.min}"` : ""} ${o.max != null ? `max="${o.max}"` : ""} ${o.step != null ? `step="${o.step}"` : ""} ${o.type === "number" ? `inputmode="${o.step ? "decimal" : "numeric"}"` : ""} autocomplete="off">${o.hint ? `<small>${o.hint}</small>` : ""}</label>`;
 const tog = (k, on, s, full) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
 const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
 const SECRET = ["stratumPassword", "wifiPass", "fallbackStratumPassword"];
@@ -358,12 +371,23 @@ function settingsPage() {
   sec(t("tuning"), tuneHint, fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint}),
     `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
   sec(t("fan_temp"), t(two ? "fan_temp_hint_two" : "fan_temp_hint_one"), tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85}) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")})) +
+  xpSec(c, i, two) +
   sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440})) +
   sec(t("network"), t("network_hint"), `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
     fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")}) + fld("hostname", c.hostname) + `<div></div>` +
     tog("useNTP", c.useNTP, t("ntp_s")) + fld("ntpServer", c.ntpServer)) +
   actions(true) + `</form>`;
 }
+
+function xpSec(c, i, two) {
+  const num = (k, v, o) => fld(k, v, Object.assign({type: "number"}, o));
+  const body = (two ? tog("autofanspeed2", c.autofanspeed2, t("autofan2_s")) + `<div></div>` + num("vrTargetTemp", c.vrTargetTemp || i.vrTargetTemp, {min: 40, max: 90}) + num("manualFanSpeed2", c.manualFanSpeed2, {min: 0, max: 100, hint: t("fanspeed2_s")}) : "") +
+    num("pidP", c.pidP, {min: 0, max: 100, step: "any", hint: t("pid_def", {v: 5})}) + num("pidI", c.pidI, {min: 0, max: 10, step: "any", hint: t("pid_def", {v: nf(0.1, 1)})}) + num("pidD", c.pidD, {min: 0, max: 100, step: "any", hint: t("pid_def", {v: 2})}) + `<div></div>` +
+    num("stratumSuggestedDifficulty", c.stratumSuggestedDifficulty, {min: 0, hint: t("sugg_s")}) + num("jobInterval", c.jobInterval, {min: 0, max: 5000, hint: t("job_s")}) +
+    `<div class="dim" style="grid-column:1/-1;font-size:13px">${t("xp_later")}</div>`;
+  return `<details class="card"${xpOpen ? " open" : ""} id="xp"><summary><h2>${t("xp")}</h2><div class="dim">${t("xp_hint")}</div></summary><div class="form">${body}</div></details>`;
+}
+let xpOpen = false;
 
 let nets = null, scanning = false;
 function bars(r) { const n = r >= -60 ? 4 : r >= -70 ? 3 : r >= -80 ? 2 : 1; return `<span style="display:flex;align-items:flex-end;gap:2px;height:14px">${[0, 1, 2, 3].map(k => `<span style="width:3px;height:${4 + k * 3}px;border-radius:1px;background:${k < n ? "var(--ok)" : "rgba(255,255,255,.18)"}"></span>`).join("")}</span>`; }
@@ -436,7 +460,8 @@ function render() {
   if (editing) return; // never re-render a form under the cursor
   v.innerHTML = route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard();
   const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword"]); };
-  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass", "useNTP", "ntpServer"]); };
+  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass", "useNTP", "ntpServer", "stratumSuggestedDifficulty"]); };
+  const xp = $("#xp"); if (xp) xp.ontoggle = () => { xpOpen = xp.open; };
   if (route === "system") { wireSystem(); const e = $("#log"); if (e) e.scrollTop = e.scrollHeight; }
 }
 async function load(full) {

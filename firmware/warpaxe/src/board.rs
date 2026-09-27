@@ -34,7 +34,7 @@ use crate::config;
 
 /// The regulator-temperature target of the second fan channel on the
 /// Nerd boards (NerdOS `m_pidSettings[1].targetTemp`).
-const VR_FAN_TARGET_C: f32 = 65.0;
+pub const VR_FAN_TARGET_C: f32 = 65.0;
 /// Seconds without a chip temperature reading before the core voltage
 /// goes off: a chain hashing blind is treated like one overheating.
 /// NerdOS has no such guard (a failed sensor reads 0 °C there).
@@ -732,6 +732,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             cfg = config::get();
             pid.set_min_percent(f32::from(cfg.min_fan_speed));
             pid_vr.set_min_percent(f32::from(cfg.min_fan_speed));
+            let (kp, ki, kd) = (cfg.pid_p as f32, cfg.pid_i as f32, cfg.pid_d as f32);
+            pid.set_gains(kp, ki, kd);
+            pid_vr.set_gains(kp, ki, kd);
             if cfg.invertfanpolarity != polarity {
                 if let Some(t) = thermal.as_mut() {
                     if t.set_polarity(cfg.invertfanpolarity) {
@@ -869,21 +872,31 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             } else {
                 profile.fan_target_c
             };
+            let vr_target_c = if cfg.vr_target_temp > 0 {
+                f32::from(cfg.vr_target_temp)
+            } else {
+                VR_FAN_TARGET_C
+            };
             let want = if overheat() {
                 (100, 100)
-            } else if cfg.autofanspeed {
-                let chip = match temp {
-                    Some(c) => pid.compute(c, target_c) as u8,
-                    None => 100, // no reading: full fan
+            } else {
+                let chip = if !cfg.autofanspeed {
+                    cfg.fanspeed.min(100)
+                } else {
+                    match temp {
+                        Some(c) => pid.compute(c, target_c) as u8,
+                        None => 100, // no reading: full fan
+                    }
                 };
-                let vrf = match vr_temp {
-                    Some(c) => pid_vr.compute(c as f32, VR_FAN_TARGET_C) as u8,
-                    None => 100,
+                let vrf = if !cfg.autofanspeed2 {
+                    cfg.manual_fan_speed2.min(100)
+                } else {
+                    match vr_temp {
+                        Some(c) => pid_vr.compute(c as f32, vr_target_c) as u8,
+                        None => 100,
+                    }
                 };
                 (chip, vrf)
-            } else {
-                let m = cfg.fanspeed.min(100);
-                (m, m)
             };
             // One fan output: the second value just mirrors the first.
             let two = matches!(t, Thermal::Nerd { .. });

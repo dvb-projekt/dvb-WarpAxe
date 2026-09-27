@@ -31,19 +31,29 @@ impl FanPid {
     /// A regulator with the reference gains, output within
     /// `min_percent..=100`.
     pub fn new(min_percent: f32) -> Self {
-        let dt = SAMPLE_MS as f32 / 1000.0;
-        // Reverse action: more temperature, more fan.
         let mut pid = FanPid {
-            kp: -KP,
-            ki: -(KI * dt),
-            kd: -(KD / dt),
+            kp: 0.0,
+            ki: 0.0,
+            kd: 0.0,
             out_min: 0.0,
             out_max: 100.0,
             sum: 0.0,
             last_input: None,
         };
+        pid.set_gains(KP, KI, KD);
         pid.set_min_percent(min_percent);
         pid
+    }
+
+    /// Gains in the ESP-Miner/NerdOS convention: `ki` and `kd` per
+    /// second. Negative or non-finite values count as zero.
+    pub fn set_gains(&mut self, kp: f32, ki: f32, kd: f32) {
+        let ok = |g: f32| if g.is_finite() { g.max(0.0) } else { 0.0 };
+        let dt = SAMPLE_MS as f32 / 1000.0;
+        // Reverse action: more temperature, more fan.
+        self.kp = -ok(kp);
+        self.ki = -(ok(ki) * dt);
+        self.kd = -(ok(kd) / dt);
     }
 
     /// Lower output bound, %; the integral is clamped into the new window.
@@ -100,6 +110,22 @@ mod tests {
         assert!(kick > 65.0 && kick <= 100.0, "{kick}");
         let held = pid.compute(61.0, 60.0);
         assert!(held > 65.0 && held < 66.0, "{held}");
+    }
+
+    #[test]
+    fn new_gains_change_the_response_not_the_state() {
+        let mut soft = FanPid::new(25.0);
+        let mut hard = FanPid::new(25.0);
+        soft.reset(50.0, 60.0);
+        hard.reset(50.0, 60.0);
+        hard.set_gains(KP * 2.0, KI, KD);
+        assert!(hard.compute(60.1, 60.0) > soft.compute(60.1, 60.0));
+        let mut off = FanPid::new(25.0);
+        off.reset(50.0, 60.0);
+        off.set_gains(0.0, 0.0, 0.0);
+        assert_eq!(off.compute(80.0, 60.0), 50.0);
+        off.set_gains(f32::NAN, -1.0, 0.0);
+        assert_eq!(off.compute(80.0, 60.0), 50.0);
     }
 
     #[test]

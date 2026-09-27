@@ -152,6 +152,7 @@ fn run(mut uart: ChipUart) {
         let mut counting = false;
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
+        let mut last_work: Option<Instant> = None;
 
         loop {
             let now = now_us();
@@ -265,7 +266,8 @@ fn run(mut uart: ChipUart) {
 
             if chain.accepting_work() {
                 let st = stratum::state();
-                let forced = config::get().asic_difficulty;
+                let cfg_now = config::get();
+                let forced = cfg_now.asic_difficulty;
                 let want = if forced > 0 {
                     forced
                 } else {
@@ -295,7 +297,14 @@ fn run(mut uart: ChipUart) {
                 }
                 // New notify, or the chips ran out of nonce space: fresh work.
                 let fresh = st.jobs_received != seen_notify;
-                if fresh || chain.needs_work(now) {
+                // A set job interval only ever brings work sooner than the
+                // chips' own nonce-space timeout.
+                let interval_ms = cfg_now.job_interval_ms;
+                let paced = interval_ms > 0
+                    && last_work.is_some_and(|t| {
+                        t.elapsed() >= Duration::from_millis(u64::from(interval_ms))
+                    });
+                if fresh || paced || chain.needs_work(now) {
                     if let Some(job) = stratum::next_job() {
                         if fresh && job.clean_jobs {
                             chain.retire_all();
@@ -311,6 +320,7 @@ fn run(mut uart: ChipUart) {
                                     hashes = 0.0;
                                     hashes_since = epoch.elapsed();
                                 }
+                                last_work = Some(Instant::now());
                                 update(|s| s.jobs_sent += 1);
                                 jobs.insert(r.serial, (job, st.jobs_received, diag::uptime_s()));
                                 if jobs.len() > 32 {

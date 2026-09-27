@@ -63,6 +63,10 @@ pub fn system_info() -> serde_json::Value {
         "fans": nerd_fans(&cfg, profile, &b),
         "invertfanpolarity": u8::from(cfg.invertfanpolarity), "minFanSpeed": cfg.min_fan_speed,
         "pidTargetTemp": if cfg.pid_target_temp > 0 { u32::from(cfg.pid_target_temp) } else { profile.fan_target_c.round() as u32 },
+        "pidP": cfg.pid_p, "pidI": cfg.pid_i, "pidD": cfg.pid_d,
+        "autofanspeed2": cfg.autofanspeed2, "manualFanSpeed2": cfg.manual_fan_speed2, "manualFanSpeed": cfg.fanspeed,
+        "vrTargetTemp": vr_target(&cfg),
+        "stratumSuggestedDifficulty": cfg.suggested_difficulty, "jobInterval": cfg.job_interval_ms,
         "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.max_temp_c.round() as u32 },
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
@@ -114,14 +118,24 @@ fn nerd_fans(
     } else {
         p.fan_target_c.round() as u32
     };
+    let gains = |t: u32| json!({"targetTemp": t, "p": cfg.pid_p, "i": cfg.pid_i, "d": cfg.pid_d});
     json!([
-        {"label": "M2", "mode": if cfg.autofanspeed { 2 } else { 0 },
-         "overheatTemp": chip_limit, "pid": {"targetTemp": target},
+        {"label": "M2", "mode": if cfg.autofanspeed { 2 } else { 0 }, "manualSpeed": cfg.fanspeed,
+         "overheatTemp": chip_limit, "pid": gains(target),
          "rpm": b.fan_rpm, "speedPerc": b.fan_pct},
-        {"label": "M1", "mode": if cfg.autofanspeed { 3 } else { 0 },
-         "overheatTemp": p.vr_max_c.round() as u32, "pid": {"targetTemp": 65},
+        {"label": "M1", "mode": if cfg.autofanspeed2 { 3 } else { 0 }, "manualSpeed": cfg.manual_fan_speed2,
+         "overheatTemp": p.vr_max_c.round() as u32, "pid": gains(vr_target(cfg)),
          "rpm": b.fan2_rpm.unwrap_or(0), "speedPerc": b.fan2_pct.unwrap_or(0)},
     ])
+}
+
+/// The regulator temperature the second fan output holds, °C.
+fn vr_target(cfg: &config::Config) -> u32 {
+    if cfg.vr_target_temp > 0 {
+        u32::from(cfg.vr_target_temp)
+    } else {
+        board::VR_FAN_TARGET_C.round() as u32
+    }
 }
 
 /// NerdOS `GET /api/v2/settings`: the board's own clock and voltage
@@ -175,6 +189,38 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
             return Some(format!(
                 "coreVoltage {mv} mV outside the board's {lo}–{hi} mV"
             ));
+        }
+    }
+    expert_refuse(v)
+}
+
+/// Expert fields outside what the controllers can use sensibly.
+fn expert_refuse(v: &serde_json::Value) -> Option<String> {
+    let num = |k: &str| v.get(k).and_then(|x| x.as_f64());
+    for (k, lo, hi) in [
+        ("pidP", 0.0, 100.0),
+        ("pidI", 0.0, 10.0),
+        ("pidD", 0.0, 100.0),
+        ("manualFanSpeed2", 0.0, 100.0),
+        ("fanspeed", 0.0, 100.0),
+        ("minFanSpeed", 0.0, 100.0),
+    ] {
+        if let Some(x) = num(k) {
+            if !(lo..=hi).contains(&x) {
+                return Some(format!("{k} {x} outside {lo}–{hi}"));
+            }
+        }
+    }
+    for (k, lo, hi) in [
+        ("vrTargetTemp", 40.0, 90.0),
+        ("pidTargetTemp", 35.0, 85.0),
+        ("jobInterval", 100.0, 5000.0),
+    ] {
+        // 0 = the default.
+        if let Some(x) = num(k) {
+            if x != 0.0 && !(lo..=hi).contains(&x) {
+                return Some(format!("{k} {x} outside {lo}–{hi} (0 = default)"));
+            }
         }
     }
     None

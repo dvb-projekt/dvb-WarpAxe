@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
-    subscribe_request, Notify, Request,
+    subscribe_request, suggest_difficulty_request, Notify, Request,
 };
 use warpaxe_stratum::{parse_line, Incoming, Job, Session};
 
@@ -262,6 +262,13 @@ fn session(pool: &str, user: &str, pass: &str, fallback: bool) -> anyhow::Result
             authorize_request(3, user, pass),
         ] {
             w.write_all(r.to_line().as_bytes())?;
+        }
+        // Ask for a share difficulty (AxeOS sends it right after
+        // authorizing); the pool may ignore it.
+        let suggest = config::get().suggested_difficulty;
+        if suggest > 0 {
+            w.write_all(suggest_difficulty_request(4, suggest).to_line().as_bytes())?;
+            log::info!("stratum: suggest difficulty {suggest}");
         }
         w.flush()?;
     }
