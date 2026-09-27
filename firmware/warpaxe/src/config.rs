@@ -128,6 +128,16 @@ pub fn best_diff() -> u64 {
     *BEST_DIFF.lock().unwrap()
 }
 
+/// Forget the all-time best difficulty.
+pub fn reset_best_diff() {
+    *BEST_DIFF.lock().unwrap() = 0;
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_u64(BEST_KEY, 0) {
+            log::warn!("config: resetting best diff: {e}");
+        }
+    }
+}
+
 /// Record a nonce difficulty; writes NVS only when the all-time best rises,
 /// which after the first hours is rare.
 pub fn raise_best_diff(diff: u64) {

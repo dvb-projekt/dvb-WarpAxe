@@ -43,6 +43,7 @@ void wa_log_capture_start(void);
 int wa_log_count(void);
 /// Copy line `i` (0 = oldest kept) into `buf`, NUL-terminated.
 void wa_log_line(int i, char *buf, size_t n);
+void wa_log_push(const char *line);
 
 /// TinyUSB's debug printf, filtered to NCM/error lines, into the same ring.
 int wa_tu_printf(const char *fmt, ...);

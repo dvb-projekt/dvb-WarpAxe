@@ -13,6 +13,7 @@ mod config;
 mod diag;
 mod display;
 mod font;
+mod history;
 mod miner;
 mod net;
 mod stratum;
@@ -175,7 +176,7 @@ fn draw_lcd(d: &mut display::Lcd) {
 
 fn main() {
     sys::link_patches();
-    esp_idf_svc::log::EspLogger::initialize_default();
+    diag::init_logger();
     diag::start_log_capture();
     diag::mark_boot();
     info!(
@@ -288,6 +289,7 @@ fn main() {
     stratum::start();
     set_step("BOARD");
     board::start();
+    history::start();
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

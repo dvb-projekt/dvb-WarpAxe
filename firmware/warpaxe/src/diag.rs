@@ -105,3 +105,41 @@ pub fn restart() -> ! {
 pub fn free_heap() -> u32 {
     unsafe { sys::esp_get_free_heap_size() }
 }
+
+/// The logger: ESP-IDF's, plus every line into the capture ring that
+/// `/api/v1/log` and the web UI read (the Rust logger does not go through
+/// esp_log's vprintf, so the ring would miss it otherwise).
+struct RingLogger(esp_idf_svc::log::EspLogger);
+
+impl log::Log for RingLogger {
+    fn enabled(&self, m: &log::Metadata) -> bool {
+        self.0.enabled(m)
+    }
+    fn log(&self, r: &log::Record) {
+        if !self.enabled(r.metadata()) {
+            return;
+        }
+        self.0.log(r);
+        let lvl = match r.level() {
+            log::Level::Error => 'E',
+            log::Level::Warn => 'W',
+            log::Level::Info => 'I',
+            log::Level::Debug => 'D',
+            log::Level::Trace => 'V',
+        };
+        let ms = unsafe { esp_idf_svc::sys::esp_log_timestamp() };
+        let line = format!("{lvl} ({ms}) {}: {}", r.target(), r.args());
+        if let Ok(c) = std::ffi::CString::new(line) {
+            unsafe { tusb::wa_log_push(c.as_ptr()) };
+        }
+    }
+    fn flush(&self) {}
+}
+
+static LOGGER: RingLogger = RingLogger(esp_idf_svc::log::EspLogger::new());
+
+/// Install the logger (in place of `EspLogger::initialize_default`).
+pub fn init_logger() {
+    let _ = log::set_logger(&LOGGER);
+    LOGGER.0.initialize();
+}

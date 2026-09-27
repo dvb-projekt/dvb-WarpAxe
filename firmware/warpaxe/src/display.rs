@@ -74,7 +74,10 @@ impl Lcd {
             bus_cfg.clk_src = tusb::soc_periph_lcd_clk_src_t_LCD_CLK_SRC_DEFAULT;
             bus_cfg.data_gpio_nums[..8].copy_from_slice(&PIN_DATA);
             bus_cfg.bus_width = 8;
-            bus_cfg.max_transfer_bytes = WIDTH * HEIGHT * 2;
+            // One full frame plus headroom: sized exactly, the DMA link list
+            // came up one descriptor short now and then after alignment
+            // ("gdma_link_mount_buffers: no more").
+            bus_cfg.max_transfer_bytes = WIDTH * HEIGHT * 2 + 8192;
             bus_cfg.__bindgen_anon_1.psram_trans_align = 64;
             bus_cfg.sram_trans_align = 4;
             check!(tusb::esp_lcd_new_i80_bus(&bus_cfg, &mut bus));

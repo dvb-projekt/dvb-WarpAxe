@@ -65,6 +65,8 @@ pub struct BoardState {
     pub vr_part: String,
     /// Mining stopped and the regulator switched off; stays until reboot.
     pub overheat: bool,
+    /// Chips switched off by hand.
+    pub shutdown: bool,
     pub last_error: String,
     /// What the regulator answered to each probe at boot.
     pub vr_probe: String,
@@ -72,6 +74,12 @@ pub struct BoardState {
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
 static OVERHEAT: AtomicBool = AtomicBool::new(false);
+/// Chips switched off by hand (web UI / API), not by a limit.
+static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+/// The core rail is up; the miner starts the chain only then.
+static POWERED: AtomicBool = AtomicBool::new(true);
+/// Set by an overheat reset: the board loop forgets its sensor-loss count.
+static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
@@ -101,9 +109,43 @@ pub fn chip() -> &'static ChipProfile {
     }
 }
 
-/// True once a temperature limit was crossed: the miner must not run.
+/// True once a temperature limit was crossed; stays until reset.
 pub fn overheat() -> bool {
     OVERHEAT.load(Ordering::Relaxed)
+}
+
+/// Chips switched off by hand.
+pub fn shutdown() -> bool {
+    SHUTDOWN.load(Ordering::Relaxed)
+}
+
+/// The chain must not run: overheat, a manual shutdown, or the core rail
+/// not (yet) back up.
+pub fn chain_stopped() -> bool {
+    overheat() || shutdown() || !POWERED.load(Ordering::Relaxed)
+}
+
+/// Switch the chips off (core rail down) or back on; the board loop does
+/// the switching, the miner restarts the chain once the rail is up.
+pub fn set_shutdown(off: bool) {
+    SHUTDOWN.store(off, Ordering::Relaxed);
+    log::warn!(
+        "board: chips switched {} by request",
+        if off { "off" } else { "on" }
+    );
+}
+
+/// Clear an overheat without a reboot. If the limit is still crossed, the
+/// next sample trips it again.
+pub fn reset_overheat() {
+    CLEAR_LOST.store(true, Ordering::Relaxed);
+    OVERHEAT.store(false, Ordering::Relaxed);
+    update(|s| {
+        if s.last_error.starts_with("temp:") {
+            s.last_error.clear();
+        }
+    });
+    log::warn!("board: overheat cleared by request");
 }
 
 /// A new core voltage from `PATCH /api/system`, applied by the board task.
@@ -297,6 +339,16 @@ impl Regulator {
         match self {
             Regulator::Tps546(vr) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
             Regulator::Tps5364x { vr, .. } => {
+                vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
+            }
+        }
+    }
+    /// Core voltage back on at `volts` after [`off`](Self::off).
+    fn on(&mut self, volts: f32) -> Result<(), String> {
+        match self {
+            Regulator::Tps546(vr) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
+            Regulator::Tps5364x { vr, enable, .. } => {
+                enable.set(true);
                 vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
             }
         }
@@ -733,9 +785,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if (hot_chip || hot_vr || blind) && !overheat() {
                 OVERHEAT.store(true, Ordering::Relaxed);
                 if blind {
-                    log::error!(
-                        "board: no chip temperature for {temp_lost_s} s: core voltage off"
-                    );
+                    log::error!("board: no chip temperature for {temp_lost_s} s: core voltage off");
                     update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
                 } else {
                     log::error!(
@@ -746,6 +796,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if let Some(vr) = vr.as_mut() {
                     vr.off();
                 }
+                POWERED.store(false, Ordering::Relaxed);
                 if let Some(t) = thermal.as_mut() {
                     t.set_fans(100, 100);
                 }
@@ -761,15 +812,47 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.fan2_rpm = rpm.1;
                 s.fan_auto = cfg.autofanspeed;
                 s.overheat = overheat();
+                s.shutdown = shutdown();
                 if let Some(st) = status {
                     s.vr_status = st;
                 }
             });
         }
 
+        // Core rail down on an overheat or a manual shutdown, back up once
+        // both are cleared; the miner restarts the chain after that.
+        if CLEAR_LOST.swap(false, Ordering::Relaxed) {
+            temp_lost_s = 0;
+        }
+        let halt = overheat() || shutdown();
+        if halt && POWERED.load(Ordering::Relaxed) {
+            if let Some(vr) = vr.as_mut() {
+                vr.off();
+            }
+            POWERED.store(false, Ordering::Relaxed);
+            log::warn!("board: core voltage off");
+        } else if !halt && !POWERED.load(Ordering::Relaxed) {
+            let ok = match vr.as_mut() {
+                Some(vr) => match vr.on(profile.vout_for_core_mv(applied_mv)) {
+                    Ok(()) => true,
+                    Err(e) => {
+                        log::error!("board: core voltage back on failed: {e}");
+                        false
+                    }
+                },
+                None => true,
+            };
+            if ok {
+                // Let the rail settle before the miner resets the chain.
+                std::thread::sleep(Duration::from_millis(500));
+                POWERED.store(true, Ordering::Relaxed);
+                log::warn!("board: core voltage back on, {applied_mv} mV");
+            }
+        }
+
         // A new core voltage from the API or the chain coming up.
         let want = WANTED_MV.load(Ordering::Relaxed);
-        if want != 0 && want != applied_mv && !overheat() {
+        if want != 0 && want != applied_mv && POWERED.load(Ordering::Relaxed) {
             if let Some(vr) = vr.as_mut() {
                 match vr.set_core(profile.vout_for_core_mv(want)) {
                     Ok(()) => log::info!("board: core {want} mV"),

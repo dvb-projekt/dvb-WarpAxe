@@ -151,8 +151,8 @@ void wa_reboot_to_bootloader(void)
     }
 }
 
-#define WA_LOG_LINES 8
-#define WA_LOG_COLS 56
+#define WA_LOG_LINES 128
+#define WA_LOG_COLS 120
 static char s_lines[WA_LOG_LINES][WA_LOG_COLS];
 static int s_head = 0;
 static int s_count = 0;
@@ -184,6 +184,11 @@ static void wa_push_line(const char *buf, int n)
     }
 }
 
+/* Some components (the Wi-Fi blob) print one line in several calls:
+ * collect the pieces until a newline, then store the line once. */
+static char s_pending[WA_LOG_COLS];
+static int s_pending_len = 0;
+
 static int wa_vprintf(const char *fmt, va_list ap)
 {
     char buf[192];
@@ -191,8 +196,32 @@ static int wa_vprintf(const char *fmt, va_list ap)
     va_copy(ap2, ap);
     int n = vsnprintf(buf, sizeof buf, fmt, ap2);
     va_end(ap2);
-    wa_push_line(buf, n);
+    if (n > 0 && !xPortInIsrContext()) {
+        if (n > (int) sizeof buf - 1) n = sizeof buf - 1;
+        portENTER_CRITICAL_SAFE(&s_mux);
+        int room = WA_LOG_COLS - 1 - s_pending_len;
+        int take = n < room ? n : room;
+        memcpy(s_pending + s_pending_len, buf, take);
+        s_pending_len += take;
+        s_pending[s_pending_len] = 0;
+        bool done = buf[n - 1] == '\n' || s_pending_len >= WA_LOG_COLS - 1;
+        char line[WA_LOG_COLS];
+        int len = 0;
+        if (done) {
+            memcpy(line, s_pending, s_pending_len + 1);
+            len = s_pending_len;
+            s_pending_len = 0;
+        }
+        portEXIT_CRITICAL_SAFE(&s_mux);
+        if (done) wa_push_line(line, len);
+    }
     return s_prev ? s_prev(fmt, ap) : vprintf(fmt, ap);
+}
+
+/* A whole line from the Rust logger, which bypasses esp_log's vprintf. */
+void wa_log_push(const char *line)
+{
+    wa_push_line(line, strlen(line));
 }
 
 int wa_tu_printf(const char *fmt, ...)

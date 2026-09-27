@@ -3,254 +3,407 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>WarpAxe</title>
+<link rel="icon" type="image/svg+xml" href="/assets/favicon.svg">
 <style>
-:root{--bg:#f4f5f8;--card:#fff;--fg:#1a1d26;--mute:#6b7280;--line:#e2e5ec;--acc:#2563eb;--ok:#15803d;--warn:#b45309;--bad:#b91c1c}
-@media (prefers-color-scheme:dark){:root{--bg:#0b1020;--card:#141a2e;--fg:#e8eaf0;--mute:#9aa3b5;--line:#252d45;--acc:#7aa7ff;--ok:#4ade80;--warn:#fbbf24;--bad:#f87171}}
+@font-face{font-family:Inter;src:url(/assets/inter.woff2) format("woff2");font-weight:100 900;font-display:swap}
+@font-face{font-family:"Space Grotesk";src:url(/assets/space-grotesk-700.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"JetBrains Mono";src:url(/assets/jetbrains-mono-400.woff2) format("woff2");font-weight:400;font-display:swap}
+:root{--void:#05060B;--deep:#0F1226;--warp:#7B5CFF;--plasma:#00E0FF;--btc:#F7931A;--fg:#E8EEF7;--mute:#9CA8BD;--dim:#8A93AE;--ok:#50E3A4;--warn:#F5B942;--err:#FF5A5A;--line:rgba(255,255,255,.08);--card:rgba(15,18,38,.78)}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,sans-serif}
-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid var(--line);background:var(--card)}
-header h1{font-size:18px;margin:0}
-header .sub{color:var(--mute);font-size:13px;flex:1;min-width:0}
-main{max-width:960px;margin:0 auto;padding:16px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.tile{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
-.tile .k{color:var(--mute);font-size:12px}
-.tile .v{font-size:20px;font-variant-numeric:tabular-nums;margin-top:2px}
-.tile .v small{font-size:12px;color:var(--mute)}
-h2{font-size:15px;margin:22px 0 10px}
-form{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px}
-fieldset{border:0;padding:0;margin:0 0 14px}
-legend{font-weight:600;margin-bottom:8px}
-.row{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
-label{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mute)}
-label.chk{flex-direction:row;align-items:center;gap:8px;color:var(--fg)}
-input[type=text],input[type=number],input[type=password]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--fg);width:100%}
-.hint{font-size:12px;color:var(--warn);margin:4px 0 0}
-.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-button,select{font:inherit;padding:7px 14px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--fg);cursor:pointer}
-button.pri{background:var(--acc);border-color:var(--acc);color:#fff}
-#msg{font-size:13px}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}
-footer{color:var(--mute);font-size:12px;padding:16px;text-align:center}
+html{background:var(--void)}
+body{margin:0;min-height:100vh;color:var(--fg);font:15px/1.5 Inter,-apple-system,system-ui,sans-serif;background:radial-gradient(ellipse 80% 45% at 50% -10%,rgba(123,92,255,.16),transparent 60%),radial-gradient(ellipse 60% 40% at 50% 105%,rgba(0,224,255,.07),transparent 60%),var(--void);background-attachment:fixed;-webkit-font-smoothing:antialiased}
+a{color:var(--plasma);text-decoration:none}
+h1,h2{font-family:"Space Grotesk",Inter,sans-serif;letter-spacing:-.02em;margin:0}
+h2{font-size:18px}
+.num{font-family:"JetBrains Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.mute{color:var(--mute)}.dim{color:var(--dim)}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
+header{display:flex;align-items:center;gap:20px;padding:14px 28px;border-bottom:1px solid var(--line);background:rgba(5,6,11,.6);position:sticky;top:0;z-index:5;backdrop-filter:blur(8px)}
+header img{height:40px;width:auto;display:block}
+nav{display:flex;gap:4px;overflow-x:auto}
+nav a{padding:8px 14px;border-radius:10px;color:var(--mute);font-weight:500;font-size:14px;white-space:nowrap}
+nav a.on{background:rgba(123,92,255,.18);color:var(--fg);font-weight:600}
+.grow{flex:1}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+select,input,button{font:inherit}
+.lang{height:36px;padding:0 8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:transparent;color:var(--fg)}
+main{max-width:1280px;margin:0 auto;padding:24px 28px 48px;display:flex;flex-direction:column;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
+.lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);font-weight:600}
+.g4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}
+.g3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.g2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.span2{grid-column:span 2}
+.plate{display:flex;align-items:center;gap:26px;position:relative;overflow:hidden;padding:22px 26px}
+.plate .stripe{position:absolute;left:0;top:0;bottom:0;width:6px}
+.chips{display:grid;gap:8px}
+.chip{border-radius:8px;border:1px solid;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:rgba(255,255,255,.03)}
+.chip span:first-child{font-size:11px;color:var(--mute)}
+.chip i{width:8px;height:8px;border-radius:50%}
+.fam{padding:4px 10px;border-radius:999px;border:1px solid;font-size:12px;font-weight:600;letter-spacing:.04em}
+.meta{display:grid;grid-template-columns:repeat(3,auto);gap:28px;text-align:right}
+.kpi .v{display:flex;align-items:baseline;gap:6px;margin-top:10px}
+.kpi .v b{font:500 32px "JetBrains Mono",monospace}
+.kpi .s{font-size:13px;color:var(--dim);margin-top:6px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-top:1px solid rgba(255,255,255,.06);font-size:14px}
+.row:first-of-type{border-top:0}
+.bar{position:relative;height:10px;border-radius:5px;background:rgba(255,255,255,.07)}
+.bar .f{position:absolute;left:0;top:0;bottom:0;border-radius:5px}
+.bar .m{position:absolute;top:-4px;bottom:-4px;width:2px}
+.fanbar{height:6px;border-radius:3px;background:rgba(255,255,255,.07);margin-top:6px}
+.fanbar div{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--warp),var(--plasma))}
+.seg button{padding:6px 10px;border-radius:8px;border:0;background:transparent;color:var(--mute);font-size:12px;cursor:pointer}
+.seg button.on{background:rgba(123,92,255,.2);color:var(--fg);font-weight:600}
+.legend{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--mute)}
+.form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:13px;color:var(--mute)}
+label.f input,label.f select{height:42px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(5,6,11,.6);color:var(--fg);font-family:"JetBrains Mono",monospace;font-size:15px}
+label.f small{font-size:12px;color:var(--dim)}
+label.t{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;font-size:14px;cursor:pointer}
+label.t small{display:block;font-size:12px;color:var(--dim)}
+label.t input{appearance:none;width:44px;height:24px;border-radius:12px;background:rgba(255,255,255,.15);position:relative;flex-shrink:0;cursor:pointer;transition:background .15s}
+label.t input::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--fg);transition:left .15s}
+label.t input:checked{background:var(--warp)}
+label.t input:checked::after{left:23px}
+.sec-h{margin-bottom:14px}.sec-h .dim{font-size:13px;margin-top:4px}
+.btn{height:44px;padding:0 18px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--fg);font-weight:600;font-size:14px;cursor:pointer}
+.btn.pri{border:0;background:linear-gradient(135deg,var(--warp),var(--plasma));color:var(--void);font-weight:700}
+.btn.dng{border-color:rgba(255,90,90,.5);background:rgba(255,90,90,.08);color:#FF8A8A}
+.btn:disabled{opacity:.5;cursor:default}
+.actions{display:flex;gap:12px;justify-content:flex-end;align-items:center;flex-wrap:wrap}
+.note{display:flex;gap:12px;padding:12px 14px;border-radius:12px;font-size:13px}
+.drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-height:130px;border-radius:14px;border:1.5px dashed rgba(123,92,255,.55);background:rgba(123,92,255,.06);text-align:center;padding:16px;cursor:pointer}
+.drop.over{background:rgba(123,92,255,.16)}
+.log{height:320px;overflow:auto;padding:14px 16px;border-radius:12px;background:#03040A;border:1px solid rgba(255,255,255,.06);font:12.5px/1.7 "JetBrains Mono",monospace;color:#C9D2E3;white-space:pre-wrap;word-break:break-word}
+#toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);padding:10px 18px;border-radius:12px;background:#141a33;border:1px solid var(--line);font-size:14px;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}
+@media (max-width:1100px){.hostip{display:none}.plate{flex-wrap:wrap}.meta{width:100%;text-align:left;grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media (max-width:960px){header{flex-wrap:wrap}nav{order:3;width:100%}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:1fr}.g2{grid-template-columns:1fr}.span2{grid-column:auto}.meta{grid-template-columns:repeat(3,auto);gap:16px}}
+@media (max-width:640px){header{position:static;padding:10px 16px;gap:8px 10px;flex-wrap:wrap}header img{height:30px}.pill{padding:5px 10px;font-size:12px}.lang{height:32px}nav{margin:0 -4px}nav a{padding:8px 10px}main{padding:16px}.plate{flex-wrap:wrap;gap:16px;padding:18px}.meta{text-align:left;width:100%}.form{grid-template-columns:1fr}.hostip{display:none}.kpi .v b{font-size:26px}}
 </style>
 </head>
 <body>
 <header>
-  <h1>WarpAxe</h1>
-  <div class="sub" id="sub">…</div>
-  <select id="lang" aria-label="Language"><option value="en">English</option><option value="de">Deutsch</option></select>
+  <a href="#/dashboard" aria-label="Dashboard"><img src="/assets/wordmark.webp" alt="dvb-WarpAxe" width="130" height="40"></a>
+  <nav id="nav"></nav>
+  <div class="grow"></div>
+  <span class="num dim hostip" id="hostip" style="font-size:13px"></span>
+  <span class="pill" id="status"></span>
+  <select class="lang" id="lang" aria-label="Language"><option value="en">EN</option><option value="de">DE</option></select>
 </header>
-<main>
-  <div class="grid" id="tiles"></div>
-
-  <h2 data-i18n="settings"></h2>
-  <form id="f" autocomplete="off">
-    <fieldset>
-      <legend data-i18n="tuning"></legend>
-      <div class="row">
-        <label><span data-i18n="frequency"></span><input type="number" name="frequency" min="100" max="1200" step="1"></label>
-        <label><span data-i18n="coreVoltage"></span><input type="number" name="coreVoltage" min="700" max="1400" step="1"></label>
-      </div>
-      <p class="hint" data-i18n="tuningHint"></p>
-    </fieldset>
-    <fieldset>
-      <legend data-i18n="fan"></legend>
-      <div class="row">
-        <label class="chk"><input type="checkbox" name="autofanspeed"><span data-i18n="autofan"></span></label>
-        <label><span data-i18n="fanspeed"></span><input type="number" name="fanspeed" min="0" max="100" step="1"></label>
-        <label><span data-i18n="minFanSpeed"></span><input type="number" name="minFanSpeed" min="0" max="100" step="1"></label>
-        <label><span data-i18n="pidTargetTemp"></span><input type="number" name="pidTargetTemp" min="0" max="90" step="1"></label>
-        <label><span data-i18n="overheat_temp"></span><input type="number" name="overheat_temp" min="0" max="90" step="1"></label>
-        <label class="chk"><input type="checkbox" name="invertfanpolarity"><span data-i18n="invertfanpolarity"></span></label>
-      </div>
-      <p class="hint" data-i18n="fanHint"></p>
-    </fieldset>
-    <fieldset>
-      <legend data-i18n="display"></legend>
-      <div class="row">
-        <label class="chk"><input type="checkbox" name="flipscreen"><span data-i18n="flipscreen"></span></label>
-        <label class="chk"><input type="checkbox" name="invertscreen"><span data-i18n="invertscreen"></span></label>
-        <label><span data-i18n="displayTimeout"></span><input type="number" name="displayTimeout" min="0" max="1440" step="1"></label>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend data-i18n="pool"></legend>
-      <div class="row">
-        <label><span data-i18n="stratumURL"></span><input type="text" name="stratumURL"></label>
-        <label><span data-i18n="stratumPort"></span><input type="number" name="stratumPort" min="1" max="65535"></label>
-        <label><span data-i18n="stratumUser"></span><input type="text" name="stratumUser"></label>
-        <label><span data-i18n="stratumPassword"></span><input type="password" name="stratumPassword"></label>
-      </div>
-    </fieldset>
-    <fieldset>
-      <legend data-i18n="network"></legend>
-      <div class="row">
-        <label><span data-i18n="hostname"></span><input type="text" name="hostname"></label>
-        <label><span data-i18n="ssid"></span><input type="text" name="ssid"></label>
-        <label><span data-i18n="wifiPass"></span><input type="password" name="wifiPass"></label>
-      </div>
-      <p class="hint" data-i18n="restartHint"></p>
-    </fieldset>
-    <div class="bar">
-      <button class="pri" type="submit" data-i18n="save"></button>
-      <button type="button" id="restart" data-i18n="restart"></button>
-      <span id="msg"></span>
-    </div>
-  </form>
-</main>
-<footer id="foot"></footer>
+<main id="view"></main>
+<div id="toast" role="status" aria-live="polite"></div>
 <script>
 "use strict";
 const T = {
-  en: {
-    settings: "Settings", tuning: "Clock and voltage", frequency: "Frequency (MHz)", coreVoltage: "Core voltage (mV)",
-    tuningHint: "Applied live. If WarpTune regulates this miner, it may change these values again.",
-    fan: "Fan", autofan: "Automatic fan control", fanspeed: "Fixed fan speed (%)",
-    minFanSpeed: "Lowest automatic fan speed (%)", pidTargetTemp: "Target chip temperature (°C, 0 = board default)",
-    overheat_temp: "Shutdown chip temperature (°C, 0 = board default)", invertfanpolarity: "Invert fan PWM (for fans that run backwards to the setting)",
-    fanHint: "Big fans may not start below about 25 %. The shutdown temperature switches the core voltage off until restart.",
-    fan2: "Second fan output",
-    display: "Display", flipscreen: "Rotate screen 180°", invertscreen: "Invert colours", displayTimeout: "Screen off after (min, 0 = never)",
-    pool: "Pool", stratumURL: "Pool host", stratumPort: "Port", stratumUser: "Worker (address.name)", stratumPassword: "Pool password",
-    network: "Network", hostname: "Hostname", ssid: "Wi-Fi name (SSID)", wifiPass: "Wi-Fi password",
-    restartHint: "Pool and network changes take effect after a restart. Leave a password field empty to keep the current one.",
-    save: "Save", restart: "Restart", saving: "Saving…", saved: "Saved.", savedRestart: "Saved. Restart to apply pool or network changes.",
-    nothing: "Nothing changed.", failed: "Failed: ", restartAsk: "Restart the miner now? Hashing stops for about 40 s.",
-    restarting: "Restarting…", offline: "Miner not reachable",
-    hashrate: "Hashrate (10 min)", expected: "expected", temp: "Chip temperature", vrTemp: "VR temperature", power: "Power",
-    efficiency: "Efficiency", clock: "Clock / core", fanNow: "Fan", shares: "Shares accepted / rejected", poolDiff: "Pool difficulty",
-    best: "Best difficulty (since boot / all-time)", phase: "Chain", wifi: "Wi-Fi signal", uptime: "Uptime", connected: "connected", notConnected: "not connected",
-    overheat: "OVERHEAT: chain switched off", days: "d"
-  },
-  de: {
-    settings: "Einstellungen", tuning: "Takt und Spannung", frequency: "Frequenz (MHz)", coreVoltage: "Kernspannung (mV)",
-    tuningHint: "Wird sofort übernommen. Wenn WarpTune diesen Miner regelt, kann es die Werte wieder ändern.",
-    fan: "Lüfter", autofan: "Lüfter automatisch regeln", fanspeed: "Feste Lüfterdrehzahl (%)",
-    minFanSpeed: "Niedrigste automatische Lüfterdrehzahl (%)", pidTargetTemp: "Ziel-Chiptemperatur (°C, 0 = Board-Standard)",
-    overheat_temp: "Abschalttemperatur Chip (°C, 0 = Board-Standard)", invertfanpolarity: "Lüfter-PWM umkehren (für Lüfter, die entgegen der Einstellung laufen)",
-    fanHint: "Große Lüfter laufen unter etwa 25 % oft nicht an. Die Abschalttemperatur schaltet die Kernspannung bis zum Neustart ab.",
-    fan2: "Zweiter Lüfterausgang",
-    display: "Anzeige", flipscreen: "Anzeige um 180° drehen", invertscreen: "Farben umkehren", displayTimeout: "Anzeige aus nach (Min., 0 = nie)",
-    pool: "Pool", stratumURL: "Pool-Host", stratumPort: "Port", stratumUser: "Worker (Adresse.Name)", stratumPassword: "Pool-Passwort",
-    network: "Netzwerk", hostname: "Hostname", ssid: "WLAN-Name (SSID)", wifiPass: "WLAN-Passwort",
-    restartHint: "Pool- und Netzwerkänderungen gelten nach einem Neustart. Ein leeres Passwortfeld behält das bisherige Passwort.",
-    save: "Speichern", restart: "Neu starten", saving: "Speichere …", saved: "Gespeichert.", savedRestart: "Gespeichert. Für Pool- oder Netzwerkänderungen neu starten.",
-    nothing: "Nichts geändert.", failed: "Fehler: ", restartAsk: "Miner jetzt neu starten? Das Minen pausiert etwa 40 s.",
-    restarting: "Startet neu …", offline: "Miner nicht erreichbar",
-    hashrate: "Hashrate (10 Min.)", expected: "erwartet", temp: "Chiptemperatur", vrTemp: "Temperatur Spannungsregler", power: "Leistung",
-    efficiency: "Effizienz", clock: "Takt / Kern", fanNow: "Lüfter", shares: "Shares angenommen / abgelehnt", poolDiff: "Pool-Difficulty",
-    best: "Beste Difficulty (seit Start / gesamt)", phase: "Chain", wifi: "WLAN-Signal", uptime: "Laufzeit", connected: "verbunden", notConnected: "nicht verbunden",
-    overheat: "ÜBERHITZUNG: Chain abgeschaltet", days: "T"
-  }
-};
-const RESTART_KEYS = ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "hostname", "ssid", "wifiPass"];
-const SECRET_KEYS = ["stratumPassword", "wifiPass"];
+en: {
+  nav_dashboard:"Dashboard", nav_pool:"Pool", nav_settings:"Settings", nav_system:"System",
+  st_mining:"Mining", st_overheat:"Overheated", st_off:"Chips off", st_power:"Powering up", st_init:"Starting", st_offline:"Offline",
+  fam_bitaxe:"BITAXE SERIES", fam_nerd:"NERD SERIES", fam_devkit:"DEVKIT",
+  uptime:"Uptime", firmware:"Firmware", wifi:"Wi-Fi signal",
+  hashrate10:"Hashrate (10 min)", expected:"expected", efficiency:"Efficiency", power_w:"W power", shares:"Shares",
+  rejected:"rejected", stale:"stale", bestdiff:"Best difficulty", since_boot:"since boot", alltime:"all-time",
+  history:"History", legend_hr:"Hashrate", legend_temp:"Chip temperature", hist_empty:"Collecting data — one point every 10 s.",
+  temperature:"Temperature", chips:"Chips", vreg:"Voltage regulator", target:"Target", shutdown_at:"Shutdown",
+  fans:"Fans", fan:"Fan", fan_chips:"chips", fan_vreg:"regulator", fan_empty:"not connected", rpm:"rpm",
+  power:"Power", input:"Input", vcore:"Core voltage (set / actual)", current:"Current", clock:"Clock",
+  cur_in:"input", cur_out:"output",
+  pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Connection", connected:"connected", disconnected:"not connected",
+  accepted:"Accepted", reject_reasons:"Reject reasons", none:"none", last_reject:"Last reject", reconnects:"Reconnects", clean_jobs:"Block changes",
+  pool_settings:"Pool settings", pool_hint:"Pool changes take effect after a restart.",
+  stratumURL:"Pool host", stratumPort:"Port", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
+  tuning:"Clock and voltage", tuning_hint_lim:"Board limits: up to {f} MHz, {lo}–{hi} mV. Applied immediately.", tuning_hint:"Applied immediately.",
+  frequency:"Frequency (MHz)", coreVoltage:"Core voltage (mV)", options_hint:"Stock firmware steps: {a}–{b}, above up to {f}", measured:"Measured: {v} mV",
+  tuner_note:"If WarpTune regulates this miner, it may change clock and voltage again.",
+  fan_temp:"Fans and temperature", fan_temp_hint_two:"Two fan outputs: M2 follows the chips, M1 the voltage regulator.", fan_temp_hint_one:"The fan follows the chip temperature.",
+  autofan:"Automatic fan control", autofan_s:"PID on the target temperature", invertfan:"Invert fan PWM", invertfan_s:"For fans that run opposite to the setting",
+  pidTargetTemp:"Target chip temperature (°C)", overheat_temp:"Shutdown temperature (°C)", overheat_s:"Chips or regulator above it: core voltage off",
+  minFanSpeed:"Lowest fan speed (%)", minFan_s:"Big fans may not start below about 25 %", fanspeed:"Fixed fan speed (%)", fanspeed_s:"Only without automatic control",
+  display:"Display", display_hint:"The screen on the miner.", flipscreen:"Rotate screen 180°", invertscreen:"Invert colours", displayTimeout:"Screen off after (min, 0 = never)",
+  network:"Network", network_hint:"Network changes take effect after a restart.", hostname:"Hostname", ssid:"Wi-Fi name (SSID)", wifiPass:"Wi-Fi password",
+  save:"Save", restart:"Restart", saving:"Saving…", saved:"Saved.", saved_restart:"Saved. Restart to apply pool or network changes.", nothing:"Nothing changed.", failed:"Failed: ",
+  fw_update:"Firmware update", installed:"Installed", partition:"Active partition", drop:"Drop the firmware file (.bin) here or click", drop_s:"The web UI and its fonts are part of the firmware: one file, one update",
+  start_update:"Start update", uploading:"Uploading… {p} %", flashing:"Written. The miner restarts — this page reloads in 45 s.",
+  maintenance:"Maintenance", status:"Status", st_fine:"No error · no overheat", last_reset:"Last restart", free_heap:"Free memory",
+  chips_off:"Switch chips off", chips_on:"Switch chips on", reset_overheat:"Reset overheat", reset_best:"Reset best difficulty",
+  maint_note:"“Switch chips off” removes the core voltage; the miner stays reachable. “Reset overheat” restarts the chips after a shutdown without a reboot.",
+  ask_restart:"Restart the miner now? Mining pauses for about 40 s.", ask_off:"Switch the chips off? Mining stops until you switch them on again.", ask_best:"Reset the best difficulty?",
+  log:"Log", pause:"Pause", resume:"Resume", download:"Download", restarting:"Restarting…", days:"d"
+},
+de: {
+  nav_dashboard:"Dashboard", nav_pool:"Pool", nav_settings:"Einstellungen", nav_system:"System",
+  st_mining:"Mining", st_overheat:"Überhitzt", st_off:"Chips aus", st_power:"Startet Versorgung", st_init:"Startet", st_offline:"Nicht erreichbar",
+  fam_bitaxe:"BITAXE-SERIE", fam_nerd:"NERD-SERIE", fam_devkit:"DEVKIT",
+  uptime:"Laufzeit", firmware:"Firmware", wifi:"WLAN-Signal",
+  hashrate10:"Hashrate (10 Min.)", expected:"erwartet", efficiency:"Effizienz", power_w:"W Leistung", shares:"Shares",
+  rejected:"abgelehnt", stale:"stale", bestdiff:"Beste Difficulty", since_boot:"seit Start", alltime:"gesamt",
+  history:"Verlauf", legend_hr:"Hashrate", legend_temp:"Chip-Temperatur", hist_empty:"Daten werden gesammelt — ein Messpunkt alle 10 s.",
+  temperature:"Temperatur", chips:"Chips", vreg:"Spannungsregler", target:"Ziel", shutdown_at:"Abschaltung",
+  fans:"Lüfter", fan:"Lüfter", fan_chips:"Chips", fan_vreg:"Regler", fan_empty:"nicht belegt", rpm:"U/min",
+  power:"Leistung", input:"Eingang", vcore:"Kernspannung (Soll / Ist)", current:"Strom", clock:"Takt",
+  cur_in:"Eingang", cur_out:"Ausgang",
+  pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Verbindung", connected:"verbunden", disconnected:"nicht verbunden",
+  accepted:"Angenommen", reject_reasons:"Ablehnungsgründe", none:"keine", last_reject:"Letzte Ablehnung", reconnects:"Neuverbindungen", clean_jobs:"Blockwechsel",
+  pool_settings:"Pool-Einstellungen", pool_hint:"Pool-Änderungen gelten nach einem Neustart.",
+  stratumURL:"Pool-Host", stratumPort:"Port", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
+  tuning:"Takt und Spannung", tuning_hint_lim:"Board-Grenzen: bis {f} MHz, {lo}–{hi} mV. Wird sofort übernommen.", tuning_hint:"Wird sofort übernommen.",
+  frequency:"Frequenz (MHz)", coreVoltage:"Kernspannung (mV)", options_hint:"Stufen der Hersteller-Firmware: {a}–{b}, darüber bis {f}", measured:"Gemessen: {v} mV",
+  tuner_note:"Wenn WarpTune diesen Miner regelt, kann es Takt und Spannung wieder ändern.",
+  fan_temp:"Lüfter und Temperatur", fan_temp_hint_two:"Zwei Lüfterausgänge: M2 folgt den Chips, M1 dem Spannungsregler.", fan_temp_hint_one:"Der Lüfter folgt der Chip-Temperatur.",
+  autofan:"Lüfter automatisch regeln", autofan_s:"PID auf die Zieltemperatur", invertfan:"Lüfter-PWM umkehren", invertfan_s:"Für Lüfter, die entgegen der Einstellung laufen",
+  pidTargetTemp:"Ziel-Chiptemperatur (°C)", overheat_temp:"Abschalttemperatur (°C)", overheat_s:"Chips oder Regler darüber: Kernspannung aus",
+  minFanSpeed:"Mindestdrehzahl (%)", minFan_s:"Große Lüfter laufen darunter oft nicht an", fanspeed:"Feste Drehzahl (%)", fanspeed_s:"Nur ohne automatische Regelung",
+  display:"Anzeige", display_hint:"Das Display am Gerät.", flipscreen:"Anzeige um 180° drehen", invertscreen:"Farben umkehren", displayTimeout:"Anzeige aus nach (Min., 0 = nie)",
+  network:"Netzwerk", network_hint:"Netzwerk-Änderungen gelten nach einem Neustart.", hostname:"Hostname", ssid:"WLAN-Name (SSID)", wifiPass:"WLAN-Passwort",
+  save:"Speichern", restart:"Neu starten", saving:"Speichere …", saved:"Gespeichert.", saved_restart:"Gespeichert. Für Pool- oder Netzwerk-Änderungen neu starten.", nothing:"Nichts geändert.", failed:"Fehler: ",
+  fw_update:"Firmware-Update", installed:"Installiert", partition:"Aktive Partition", drop:"Firmware-Datei (.bin) hierher ziehen oder klicken", drop_s:"Oberfläche und Schriften sind in der Firmware enthalten — eine Datei, ein Update",
+  start_update:"Update starten", uploading:"Lade hoch … {p} %", flashing:"Geschrieben. Der Miner startet neu — die Seite lädt in 45 s neu.",
+  maintenance:"Wartung", status:"Status", st_fine:"Kein Fehler · keine Überhitzung", last_reset:"Letzter Neustart", free_heap:"Freier Speicher",
+  chips_off:"Chips abschalten", chips_on:"Chips einschalten", reset_overheat:"Überhitzung zurücksetzen", reset_best:"Beste Difficulty zurücksetzen",
+  maint_note:"„Chips abschalten“ nimmt die Kernspannung weg, das Gerät bleibt erreichbar. „Überhitzung zurücksetzen“ startet die Chips nach einer Abschaltung ohne Neustart wieder.",
+  ask_restart:"Miner jetzt neu starten? Das Minen pausiert etwa 40 s.", ask_off:"Chips abschalten? Das Minen stoppt, bis du sie wieder einschaltest.", ask_best:"Beste Difficulty zurücksetzen?",
+  log:"Log", pause:"Pausieren", resume:"Fortsetzen", download:"Herunterladen", restarting:"Startet neu …", days:"T"
+}};
+
 let lang = "en";
 try { lang = localStorage.getItem("lang") || (navigator.language || "").slice(0, 2); } catch (e) {}
 if (!T[lang]) lang = "en";
-const t = k => T[lang][k] ?? T.en[k] ?? k;
+const t = (k, v) => { let s = T[lang][k] ?? T.en[k] ?? k; if (v) for (const [a, b] of Object.entries(v)) s = s.replace("{" + a + "}", b); return s; };
 const $ = s => document.querySelector(s);
-const f = $("#f");
-let loaded = {};
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const nf = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
+function sfx(v) { if (v == null || isNaN(v)) return "–"; const u = ["", "k", "M", "G", "T", "P", "E"]; let i = 0; while (v >= 1000 && i < 6) { v /= 1000; i++; } return nf(v, i ? 2 : 0) + (u[i] ? " " + u[i] : ""); }
+function upt(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " " + t("days") + " " : "") + h + " h " + String(m).padStart(2, "0") + " min"; }
+function toast(msg, cls) { const e = $("#toast"); e.textContent = msg; e.className = "show " + (cls || ""); clearTimeout(toast.h); toast.h = setTimeout(() => e.className = "", 3500); }
+async function get(u) { const r = await fetch(u, {cache: "no-store"}); if (!r.ok) throw new Error(r.status); return r.headers.get("content-type")?.includes("json") ? r.json() : r.text(); }
+async function post(u, body) { const r = await fetch(u, {method: body ? "PATCH" : "POST", headers: body ? {"Content-Type": "application/json"} : {}, body: body ? JSON.stringify(body) : undefined}); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; }
 
-function applyLang() {
-  document.documentElement.lang = lang;
-  $("#lang").value = lang;
-  document.querySelectorAll("[data-i18n]").forEach(e => e.textContent = t(e.dataset.i18n));
-}
-$("#lang").onchange = e => {
-  lang = e.target.value;
-  try { localStorage.setItem("lang", lang); } catch (err) {}
-  applyLang(); refresh();
-};
+let info = null, state = null, asic = null, hist = null, span = 3600, route = "dashboard", timers = [];
 
-const fmt = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
-function upt(s) {
-  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
-  return (d ? d + " " + t("days") + " " : "") + h + " h " + m + " min";
+function family(i) {
+  const b = (i.boardVersion || "").toLowerCase();
+  if (b.startsWith("bitaxe")) return {key: "fam_bitaxe", col: "var(--btc)"};
+  if (b.startsWith("t-display")) return {key: "fam_devkit", col: "var(--mute)"};
+  return {key: "fam_nerd", col: "var(--plasma)"};
 }
-function sfx(v) {
-  if (v == null || isNaN(v)) return "–";
-  const u = ["", "k", "M", "G", "T", "P", "E"];
-  let i = 0;
-  while (v >= 1000 && i < u.length - 1) { v /= 1000; i++; }
-  return fmt(v, i ? 2 : 0) + (u[i] ? " " + u[i] : "");
+function phase(i) {
+  if (!i) return {k: "st_offline", c: "err"};
+  if (i.overheat_mode) return {k: "st_overheat", c: "err"};
+  if (i.shutdown) return {k: "st_off", c: "mute"};
+  if (i.chainPhase === "READY") return {k: "st_mining", c: "ok"};
+  if (i.chainPhase === "POWER") return {k: "st_power", c: "warn"};
+  return {k: "st_init", c: "warn"};
 }
-function tile(k, v, cls) {
-  return `<div class="tile"><div class="k">${t(k)}</div><div class="v ${cls || ""}">${v}</div></div>`;
-}
-
-async function refresh() {
-  let i;
-  try { i = await (await fetch("/api/system/info", {cache: "no-store"})).json(); }
-  catch (e) { $("#sub").innerHTML = `<span class="bad">${t("offline")}</span>`; return; }
-  $("#sub").textContent = `${i.hostname} · ${i.ASICModel} × ${i.asicCount} · ${i.boardName || i.boardVersion} · ${i.version}`;
-  const ths = i.hashRate / 1000, exp = i.expectedHashrate / 1000;
-  const eff = i.hashRate > 0 ? i.power / (i.hashRate / 1000) : null;
-  const tc = i.temp >= 70 ? "bad" : i.temp >= 65 ? "warn" : "";
-  const pool = i.stratumConnected ? `<span class="ok">${t("connected")}</span>` : `<span class="bad">${t("notConnected")}</span>`;
-  $("#tiles").innerHTML =
-    (i.overheat_mode ? `<div class="tile bad" style="grid-column:1/-1">${t("overheat")}</div>` : "") +
-    tile("hashrate", `${fmt(ths, 2)} <small>TH/s · ${t("expected")} ${fmt(exp, 2)}</small>`) +
-    tile("temp", `${fmt(i.temp, 1)} <small>°C</small>`, tc) +
-    tile("vrTemp", `${fmt(i.vrTemp)} <small>°C</small>`) +
-    tile("power", `${fmt(i.power, 1)} <small>W</small>`) +
-    tile("efficiency", `${fmt(eff, 1)} <small>J/TH</small>`) +
-    tile("clock", `${fmt(i.frequency)} <small>MHz</small> / ${fmt(i.coreVoltage)} <small>mV</small>`) +
-    tile("fanNow", `${fmt(i.fanspeed)} <small>% · ${fmt(i.fanrpm)} rpm</small>`) +
-    (i.fanrpm2 != null ? tile("fan2", `${fmt(i.fanspeed2)} <small>% · ${fmt(i.fanrpm2)} rpm</small>`) : "") +
-    tile("shares", `${fmt(i.sharesAccepted)} / ${fmt(i.sharesRejected)}`) +
-    tile("poolDiff", `${fmt(i.poolDifficulty)} <small>${pool}</small>`) +
-    tile("best", `${sfx(i.bestSessionDiff)} <small>/ ${sfx(i.bestDiff)}</small>`) +
-    tile("phase", i.chainPhase) +
-    tile("wifi", i.wifiRSSI ? `${i.wifiRSSI} <small>dBm</small>` : "–") +
-    tile("uptime", `<small>${upt(i.uptimeSeconds)}</small>`);
+function header() {
+  const pages = ["dashboard", "pool", "settings", "system"];
+  $("#nav").innerHTML = pages.map(p => `<a href="#/${p}" class="${p === route ? "on" : ""}">${t("nav_" + p)}</a>`).join("");
+  const p = phase(info), pill = $("#status");
+  pill.textContent = t(p.k);
+  pill.style.color = `var(--${p.c === "mute" ? "mute" : p.c})`;
+  pill.style.background = p.c === "ok" ? "rgba(80,227,164,.12)" : p.c === "err" ? "rgba(255,90,90,.12)" : "rgba(255,255,255,.06)";
+  if (info) $("#hostip").textContent = `${info.hostname} · ${location.hostname}`;
+  document.documentElement.lang = lang; $("#lang").value = lang;
 }
 
-async function loadForm() {
-  const st = await (await fetch("/api/v1/state", {cache: "no-store"})).json();
-  loaded = st.config || {};
-  for (const el of f.elements) {
-    if (!el.name || !(el.name in loaded)) continue;
-    if (el.type === "checkbox") el.checked = !!loaded[el.name];
-    else if (SECRET_KEYS.includes(el.name)) el.value = "";
-    else el.value = loaded[el.name];
-  }
+/* ---------- dashboard ---------- */
+function plate(i) {
+  const f = family(i), n = Math.max(1, i.asicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1, px = n > 1 ? 56 : 72;
+  const p = phase(i), dot = p.c === "ok" ? "var(--ok)" : p.c === "err" ? "var(--err)" : "var(--warn)";
+  const chips = Array.from({length: n}, (_, k) => `<div class="chip" style="width:${px}px;height:${px}px;border-color:${f.col}"><span class="num">ASIC ${k}</span><i style="background:${dot}"></i></div>`).join("");
+  const sub = [`${esc(i.ASICModel)} × ${n}`, i.vrPart ? esc(i.vrPart.replace(/^Tps/i, "TPS").replace(/ (\d+) phases/, " · $1 " + (lang === "de" ? "Phasen" : "phases"))) : "", i.nominalVoltage ? i.nominalVoltage + " V" : ""].filter(Boolean).join(" · ");
+  return `<section class="card plate"><div class="stripe" style="background:${f.col}"></div>
+  <div class="chips" style="grid-template-columns:repeat(${cols},${px}px)">${chips}</div>
+  <div style="flex:1;display:flex;flex-direction:column;gap:6px;min-width:200px">
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap"><h1 style="font-size:30px">${esc(i.boardName || i.boardVersion)}</h1><span class="fam" style="color:${f.col};border-color:${f.col}">${t(f.key)}</span></div>
+    <div class="mute" style="font-size:14px">${sub}</div></div>
+  <div class="meta"><div><div class="lbl">${t("uptime")}</div><div class="num" style="margin-top:4px">${upt(i.uptimeSeconds)}</div></div>
+    <div><div class="lbl">${t("firmware")}</div><div class="num" style="margin-top:4px">${esc(i.version)}</div></div>
+    <div><div class="lbl">${t("wifi")}</div><div class="num" style="margin-top:4px">${i.wifiRSSI ? i.wifiRSSI + " dBm" : "–"}</div></div></div></section>`;
+}
+function kpis(i) {
+  const th = i.hashRate / 1000, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 ? i.power / th : null;
+  const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
+  const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
+  return `<div class="g4">${k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
+}
+function chart() {
+  const W = 800, H = 160;
+  if (!hist || hist.t.length < 2) return `<div class="dim" style="height:${H}px;display:flex;align-items:center;justify-content:center;font-size:13px">${t("hist_empty")}</div>`;
+  const hr = hist.hashrate.map(v => v == null ? null : v / 1000), tc = hist.temp;
+  const vals = hr.filter(v => v != null), tv = tc.filter(v => v != null);
+  const lo = Math.min(...vals) * 0.97, hi = Math.max(...vals) * 1.03 || 1, tlo = Math.min(...tv) - 2, thi = Math.max(...tv) + 2;
+  const t0 = hist.uptime - hist.span, x = s => (s - t0) / hist.span * W;
+  const y = (v, a, b) => H - 10 - (v - a) / ((b - a) || 1) * (H - 30);
+  const line = (arr, a, b) => arr.map((v, k) => v == null ? null : `${x(hist.t[k]).toFixed(1)},${y(v, a, b).toFixed(1)}`).filter(Boolean).join(" ");
+  const hl = line(hr, lo, hi), first = hl.split(" ")[0].split(",")[0], last = hl.split(" ").pop().split(",")[0];
+  const tl = tv.length ? line(tc, tlo, thi) : "";
+  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${t("history")}">
+    <polygon points="${first},${H} ${hl} ${last},${H}" fill="#7B5CFF" fill-opacity=".12"/>
+    <polyline points="${hl}" fill="none" stroke="#7B5CFF" stroke-width="2" vector-effect="non-scaling-stroke"/>
+    ${tl ? `<polyline points="${tl}" fill="none" stroke="#00E0FF" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>` : ""}</svg>
+  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px"><span>−${span / 60} min</span><span>${nf(lo, 2)}–${nf(hi, 2)} TH/s${tv.length ? ` · ${nf(Math.min(...tv), 1)}–${nf(Math.max(...tv), 1)} °C` : ""}</span><span>${lang === "de" ? "jetzt" : "now"}</span></div>`;
+}
+function tbar(label, v, target, limit, max) {
+  if (v == null) return "";
+  const pct = x => Math.min(100, x / max * 100).toFixed(1) + "%";
+  const col = v >= limit ? "var(--err)" : target && v >= target + 3 ? "var(--warn)" : "var(--ok)";
+  return `<div style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mute" style="font-size:14px">${label}</span><span class="num" style="font-size:22px;color:${col}">${nf(v, 1)} °C</span></div>
+  <div class="bar"><div class="f" style="width:${pct(v)};background:${col}"></div>${target ? `<div class="m" style="left:${pct(target)};background:var(--fg)"></div>` : ""}<div class="m" style="left:${pct(limit)};background:var(--err)"></div></div>
+  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px"><span>${target ? t("target") + " " + target + " °C" : ""}</span><span>${t("shutdown_at")} ${limit} °C</span></div></div>`;
+}
+function fanrow(name, note, pct, rpm) {
+  return `<div style="display:flex;align-items:center;gap:14px"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="none" stroke="#9CA8BD" stroke-width="1.6"/><path d="M12 10c0-4 1-7 4-7 2 0 2 3 0 5M14 12c4 0 7 1 7 4 0 2-3 2-5 0M12 14c0 4-1 7-4 7-2 0-2-3 0-5M10 12c-4 0-7-1-7-4 0-2 3-2 5 0" fill="none" stroke="#9CA8BD" stroke-width="1.6" stroke-linecap="round"/></svg>
+  <div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${name} <span class="dim">· ${note}</span></span><span class="num">${nf(pct)} % · ${nf(rpm)} ${t("rpm")}</span></div><div class="fanbar"><div style="width:${pct || 0}%"></div></div></div></div>`;
+}
+function dashboard() {
+  const i = info; if (!i) return "";
+  const two = i.fanrpm2 != null, vrTarget = two ? 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
+  const fans = two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2) : fanrow(t("fan"), t("fan_chips"), i.fanspeed, i.fanrpm);
+  const curNote = two ? t("cur_in") : t("cur_out");
+  return plate(i) + kpis(i) + `<div class="g3">
+  <section class="card span2" style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>${t("history")}</h2>
+    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
+    <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</section>
+  <section class="card" style="display:flex;flex-direction:column;gap:18px"><h2>${t("temperature")}</h2>${tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section></div>
+  <div class="g3"><section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("fans")}</h2>${fans}</section>
+  <section class="card"><h2 style="margin-bottom:8px">${t("power")}</h2><div class="row"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage / 1000, 2)} V</span></div><div class="row"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div><div class="row"><span class="mute">${t("current")}</span><span class="num">${nf(i.current / 1000, 1)} A (${curNote})</span></div><div class="row"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>
+  <section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${poolRows(i)}</section></div>`;
+}
+function worker(u) { u = String(u || ""); const [a, ...r] = u.split("."); return a.length > 14 ? a.slice(0, 6) + "…" + a.slice(-4) + (r.length ? "." + r.join(".") : "") : u; }
+function poolRows(i) {
+  return `<div class="row"><span class="mute">${t("server")}</span><span class="num" style="font-size:13px">${esc(i.stratumURL)}:${i.stratumPort}</span></div><div class="row"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(i.stratumUser))}</span></div><div class="row"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div><div class="row"><span class="mute">${t("connection")}</span><span class="${i.stratumConnected ? "ok" : "err"}">Stratum V1 · ${t(i.stratumConnected ? "connected" : "disconnected")}</span></div>`;
 }
 
-f.onsubmit = async e => {
-  e.preventDefault();
+/* ---------- forms ---------- */
+const fld = (k, v, o = {}) => `<label class="f">${o.label || t(k)}<input name="${k}" type="${o.type || "text"}" value="${esc(v)}" ${o.min != null ? `min="${o.min}"` : ""} ${o.max != null ? `max="${o.max}"` : ""} ${o.type === "number" ? 'inputmode="numeric"' : ""} autocomplete="off">${o.hint ? `<small>${o.hint}</small>` : ""}</label>`;
+const tog = (k, on, s) => `<label class="t"><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
+const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
+const SECRET = ["stratumPassword", "wifiPass"];
+function collect(form, cfg) {
   const body = {};
-  for (const el of f.elements) {
-    if (!el.name || !(el.name in loaded)) continue;
-    let v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
-    if (SECRET_KEYS.includes(el.name)) { if (v !== "") body[el.name] = v; continue; }
-    if (v !== loaded[el.name]) body[el.name] = v;
+  for (const el of form.elements) {
+    if (!el.name || !(el.name in cfg)) continue;
+    const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+    if (SECRET.includes(el.name)) { if (v !== "") body[el.name] = v; continue; }
+    if (v !== cfg[el.name]) body[el.name] = v;
   }
-  const msg = $("#msg");
-  if (!Object.keys(body).length) { msg.className = ""; msg.textContent = t("nothing"); return; }
-  msg.className = ""; msg.textContent = t("saving");
+  return body;
+}
+async function save(form, restartKeys) {
+  const cfg = state.config, body = collect(form, cfg);
+  if (!Object.keys(body).length) return toast(t("nothing"));
+  toast(t("saving"));
   try {
-    const r = await fetch("/api/system", {method: "PATCH", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
-    const j = await r.json();
-    if (!r.ok) throw new Error(j.error || r.status);
-    const needRestart = Object.keys(body).some(k => RESTART_KEYS.includes(k));
-    msg.className = "ok"; msg.textContent = t(needRestart ? "savedRestart" : "saved");
-    await loadForm(); refresh();
-  } catch (err) { msg.className = "bad"; msg.textContent = t("failed") + err.message; }
-};
+    await post("/api/system", body);
+    toast(t(Object.keys(body).some(k => restartKeys.includes(k)) ? "saved_restart" : "saved"), "ok");
+    await load(true);
+  } catch (e) { toast(t("failed") + e.message, "err"); }
+}
+const actions = (restart) => `<div class="actions">${restart ? `<button type="button" class="btn" data-act="restart">${t("restart")}</button>` : ""}<button type="submit" class="btn pri">${t("save")}</button></div>`;
 
-$("#restart").onclick = async () => {
-  if (!confirm(t("restartAsk"))) return;
-  $("#msg").className = "warn"; $("#msg").textContent = t("restarting");
-  try { await fetch("/api/system/restart", {method: "POST"}); } catch (e) {}
-  setTimeout(() => location.reload(), 45000);
-};
+function poolPage() {
+  const i = info, s = state?.stratum || {}, c = state?.config || {};
+  const reasons = Object.entries(s.reject_reasons || {}).map(([m, n]) => `${esc(m)} × ${n}`).join("<br>") || t("none");
+  return `<div class="g2"><section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${poolRows(i)}<div class="row"><span class="mute">${t("accepted")}</span><span class="num">${nf(s.shares_accepted)} / ${nf(s.shares_rejected)} ${t("rejected")}</span></div><div class="row"><span class="mute">${t("clean_jobs")}</span><span class="num">${nf(s.clean_jobs)}</span></div><div class="row"><span class="mute">${t("reconnects")}</span><span class="num">${nf(s.reconnects)}</span></div></section>
+  <section class="card"><h2 style="margin-bottom:8px">${t("reject_reasons")}</h2><div class="num" style="font-size:13px;line-height:1.8">${reasons}</div>${s.last_reject ? `<div class="row" style="margin-top:12px"><span class="mute">${t("last_reject")}</span></div><div class="num dim" style="font-size:12px;word-break:break-all">${esc(s.last_reject)}</div>` : ""}</section></div>
+  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}), actions(true))}</form>`;
+}
+function settingsPage() {
+  const c = state?.config || {}, i = info, two = i.fanrpm2 != null;
+  let tuneHint = t("tuning_hint"), fHint = "", vHint = t("measured", {v: i.coreVoltageActual});
+  if (asic) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
+  return `<form id="sf">` +
+  sec(t("tuning"), tuneHint, fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint}),
+    `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
+  sec(t("fan_temp"), t(two ? "fan_temp_hint_two" : "fan_temp_hint_one"), tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85}) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")})) +
+  sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440})) +
+  sec(t("network"), t("network_hint"), fld("hostname", c.hostname) + fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")})) +
+  actions(true) + `</form>`;
+}
 
-applyLang();
-refresh(); loadForm();
-setInterval(refresh, 5000);
+/* ---------- system ---------- */
+let logPaused = false, logText = "";
+function systemPage() {
+  const i = info, err = i.boardError, fine = !i.overheat_mode && !i.shutdown && !err;
+  return `<div class="g2"><section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("fw_update")}</h2>
+    <div><div class="row"><span class="mute">${t("installed")}</span><span class="num">${esc(i.version)}</span></div><div class="row"><span class="mute">${t("partition")}</span><span class="num">${esc(i.runningPartition)}</span></div></div>
+    <label class="drop" id="drop"><input type="file" id="fw" accept=".bin" hidden><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" fill="none" stroke="#9CA8BD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="fwname" style="font-size:14px">${t("drop")}</span><span class="dim" style="font-size:12px">${t("drop_s")}</span></label>
+    <div class="actions" style="justify-content:flex-start"><button type="button" class="btn pri" id="fwgo" disabled>${t("start_update")}</button><span id="fwmsg" class="mute" style="font-size:13px"></span></div></section>
+  <section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("maintenance")}</h2>
+    <div><div class="row"><span class="mute">${t("status")}</span><span class="${fine ? "ok" : "err"}">${fine ? t("st_fine") : esc(i.overheat_mode ? t("st_overheat") : i.shutdown ? t("st_off") : err)}</span></div><div class="row"><span class="mute">${t("last_reset")}</span><span class="num">${esc(i.resetReason)}</span></div><div class="row"><span class="mute">${t("free_heap")}</span><span class="num">${nf(i.freeHeap / 1024)} KB</span></div></div>
+    <div class="g2" style="gap:10px"><button type="button" class="btn" data-act="restart">${t("restart")}</button>${i.shutdown ? `<button type="button" class="btn" data-act="on">${t("chips_on")}</button>` : `<button type="button" class="btn dng" data-act="off">${t("chips_off")}</button>`}<button type="button" class="btn" data-act="overheat" ${i.overheat_mode ? "" : "disabled"}>${t("reset_overheat")}</button><button type="button" class="btn" data-act="best">${t("reset_best")}</button></div>
+    <div class="dim" style="font-size:12px">${t("maint_note")}</div></section></div>
+  <section class="card" style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>${t("log")}</h2><div class="actions"><button type="button" class="btn" data-act="logpause">${t(logPaused ? "resume" : "pause")}</button><button type="button" class="btn" data-act="logsave">${t("download")}</button></div></div><div class="log" id="log">${esc(logText)}</div></section>`;
+}
+async function pollLog() {
+  if (route !== "system" || logPaused) return;
+  try { logText = await get("/api/v1/log"); const e = $("#log"); if (e) { const end = e.scrollTop + e.clientHeight >= e.scrollHeight - 20; e.textContent = logText; if (end) e.scrollTop = e.scrollHeight; } } catch (e) {}
+}
+function wireSystem() {
+  const inp = $("#fw"), drop = $("#drop"), go = $("#fwgo");
+  const pick = f => { if (!f) return; inp.file = f; $("#fwname").textContent = `${f.name} · ${nf(f.size / 1024)} KB`; go.disabled = false; };
+  inp.onchange = () => pick(inp.files[0]);
+  drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+  drop.ondragleave = () => drop.classList.remove("over");
+  drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); pick(e.dataTransfer.files[0]); };
+  go.onclick = () => {
+    const f = inp.file; if (!f) return; go.disabled = true;
+    const x = new XMLHttpRequest(); x.open("POST", "/api/system/OTA");
+    x.upload.onprogress = e => { if (e.lengthComputable) $("#fwmsg").textContent = t("uploading", {p: Math.round(e.loaded / e.total * 100)}); };
+    x.onload = () => { if (x.status < 300) { $("#fwmsg").textContent = t("flashing"); setTimeout(() => location.reload(), 45000); } else { $("#fwmsg").textContent = t("failed") + x.responseText; go.disabled = false; } };
+    x.onerror = () => { $("#fwmsg").textContent = t("failed") + "network"; go.disabled = false; };
+    x.send(f);
+  };
+}
+
+/* ---------- routing, polling ---------- */
+async function act(a) {
+  try {
+    if (a === "restart") { if (!confirm(t("ask_restart"))) return; await fetch("/api/system/restart", {method: "POST"}).catch(() => {}); toast(t("restarting")); setTimeout(() => location.reload(), 45000); return; }
+    if (a === "off") { if (!confirm(t("ask_off"))) return; await post("/api/v1/chips/off"); }
+    if (a === "on") await post("/api/v1/chips/on");
+    if (a === "overheat") await post("/api/v1/overheat/reset");
+    if (a === "best") { if (!confirm(t("ask_best"))) return; await post("/api/v1/bestdiff/reset"); }
+    if (a === "logpause") { logPaused = !logPaused; render(); return; }
+    if (a === "logsave") { const b = new Blob([logText], {type: "text/plain"}); const u = URL.createObjectURL(b); const l = document.createElement("a"); l.href = u; l.download = `${info?.hostname || "warpaxe"}-log.txt`; l.click(); URL.revokeObjectURL(u); return; }
+    await load(true); toast(t("saved"), "ok");
+  } catch (e) { toast(t("failed") + e.message, "err"); }
+}
+function render() {
+  header();
+  const v = $("#view");
+  if (!info) { v.innerHTML = ""; return; }
+  const editing = document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && v.contains(document.activeElement);
+  if (editing) return; // never re-render a form under the cursor
+  v.innerHTML = route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard();
+  const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword"]); };
+  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass"]); };
+  if (route === "system") { wireSystem(); const e = $("#log"); if (e) e.scrollTop = e.scrollHeight; }
+}
+async function load(full) {
+  try { info = await get("/api/system/info"); } catch (e) { info = null; header(); return; }
+  if (full || !state || route !== "dashboard") { try { state = await get("/api/v1/state"); } catch (e) {} }
+  if (full && asic === null) { try { asic = await get("/api/system/asic"); } catch (e) { asic = false; } }
+  if (route === "dashboard") { try { hist = await get(`/api/v1/history?span=${span}`); } catch (e) {} }
+  if (route === "dashboard" || full) render(); else header();
+}
+function go() {
+  route = (location.hash.match(/#\/(\w+)/) || [])[1] || "dashboard";
+  if (!["dashboard", "pool", "settings", "system"].includes(route)) route = "dashboard";
+  load(true).then(pollLog);
+}
+document.addEventListener("click", e => {
+  const s = e.target.closest("[data-span]"); if (s) { span = Number(s.dataset.span); load(false); return; }
+  const a = e.target.closest("[data-act]"); if (a) act(a.dataset.act);
+});
+$("#lang").onchange = e => { lang = e.target.value; try { localStorage.setItem("lang", lang); } catch (err) {} render(); };
+window.addEventListener("hashchange", go);
+setInterval(() => load(false), 5000);
+setInterval(pollLog, 3000);
+go();
 </script>
 </body>
 </html>

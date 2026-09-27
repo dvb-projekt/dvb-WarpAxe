@@ -53,6 +53,11 @@ static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
 static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
 
 /// A new clock from `PATCH /api/system`, applied live by the mining loop.
+/// Forget the best difficulty since boot (web UI "reset best difficulty").
+pub fn reset_best_session() {
+    update(|s| s.best_session_diff = 0);
+}
+
 pub fn request_frequency(mhz: u32) {
     WANTED_MHZ.store(mhz, Ordering::Relaxed);
 }
@@ -77,8 +82,15 @@ fn run(mut uart: ChipUart) {
     let epoch = Instant::now();
     let now_us = || epoch.elapsed().as_micros() as u64;
     loop {
-        if board::overheat() {
-            update(|s| s.phase = "OVERHEAT".into());
+        if board::chain_stopped() {
+            let why = if board::overheat() {
+                "OVERHEAT"
+            } else if board::shutdown() {
+                "OFF"
+            } else {
+                "POWER"
+            };
+            update(|s| s.phase = why.into());
             std::thread::sleep(Duration::from_secs(1));
             continue;
         }
@@ -131,7 +143,7 @@ fn run(mut uart: ChipUart) {
         loop {
             let now = now_us();
             let mut events: Vec<Event> = Vec::new();
-            if board::overheat() {
+            if board::chain_stopped() {
                 break;
             }
             // A new block (clean_jobs) retires everything before this

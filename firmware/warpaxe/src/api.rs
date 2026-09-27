@@ -13,6 +13,25 @@ use serde_json::json;
 
 use crate::{board, config, diag, miner, net, stratum};
 
+/// The web UI's files: fonts (OFL, Latin subsets), the wordmark and the
+/// icon, all in the firmware so the page looks the same offline.
+fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
+    Some(match name {
+        "favicon.svg" => (include_bytes!("ui/assets/favicon.svg"), "image/svg+xml"),
+        "wordmark.webp" => (include_bytes!("ui/assets/wordmark.webp"), "image/webp"),
+        "inter.woff2" => (include_bytes!("ui/assets/inter.woff2"), "font/woff2"),
+        "space-grotesk-700.woff2" => (
+            include_bytes!("ui/assets/space-grotesk-700.woff2"),
+            "font/woff2",
+        ),
+        "jetbrains-mono-400.woff2" => (
+            include_bytes!("ui/assets/jetbrains-mono-400.woff2"),
+            "font/woff2",
+        ),
+        _ => return None,
+    })
+}
+
 /// The web UI: one static page on top of the JSON API.
 const UI: &str = include_str!("ui/index.html");
 
@@ -38,7 +57,8 @@ pub fn system_info() -> serde_json::Value {
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv.unwrap_or(0.0), "current": b.iout_ma.unwrap_or(0.0),
         "temp": b.temp_c.unwrap_or(0.0), "vrTemp": b.vr_temp_c.unwrap_or(0),
-        "overheat_mode": u8::from(b.overheat), "fanrpm": b.fan_rpm,
+        "overheat_mode": u8::from(b.overheat), "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
+        "vrOverheatTemp": profile.vr_max_c.round() as u32, "boardError": b.last_error,
         "fanrpm2": b.fan2_rpm, "fanspeed2": b.fan2_pct, "vrPart": b.vr_part,
         "fans": nerd_fans(&cfg, profile, &b),
         "invertfanpolarity": u8::from(cfg.invertfanpolarity), "minFanSpeed": cfg.min_fan_speed,
@@ -159,11 +179,17 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
     None
 }
 
+/// The app slot this boot runs from; it cannot change until the next
+/// boot, so it is read once (each `EspOta` also logs its drop).
 fn running_partition() -> String {
-    EspOta::new()
-        .and_then(|o| o.get_running_slot())
-        .map(|s| s.label.to_string())
-        .unwrap_or_else(|_| "?".into())
+    static SLOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    SLOT.get_or_init(|| {
+        EspOta::new()
+            .and_then(|o| o.get_running_slot())
+            .map(|s| s.label.to_string())
+            .unwrap_or_else(|_| "?".into())
+    })
+    .clone()
 }
 
 /// WarpAxe's own state document.
@@ -230,7 +256,8 @@ fn reply_json(
 pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     let mut server = EspHttpServer::new(&Configuration {
         stack_size: 12 * 1024,
-        max_uri_handlers: 16,
+        max_uri_handlers: 32,
+        uri_match_wildcard: true,
         ..Default::default()
     })?;
 
@@ -328,6 +355,70 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             },
             Err(e) => reply_json(req, 400, &json!({"error": format!("bad json: {e}")})),
         }
+    })?;
+
+    server.fn_handler("/assets/*", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let name = req
+            .uri()
+            .trim_start_matches("/assets/")
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        match asset(&name) {
+            Some((body, kind)) => {
+                let mut r = req.into_response(
+                    200,
+                    None,
+                    &[
+                        ("Content-Type", kind),
+                        ("Cache-Control", "public, max-age=604800"),
+                    ],
+                )?;
+                r.write_all(body)?;
+            }
+            None => {
+                req.into_status_response(404)?.write_all(b"not found")?;
+            }
+        }
+        Ok::<(), EspIOError>(())
+    })?;
+    server.fn_handler("/favicon.ico", Method::Get, |req| {
+        let mut r = req.into_response(200, None, &[("Content-Type", "image/svg+xml")])?;
+        r.write_all(include_bytes!("ui/assets/favicon.svg"))?;
+        Ok::<(), EspIOError>(())
+    })?;
+    server.fn_handler("/api/v1/history", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let span = req
+            .uri()
+            .split_once("span=")
+            .and_then(|(_, v)| v.split('&').next())
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(3600);
+        reply_json(req, 200, &crate::history::json(span))
+    })?;
+    server.fn_handler("/api/v1/overheat/reset", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        board::reset_overheat();
+        reply_json(req, 200, &json!({"overheat": board::overheat()}))
+    })?;
+    server.fn_handler("/api/v1/chips/off", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        board::set_shutdown(true);
+        reply_json(req, 200, &json!({"shutdown": true}))
+    })?;
+    server.fn_handler("/api/v1/chips/on", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        board::set_shutdown(false);
+        reply_json(req, 200, &json!({"shutdown": false}))
+    })?;
+    server.fn_handler("/api/v1/bestdiff/reset", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        config::reset_best_diff();
+        miner::reset_best_session();
+        reply_json(req, 200, &json!({"bestDiff": 0}))
     })?;
 
     server.fn_handler("/api/system/restart", Method::Post, |req| {
