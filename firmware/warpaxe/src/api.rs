@@ -519,14 +519,20 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         };
         reply_json(req, 200, &v)
     })?;
-    server.fn_handler("/api/v1/update/check", Method::Post, |req| {
+    server.fn_handler("/api/v1/update/check", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::info!("update: check requested from {}", peer(&mut req));
         crate::update::request_check();
         reply_json(req, 200, &json!({"checking": true}))
     })?;
-    server.fn_handler("/api/v1/update/install", Method::Post, |req| {
+    server.fn_handler("/api/v1/update/install", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let who = peer(&mut req);
         if crate::update::request_install() {
+            log::warn!(
+                "update: install of {} requested from {who}",
+                crate::update::state().latest.map_or("?".into(), |r| r.tag)
+            );
             reply_json(req, 200, &json!({"installing": true}))
         } else {
             reply_json(
@@ -572,6 +578,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     server.fn_handler("/api/system/OTA", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::warn!("ota: upload started from {}", peer(&mut req));
         // Take the whole image into RAM first (PSRAM has room), answer, and
         // flash on a thread of our own: esp_ota_begin erases the target
         // partition, which takes seconds and must not stall the HTTP task.
@@ -685,4 +692,39 @@ pub(crate) fn flash_image(image: &[u8]) -> anyhow::Result<()> {
     log::info!("ota: verifying");
     update.complete()?;
     Ok(())
+}
+
+/// The address a request came from ("192.168.178.20"), for the log of
+/// actions that change the firmware; "?" if the socket does not say.
+fn peer(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection>) -> String {
+    use esp_idf_svc::handle::RawHandle;
+    use esp_idf_svc::sys;
+    let Ok(raw) = req.connection().raw_connection() else {
+        return "?".into();
+    };
+    let fd = unsafe { sys::httpd_req_to_sockfd(raw.handle()) };
+    // lwIP sockaddr: len, family, port, then the address (IPv4 at 4,
+    // IPv6 at 8; the server socket is dual-stack, so IPv4 clients arrive
+    // as ::ffff:a.b.c.d).
+    let mut buf = [0u8; 32];
+    let mut len = buf.len() as sys::socklen_t;
+    let rc = unsafe { sys::lwip_getpeername(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) };
+    if rc != 0 {
+        return "?".into();
+    }
+    match buf[1] as u32 {
+        f if f == sys::AF_INET => format!("{}.{}.{}.{}", buf[4], buf[5], buf[6], buf[7]),
+        f if f == sys::AF_INET6 => {
+            let a = &buf[8..24];
+            if a[..10].iter().all(|&b| b == 0) && a[10] == 0xff && a[11] == 0xff {
+                format!("{}.{}.{}.{}", a[12], a[13], a[14], a[15])
+            } else {
+                a.chunks(2)
+                    .map(|c| format!("{:x}", u16::from_be_bytes([c[0], c[1]])))
+                    .collect::<Vec<_>>()
+                    .join(":")
+            }
+        }
+        _ => "?".into(),
+    }
 }
