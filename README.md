@@ -197,7 +197,9 @@ cargo build -p warpaxe-core --target thumbv7em-none-eabihf   # proves no_std
 ```
 
 Firmware (Xtensa, ESP-IDF 5.3 via `esp-idf-svc`; toolchain from
-[espup](https://github.com/esp-rs/espup)):
+[espup](https://github.com/esp-rs/espup); its export script must be
+sourced first, the C code in `secp256k1-sys` needs `xtensa-esp32s3-elf-gcc`
+on the PATH):
 
 ```bash
 cd firmware/warpaxe

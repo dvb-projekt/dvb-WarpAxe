@@ -53,6 +53,12 @@ export PATH="/opt/homebrew/opt/python@3.12/libexec/bin:$PATH"   # ESP-IDF's Pyth
 cargo build --release
 ```
 
+The espup export puts `xtensa-esp32s3-elf-gcc` on the PATH; the build
+needs it for the C code in `secp256k1-sys` (Stratum V2). Without it the
+build stops with "xtensa-esp32s3-elf-gcc not found". The wrapper and
+`-mlongcalls` are pinned in `.cargo/config.toml`: the generic
+`xtensa-esp-elf-gcc` would produce big-endian objects.
+
 First flash (board in ROM download mode: BOOT held while plugging in, or
 `GET /bootloader` on a running WarpAxe/proof firmware):
 
