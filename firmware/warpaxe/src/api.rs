@@ -56,7 +56,7 @@ pub fn system_info() -> serde_json::Value {
     json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
-        "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv.unwrap_or(0.0), "current": b.iout_ma.unwrap_or(0.0),
+        "power": b.power_w.unwrap_or(0.0), "voltage": b.vin_mv, "current": b.iout_ma.unwrap_or(0.0),
         "temp": b.temp_c.unwrap_or(0.0), "vrTemp": b.vr_temp_c.unwrap_or(0),
         "overheat_mode": u8::from(b.overheat), "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
         "vrOverheatTemp": profile.vr_max_c.round() as u32, "boardError": b.last_error,

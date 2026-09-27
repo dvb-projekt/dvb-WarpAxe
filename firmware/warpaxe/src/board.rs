@@ -750,16 +750,33 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let mut status = None;
             vr_temp = None;
             if let Some(vr) = vr.as_mut() {
-                vr_temp = vr.temperature_c();
-                vin = vr.vin();
-                vout = vr.vout();
-                current = vr.current_a();
-                power = vr.power_w(vout, current, profile.power_offset_w);
+                // A regulator that is still coming up (right after power-on)
+                // can answer with garbage words (0xFF01 read as -127.5 V):
+                // those count as no reading, never as a value.
+                vr_temp = plausible(
+                    vr.temperature_c().map(|t| t as f32),
+                    -40.0,
+                    150.0,
+                    "vr temp",
+                )
+                .map(|t| t as i32);
+                vin = plausible(vr.vin(), 0.0, 30.0, "vin");
+                vout = plausible(vr.vout(), 0.0, 2.0, "vout");
+                current = plausible(vr.current_a(), -1.0, 150.0, "iout");
+                power = plausible(
+                    vr.power_w(vout, current, profile.power_offset_w),
+                    0.0,
+                    500.0,
+                    "power",
+                );
                 status = vr.status();
             }
             let mut rpm = (0, None);
             if let Some(t) = thermal.as_mut() {
-                match t.chip_temp_c() {
+                match t.chip_temp_c().and_then(|c| {
+                    plausible(Some(c), -40.0, 150.0, "chip temp")
+                        .ok_or_else(|| "implausible reading".into())
+                }) {
                     Ok(c) => {
                         temp = Some(c);
                         temp_lost_s = 0;
@@ -911,4 +928,18 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         }
         std::thread::sleep(Duration::from_millis(u64::from(SAMPLE_MS)));
     }
+}
+
+/// `v` if it lies within `lo..=hi`, else `None`; the first few rejects are
+/// logged.
+fn plausible(v: Option<f32>, lo: f32, hi: f32, what: &str) -> Option<f32> {
+    static REJECTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let v = v?;
+    if v.is_finite() && (lo..=hi).contains(&v) {
+        return Some(v);
+    }
+    if REJECTS.fetch_add(1, Ordering::Relaxed) < 20 {
+        log::warn!("board: implausible {what} reading {v} ignored");
+    }
+    None
 }
