@@ -91,7 +91,7 @@ pub fn system_info() -> serde_json::Value {
         "useFallbackStratum": cfg.use_fallback, "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
         "poolDifficulty": st.difficulty,
         "blockHeight": st.block_height, "networkDifficulty": st.network_difficulty, "scriptsig": st.scriptsig,
-        "blockFound": m.blocks_found, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
+        "blockFound": m.blocks_found, "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
@@ -507,6 +507,36 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         }
     })?;
 
+    // Online update from the project's releases.
+    server.fn_handler("/api/v1/update", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let mut v = serde_json::to_value(crate::update::state()).unwrap_or_default();
+        let ota = display::OTA_STATE.load(Ordering::Relaxed);
+        v["flashProgress"] = if ota >= 2 {
+            json!(ota - 2)
+        } else {
+            json!(null)
+        };
+        reply_json(req, 200, &v)
+    })?;
+    server.fn_handler("/api/v1/update/check", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        crate::update::request_check();
+        reply_json(req, 200, &json!({"checking": true}))
+    })?;
+    server.fn_handler("/api/v1/update/install", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        if crate::update::request_install() {
+            reply_json(req, 200, &json!({"installing": true}))
+        } else {
+            reply_json(
+                req,
+                409,
+                &json!({"error": "no release known yet: check first"}),
+            )
+        }
+    })?;
+
     // Press a display key remotely: ?k=next|home.
     server.fn_handler("/api/v1/display/key", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
@@ -637,7 +667,7 @@ fn bootloader(
 }
 
 /// Write an app image to the other OTA slot and make it bootable.
-fn flash_image(image: &[u8]) -> anyhow::Result<()> {
+pub(crate) fn flash_image(image: &[u8]) -> anyhow::Result<()> {
     let mut ota = EspOta::new()?;
     log::info!("ota: erasing target slot");
     display::OTA_STATE.store(1, Ordering::Relaxed);

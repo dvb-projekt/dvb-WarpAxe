@@ -60,6 +60,10 @@ pub struct Config {
     /// Currency of that price (a key of mempool.space `/api/v1/prices`).
     #[serde(rename = "priceCurrency")]
     pub price_currency: String,
+    /// Look for new firmware on the project's Forgejo (at boot and every
+    /// 12 hours); installing is always a click in the web UI.
+    #[serde(rename = "updateCheck")]
+    pub update_check: bool,
     /// Target ASIC clock, MHz (AxeOS name).
     pub frequency: u32,
     /// Core voltage, mV (AxeOS name).
@@ -147,6 +151,7 @@ impl Default for Config {
             timezone: "CET-1CEST,M3.5.0,M10.5.0/3".into(),
             btc_price: false,
             price_currency: "EUR".into(),
+            update_check: true,
             frequency: 525,
             core_voltage: 1150,
             fanspeed: 100,

@@ -23,6 +23,7 @@ mod net;
 mod screens;
 mod stratum;
 mod uart;
+mod update;
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -235,6 +236,7 @@ fn main() {
     history::start();
     clock::start();
     market::start();
+    update::start();
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

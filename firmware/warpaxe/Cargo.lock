@@ -1480,6 +1480,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "sha2",
  "warpaxe-board",
  "warpaxe-chain",
  "warpaxe-core",
