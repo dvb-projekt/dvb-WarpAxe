@@ -66,8 +66,54 @@ pub enum Key {
     Home,
 }
 
-fn de() -> bool {
-    config::get().display_language == "de"
+/// The display language; Japanese and Chinese fall back to English (the
+/// display fonts carry Latin script only).
+fn lang() -> &'static str {
+    match config::get().display_language.as_str() {
+        "de" => "de",
+        "es" => "es",
+        "fr" => "fr",
+        "it" => "it",
+        "pt" => "pt",
+        _ => "en",
+    }
+}
+
+/// A display text in the display language: English and German inline,
+/// the others from `display_i18n` (English where a text is missing).
+fn l(en: &'static str, de: &'static str) -> &'static str {
+    match lang() {
+        "en" => en,
+        "de" => de,
+        other => crate::display_i18n::lookup(other, en).unwrap_or(en),
+    }
+}
+
+/// For the 5x7 OLED font: capitals, accents dropped (German ones spelt
+/// out as AE/OE/UE/SS).
+fn oled_str(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        let rep = match c {
+            'ä' | 'Ä' => "AE",
+            'ö' | 'Ö' => "OE",
+            'ü' | 'Ü' => "UE",
+            'ß' => "SS",
+            'à' | 'á' | 'â' | 'ã' | 'À' | 'Á' | 'Â' | 'Ã' => "A",
+            'ç' | 'Ç' => "C",
+            'è' | 'é' | 'ê' | 'ë' | 'È' | 'É' | 'Ê' | 'Ë' => "E",
+            'ì' | 'í' | 'î' | 'ï' | 'Ì' | 'Í' | 'Î' | 'Ï' => "I",
+            'ñ' | 'Ñ' => "N",
+            'ò' | 'ó' | 'ô' | 'õ' | 'Ò' | 'Ó' | 'Ô' | 'Õ' => "O",
+            'ù' | 'ú' | 'û' | 'Ù' | 'Ú' | 'Û' => "U",
+            _ => {
+                out.push(c.to_ascii_uppercase());
+                continue;
+            }
+        };
+        out.push_str(rep);
+    }
+    out
 }
 
 /// A number with `d` decimals, in the display language's style.
@@ -75,7 +121,11 @@ fn num(v: f64, d: usize) -> String {
     let s = format!("{v:.d$}");
     let (int, frac) = s.split_once('.').map_or((s.as_str(), ""), |(a, b)| (a, b));
     let (neg, int) = int.strip_prefix('-').map_or((false, int), |i| (true, i));
-    let sep = if de() { '.' } else { ',' };
+    let (sep, dec) = match lang() {
+        "en" => (',', '.'),
+        "fr" => (' ', ','),
+        _ => ('.', ','),
+    };
     let mut grouped = String::new();
     for (i, c) in int.chars().enumerate() {
         if i > 0 && (int.len() - i) % 3 == 0 {
@@ -89,7 +139,7 @@ fn num(v: f64, d: usize) -> String {
     }
     out.push_str(&grouped);
     if !frac.is_empty() {
-        out.push(if de() { ',' } else { '.' });
+        out.push(dec);
         out.push_str(frac);
     }
     out
@@ -373,19 +423,11 @@ impl Ui {
             let pulse = 0.5 + 0.5 * (t * 3.0).sin();
             let title_col = mix(gfx::rgb(0xFF, 0xD2, 0x7A), gfx::BTC, (pulse * 255.0) as u8);
             c.rect(0, 52, W, 72, gfx::VOID, (a * 170.0) as u8);
-            let title = if de() {
-                "BLOCK GEFUNDEN"
-            } else {
-                "BLOCK FOUND"
-            };
+            let title = l("BLOCK FOUND", "BLOCK GEFUNDEN");
             fade_text(c, &TITLE, W / 2, 86, title_col, title, a);
             let sub = format!("Block {}", num(height as f64, 0));
             fade_text(c, &VAL12, W / 2, 106, gfx::FG, &sub, a);
-            let hint = if de() {
-                "Taste drücken zum Schließen"
-            } else {
-                "Press a key to close"
-            };
+            let hint = l("Press a key to close", "Taste drücken zum Schließen");
             fade_text(c, &LABEL11, W / 2, 120, gfx::MUTE, hint, a * 0.8);
         }
     }
@@ -486,6 +528,25 @@ fn background() -> Vec<u8> {
     v
 }
 
+/// Text centred at `x` in the first font of `fonts` it fits in (`max`
+/// px): long translations step down a size instead of running off the
+/// screen.
+fn fit_text(
+    c: &mut Canvas,
+    fonts: &[&gfx::font::Font],
+    x: i32,
+    y: i32,
+    col: u16,
+    s: &str,
+    max: i32,
+) {
+    let f = fonts
+        .iter()
+        .find(|f| f.width(s) <= max)
+        .unwrap_or(&fonts[fonts.len() - 1]);
+    c.text(f, x, y, col, s, Align::Center);
+}
+
 fn fade_text(c: &mut Canvas, f: &gfx::font::Font, x: i32, y: i32, col: u16, s: &str, a: f32) {
     let w = f.width(s);
     let a = a.clamp(0.0, 1.0);
@@ -554,8 +615,33 @@ fn dots(c: &mut Canvas, x: i32, y: i32, n: usize) {
 }
 
 fn kv(c: &mut Canvas, label: &str, val: &str, y: i32, col: u16, x0: i32, x1: i32) {
-    c.text(&LABEL11, x0, y, gfx::MUTE, label, Align::Left);
-    c.text(&VAL12, x1, y, col, val, Align::Right);
+    kv_in(c, label, val, y, col, x0, x1, &VAL12);
+}
+
+/// Label left, value right in `x0..x1`; where a long translation would
+/// make them touch, the label and then the value step down a size.
+#[allow(clippy::too_many_arguments)]
+fn kv_in(
+    c: &mut Canvas,
+    label: &str,
+    val: &str,
+    y: i32,
+    col: u16,
+    x0: i32,
+    x1: i32,
+    val_font: &gfx::font::Font,
+) {
+    let room = x1 - x0 - 6;
+    let mut lf: &gfx::font::Font = &LABEL11;
+    let mut vf: &gfx::font::Font = val_font;
+    if lf.width(label) + vf.width(val) > room {
+        lf = &LABEL10;
+    }
+    if lf.width(label) + vf.width(val) > room {
+        vf = &MONO9;
+    }
+    c.text(lf, x0, y, gfx::MUTE, label, Align::Left);
+    c.text(vf, x1, y, col, val, Align::Right);
 }
 
 fn lock_icon(c: &mut Canvas, x: i32, y: i32, col: u16) {
@@ -663,11 +749,7 @@ fn cockpit(c: &mut Canvas) {
         c.rect(rx, 50, (88.0 * f) as i32, 3, temp_color(t), 255);
     }
     let pw = b.power_w.unwrap_or(0.0);
-    let (lbl_p, lbl_e) = if de() {
-        ("LEISTUNG", "EFFIZIENZ")
-    } else {
-        ("POWER", "EFFICIENCY")
-    };
+    let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
     big(c, lbl_p, &num(f64::from(pw), 1), "W", 66, gfx::FG);
     let eff = if m.hashrate_ghs > 1.0 {
         f64::from(pw) / (m.hashrate_ghs / 1000.0)
@@ -727,14 +809,13 @@ fn cockpit(c: &mut Canvas) {
 
 fn bitcoin(c: &mut Canvas) {
     let st = stratum::state();
-    let g = de();
     page_head(c, "Bitcoin", 1);
     c.text(
         &LABEL11,
         12,
         42,
         gfx::DIM,
-        if g { "BLOCKHÖHE" } else { "BLOCK HEIGHT" },
+        l("BLOCK HEIGHT", "BLOCKHÖHE"),
         Align::Left,
     );
     let h = st.block_height;
@@ -756,17 +837,13 @@ fn bitcoin(c: &mut Canvas) {
         let left = next - h;
         let frac = (h - epoch * 210_000) as f32 / 210_000.0;
         c.text(&LABEL11, 180, 42, gfx::DIM, "HALVING", Align::Left);
-        let blocks = format!(
-            "{} {}",
-            num(left as f64, 0),
-            if g { "Blöcke" } else { "blocks" }
-        );
+        let blocks = format!("{} {}", num(left as f64, 0), l("blocks", "Blöcke"));
         c.text(&VAL12, 180, 58, gfx::FG, &blocks, Align::Left);
         let months = (left as f64 / 144.0 / 30.44).round();
         let sub = format!(
             "≈ {} {} · {} %",
             months,
-            if g { "Monate" } else { "months" },
+            l("months", "Monate"),
             (frac * 100.0).round()
         );
         c.text(&LABEL11, 180, 72, gfx::MUTE, &sub, Align::Left);
@@ -776,11 +853,7 @@ fn bitcoin(c: &mut Canvas) {
     let nd = st.network_difficulty;
     kv(
         c,
-        if g {
-            "Netzwerk-Difficulty"
-        } else {
-            "Network difficulty"
-        },
+        l("Network difficulty", "Netzwerk-Difficulty"),
         &if nd > 0.0 { si(nd) } else { "–".into() },
         104,
         gfx::FG,
@@ -790,11 +863,7 @@ fn bitcoin(c: &mut Canvas) {
     let nh = nd * 4_294_967_296.0 / 600.0;
     kv(
         c,
-        if g {
-            "Netzwerk-Hashrate"
-        } else {
-            "Network hashrate"
-        },
+        l("Network hashrate", "Netzwerk-Hashrate"),
         &if nd > 0.0 {
             format!("≈ {}H/s", si(nh))
         } else {
@@ -823,7 +892,7 @@ fn bitcoin(c: &mut Canvas) {
         if let Some((a, b2, c2)) = mk.fees {
             let s = format!(
                 "{} {} · {} · {} sat/vB",
-                if g { "Gebühren" } else { "Fees" },
+                l("Fees", "Gebühren"),
                 num(c2, 0),
                 num(b2, 0),
                 num(a, 0)
@@ -838,9 +907,8 @@ fn device(c: &mut Canvas) {
     let m = miner::state();
     let cfg = config::get();
     let p = board::profile();
-    let g = de();
-    page_head(c, if g { "Gerät" } else { "Device" }, 2);
-    let (l, r, r2, e) = (12, 156, 170, 308);
+    page_head(c, l("Device", "Gerät"), 2);
+    let (x0, r, r2, e) = (12, 156, 170, 308);
     let t = b
         .temp_c
         .map_or("–".into(), |t| format!("{} °C", num(f64::from(t), 1)));
@@ -850,26 +918,18 @@ fn device(c: &mut Canvas) {
         &t,
         44,
         b.temp_c.map_or(gfx::FG, temp_color),
-        l,
+        x0,
         r,
     );
     let vr = b.vr_temp_c.map_or("–".into(), |t| format!("{t} °C"));
+    kv(c, l("Regulator", "Regler"), &vr, 62, gfx::FG, x0, r);
     kv(
         c,
-        if g { "Regler" } else { "Regulator" },
-        &vr,
-        62,
-        gfx::FG,
-        l,
-        r,
-    );
-    kv(
-        c,
-        if g { "Takt" } else { "Clock" },
+        l("Clock", "Takt"),
         &format!("{} MHz", m.frequency_hz / 1_000_000),
         80,
         gfx::FG,
-        l,
+        x0,
         r,
     );
     let meas = b
@@ -878,65 +938,37 @@ fn device(c: &mut Canvas) {
         .unwrap_or(0);
     kv(
         c,
-        if g { "Kern" } else { "Core" },
+        l("Core", "Kern"),
         &format!("{}/{} mV", cfg.core_voltage, meas),
         98,
         gfx::FG,
-        l,
+        x0,
         r,
     );
     kv(
         c,
-        if g { "Laufzeit" } else { "Uptime" },
+        l("Uptime", "Laufzeit"),
         &uptime(diag::uptime_s()),
         116,
         gfx::FG,
-        l,
+        x0,
         r,
     );
     let vin = b.vin_mv.map_or("–".into(), |v| {
         format!("{} V", num(f64::from(v) / 1000.0, 2))
     });
-    kv(
-        c,
-        if g { "Eingang" } else { "Input" },
-        &vin,
-        44,
-        gfx::FG,
-        r2,
-        e,
-    );
+    kv(c, l("Input", "Eingang"), &vin, 44, gfx::FG, r2, e);
     let amps = b.iout_ma.map_or("–".into(), |v| {
         format!("{} A", num(f64::from(v) / 1000.0, 2))
     });
-    kv(
-        c,
-        if g { "Strom" } else { "Current" },
-        &amps,
-        62,
-        gfx::FG,
-        r2,
-        e,
-    );
+    kv(c, l("Current", "Strom"), &amps, 62, gfx::FG, r2, e);
     let pw = b
         .power_w
         .map_or("–".into(), |v| format!("{} W", num(f64::from(v), 1)));
-    kv(
-        c,
-        if g { "Leistung" } else { "Power" },
-        &pw,
-        80,
-        gfx::FG,
-        r2,
-        e,
-    );
+    kv(c, l("Power", "Leistung"), &pw, 80, gfx::FG, r2, e);
     let fan = |rpm: u16, pct: u8| {
         if rpm == 0 && pct > 0 {
-            if g {
-                "nicht belegt".to_string()
-            } else {
-                "not connected".to_string()
-            }
+            l("not connected", "nicht belegt").to_string()
         } else {
             format!("{rpm} rpm")
         }
@@ -945,15 +977,9 @@ fn device(c: &mut Canvas) {
     kv(
         c,
         if two {
-            if g {
-                "Lüfter M2"
-            } else {
-                "Fan M2"
-            }
-        } else if g {
-            "Lüfter"
+            l("Fan M2", "Lüfter M2")
         } else {
-            "Fan"
+            l("Fan", "Lüfter")
         },
         &fan(b.fan_rpm, b.fan_pct),
         98,
@@ -963,12 +989,11 @@ fn device(c: &mut Canvas) {
     );
     if let (Some(rpm), Some(pct)) = (b.fan2_rpm, b.fan2_pct) {
         let v = fan(rpm, pct);
-        let label = if g { "Lüfter M1" } else { "Fan M1" };
+        let label = l("Fan M1", "Lüfter M1");
         if rpm == 0 && pct > 0 {
             // "not connected" in the narrower label face: it would run
             // into the label in the value face.
-            c.text(&LABEL11, r2, 116, gfx::MUTE, label, Align::Left);
-            c.text(&LABEL11, e, 116, gfx::DIM, &v, Align::Right);
+            kv_in(c, label, &v, 116, gfx::DIM, r2, e, &LABEL11);
         } else {
             kv(c, label, &v, 116, gfx::FG, r2, e);
         }
@@ -976,17 +1001,24 @@ fn device(c: &mut Canvas) {
     c.rect(12, 130, 298, 1, gfx::WHITE, 16);
     let (target, hot) = limits();
     let line = if cfg.autofanspeed {
-        if g {
-            format!("Lüfter automatisch · Ziel {target:.0} °C · Abschaltung {hot:.0} °C")
-        } else {
-            format!("Fans automatic · target {target:.0} °C · shutdown {hot:.0} °C")
-        }
-    } else if g {
-        format!("Lüfter fest {} % · Abschaltung {hot:.0} °C", cfg.fanspeed)
+        l(
+            "Fans automatic · target {t} °C · shutdown {h} °C",
+            "Lüfter automatisch · Ziel {t} °C · Abschaltung {h} °C",
+        )
     } else {
-        format!("Fans fixed {} % · shutdown {hot:.0} °C", cfg.fanspeed)
-    };
-    c.text(&LABEL10, 12, 150, gfx::MUTE, &line, Align::Left);
+        l(
+            "Fans fixed {p} % · shutdown {h} °C",
+            "Lüfter fest {p} % · Abschaltung {h} °C",
+        )
+    }
+    .replace("{t}", &format!("{target:.0}"))
+    .replace("{h}", &format!("{hot:.0}"))
+    .replace("{p}", &cfg.fanspeed.to_string());
+    let f = [&LABEL10, &MONO9]
+        .into_iter()
+        .find(|f| f.width(&line) <= W - 24)
+        .unwrap_or(&MONO9);
+    c.text(f, 12, 150, gfx::MUTE, &line, Align::Left);
     c.text(
         &MONO9,
         12,
@@ -1002,7 +1034,6 @@ fn pool(c: &mut Canvas) {
     let m = miner::state();
     let n = net::state();
     let cfg = config::get();
-    let g = de();
     page_head(c, "Pool", 3);
     let w = c.text(&VAL12, 12, 46, gfx::FG, &st.pool, Align::Left);
     let mut x = 16 + w;
@@ -1017,7 +1048,7 @@ fn pool(c: &mut Canvas) {
             x,
             46,
             gfx::WARN,
-            if g { "AUSWEICH" } else { "FALLBACK" },
+            l("FALLBACK", "AUSWEICH"),
             Align::Left,
         );
     }
@@ -1042,11 +1073,7 @@ fn pool(c: &mut Canvas) {
     );
     kv(
         c,
-        if g {
-            "Pool-Difficulty"
-        } else {
-            "Pool difficulty"
-        },
+        l("Pool difficulty", "Pool-Difficulty"),
         &si(st.difficulty),
         100,
         gfx::FG,
@@ -1060,11 +1087,10 @@ fn pool(c: &mut Canvas) {
     );
     kv(
         c,
-        if g {
-            "Beste Diff (Sitzung / gesamt)"
-        } else {
-            "Best diff (session / all-time)"
-        },
+        l(
+            "Best diff (session / all-time)",
+            "Beste Diff (Sitzung / gesamt)",
+        ),
         &best,
         116,
         gfx::FG,
@@ -1156,7 +1182,6 @@ fn log_page(c: &mut Canvas) {
 }
 
 fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
-    let g = de();
     let pulse = 0.5 + 0.5 * (t * 2.5).sin();
     match ev {
         Event::Overheat => {
@@ -1176,22 +1201,37 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W / 2,
                 62,
                 gfx::ERR,
-                if g { "ÜBERHITZUNG" } else { "OVERHEAT" },
+                l("OVERHEAT", "ÜBERHITZUNG"),
                 Align::Center,
             );
             let tc = b.temp_c.map_or("–".into(), |t| num(f64::from(t), 1));
-            let l1 = if g {
-                format!("Chip {tc} °C · Kernspannung aus")
-            } else {
-                format!("Chip {tc} °C · core voltage off")
-            };
-            c.text(&VAL12, W / 2, 90, gfx::FG, &l1, Align::Center);
-            let l2 = if g {
-                "Lüfter 100 % · Freigabe im Web-UI unter System"
-            } else {
-                "Fans 100 % · release in the web UI under System"
-            };
-            c.text(&LABEL11, W / 2, 112, gfx::MUTE, l2, Align::Center);
+            let l1 = l(
+                "Chip {t} °C · core voltage off",
+                "Chip {t} °C · Kernspannung aus",
+            )
+            .replace("{t}", &tc);
+            fit_text(
+                c,
+                &[&VAL12, &LABEL11, &LABEL10],
+                W / 2,
+                90,
+                gfx::FG,
+                &l1,
+                W - 16,
+            );
+            let l2 = l(
+                "Fans 100 % · clear it in the web UI under System",
+                "Lüfter 100 % · Freigabe im Web-UI unter System",
+            );
+            fit_text(
+                c,
+                &[&LABEL11, &LABEL10, &MONO9],
+                W / 2,
+                112,
+                gfx::MUTE,
+                l2,
+                W - 16,
+            );
         }
         Event::ChipsOff => {
             c.fill(gfx::rgb(0x0b, 0x0c, 0x14));
@@ -1207,22 +1247,36 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W / 2,
                 84,
                 gfx::WARN,
-                if g { "CHIPS AUS" } else { "CHIPS OFF" },
+                l("CHIPS OFF", "CHIPS AUS"),
                 Align::Center,
             );
-            let l = if g {
-                "Gerät bleibt erreichbar · Einschalten im Web-UI"
-            } else {
-                "Device stays reachable · switch on in the web UI"
-            };
-            c.text(&LABEL11, W / 2, 106, gfx::MUTE, l, Align::Center);
+            let l = l(
+                "Device stays reachable · switch on in the web UI",
+                "Gerät bleibt erreichbar · Einschalten im Web-UI",
+            );
+            fit_text(
+                c,
+                &[&LABEL11, &LABEL10, &MONO9],
+                W / 2,
+                106,
+                gfx::MUTE,
+                l,
+                W - 16,
+            );
             let n = net::state();
             let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_default();
             c.text(&VAL12, W / 2, 128, gfx::FG, &ip, Align::Center);
         }
         Event::Ota(pct) => {
             c.fill(gfx::rgb(0x0b, 0x0c, 0x1c));
-            c.text(&TITLE, W / 2, 64, gfx::FG, "FIRMWARE-UPDATE", Align::Center);
+            c.text(
+                &TITLE,
+                W / 2,
+                64,
+                gfx::FG,
+                l("FIRMWARE UPDATE", "FIRMWARE-UPDATE"),
+                Align::Center,
+            );
             c.rect(60, 84, 200, 6, gfx::WHITE, 26);
             let f = pct.map_or(0.0, |p| f32::from(p) / 100.0);
             let fw = (200.0 * f) as i32;
@@ -1239,23 +1293,24 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                     c.rect(x, 84, 1, 6, gfx::WHITE, a);
                 }
             }
-            let l = match pct {
-                None => {
-                    if g {
-                        "Speicher wird vorbereitet · nicht ausschalten".to_string()
-                    } else {
-                        "Preparing flash · do not power off".to_string()
-                    }
-                }
-                Some(p) => {
-                    if g {
-                        format!("{p} % · nicht ausschalten")
-                    } else {
-                        format!("{p} % · do not power off")
-                    }
-                }
+            let line = match pct {
+                None => l(
+                    "Preparing flash · do not power off",
+                    "Speicher wird vorbereitet · nicht ausschalten",
+                )
+                .to_string(),
+                Some(p) => l("{p} % · do not power off", "{p} % · nicht ausschalten")
+                    .replace("{p}", &p.to_string()),
             };
-            c.text(&LABEL11, W / 2, 110, gfx::MUTE, &l, Align::Center);
+            fit_text(
+                c,
+                &[&LABEL11, &LABEL10, &MONO9],
+                W / 2,
+                110,
+                gfx::MUTE,
+                &line,
+                W - 16,
+            );
         }
         Event::Block(_) => {}
     }
@@ -1378,30 +1433,25 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
                         o.pixel(x, y, false);
                     }
                 }
-                oled_center(
-                    o,
-                    6,
-                    match (de(), blink) {
-                        (true, true) => "!! BLOCK GEFUNDEN !!",
-                        (true, false) => "   BLOCK GEFUNDEN   ",
-                        (false, true) => "!! BLOCK FOUND !!",
-                        (false, false) => "   BLOCK FOUND   ",
-                    },
-                );
+                oled_center(o, 6, &{
+                    let t = oled_str(l("BLOCK FOUND", "BLOCK GEFUNDEN"));
+                    if blink {
+                        format!("!! {t} !!")
+                    } else {
+                        t
+                    }
+                });
                 oled_center(o, 19, &format!("{h}"));
             }
         }
         Event::Overheat => {
-            let g = de();
             oled_center(
                 o,
                 6,
-                if !blink {
-                    ""
-                } else if g {
-                    "UEBERHITZUNG"
+                &if blink {
+                    oled_str(l("OVERHEAT", "ÜBERHITZUNG"))
                 } else {
-                    "OVERHEAT"
+                    String::new()
                 },
             );
             let tc = board::state()
@@ -1410,16 +1460,16 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
             oled_center(
                 o,
                 19,
-                &format!("{tc} {}", if g { "KERN AUS" } else { "CORE OFF" }),
+                &format!("{tc} {}", oled_str(l("CORE OFF", "KERN AUS"))),
             );
         }
         Event::ChipsOff => {
-            oled_center(o, 6, if de() { "CHIPS AUS" } else { "CHIPS OFF" });
+            oled_center(o, 6, &oled_str(l("CHIPS OFF", "CHIPS AUS")));
             let n = net::state();
             oled_center(o, 19, &n.wifi_ip.or(n.usb_ip).unwrap_or_default());
         }
         Event::Ota(p) => {
-            oled_center(o, 4, "FIRMWARE UPDATE");
+            oled_center(o, 4, &oled_str(l("FIRMWARE UPDATE", "FIRMWARE-UPDATE")));
             let f = p.map_or(0, |p| i32::from(p));
             for x in 14..114 {
                 o.pixel(x, 18, true);

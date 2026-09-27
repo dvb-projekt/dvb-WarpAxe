@@ -13,6 +13,7 @@ mod clock;
 mod config;
 mod diag;
 mod display;
+mod display_i18n;
 mod font;
 mod gfx;
 mod history;

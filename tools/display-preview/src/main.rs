@@ -9,6 +9,8 @@
 mod gfx;
 #[path = "../../../firmware/warpaxe/src/screens.rs"]
 mod screens;
+#[path = "../../../firmware/warpaxe/src/display_i18n.rs"]
+mod display_i18n;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 

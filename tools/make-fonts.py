@@ -20,13 +20,15 @@ OUT = ROOT / "firmware/warpaxe/src/gfx"
 
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 EXTRA = "äöüÄÖÜß°·≈€…–"
-TEXT = ASCII + EXTRA
+# Latin letters of the other display languages (es, fr, it, pt).
+LATIN = "àâçéèêëîïôûùÿñáíóúãõœÀÂÇÉÈÊËÎÏÔÛÙÑÁÍÓÚÃÕŒ¿¡«»’"
+TEXT = ASCII + EXTRA + LATIN
 DIGITS = "0123456789.,-–: "
 
 # name, file, size px, axes (weight or [opsz, weight]), characters
 FONTS = [
     ("HERO", "SpaceGrotesk.ttf", 38, [700], DIGITS),
-    ("TITLE", "SpaceGrotesk.ttf", 26, [700], "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜ0123456789 .,-!:%"),
+    ("TITLE", "SpaceGrotesk.ttf", 26, [700], "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜÀÂÇÉÈÊËÎÏÔÛÙÑÁÍÓÚÃÕŒ0123456789 .,-!:%’"),
     ("VAL16", "JetBrainsMono.ttf", 16, [700], DIGITS + "/%"),
     ("VAL12", "JetBrainsMono.ttf", 12, [700], TEXT),
     ("MONO9", "JetBrainsMono.ttf", 9, [500], TEXT),
