@@ -10,6 +10,7 @@
 #![cfg_attr(not(test), no_std)]
 
 pub mod emc2101;
+pub mod emc2302;
 pub mod fan;
 pub mod font;
 pub mod fxl6408;

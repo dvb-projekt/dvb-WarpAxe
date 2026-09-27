@@ -55,7 +55,7 @@ pub enum Thermal {
     /// TMP1075 sensors (one near the regulator at address offset 1,
     /// more near the chips, detected at init) and an EMC2302 dual fan
     /// controller: the Nerd multi-chip boards. TMP1075 driver:
-    /// [`crate::tmp1075`]; no EMC2302 driver yet.
+    /// [`crate::tmp1075`], EMC2302 driver: [`crate::emc2302`].
     Tmp1075Emc2302,
 }
 
