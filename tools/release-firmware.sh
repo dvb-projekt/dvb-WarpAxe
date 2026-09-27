@@ -6,7 +6,7 @@
 #   tools/release-firmware.sh v0.2.0 [notes-file]
 #
 # The version must match firmware/warpaxe/Cargo.toml; the tag goes on the
-# current commit, which must be pushed and green. Token:
+# current commit, which must be pushed (main or a release branch) and green. Token:
 # ~/.config/warppool/forgejo-admin-token (never printed).
 set -euo pipefail
 
@@ -23,7 +23,9 @@ VERSION="$(grep -m1 '^version' "$FW/Cargo.toml" | cut -d'"' -f2)"
 [ -z "$(git -C "$ROOT" status --porcelain)" ] || { echo "working tree not clean" >&2; exit 1; }
 COMMIT="$(git -C "$ROOT" rev-parse HEAD)"
 git -C "$ROOT" fetch -q origin
-[ "$(git -C "$ROOT" rev-parse origin/main)" = "$COMMIT" ] || { echo "HEAD is not origin/main" >&2; exit 1; }
+# The tag goes on a pushed commit: main, or a release branch when main
+# already carries work that must not ship yet.
+[ -n "$(git -C "$ROOT" branch -r --contains "$COMMIT")" ] || { echo "HEAD is not pushed to any branch" >&2; exit 1; }
 
 (cd "$FW" && cargo build --release)
 mkdir -p "$OUT"

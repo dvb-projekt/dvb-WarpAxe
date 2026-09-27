@@ -231,5 +231,7 @@
   "auth_s": "A chave pública tal como o pool a publica (Base58). O certificado do pool é verificado com ela.",
   "stratumV2RequireAuth": "Exigir autenticação do pool",
   "fallbackStratumV2RequireAuth": "Exigir autenticação do pool",
-  "reqauth_s": "Ligar apenas se o certificado do pool puder ser verificado. Desligado: sem chave, o pool é aceite tal como está."
+  "reqauth_s": "Ligar apenas se o certificado do pool puder ser verificado. Desligado: sem chave, o pool é aceite tal como está.",
+  "bd_unsup_title": "Placa reconhecida: {m}",
+  "bd_unsup": "O WarpAxe ainda não consegue operar esta placa, por isso os chips continuam desligados. Reinstale o firmware anterior ou escolha uma placa abaixo só se tiver certeza de que ela foi reconhecida incorretamente."
 }

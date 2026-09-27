@@ -231,5 +231,7 @@
   "auth_s": "矿池公布的公钥（Base58）。矿池证书将据此校验。",
   "stratumV2RequireAuth": "要求矿池认证",
   "fallbackStratumV2RequireAuth": "要求矿池认证",
-  "reqauth_s": "仅在能校验矿池证书时连接。关闭：无密钥时直接信任该矿池。"
+  "reqauth_s": "仅在能校验矿池证书时连接。关闭：无密钥时直接信任该矿池。",
+  "bd_unsup_title": "已识别：{m}",
+  "bd_unsup": "WarpAxe 暂不支持此主板，因此芯片保持关闭。请刷回之前的固件；只有在确定识别有误时，才在下方选择主板。"
 }

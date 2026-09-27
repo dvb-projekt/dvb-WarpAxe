@@ -231,5 +231,7 @@
   "auth_s": "La chiave pubblica così come la pubblica il pool (Base58). Il certificato del pool viene verificato con essa.",
   "stratumV2RequireAuth": "Richiedi l'autenticazione del pool",
   "fallbackStratumV2RequireAuth": "Richiedi l'autenticazione del pool",
-  "reqauth_s": "Connetti solo se il certificato del pool può essere verificato. Disattivato: senza chiave il pool viene accettato così com'è."
+  "reqauth_s": "Connetti solo se il certificato del pool può essere verificato. Disattivato: senza chiave il pool viene accettato così com'è.",
+  "bd_unsup_title": "Scheda riconosciuta: {m}",
+  "bd_unsup": "WarpAxe non può ancora far funzionare questa scheda, quindi i chip restano spenti. Reinstalla il firmware precedente, oppure scegli una scheda qui sotto solo se sei sicuro che sia stata riconosciuta in modo errato."
 }
