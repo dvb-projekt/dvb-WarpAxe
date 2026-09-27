@@ -231,7 +231,7 @@
   "auth_s": "La clave pública tal como la publica el pool (Base58). El certificado del pool se verifica con ella.",
   "stratumV2RequireAuth": "Exigir autenticación del pool",
   "fallbackStratumV2RequireAuth": "Exigir autenticación del pool",
-  "reqauth_s": "Conectar solo si el certificado del pool se puede verificar. Desactivado: sin clave se confía en el pool tal cual.",
+  "reqauth_s": "Activado: conectar solo después de verificar el certificado del pool con la clave. Desactivado: una clave configurada se sigue verificando en cuanto el reloj esté en hora; sin clave se confía en el pool sin verificarlo.",
   "bd_unsup_title": "Placa reconocida: {m}",
   "bd_unsup": "WarpAxe todavía no puede hacer funcionar esta placa, así que sus chips siguen apagados. Vuelve a instalar el firmware anterior, o elige una placa abajo solo si estás seguro de que se reconoció mal.",
   "upd_unsigned": "Esta versión no lleva firma; se puede instalar, pero el minero no puede comprobar quién la compiló."

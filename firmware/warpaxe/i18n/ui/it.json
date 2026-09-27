@@ -228,11 +228,11 @@
   "proto_s": "Stratum V2 è sempre cifrato e usa una porta propria. L'interruttore TLS vale solo per V1.",
   "stratumV2AuthorityPubkey": "Chiave di autorità Sv2 del pool",
   "fallbackStratumV2AuthorityPubkey": "Chiave di autorità Sv2 del pool",
-  "auth_s": "La chiave pubblica così come la pubblica il pool (Base58). Il certificato del pool viene verificato con essa.",
+  "auth_s": "La chiave pubblica del pool così come il pool la pubblica (Base58). Il certificato del pool viene verificato con questa chiave.",
   "stratumV2RequireAuth": "Richiedi l'autenticazione del pool",
   "fallbackStratumV2RequireAuth": "Richiedi l'autenticazione del pool",
-  "reqauth_s": "Connetti solo se il certificato del pool può essere verificato. Disattivato: senza chiave il pool viene accettato così com'è.",
+  "reqauth_s": "Attivato: il miner si connette solo dopo che il certificato del pool è stato verificato con la chiave. Disattivato: una chiave impostata viene comunque verificata non appena l'orologio è regolato; senza chiave il pool è considerato attendibile senza verifica.",
   "bd_unsup_title": "Scheda riconosciuta: {m}",
   "bd_unsup": "WarpAxe non può ancora far funzionare questa scheda, quindi i chip restano spenti. Reinstalla il firmware precedente, oppure scegli una scheda qui sotto solo se sei sicuro che sia stata riconosciuta in modo errato.",
-  "upd_unsigned": "Questa versione non ha firma; si installa, ma il miner non può verificare chi l'ha compilata."
+  "upd_unsigned": "Questa release non è firmata: si può installare, ma il miner non può verificare chi l'ha compilata."
 }

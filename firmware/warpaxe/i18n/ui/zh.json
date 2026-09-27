@@ -224,15 +224,15 @@
   "days": "天",
   "stratumProtocol": "协议",
   "fallbackStratumProtocol": "协议",
-  "proto_main_s": "Stratum V2 始终加密并使用独立端口（WarpPool：3336）。TLS 开关仅对 V1 有效。",
-  "proto_s": "Stratum V2 始终加密并使用独立端口。TLS 开关仅对 V1 有效。",
-  "stratumV2AuthorityPubkey": "矿池的 Sv2 授权密钥",
-  "fallbackStratumV2AuthorityPubkey": "矿池的 Sv2 授权密钥",
-  "auth_s": "矿池公布的公钥（Base58）。矿池证书将据此校验。",
+  "proto_main_s": "Stratum V2 始终加密，并需要单独的端口 (WarpPool: 3336)。TLS 开关仅对 V1 有效。",
+  "proto_s": "Stratum V2 始终加密，并需要单独的端口。TLS 开关仅对 V1 有效。",
+  "stratumV2AuthorityPubkey": "矿池的 Sv2 权威公钥",
+  "fallbackStratumV2AuthorityPubkey": "矿池的 Sv2 权威公钥",
+  "auth_s": "矿池公布的公钥 (Base58)。矿池证书将以此公钥进行校验。",
   "stratumV2RequireAuth": "要求矿池认证",
   "fallbackStratumV2RequireAuth": "要求矿池认证",
-  "reqauth_s": "仅在能校验矿池证书时连接。关闭：无密钥时直接信任该矿池。",
+  "reqauth_s": "开启：仅在矿池证书已用该密钥校验通过后才连接。关闭：若已设置密钥，时钟校准后仍会校验；若无密钥，则不经校验直接信任该矿池。",
   "bd_unsup_title": "已识别：{m}",
   "bd_unsup": "WarpAxe 暂不支持此主板，因此芯片保持关闭。请刷回之前的固件；只有在确定识别有误时，才在下方选择主板。",
-  "upd_unsigned": "此版本没有签名；可以安装，但矿机无法验证是谁构建的。"
+  "upd_unsigned": "此版本未附带签名；仍可安装，但矿机无法验证它是由谁构建的。"
 }

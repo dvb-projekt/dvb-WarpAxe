@@ -38,3 +38,9 @@ CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=16
 CONFIG_ESP_HTTPD_MAX_URI_LEN=128
 CONFIG_ESP_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+
+# mbedTLS (Stratum TLS/Sv2, online update, price fetch) allocates from
+# PSRAM: with its buffers in the small internal RAM, an hour of mining on
+# TLS left too little contiguous memory for the RSA check of a server
+# certificate (-0x4290, MPI alloc) and the online update failed.
+CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y

@@ -225,7 +225,25 @@ fn fetch_latest() -> anyhow::Result<Release> {
 
 /// GET over HTTPS (built-in CA bundle), following redirects, at most
 /// `max` bytes; `progress(bytes so far)` after every chunk.
+/// [`get_once`] with up to three attempts, five seconds apart: a TLS
+/// handshake can fail for want of memory at a bad moment (seen after an
+/// hour of mining on TLS) or on a network hiccup.
 fn get(url: &str, max: usize, mut progress: impl FnMut(usize)) -> anyhow::Result<Vec<u8>> {
+    let mut last = None;
+    for attempt in 1..=3 {
+        match get_once(url, max, &mut progress) {
+            Ok(b) => return Ok(b),
+            Err(e) => {
+                log::warn!("update: {url}: attempt {attempt} failed: {e}");
+                last = Some(e);
+                std::thread::sleep(Duration::from_secs(5));
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("{url}: no attempt made")))
+}
+
+fn get_once(url: &str, max: usize, progress: &mut impl FnMut(usize)) -> anyhow::Result<Vec<u8>> {
     let mut url = url.to_string();
     for _ in 0..5 {
         let mut c = EspHttpConnection::new(&Configuration {
