@@ -15,7 +15,7 @@ use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
     subscribe_request, suggest_difficulty_request, Notify, Request,
 };
-use warpaxe_stratum::{parse_line, Incoming, Job, Session};
+use warpaxe_stratum::{coinbase, parse_line, Incoming, Job, Session};
 
 use crate::link::{Link, LinkReader};
 use crate::{config, diag};
@@ -30,6 +30,12 @@ pub struct StratumState {
     pub using_fallback: bool,
     /// The live session runs over TLS.
     pub tls: bool,
+    /// Height of the block the current job builds (BIP34), 0 = unknown.
+    pub block_height: u64,
+    /// Network difficulty of the current job (from nbits).
+    pub network_difficulty: f64,
+    /// Readable text in the coinbase script (the pool's tag).
+    pub scriptsig: String,
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
@@ -412,6 +418,13 @@ fn session(
                 };
                 let clean = n.clean_jobs;
                 let job_id = n.job_id.clone();
+                let c1 = hex::decode(&n.coinb1).unwrap_or_default();
+                let c2 = hex::decode(&n.coinb2).unwrap_or_default();
+                let height = coinbase::block_height(&c1).unwrap_or(0);
+                let net_diff = u32::from_str_radix(&n.nbits, 16)
+                    .map(coinbase::nbits_difficulty)
+                    .unwrap_or(0.0);
+                let tag = coinbase::script_text(&c1, &c2, s.extranonce1.len() + s.extranonce2_size);
                 if started.elapsed() < Duration::from_secs(5) || clean {
                     log::info!(
                         "stratum: job {} ntime {} clean {}",
@@ -429,6 +442,9 @@ fn session(
                 update(|st| {
                     st.jobs_received += 1;
                     st.last_job_id = job_id;
+                    st.block_height = height;
+                    st.network_difficulty = net_diff;
+                    st.scriptsig = tag;
                     st.last_job_uptime_s = diag::uptime_s();
                     if clean {
                         st.clean_jobs += 1;

@@ -1,4 +1,4 @@
-#![recursion_limit = "256"]
+#![recursion_limit = "512"]
 //! WarpAxe firmware, stage B: everything but the hashing.
 //!
 //! Boot order matters and is deliberate: diagnostics first (a crash in the
@@ -14,10 +14,13 @@ mod config;
 mod diag;
 mod display;
 mod font;
+mod gfx;
 mod history;
 mod link;
+mod market;
 mod miner;
 mod net;
+mod screens;
 mod stratum;
 mod uart;
 
@@ -43,15 +46,14 @@ const SPLASH_S: u64 = 6;
 static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565");
 static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
-fn draw(d: &mut display::Display) {
+/// One frame: the splash for the first seconds, then the screens.
+/// Returns how long until the next frame.
+fn draw(d: &mut display::Display, ui: &mut screens::Ui) -> Duration {
     if diag::uptime_s() < SPLASH_S {
         draw_splash(d);
-        return;
+        return Duration::from_millis(500);
     }
-    match d {
-        display::Display::Lcd(l) => draw_lcd(l),
-        display::Display::Oled(o) => draw_oled(o),
-    }
+    ui.frame(d)
 }
 
 /// The wordmark with the model and firmware version under it, in the
@@ -91,138 +93,6 @@ fn draw_splash(d: &mut display::Display) {
     }
 }
 
-/// Four lines of 21 characters on the Bitaxe OLED.
-fn draw_oled(d: &mut display::Oled) {
-    let cfg = config::get();
-    let n = net::state();
-    let st = stratum::state();
-    let m = miner::state();
-    let b = board::state();
-    d.orient(cfg.flipscreen, cfg.invertscreen);
-    d.clear();
-    d.text(0, 0, 1, &format!("WARPAXE {}", cfg.hostname));
-    let step = *STEP.lock().unwrap();
-    let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_else(|| "-".into());
-    d.text(
-        0,
-        8,
-        1,
-        &format!("{ip} {}", if step == "RUN" { "" } else { step }),
-    );
-    let temp = b.temp_c.map(|t| format!("{t:.0}C")).unwrap_or_default();
-    let power = b.power_w.map(|p| format!("{p:.0}W")).unwrap_or_default();
-    d.text(
-        0,
-        16,
-        1,
-        &format!(
-            "{}X{} {:.0}GH {temp} {power}",
-            m.chips,
-            m.frequency_hz / 1_000_000,
-            m.hashrate_ghs
-        ),
-    );
-    let pool = if st.authorized {
-        "OK"
-    } else if st.connected {
-        "CONN"
-    } else {
-        "OFF"
-    };
-    d.text(
-        0,
-        24,
-        1,
-        &format!(
-            "SH {}/{} {} {pool}",
-            st.shares_accepted, st.shares_rejected, m.phase
-        ),
-    );
-    if d.flush().is_err() {
-        log::warn!("oled flush failed");
-    }
-}
-
-fn draw_lcd(d: &mut display::Lcd) {
-    use display::*;
-    let cfg = config::get();
-    d.orient(cfg.flipscreen, cfg.invertscreen);
-    let n = net::state();
-    d.clear(NAVY);
-    d.text(4, 4, 2, WHITE, &format!("WARPAXE {}", cfg.hostname));
-    let step = *STEP.lock().unwrap();
-    let (usb, col) = if n.usb_mounted {
-        ("USB UP", GREEN)
-    } else {
-        ("USB -", ORANGE)
-    };
-    d.text(4, 26, 2, col, &format!("{step}  {usb}"));
-    d.text(
-        4,
-        48,
-        1,
-        WHITE,
-        &format!(
-            "USB {}  WIFI {}  UP {}S  HITS {}",
-            n.usb_ip.unwrap_or_else(|| "-".into()),
-            n.wifi_ip.unwrap_or_else(|| "-".into()),
-            diag::uptime_s(),
-            diag::HTTP_HITS.load(std::sync::atomic::Ordering::Relaxed)
-        ),
-    );
-    let st = stratum::state();
-    let pool_state = if st.authorized {
-        "AUTH"
-    } else if st.connected {
-        "CONN"
-    } else {
-        "OFF"
-    };
-    d.text(
-        4,
-        58,
-        1,
-        GREY,
-        &format!(
-            "POOL {} {}  DIFF {}  JOBS {}  {}",
-            cfg.stratum_url, pool_state, st.difficulty, st.jobs_received, st.last_job_id
-        ),
-    );
-    let m = miner::state();
-    d.text(
-        4,
-        68,
-        1,
-        WHITE,
-        &format!(
-            "CHAIN {} {}x{}MHz {:.1}GH/S SH {}/{} N {}",
-            m.phase,
-            m.chips,
-            m.frequency_hz / 1_000_000,
-            m.hashrate_ghs,
-            st.shares_accepted,
-            st.shares_rejected,
-            m.nonces
-        ),
-    );
-    match diag::last_crash() {
-        Some(c) => {
-            d.text(
-                4,
-                78,
-                1,
-                RED,
-                &format!("LAST CRASH {}", &c[..c.len().min(46)]),
-            );
-            d.log_tail(88, 8, GREY);
-        }
-        None => d.log_tail(78, 9, GREY),
-    }
-    if d.flush().is_err() {
-        log::warn!("display flush failed");
-    }
-}
-
 fn main() {
     sys::link_patches();
     diag::init_logger();
@@ -247,34 +117,58 @@ fn main() {
     let mut d = display::Display::new();
     let crashed = diag::log_core_dump();
     if let Some(mut d) = d.take() {
-        std::thread::Builder::new()
-            .stack_size(8192)
-            .spawn(move || {
-                // The boot button (GPIO0, active low) wakes the display.
+        diag::spawn_psram("display", 16 * 1024, move || {
+            // Keys, active low: GPIO0 (boot key) on every board; GPIO14
+            // (page key) next to the LCD on the Nerd boards.
+            let page_key = matches!(d, display::Display::Lcd(_));
+            let keys: &[i32] = if page_key { &[0, 14] } else { &[0] };
+            for &k in keys {
                 unsafe {
-                    sys::gpio_set_direction(0, sys::gpio_mode_t_GPIO_MODE_INPUT);
-                    sys::gpio_set_pull_mode(0, sys::gpio_pull_mode_t_GPIO_PULLUP_ONLY);
+                    sys::gpio_set_direction(k, sys::gpio_mode_t_GPIO_MODE_INPUT);
+                    sys::gpio_set_pull_mode(k, sys::gpio_pull_mode_t_GPIO_PULLUP_ONLY);
                 }
-                display::touch();
-                let mut awake = true;
-                loop {
-                    if unsafe { sys::gpio_get_level(0) } == 0 {
+            }
+            display::touch();
+            let mut ui = screens::Ui::new();
+            let mut awake = true;
+            let mut was_down = [false; 2];
+            let mut next_frame = std::time::Instant::now();
+            loop {
+                for (i, &k) in keys.iter().enumerate() {
+                    let down = unsafe { sys::gpio_get_level(k) } == 0;
+                    if down && !was_down[i] {
+                        // A press that wakes the display does nothing else.
+                        if awake {
+                            ui.key(if k == 14 {
+                                screens::Key::Next
+                            } else {
+                                screens::Key::Home
+                            });
+                        }
                         display::touch();
+                        next_frame = std::time::Instant::now();
                     }
-                    let timeout_s = u64::from(config::get().display_timeout) * 60;
-                    let idle = diag::uptime_s().saturating_sub(display::last_wake());
-                    let want_awake = timeout_s == 0 || idle < timeout_s;
-                    if want_awake != awake {
-                        awake = want_awake;
-                        d.set_awake(awake);
-                    }
-                    if awake {
-                        draw(&mut d);
-                    }
-                    std::thread::sleep(Duration::from_millis(500));
+                    was_down[i] = down;
                 }
-            })
-            .expect("display thread");
+                match display::REMOTE_KEY.swap(0, std::sync::atomic::Ordering::Relaxed) {
+                    1 => ui.key(screens::Key::Next),
+                    2 => ui.key(screens::Key::Home),
+                    _ => {}
+                }
+                let timeout_s = u64::from(config::get().display_timeout) * 60;
+                let idle = diag::uptime_s().saturating_sub(display::last_wake());
+                let want_awake = timeout_s == 0 || idle < timeout_s;
+                if want_awake != awake {
+                    awake = want_awake;
+                    d.set_awake(awake);
+                }
+                if awake && std::time::Instant::now() >= next_frame {
+                    next_frame = std::time::Instant::now() + draw(&mut d, &mut ui);
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+        })
+        .expect("display thread");
     }
 
     // After a crash: keep USB-Serial/JTAG for a while, then continue.
@@ -340,6 +234,7 @@ fn main() {
     board::start();
     history::start();
     clock::start();
+    market::start();
     set_step("CHAIN");
     match uart::ChipUart::new(
         peripherals.uart1,

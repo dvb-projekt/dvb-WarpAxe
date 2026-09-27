@@ -29,6 +29,7 @@ esp-idf-svc = "0.51"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 heapless = "0.8"
+hex = "0.4"
 anyhow = "1"
 warpaxe-core = { path = "../../crates/core" }
 warpaxe-chain = { path = "../../crates/chain" }

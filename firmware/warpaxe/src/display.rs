@@ -22,12 +22,7 @@ const PIN_RST: i32 = 5;
 const PIN_DATA: [i32; 8] = [39, 40, 41, 42, 45, 46, 47, 48];
 
 pub const BLACK: u16 = 0x0000;
-pub const WHITE: u16 = 0xFFFF;
-pub const GREEN: u16 = 0x07E0;
-pub const RED: u16 = 0xF800;
-pub const ORANGE: u16 = 0xFD20;
 pub const GREY: u16 = 0x8410;
-pub const NAVY: u16 = 0x0010;
 /// Brand colours of the web UI: `--btc` (Bitaxe) and `--plasma` (Nerd).
 pub const BTC: u16 = 0xF483;
 pub const PLASMA: u16 = 0x071F;
@@ -153,28 +148,15 @@ impl Lcd {
 
     /// Draw `text` at (x, y), each font pixel `scale` screen pixels.
     /// Last `n` captured IDF log lines, small, from `y` downwards.
-    pub fn log_tail(&mut self, y: usize, n: usize, color: u16) {
-        let count = unsafe { tusb::wa_log_count() } as usize;
-        let first = count.saturating_sub(n);
-        let mut row = 0;
-        for i in first..count {
-            let mut buf = [0u8; 56];
-            unsafe {
-                tusb::wa_log_line(
-                    i as i32,
-                    buf.as_mut_ptr() as *mut core::ffi::c_char,
-                    buf.len(),
-                )
-            };
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            let s = String::from_utf8_lossy(&buf[..end]).into_owned();
-            self.text(4, y + row * 9, 1, color, &s);
-            row += 1;
+    /// The frame buffer as a drawing surface.
+    pub fn canvas(&mut self) -> crate::gfx::Canvas<'_> {
+        crate::gfx::Canvas {
+            fb: self.fb,
+            w: WIDTH as i32,
+            h: HEIGHT as i32,
         }
     }
 
-    /// A whole RGB565 frame in the framebuffer's byte order (the boot
-    /// splash); a short slice leaves the rest as it was.
     pub fn blit(&mut self, frame: &[u8]) {
         let n = frame.len().min(self.fb.len());
         self.fb[..n].copy_from_slice(&frame[..n]);
@@ -229,6 +211,7 @@ impl Lcd {
                 self.fb.as_ptr() as *const c_void,
             ));
         }
+        snapshot(self.fb);
         Ok(())
     }
 }
@@ -263,6 +246,11 @@ impl Oled {
     pub fn bitmap(&mut self, bits: &[u8]) {
         self.panel.bitmap(bits);
     }
+    pub fn pixel(&mut self, x: i32, y: i32, on: bool) {
+        if (0..128).contains(&x) && (0..32).contains(&y) {
+            self.panel.set_pixel(x as usize, y as usize, on);
+        }
+    }
     pub fn clear(&mut self) {
         self.panel.clear();
     }
@@ -270,6 +258,7 @@ impl Oled {
         self.panel.text(x, y, scale, text);
     }
     pub fn flush(&mut self) -> Result<(), String> {
+        snapshot(self.panel.frame());
         self.panel.flush().map_err(|e| format!("{e:?}"))
     }
     pub fn set_power(&mut self, on: bool) {
@@ -341,3 +330,46 @@ impl Display {
         }
     }
 }
+
+/// Firmware update progress for the display: 0 = none, 1 = erasing,
+/// 2..=102 = written percent + 2.
+pub static OTA_STATE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
+
+/// A special screen shown for a while on request (`POST
+/// /api/v1/display/demo`), to see it without the real event.
+pub static DEMO: std::sync::Mutex<Option<(String, u64)>> = std::sync::Mutex::new(None);
+
+pub fn demo(event: &str, secs: u64) {
+    *DEMO.lock().unwrap() = Some((event.to_string(), crate::diag::uptime_s() + secs));
+    touch();
+}
+
+/// A copy of the next frame sent to the panel, on request (`GET
+/// /api/v1/display/frame`, for looking at the screen remotely).
+static SNAP_WANTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+static SNAP: std::sync::Mutex<Option<Vec<u8>>> = std::sync::Mutex::new(None);
+
+fn snapshot(frame: &[u8]) {
+    if SNAP_WANTED.swap(false, std::sync::atomic::Ordering::Relaxed) {
+        *SNAP.lock().unwrap() = Some(frame.to_vec());
+    }
+}
+
+/// The next frame the display sends, waiting up to two seconds (the
+/// display may be asleep: then none).
+pub fn capture() -> Option<Vec<u8>> {
+    *SNAP.lock().unwrap() = None;
+    SNAP_WANTED.store(true, std::sync::atomic::Ordering::Relaxed);
+    for _ in 0..40 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        if let Some(f) = SNAP.lock().unwrap().take() {
+            return Some(f);
+        }
+    }
+    SNAP_WANTED.store(false, std::sync::atomic::Ordering::Relaxed);
+    None
+}
+
+/// A key press from the API (`POST /api/v1/display/key?k=next|home`):
+/// 0 none, 1 next, 2 home.
+pub static REMOTE_KEY: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);

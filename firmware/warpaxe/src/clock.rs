@@ -92,3 +92,28 @@ pub fn wifi_scan() -> Result<serde_json::Value, String> {
         "networks": found.iter().map(|(s, r, a)| json!({"ssid": s, "rssi": r, "authmode": a})).collect::<Vec<_>>()
     }))
 }
+
+static TZ_APPLIED: Mutex<String> = Mutex::new(String::new());
+
+/// Local wall-clock hours and minutes by the configured time zone, once
+/// the clock is set. A changed `timezone` applies on the next call.
+pub fn local_hm() -> Option<(u8, u8)> {
+    let now = unix_now()?;
+    let tz = config::get().timezone;
+    {
+        let mut applied = TZ_APPLIED.lock().unwrap();
+        if *applied != tz {
+            if let Ok(c) = std::ffi::CString::new(tz.as_str()) {
+                unsafe {
+                    sys::setenv(c"TZ".as_ptr(), c.as_ptr(), 1);
+                    sys::tzset();
+                }
+            }
+            *applied = tz;
+        }
+    }
+    let t = now as sys::time_t;
+    let mut tm: sys::tm = unsafe { core::mem::zeroed() };
+    unsafe { sys::localtime_r(&t, &mut tm) };
+    Some((tm.tm_hour as u8, tm.tm_min as u8))
+}

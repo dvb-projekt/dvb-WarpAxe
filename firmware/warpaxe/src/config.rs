@@ -49,6 +49,17 @@ pub struct Config {
     pub use_ntp: bool,
     #[serde(rename = "ntpServer")]
     pub ntp_server: String,
+    /// POSIX TZ rule for the clock on the display (default: Central
+    /// European time with summer time).
+    pub timezone: String,
+    /// Fetch the BTC price and fee rates from mempool.space for the
+    /// display's Bitcoin page. Off by default: the miner asks no one but
+    /// its pool unless this is on.
+    #[serde(rename = "btcPrice")]
+    pub btc_price: bool,
+    /// Currency of that price (a key of mempool.space `/api/v1/prices`).
+    #[serde(rename = "priceCurrency")]
+    pub price_currency: String,
     /// Target ASIC clock, MHz (AxeOS name).
     pub frequency: u32,
     /// Core voltage, mV (AxeOS name).
@@ -62,6 +73,9 @@ pub struct Config {
     pub display_timeout: u32,
     /// OLED mounted the other way round (AxeOS/NerdOS name).
     pub flipscreen: bool,
+    /// Language of the device display: "en" or "de".
+    #[serde(rename = "displayLanguage")]
+    pub display_language: String,
     /// OLED inverse video (AxeOS name).
     pub invertscreen: bool,
     /// Fan PWM inverted, for fans that read duty backwards (NerdOS name).
@@ -130,12 +144,16 @@ impl Default for Config {
             fallback_tls: 0,
             use_ntp: true,
             ntp_server: "pool.ntp.org".into(),
+            timezone: "CET-1CEST,M3.5.0,M10.5.0/3".into(),
+            btc_price: false,
+            price_currency: "EUR".into(),
             frequency: 525,
             core_voltage: 1150,
             fanspeed: 100,
             autofanspeed: true,
             display_timeout: 30,
             flipscreen: false,
+            display_language: "en".into(),
             invertscreen: false,
             invertfanpolarity: false,
             min_fan_speed: 25,

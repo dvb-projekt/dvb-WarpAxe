@@ -46,6 +46,10 @@ pub struct MinerState {
     pub last_submit_age: String,
     /// Best nonce difficulty since boot (AxeOS `bestSessionDiff`).
     pub best_session_diff: u64,
+    /// Blocks found since boot (a nonce at or above the network
+    /// difficulty), and the last one's height and uptime second.
+    pub blocks_found: u32,
+    pub last_block: Option<(u64, u64)>,
 }
 
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
@@ -201,6 +205,17 @@ fn run(mut uart: ChipUart) {
                             s.best_session_diff = s.best_session_diff.max(diff as u64);
                         });
                         config::raise_best_diff(diff as u64);
+                        let st_now = stratum::state();
+                        if st_now.network_difficulty > 0.0 && diff >= st_now.network_difficulty {
+                            log::warn!(
+                                "miner: BLOCK FOUND at height {} (diff {diff:.0})",
+                                st_now.block_height
+                            );
+                            update(|s| {
+                                s.blocks_found += 1;
+                                s.last_block = Some((st_now.block_height, diag::uptime_s()));
+                            });
+                        }
                         if diff >= want {
                             // How old the stratum job is at submit time, in
                             // notifies and seconds: a pool keeps only a few

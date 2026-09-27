@@ -143,3 +143,36 @@ pub fn init_logger() {
     let _ = log::set_logger(&LOGGER);
     LOGGER.0.initialize();
 }
+
+/// Free internal (non-PSRAM) heap: task stacks, DMA and mbedTLS need it.
+pub fn free_heap_internal() -> u32 {
+    unsafe { sys::heap_caps_get_free_size(sys::MALLOC_CAP_INTERNAL) as u32 }
+}
+
+/// Spawn a thread whose stack lives in PSRAM, for threads that neither
+/// write flash nor run with the cache off (display, fetches, sampling):
+/// the internal RAM stays free for the OTA writer and TLS.
+pub fn spawn_psram<F>(
+    name: &str,
+    stack: usize,
+    f: F,
+) -> std::io::Result<std::thread::JoinHandle<()>>
+where
+    F: FnOnce() + Send + 'static,
+{
+    unsafe {
+        let mut cfg = sys::esp_pthread_get_default_config();
+        cfg.stack_size = stack;
+        cfg.stack_alloc_caps = sys::MALLOC_CAP_8BIT | sys::MALLOC_CAP_SPIRAM;
+        sys::esp_pthread_set_cfg(&cfg);
+    }
+    let r = std::thread::Builder::new()
+        .name(name.into())
+        .stack_size(stack)
+        .spawn(f);
+    unsafe {
+        let d = sys::esp_pthread_get_default_config();
+        sys::esp_pthread_set_cfg(&d);
+    }
+    r
+}

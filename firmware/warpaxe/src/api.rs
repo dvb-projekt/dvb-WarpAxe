@@ -11,7 +11,7 @@ use esp_idf_svc::io::{EspIOError, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{board, config, diag, miner, net, stratum};
+use crate::{board, config, diag, display, miner, net, stratum};
 
 /// The web UI's files: fonts (OFL, Latin subsets), the wordmark and the
 /// icon, all in the firmware so the page looks the same offline.
@@ -19,6 +19,7 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
     Some(match name {
         "favicon.svg" => (include_bytes!("ui/assets/favicon.svg"), "image/svg+xml"),
         "wordmark.webp" => (include_bytes!("ui/assets/wordmark.webp"), "image/webp"),
+        "bitcoin.pdf" => (include_bytes!("ui/assets/bitcoin.pdf"), "application/pdf"),
         "inter.woff2" => (include_bytes!("ui/assets/inter.woff2"), "font/woff2"),
         "space-grotesk-700.woff2" => (
             include_bytes!("ui/assets/space-grotesk-700.woff2"),
@@ -71,7 +72,7 @@ pub fn system_info() -> serde_json::Value {
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
         "bestDiff": config::best_diff(), "bestSessionDiff": m.best_session_diff,
-        "freeHeap": diag::free_heap(),
+        "freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(),
         "coreVoltage": cfg.core_voltage,
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),
         "frequency": cfg.frequency,
@@ -88,7 +89,9 @@ pub fn system_info() -> serde_json::Value {
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user, "stratumTLS": cfg.stratum_tls, "fallbackStratumTLS": cfg.fallback_tls, "stratumTLSActive": st.tls,
         "isUsingFallbackStratum": st.using_fallback, "activePool": st.pool,
         "useFallbackStratum": cfg.use_fallback, "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
-        "poolDifficulty": stratum::state().difficulty,
+        "poolDifficulty": st.difficulty,
+        "blockHeight": st.block_height, "networkDifficulty": st.network_difficulty, "scriptsig": st.scriptsig,
+        "blockFound": m.blocks_found, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
@@ -305,7 +308,7 @@ fn reply_json(
 pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     let mut server = EspHttpServer::new(&Configuration {
         stack_size: 12 * 1024,
-        max_uri_handlers: 32,
+        max_uri_handlers: 40,
         uri_match_wildcard: true,
         ..Default::default()
     })?;
@@ -489,6 +492,54 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         Ok::<(), EspIOError>(())
     })?;
 
+    // The display's next frame, raw: RGB565 big-endian 320×170 (LCD) or
+    // SSD1306 pages 128×32 (OLED); the size tells which.
+    server.fn_handler("/api/v1/display/frame", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        match display::capture() {
+            Some(f) => {
+                let mut r =
+                    req.into_response(200, None, &[("Content-Type", "application/octet-stream")])?;
+                r.write_all(&f)?;
+                Ok::<(), EspIOError>(())
+            }
+            None => reply_json(req, 503, &json!({"error": "display off or not drawing"})),
+        }
+    })?;
+
+    // Press a display key remotely: ?k=next|home.
+    server.fn_handler("/api/v1/display/key", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let k = if req.uri().contains("k=home") { 2 } else { 1 };
+        display::REMOTE_KEY.store(k, Ordering::Relaxed);
+        display::touch();
+        reply_json(
+            req,
+            200,
+            &json!({"key": if k == 1 { "next" } else { "home" }}),
+        )
+    })?;
+
+    // Show a special screen on the device for 20 s:
+    // ?event=block|overheat|off|ota.
+    server.fn_handler("/api/v1/display/demo", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let ev = req
+            .uri()
+            .split_once("event=")
+            .map(|(_, v)| v.split('&').next().unwrap_or("").to_string())
+            .unwrap_or_default();
+        if !["block", "overheat", "off", "ota"].contains(&ev.as_str()) {
+            return reply_json(
+                req,
+                400,
+                &json!({"error": "event must be block, overheat, off or ota"}),
+            );
+        }
+        display::demo(&ev, 20);
+        reply_json(req, 200, &json!({"demo": ev, "seconds": 20}))
+    })?;
+
     server.fn_handler("/api/system/OTA", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         // Take the whole image into RAM first (PSRAM has room), answer, and
@@ -509,22 +560,38 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         }
         let n = image.len();
         log::info!("ota: {n} bytes received, flashing in background");
-        let mut r = req.into_ok_response()?;
-        r.write_all(
-            format!("ota: {n} bytes accepted, flashing, restarting when done\n").as_bytes(),
-        )?;
-        r.flush()?;
-        std::thread::Builder::new()
+        // Start the writer before answering: if its stack does not fit in
+        // internal RAM, say so instead of accepting an update that never
+        // happens. It waits a moment so the answer goes out first.
+        let spawned = std::thread::Builder::new()
             .stack_size(16 * 1024)
-            .spawn(move || match flash_image(&image) {
+            .spawn(move || {
+                std::thread::sleep(Duration::from_millis(300));
+                match flash_image(&image) {
                 Ok(()) => {
                     log::info!("ota: written and verified, restarting");
                     std::thread::sleep(Duration::from_millis(500));
                     diag::restart();
                 }
-                Err(e) => log::error!("ota: failed: {e}"),
-            })
-            .ok();
+                Err(e) => {
+                    display::OTA_STATE.store(0, Ordering::Relaxed);
+                    log::error!("ota: failed: {e}")
+                }
+                }
+            });
+        if let Err(e) = spawned {
+            log::error!("ota: cannot start the writer: {e}");
+            let mut r = req.into_response(503, None, &[])?;
+            r.write_all(
+                format!("ota: not enough internal memory to start the update ({} bytes free), try again\n", diag::free_heap_internal()).as_bytes(),
+            )?;
+            return Ok(());
+        }
+        let mut r = req.into_ok_response()?;
+        r.write_all(
+            format!("ota: {n} bytes accepted, flashing, restarting when done\n").as_bytes(),
+        )?;
+        r.flush()?;
         Ok::<(), EspIOError>(())
     })?;
 
@@ -573,12 +640,17 @@ fn bootloader(
 fn flash_image(image: &[u8]) -> anyhow::Result<()> {
     let mut ota = EspOta::new()?;
     log::info!("ota: erasing target slot");
+    display::OTA_STATE.store(1, Ordering::Relaxed);
+    display::touch();
     let mut update = ota.initiate_update()?;
     log::info!("ota: writing {} bytes", image.len());
-    for chunk in image.chunks(4096) {
+    let total = image.len().max(1);
+    for (i, chunk) in image.chunks(4096).enumerate() {
         update
             .write_all(chunk)
             .map_err(|e| anyhow::anyhow!("write: {e:?}"))?;
+        let pct = ((i + 1) * 4096).min(total) * 100 / total;
+        display::OTA_STATE.store(2 + pct as u8, Ordering::Relaxed);
     }
     log::info!("ota: verifying");
     update.complete()?;

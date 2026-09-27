@@ -32,29 +32,26 @@ static SAMPLES: Mutex<Option<VecDeque<Sample>>> = Mutex::new(None);
 /// Start the sampling thread.
 pub fn start() {
     *SAMPLES.lock().unwrap() = Some(VecDeque::with_capacity(CAPACITY));
-    std::thread::Builder::new()
-        .name("history".into())
-        .stack_size(4096)
-        .spawn(|| loop {
-            std::thread::sleep(Duration::from_secs(INTERVAL_S));
-            let m = miner::state();
-            let b = board::state();
-            let s = Sample {
-                uptime_s: diag::uptime_s() as u32,
-                hashrate_now_ghs: m.hashrate_now_ghs as f32,
-                hashrate_10m_ghs: m.hashrate_ghs as f32,
-                temp_c: b.temp_c.unwrap_or(f32::NAN),
-                vr_temp_c: b.vr_temp_c.map_or(f32::NAN, |t| t as f32),
-                power_w: b.power_w.unwrap_or(f32::NAN),
-            };
-            if let Some(q) = SAMPLES.lock().unwrap().as_mut() {
-                if q.len() == CAPACITY {
-                    q.pop_front();
-                }
-                q.push_back(s);
+    diag::spawn_psram("history", 4096, || loop {
+        std::thread::sleep(Duration::from_secs(INTERVAL_S));
+        let m = miner::state();
+        let b = board::state();
+        let s = Sample {
+            uptime_s: diag::uptime_s() as u32,
+            hashrate_now_ghs: m.hashrate_now_ghs as f32,
+            hashrate_10m_ghs: m.hashrate_ghs as f32,
+            temp_c: b.temp_c.unwrap_or(f32::NAN),
+            vr_temp_c: b.vr_temp_c.map_or(f32::NAN, |t| t as f32),
+            power_w: b.power_w.unwrap_or(f32::NAN),
+        };
+        if let Some(q) = SAMPLES.lock().unwrap().as_mut() {
+            if q.len() == CAPACITY {
+                q.pop_front();
             }
-        })
-        .expect("history thread");
+            q.push_back(s);
+        }
+    })
+    .expect("history thread");
 }
 
 /// The last `span_s` seconds, at most [`MAX_POINTS`] points (averaged
@@ -93,4 +90,20 @@ pub fn json(span_s: u64) -> serde_json::Value {
         "unixNow": crate::clock::unix_now(),
         "t": t, "hashrate": hn, "hashrate10m": h10, "temp": tc, "vrTemp": tv, "power": pw,
     })
+}
+
+/// The last `n` samples of the short-window hashrate, GH/s, oldest first
+/// (the display's sparkline).
+pub fn recent_ghs(n: usize) -> Vec<f32> {
+    SAMPLES
+        .lock()
+        .unwrap()
+        .as_ref()
+        .map(|q| {
+            q.iter()
+                .skip(q.len().saturating_sub(n))
+                .map(|s| s.hashrate_now_ghs)
+                .collect()
+        })
+        .unwrap_or_default()
 }
