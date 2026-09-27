@@ -242,7 +242,18 @@ function chart() {
   const hr = hist.hashrate.map(v => v == null ? null : v / 1000), tc = hist.temp;
   const vals = hr.filter(v => v != null), tv = tc.filter(v => v != null);
   const ha = nice(Math.min(...vals), Math.max(...vals), 4);
-  const ta = tv.length ? nice(Math.min(...tv), Math.max(...tv), ha.n) : null;
+  // The temperature scale gets the same number of steps as the hashrate
+  // scale, so both sets of labels sit on the same grid lines.
+  let ta = null;
+  if (tv.length) {
+    const tmin = Math.min(...tv), tmax = Math.max(...tv);
+    let step = nice(tmin, tmax, ha.n).step;
+    for (let k = 0; k < 8; k++) {
+      const lo = Math.floor(tmin / step) * step;
+      if (lo + step * ha.n >= tmax) { ta = {lo, hi: lo + step * ha.n, step, n: ha.n}; break; }
+      step = nice(0, step * 1.5, 1).step;
+    }
+  }
   const t0 = hist.uptime - hist.span, x = s => (s - t0) / hist.span * W;
   const y = (v, a) => H - (v - a.lo) / ((a.hi - a.lo) || 1) * H;
   const line = (arr, a) => arr.map((v, k) => v == null ? null : `${x(hist.t[k]).toFixed(1)},${y(v, a).toFixed(1)}`).filter(Boolean).join(" ");
