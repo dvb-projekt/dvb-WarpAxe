@@ -108,7 +108,7 @@ en: {
   rejected:"rejected", stale:"stale", bestdiff:"Best difficulty", since_boot:"since boot", alltime:"all-time",
   history:"History", legend_hr:"Hashrate", legend_temp:"Chip temperature", hist_empty:"Collecting data — one point every 10 s.",
   temperature:"Temperature", chips:"Chips", vreg:"Voltage regulator", target:"Target", shutdown_at:"Shutdown",
-  fans:"Fans", fan:"Fan", fan_chips:"chips", fan_vreg:"regulator", fan_empty:"not connected", rpm:"rpm",
+  fans:"Fans", fan:"Fan", fan_chips:"chips", fan_vreg:"regulator", fan_empty:"not connected", fan_stalled:"stopped!", rpm:"rpm",
   power:"Power", input:"Input", vcore:"Core voltage (set / actual)", current:"Current", clock:"Clock",
   cur_in:"input", cur_out:"output",
   pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Connection", connected:"connected", disconnected:"not connected",
@@ -142,7 +142,7 @@ de: {
   rejected:"abgelehnt", stale:"stale", bestdiff:"Beste Difficulty", since_boot:"seit Start", alltime:"gesamt",
   history:"Verlauf", legend_hr:"Hashrate", legend_temp:"Chip-Temperatur", hist_empty:"Daten werden gesammelt — ein Messpunkt alle 10 s.",
   temperature:"Temperatur", chips:"Chips", vreg:"Spannungsregler", target:"Ziel", shutdown_at:"Abschaltung",
-  fans:"Lüfter", fan:"Lüfter", fan_chips:"Chips", fan_vreg:"Regler", fan_empty:"nicht belegt", rpm:"U/min",
+  fans:"Lüfter", fan:"Lüfter", fan_chips:"Chips", fan_vreg:"Regler", fan_empty:"nicht belegt", fan_stalled:"steht!", rpm:"U/min",
   power:"Leistung", input:"Eingang", vcore:"Kernspannung (Soll / Ist)", current:"Strom", clock:"Takt",
   cur_in:"Eingang", cur_out:"Ausgang",
   pool:"Pool", server:"Server", worker:"Worker", difficulty:"Difficulty", connection:"Verbindung", connected:"verbunden", disconnected:"nicht verbunden",
@@ -229,22 +229,36 @@ function kpis(i) {
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   return `<div class="g4">${k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
+function nice(lo, hi, n) {
+  if (!(hi > lo)) { hi = lo + 1; }
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  const a = Math.floor(lo / step) * step, b = Math.ceil(hi / step) * step;
+  return {lo: a, hi: b, step, n: Math.max(1, Math.round((b - a) / step))};
+}
 function chart() {
-  const W = 800, H = 160;
+  const W = 800, H = 180;
   if (!hist || hist.t.length < 2) return `<div class="dim" style="height:${H}px;display:flex;align-items:center;justify-content:center;font-size:13px">${t("hist_empty")}</div>`;
   const hr = hist.hashrate.map(v => v == null ? null : v / 1000), tc = hist.temp;
   const vals = hr.filter(v => v != null), tv = tc.filter(v => v != null);
-  const lo = Math.min(...vals) * 0.97, hi = Math.max(...vals) * 1.03 || 1, tlo = Math.min(...tv) - 2, thi = Math.max(...tv) + 2;
+  const ha = nice(Math.min(...vals), Math.max(...vals), 4);
+  const ta = tv.length ? nice(Math.min(...tv), Math.max(...tv), ha.n) : null;
   const t0 = hist.uptime - hist.span, x = s => (s - t0) / hist.span * W;
-  const y = (v, a, b) => H - 10 - (v - a) / ((b - a) || 1) * (H - 30);
-  const line = (arr, a, b) => arr.map((v, k) => v == null ? null : `${x(hist.t[k]).toFixed(1)},${y(v, a, b).toFixed(1)}`).filter(Boolean).join(" ");
-  const hl = line(hr, lo, hi), first = hl.split(" ")[0].split(",")[0], last = hl.split(" ").pop().split(",")[0];
-  const tl = tv.length ? line(tc, tlo, thi) : "";
-  return `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${t("history")}">
+  const y = (v, a) => H - (v - a.lo) / ((a.hi - a.lo) || 1) * H;
+  const line = (arr, a) => arr.map((v, k) => v == null ? null : `${x(hist.t[k]).toFixed(1)},${y(v, a).toFixed(1)}`).filter(Boolean).join(" ");
+  const hl = line(hr, ha), first = hl.split(" ")[0].split(",")[0], last = hl.split(" ").pop().split(",")[0];
+  const tl = ta ? line(tc, ta) : "";
+  const grid = Array.from({length: ha.n + 1}, (_, k) => `<line x1="0" x2="${W}" y1="${(H * k / ha.n).toFixed(1)}" y2="${(H * k / ha.n).toFixed(1)}" stroke="rgba(255,255,255,.07)" stroke-width="1" vector-effect="non-scaling-stroke"/>`).join("");
+  const dH = ha.step < 0.1 ? 2 : 1, dT = ta && ta.step < 1 ? 1 : 0;
+  const axis = (a, d, u, col, align) => `<div class="num" style="display:flex;flex-direction:column;justify-content:space-between;height:${H}px;font-size:11px;color:${col};text-align:${align};min-width:44px">${Array.from({length: a.n + 1}, (_, k) => `<span style="line-height:0">${nf(a.hi - a.step * k, d)}</span>`).join("")}</div>`;
+  return `<div style="display:flex;gap:8px;align-items:stretch;padding:6px 0">
+  ${axis(ha, dH, "TH/s", "#A994FF", "right")}
+  <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${t("history")}" style="flex:1;min-width:0;overflow:visible">${grid}
     <polygon points="${first},${H} ${hl} ${last},${H}" fill="#7B5CFF" fill-opacity=".12"/>
     <polyline points="${hl}" fill="none" stroke="#7B5CFF" stroke-width="2" vector-effect="non-scaling-stroke"/>
     ${tl ? `<polyline points="${tl}" fill="none" stroke="#00E0FF" stroke-width="1.5" stroke-dasharray="5 4" vector-effect="non-scaling-stroke"/>` : ""}</svg>
-  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px"><span>−${span / 60} min</span><span>${nf(lo, 2)}–${nf(hi, 2)} TH/s${tv.length ? ` · ${nf(Math.min(...tv), 1)}–${nf(Math.max(...tv), 1)} °C` : ""}</span><span>${lang === "de" ? "jetzt" : "now"}</span></div>`;
+  ${ta ? axis(ta, dT, "°C", "#00E0FF", "left") : ""}</div>
+  <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px;padding:0 52px"><span>−${span / 60} min</span><span>TH/s${ta ? " · °C" : ""}</span><span>${lang === "de" ? "jetzt" : "now"}</span></div>`;
 }
 function tbar(label, v, target, limit, max) {
   if (v == null) return "";
@@ -254,14 +268,18 @@ function tbar(label, v, target, limit, max) {
   <div class="bar"><div class="f" style="width:${pct(v)};background:${col}"></div>${target ? `<div class="m" style="left:${pct(target)};background:var(--fg)"></div>` : ""}<div class="m" style="left:${pct(limit)};background:var(--err)"></div></div>
   <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px"><span>${target ? t("target") + " " + target + " °C" : ""}</span><span>${t("shutdown_at")} ${limit} °C</span></div></div>`;
 }
-function fanrow(name, note, pct, rpm) {
-  return `<div style="display:flex;align-items:center;gap:14px"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="none" stroke="#9CA8BD" stroke-width="1.6"/><path d="M12 10c0-4 1-7 4-7 2 0 2 3 0 5M14 12c4 0 7 1 7 4 0 2-3 2-5 0M12 14c0 4-1 7-4 7-2 0-2-3 0-5M10 12c-4 0-7-1-7-4 0-2 3-2 5 0" fill="none" stroke="#9CA8BD" stroke-width="1.6" stroke-linecap="round"/></svg>
-  <div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${name} <span class="dim">· ${note}</span></span><span class="num">${nf(pct)} % · ${nf(rpm)} ${t("rpm")}</span></div><div class="fanbar"><div style="width:${pct || 0}%"></div></div></div></div>`;
+function fanrow(name, note, pct, rpm, optional) {
+  const idle = !rpm, stalled = idle && !optional && pct > 0;
+  const shown = idle && optional ? "–" : `${nf(pct)} %`;
+  const tail = stalled ? `<span class="err" style="font-weight:600">${t("fan_stalled")}</span>` : `${shown} · ${nf(rpm)} ${t("rpm")}`;
+  const w = idle && optional ? 0 : (pct || 0);
+  return `<div style="display:flex;align-items:center;gap:14px${idle && optional ? ";opacity:.55" : ""}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2" fill="none" stroke="#9CA8BD" stroke-width="1.6"/><path d="M12 10c0-4 1-7 4-7 2 0 2 3 0 5M14 12c4 0 7 1 7 4 0 2-3 2-5 0M12 14c0 4-1 7-4 7-2 0-2-3 0-5M10 12c-4 0-7-1-7-4 0-2 3-2 5 0" fill="none" stroke="${stalled ? "#FF5A5A" : "#9CA8BD"}" stroke-width="1.6" stroke-linecap="round"/></svg>
+  <div style="flex:1"><div style="display:flex;justify-content:space-between;gap:8px;font-size:14px"><span>${name} <span class="dim">· ${note}</span></span><span class="num">${tail}</span></div><div class="fanbar"><div style="width:${w}%"></div></div></div></div>`;
 }
 function dashboard() {
   const i = info; if (!i) return "";
   const two = i.fanrpm2 != null, vrTarget = two ? 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
-  const fans = two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2) : fanrow(t("fan"), t("fan_chips"), i.fanspeed, i.fanrpm);
+  const fans = two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2, true) : fanrow(t("fan"), t("fan_chips"), i.fanspeed, i.fanrpm);
   const curNote = two ? t("cur_in") : t("cur_out");
   return plate(i) + kpis(i) + `<div class="g3">
   <section class="card span2" style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>${t("history")}</h2>

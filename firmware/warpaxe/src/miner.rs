@@ -13,6 +13,7 @@ use warpaxe_stratum::{sha256d, Job};
 
 use crate::uart::ChipUart;
 use crate::{board, config, diag, stratum};
+use warpaxe_chain::Uart;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinerState {
@@ -90,7 +91,12 @@ fn run(mut uart: ChipUart) {
             } else {
                 "POWER"
             };
-            update(|s| s.phase = why.into());
+            // Not hashing: say so, instead of the last value standing.
+            update(|s| {
+                s.phase = why.into();
+                s.hashrate_ghs = 0.0;
+                s.hashrate_now_ghs = 0.0;
+            });
             std::thread::sleep(Duration::from_secs(1));
             continue;
         }
@@ -106,8 +112,15 @@ fn run(mut uart: ChipUart) {
             (stratum::state().difficulty.max(1.0) as u32).min(chip_cap)
         };
         let profile = board::profile();
-        if profile.asic_reset.is_some() {
-            board::reset_chain(10, profile.reset_release_ms);
+        // Reset pulse (an ESP GPIO, or the expander pin on the Q13xx; a
+        // no-op without a reset line), and the host back at the chips'
+        // power-on baud rate: a restarted or re-powered chain talks
+        // 115200 again, while the UART still ran at the fast rate of the
+        // previous init (every restart after the first failed with
+        // NoChips).
+        board::reset_chain(10, profile.reset_release_ms);
+        if let Err(e) = Uart::set_baud(&mut uart, 115_200) {
+            log::warn!("miner: uart back to 115200: {e:?}");
         }
         let chain_cfg = ChainConfig {
             expected_chips: cfg.asic_count,
@@ -238,6 +251,10 @@ fn run(mut uart: ChipUart) {
             if phase == Phase::Failed {
                 if failed_at.is_none() {
                     failed_at = Some(Instant::now());
+                    update(|s| {
+                        s.hashrate_ghs = 0.0;
+                        s.hashrate_now_ghs = 0.0;
+                    });
                 }
                 if failed_at.map_or(false, |t| t.elapsed() > Duration::from_secs(10)) {
                     break; // start over, maybe chips are there now
