@@ -1341,10 +1341,11 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
                 oled_center(
                     o,
                     6,
-                    if blink {
-                        "!! BLOCK FOUND !!"
-                    } else {
-                        "   BLOCK FOUND   "
+                    match (de(), blink) {
+                        (true, true) => "!! BLOCK GEFUNDEN !!",
+                        (true, false) => "   BLOCK GEFUNDEN   ",
+                        (false, true) => "!! BLOCK FOUND !!",
+                        (false, false) => "   BLOCK FOUND   ",
                     },
                 );
                 oled_center(o, 19, &format!("{h}"));
