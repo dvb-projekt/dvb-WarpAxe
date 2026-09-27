@@ -32,5 +32,12 @@ warpaxe-cgminer = { path = "../cgminer" }
 # test against a local dvb-WarpPool working tree instead, replace with
 #   warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
 warppool-tune = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", tag = "v1.34.0" }
+# The Sv2 server the firmware client is tested against (tests/sv2.rs):
+# the same tag, the same checkout.
+warppool-stratum-v2 = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", tag = "v1.34.0" }
+warppool-stratum-v1 = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", tag = "v1.34.0" }
+warpaxe-sv2 = { path = "../sv2" }
+warpaxe-stratum = { path = "../stratum" }
+bytes = "1"
 serde_json = "1"
-tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "time"] }
