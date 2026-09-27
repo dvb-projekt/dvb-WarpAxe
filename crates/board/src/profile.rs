@@ -5,12 +5,12 @@
 //! devkit profile is the bare T-Display-S3 with nothing but the chain
 //! UART.
 //!
-//! A profile names what is there even when this crate has no driver for
-//! it yet ([`Vr::Tps5364x`], [`Thermal::Tmp1075Emc2302`]): the firmware
-//! then reports the board and refuses to power the chain, instead of
-//! guessing.
+//! A profile names what is there even when the firmware cannot drive it
+//! yet ([`Vr::Tps5364x`], whose driver [`crate::tps53647`] is not wired
+//! into the firmware): the firmware then reports the board and refuses
+//! to power the chain, instead of guessing.
 
-use crate::{emc2101, tps546};
+use crate::{emc2101, tps53647, tps546};
 
 /// The mining chip on the board; the firmware picks the
 /// `warpaxe_core` chip profile from it.
@@ -30,11 +30,15 @@ pub enum Vr {
     /// TPS546D24A over PMBus, driver in [`crate::tps546`].
     Tps546(tps546::Config),
     /// TPS53647 (up to 4 phases) or TPS53667 (6 phases) over PMBus,
-    /// the Nerd multi-chip boards. No driver yet. `enable`/`ldo_enable`
-    /// are ESP GPIOs, or expander pins when `via_expander`.
+    /// the Nerd multi-chip boards; driver in [`crate::tps53647`], not
+    /// yet wired into the firmware. `enable`/`ldo_enable` are ESP
+    /// GPIOs, or expander pins when `via_expander`. Boards that carry
+    /// either part (Octaxe, Q1373) list the default here; the firmware
+    /// must swap in the other [`tps53647::Config`] after reading the
+    /// detect pin.
     Tps5364x {
-        /// Phases the board is populated with (NerdOS `m_numPhases`).
-        phases: u8,
+        /// Part, phases and current limits.
+        regulator: tps53647::Config,
         /// Regulator enable pin.
         enable: u8,
         /// LDO enable pin (chip I/O rails), if separate.
@@ -153,6 +157,14 @@ impl Profile {
         }
     }
 
+    /// The multi-phase regulator configuration, if the board has one.
+    pub fn tps53647(&self) -> Option<tps53647::Config> {
+        match self.vr {
+            Vr::Tps5364x { regulator, .. } => Some(regulator),
+            _ => None,
+        }
+    }
+
     /// The sensor this crate can drive, if the board has one.
     pub fn emc2101(&self) -> Option<emc2101::Config> {
         match self.thermal {
@@ -161,8 +173,8 @@ impl Profile {
         }
     }
 
-    /// True when the profile names a regulator this crate has no
-    /// driver for: the chain must stay unpowered.
+    /// True when the profile names a regulator the firmware does not
+    /// drive yet: the chain must stay unpowered.
     pub fn vr_unsupported(&self) -> bool {
         matches!(self.vr, Vr::Tps5364x { .. })
     }
@@ -284,7 +296,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
 /// GPIO10, LDO GPIO13), TMP1075 + EMC2302, 600 MHz / 1150 mV, brought
-/// up at 1200 mV, 100 W. No regulator driver yet.
+/// up at 1200 mV, 100 W.
 pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     name: "nerdqaxe-plusplus",
     asic: Asic::Bm1370,
@@ -296,7 +308,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     reset_release_ms: 100,
     i2c: Some(NERD_I2C),
     vr: Vr::Tps5364x {
-        phases: 3,
+        regulator: tps53647::Config::NERDQAXE_PLUSPLUS,
         enable: 10,
         ldo_enable: Some(13),
         via_expander: false,
@@ -317,13 +329,13 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
 };
 
 /// NerdOctaxe-γ: eight BM1370 on 12 V, TPS53667 six-phase (or TPS53647
-/// four-phase, detected by a pin), 700 MHz / 1210 mV, 300 W. No
-/// regulator driver yet.
+/// four-phase when VR_DETECT GPIO3 reads low:
+/// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W.
 pub const NERDOCTAXE_GAMMA: Profile = Profile {
     name: "nerdoctaxe-gamma",
     asic_count: 8,
     vr: Vr::Tps5364x {
-        phases: 6,
+        regulator: tps53647::Config::NERDOCTAXE_GAMMA_6P,
         enable: 10,
         ldo_enable: Some(13),
         via_expander: false,
@@ -337,13 +349,13 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
 
 /// Q1370: four BM1370 on 12 V, TPS53647 four-phase behind an FXL6408
 /// expander (reset 0, regulator 1, LDO 2), EMC2302, 600 MHz / 1150 mV,
-/// 150 W. Expander driver: [`crate::fxl6408`]; no regulator driver yet.
+/// 150 W. Expander driver: [`crate::fxl6408`].
 pub const Q1370: Profile = Profile {
     name: "q1370",
     asic_count: 4,
     asic_reset: None,
     vr: Vr::Tps5364x {
-        phases: 4,
+        regulator: tps53647::Config::Q1370,
         enable: 1,
         ldo_enable: Some(2),
         via_expander: true,
@@ -356,16 +368,16 @@ pub const Q1370: Profile = Profile {
 };
 
 /// Q1373 (NerdAxe Gaia): four BM1373 on 12 V, TPS53647 four-phase or
-/// TPS53667 six-phase (expander pin 6 tells), 425 MHz / 1010 mV, brought
-/// up at 1050 mV, 180 W. Expander driver: [`crate::fxl6408`]; no
-/// regulator driver yet.
+/// TPS53667 six-phase (expander pin 6 low:
+/// [`tps53647::Config::Q1373_6P`]), 425 MHz / 1010 mV, brought up at
+/// 1050 mV, 180 W. Expander driver: [`crate::fxl6408`].
 pub const Q1373: Profile = Profile {
     name: "q1373",
     asic: Asic::Bm1373,
     asic_count: 4,
     asic_reset: None,
     vr: Vr::Tps5364x {
-        phases: 4,
+        regulator: tps53647::Config::Q1373_4P,
         enable: 1,
         ldo_enable: Some(2),
         via_expander: true,
@@ -429,11 +441,22 @@ mod tests {
         for p in [&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &Q1370, &Q1373] {
             assert!(p.vr_unsupported(), "{}", p.name);
             assert!(p.tps546().is_none());
+            let vr = p.tps53647().unwrap();
+            assert!((1..=6).contains(&vr.phases), "{}", p.name);
+            assert!(
+                p.default_core_mv >= tps53647::VOUT_MIN_MV
+                    && p.default_core_mv <= tps53647::VOUT_MAX_MV,
+                "{}",
+                p.name
+            );
             assert_eq!(p.thermal, Thermal::Tmp1075Emc2302);
             assert_eq!(p.i2c, Some(NERD_I2C));
             assert_eq!(p.nominal_voltage_v, 12);
         }
         assert!(!NERDAXE_GAMMA.vr_unsupported());
+        assert!(NERDAXE_GAMMA.tps53647().is_none());
+        assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().phases, 6);
+        assert_eq!(Q1373.tps53647().unwrap().phases, 4);
         assert!(NERDAXE_GAMMA.emc2101().is_some());
         assert_eq!(Q1373.asic_reset, None, "reset sits on the expander");
         assert_eq!(Q1373.asic, Asic::Bm1373);

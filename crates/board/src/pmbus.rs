@@ -1,4 +1,5 @@
-//! PMBus number formats and command codes (the subset the TPS546 needs).
+//! PMBus number formats and command codes (the subset the TPS546 and
+//! TPS53647/TPS53667 need).
 //!
 //! LINEAR11: 5-bit signed exponent, 11-bit signed mantissa, value =
 //! mantissa × 2^exponent. ULINEAR16: 16-bit unsigned mantissa with the
@@ -13,6 +14,8 @@ pub const ON_OFF_CONFIG: u8 = 0x02;
 pub const CLEAR_FAULTS: u8 = 0x03;
 /// PMBus command code.
 pub const PHASE: u8 = 0x04;
+/// PMBus command code.
+pub const RESTORE_DEFAULT_ALL: u8 = 0x12;
 /// PMBus command code.
 pub const VOUT_MODE: u8 = 0x20;
 /// PMBus command code.
@@ -60,6 +63,10 @@ pub const VIN_OV_FAULT_RESPONSE: u8 = 0x56;
 /// PMBus command code.
 pub const VIN_UV_WARN_LIMIT: u8 = 0x58;
 /// PMBus command code.
+pub const IIN_OC_FAULT_LIMIT: u8 = 0x5B;
+/// PMBus command code.
+pub const IIN_OC_WARN_LIMIT: u8 = 0x5D;
+/// PMBus command code.
 pub const TON_DELAY: u8 = 0x60;
 /// PMBus command code.
 pub const TON_RISE: u8 = 0x61;
@@ -72,15 +79,33 @@ pub const TOFF_DELAY: u8 = 0x64;
 /// PMBus command code.
 pub const TOFF_FALL: u8 = 0x65;
 /// PMBus command code.
+pub const STATUS_BYTE: u8 = 0x78;
+/// PMBus command code.
 pub const STATUS_WORD: u8 = 0x79;
 /// PMBus command code.
+pub const STATUS_VOUT: u8 = 0x7A;
+/// PMBus command code.
+pub const STATUS_IOUT: u8 = 0x7B;
+/// PMBus command code.
+pub const STATUS_INPUT: u8 = 0x7C;
+/// PMBus command code.
+pub const STATUS_TEMPERATURE: u8 = 0x7D;
+/// PMBus command code.
+pub const STATUS_MFR_SPECIFIC: u8 = 0x80;
+/// PMBus command code.
 pub const READ_VIN: u8 = 0x88;
+/// PMBus command code.
+pub const READ_IIN: u8 = 0x89;
 /// PMBus command code.
 pub const READ_VOUT: u8 = 0x8B;
 /// PMBus command code.
 pub const READ_IOUT: u8 = 0x8C;
 /// PMBus command code.
 pub const READ_TEMPERATURE_1: u8 = 0x8D;
+/// PMBus command code.
+pub const READ_POUT: u8 = 0x96;
+/// PMBus command code.
+pub const READ_PIN: u8 = 0x97;
 /// PMBus command code.
 pub const IC_DEVICE_ID: u8 = 0xAD;
 /// PMBus command code.
