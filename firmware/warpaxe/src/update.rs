@@ -70,6 +70,10 @@ pub struct UpdateState {
     /// Outcome of the signature check of the last install: "" (none
     /// yet), "verified", "missing" (installed unsigned), "invalid".
     pub signature: String,
+    /// What the running image was installed as by the online update and
+    /// how its signature checked, e.g. "v0.1.3 verified"; empty for an
+    /// image flashed by hand.
+    pub last_install: String,
 }
 
 static STATE: Mutex<Option<UpdateState>> = Mutex::new(None);
@@ -83,6 +87,7 @@ pub fn state() -> UpdateState {
         .clone()
         .unwrap_or_else(|| UpdateState {
             installed: env!("CARGO_PKG_VERSION").into(),
+            last_install: config::last_install(),
             phase: "idle".into(),
             ..Default::default()
         })
@@ -92,6 +97,7 @@ fn update(f: impl FnOnce(&mut UpdateState)) {
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(|| UpdateState {
         installed: env!("CARGO_PKG_VERSION").into(),
+        last_install: config::last_install(),
         phase: "idle".into(),
         ..Default::default()
     });
@@ -127,6 +133,10 @@ fn semver(s: &str) -> (u32, u32, u32) {
 }
 
 pub fn start() {
+    let record = config::last_install();
+    if !record.is_empty() {
+        log::info!("update: running image installed as {record}");
+    }
     // The watcher only waits and fetches: its stack can live in PSRAM.
     // The install runs on a thread of its own with an internal stack,
     // because writing flash turns the cache off.
@@ -378,11 +388,15 @@ fn install() {
     }
     log::info!("update: {} verified (sha256 {got}), flashing", r.tag);
     update(|s| s.phase = "flashing".into());
+    // Survives the restart: the next boot reports what was installed
+    // and how the signature checked.
+    let record = format!("{} {}", r.tag, state().signature);
     let spawned = std::thread::Builder::new()
         .stack_size(16 * 1024)
         .spawn(move || match crate::api::flash_image(&image) {
             Ok(()) => {
                 log::info!("update: written and verified, restarting");
+                config::set_last_install(&record);
                 std::thread::sleep(Duration::from_millis(500));
                 diag::restart();
             }

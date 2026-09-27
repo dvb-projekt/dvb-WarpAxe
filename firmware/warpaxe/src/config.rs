@@ -264,6 +264,32 @@ pub fn reset_best_diff() {
     }
 }
 
+/// What the last online update installed and whether its signature
+/// verified ("v0.1.3 verified" / "v0.1.3 missing"), written just before
+/// the restart that ends an install and read back at the next boot.
+const LAST_INSTALL_KEY: &str = "lastinstall";
+
+/// The last install's record, empty when the running image was flashed
+/// by hand or before this record existed.
+pub fn last_install() -> String {
+    let mut buf = [0u8; 64];
+    NVS.lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|nvs| nvs.get_str(LAST_INSTALL_KEY, &mut buf).ok().flatten())
+        .map(|s| s.trim_end_matches('\0').to_string())
+        .unwrap_or_default()
+}
+
+/// Record what the online update is about to boot into.
+pub fn set_last_install(record: &str) {
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_str(LAST_INSTALL_KEY, record) {
+            log::warn!("config: storing the install record: {e}");
+        }
+    }
+}
+
 /// Record a nonce difficulty; writes NVS only when the all-time best rises,
 /// which after the first hours is rare.
 pub fn raise_best_diff(diff: u64) {
