@@ -7,8 +7,7 @@
 #   cargo test --manifest-path crates/scenarios/Cargo.toml
 #
 # CI runs it as the `scenarios` job. Bump the `tag` deliberately when
-# dvb-WarpPool releases a regulator change. Currently a commit `rev`
-# (7c66190, the Avalon `workmode,set,<n>` fix) until v1.34.0 is tagged.
+# dvb-WarpPool releases a regulator change.
 
 [package]
 name = "warpaxe-scenarios"
@@ -32,6 +31,6 @@ warpaxe-cgminer = { path = "../cgminer" }
 # change over there must not turn these scenarios red unannounced. To
 # test against a local dvb-WarpPool working tree instead, replace with
 #   warppool-tune = { path = "../../../dvb-WarpPool/crates/tune" }
-warppool-tune = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", rev = "7c66190455ac286ea9db77c1d95a3ec31d3ef69a" }
+warppool-tune = { git = "https://git.warppool.org/dvb-projekt/dvb-WarpPool.git", tag = "v1.34.0" }
 serde_json = "1"
 tokio = { version = "1", features = ["rt", "macros", "net", "io-util", "time"] }
