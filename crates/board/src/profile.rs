@@ -501,6 +501,22 @@ pub const Q1373: Profile = Profile {
 };
 
 /// Every profile this firmware knows.
+/// What a first start runs on until the board is known: no bus, no
+/// regulator, no display, no chips; the web UI asks which board it is.
+/// Not in [`ALL`], so it cannot be configured by name.
+pub const UNDETECTED: Profile = Profile {
+    name: "undetected",
+    model: "Board not detected",
+    asic_count: 0,
+    asic_reset: None,
+    i2c: None,
+    vr: Vr::None,
+    thermal: Thermal::None,
+    display: Display::None,
+    ..T_DISPLAY_S3_DEVKIT
+};
+
+/// Every board a `boardModel` can name.
 pub const ALL: &[Profile] = &[
     BITAXE_GAMMA,
     T_DISPLAY_S3_DEVKIT,

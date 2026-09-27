@@ -238,13 +238,19 @@ fn main() {
     market::start();
     update::start();
     set_step("CHAIN");
-    match uart::ChipUart::new(
-        peripherals.uart1,
-        peripherals.pins.gpio17,
-        peripherals.pins.gpio18,
-    ) {
-        Ok(u) => miner::start(u),
-        Err(e) => log::error!("chain uart failed: {e}"),
+    if board::profile().name == "undetected" {
+        // First start without a known board: no chain until one is chosen
+        // in the web UI (board::first_start).
+        log::warn!("chain: not started, the board is not known yet");
+    } else {
+        match uart::ChipUart::new(
+            peripherals.uart1,
+            peripherals.pins.gpio17,
+            peripherals.pins.gpio18,
+        ) {
+            Ok(u) => miner::start(u),
+            Err(e) => log::error!("chain uart failed: {e}"),
+        }
     }
     set_step("RUN");
     info!(

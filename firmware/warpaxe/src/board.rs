@@ -425,15 +425,17 @@ impl Thermal {
 
 /// Pick the profile from the config and create its I²C bus on the
 /// profile's pins, before anything (the display first) needs it.
-pub fn init_bus(i2c0: I2C0) {
+pub fn init_bus(mut i2c0: I2C0) {
     let cfg = config::get();
-    let profile = Profile::by_name(&cfg.board_model).unwrap_or_else(|| {
-        log::warn!(
-            "board: unknown boardModel {:?}, using the devkit profile",
-            cfg.board_model
-        );
-        &warpaxe_board::T_DISPLAY_S3_DEVKIT
-    });
+    let profile = match Profile::by_name(&cfg.board_model) {
+        Some(p) => p,
+        None => {
+            if !cfg.board_model.is_empty() {
+                log::warn!("board: unknown boardModel {:?}, detecting", cfg.board_model);
+            }
+            first_start(&mut i2c0)
+        }
+    };
     *PROFILE.lock().unwrap() = Some(profile);
     update(|s| {
         s.board = profile.name.into();
@@ -942,4 +944,112 @@ fn plausible(v: Option<f32>, lo: f32, hi: f32, what: &str) -> Option<f32> {
         log::warn!("board: implausible {what} reading {v} ignored");
     }
     None
+}
+
+/// Outcome of a first-start detection, for the API and the web UI.
+#[derive(Clone, Debug, Serialize)]
+pub struct DetectInfo {
+    /// "detected" (board taken) or "choose" (chips stay off until one is
+    /// picked).
+    pub status: &'static str,
+    pub why: &'static str,
+    /// Board names that fit, best guess first.
+    pub candidates: Vec<&'static str>,
+    /// Settings taken from the stock firmware.
+    pub imported: Vec<&'static str>,
+}
+
+static DETECT: Mutex<Option<DetectInfo>> = Mutex::new(None);
+
+pub fn detect_info() -> Option<DetectInfo> {
+    DETECT.lock().unwrap().clone()
+}
+
+/// Which chips answer on a pin pair (read-only address probes).
+fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
+    // SAFETY: the two pairs probed drive no power or reset line on any
+    // supported board (warpaxe_board::detect); the pins are released when
+    // the driver drops.
+    let (sda_pin, scl_pin) = unsafe { (AnyIOPin::new(sda), AnyIOPin::new(scl)) };
+    let Ok(mut bus) = I2cDriver::new(
+        &mut *i2c0,
+        sda_pin,
+        scl_pin,
+        &I2cConfig::new().baudrate(Hertz(100_000)),
+    ) else {
+        return Vec::new();
+    };
+    let mut found = Vec::new();
+    for a in warpaxe_board::detect::addr::ALL {
+        let mut b = [0u8; 1];
+        if bus.read(a, &mut b, 20).is_ok() {
+            found.push(a);
+        }
+    }
+    log::info!("board: probe {sda}/{scl}: {found:02x?}");
+    found
+}
+
+/// No board configured: take settings from the stock firmware, then find
+/// the board from its NVS or its chips. A board that is not unique (or has
+/// never run WarpAxe) is offered in the web UI; until then nothing is
+/// powered.
+fn first_start(i2c0: &mut I2C0) -> &'static Profile {
+    use warpaxe_board::detect::{self, Detection};
+    let stock = config::Stock::open();
+    let imported = config::import_stock(&stock);
+    if !imported.is_empty() {
+        log::info!(
+            "board: first start, took {} from the stock firmware",
+            imported.join(", ")
+        );
+    }
+    let keys = (
+        stock.str("devicemodel"),
+        stock.str("asicmodel"),
+        stock.str("boardversion"),
+    );
+    let stock_keys = (keys.0.as_deref(), keys.1.as_deref(), keys.2.as_deref());
+    let d = match detect::from_stock(stock_keys.0, stock_keys.1, stock_keys.2) {
+        Some(_) => detect::detect(stock_keys, &[], &[]),
+        None => {
+            let bitaxe = probe(i2c0, 47, 48);
+            let nerd = if matches!(detect::from_bus(&bitaxe, &[]), Detection::Board(..)) {
+                Vec::new()
+            } else {
+                probe(i2c0, 44, 43)
+            };
+            detect::detect(stock_keys, &bitaxe, &nerd)
+        }
+    };
+    match d {
+        Detection::Board(p, why) => {
+            log::warn!("board: detected {} ({why})", p.name);
+            let mut cfg = config::get();
+            cfg.board_model = p.name.into();
+            if let Err(e) = config::save(&cfg) {
+                log::warn!("board: saving the detected board failed: {e}");
+            }
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status: "detected",
+                why,
+                candidates: vec![p.name],
+                imported,
+            });
+            p
+        }
+        Detection::Choose(c, why) => {
+            log::warn!(
+                "board: not detected for sure ({why}); candidates {:?}; chips stay off until a board is chosen",
+                c.iter().map(|p| p.name).collect::<Vec<_>>()
+            );
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status: "choose",
+                why,
+                candidates: c.iter().map(|p| p.name).collect(),
+                imported,
+            });
+            &warpaxe_board::profile::UNDETECTED
+        }
+    }
 }

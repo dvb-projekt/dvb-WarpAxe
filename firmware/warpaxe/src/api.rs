@@ -55,6 +55,8 @@ pub fn system_info() -> serde_json::Value {
     let profile = board::profile();
     json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
+        "boardDetect": board::detect_info(),
+        "boardModels": warpaxe_board::profile::ALL.iter().filter(|p| p.name != "t-display-s3").map(|p| json!({"name": p.name, "model": p.model, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w, "voltage": b.vin_mv, "current": b.iout_ma,
         "temp": b.temp_c, "vrTemp": b.vr_temp_c.unwrap_or(0),

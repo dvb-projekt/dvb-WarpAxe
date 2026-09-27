@@ -134,6 +134,11 @@ fn short_worker(user: &str) -> String {
 
 /// (value, unit) for a hashrate in GH/s.
 fn hashrate(ghs: f64) -> (String, &'static str) {
+    // No estimate yet (the first 30 s after a start): a dash, not a 0
+    // that reads like a dead chain.
+    if ghs <= 0.0 {
+        return ("–".into(), "TH/s");
+    }
     if ghs >= 1000.0 {
         (num(ghs / 1000.0, 2), "TH/s")
     } else {
@@ -1315,7 +1320,9 @@ fn oled_slide(o: &mut Oled, i: usize) {
     }
     // Hashrate large on the left.
     let ths = m.hashrate_ghs / 1000.0;
-    let (v, unit) = if ths >= 1.0 {
+    let (v, unit) = if m.hashrate_ghs <= 0.0 {
+        ("-".to_string(), "TH/S")
+    } else if ths >= 1.0 {
         (format!("{ths:.2}"), "TH/S")
     } else {
         (format!("{:.0}", m.hashrate_ghs), "GH/S")

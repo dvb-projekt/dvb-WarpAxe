@@ -123,6 +123,8 @@ en: {
   accepted:"Accepted", reject_reasons:"Reject reasons", none:"none", last_reject:"Last reject", reconnects:"Reconnects", clean_jobs:"Block changes",
   pool_settings:"Pool settings", pool_hint:"Pool changes take effect after a restart.",
   stratumURL:"Pool host", stratumPort:"Port", main_pool:"Main pool", fb_pool:"Fallback pool", useFallbackStratum:"Use a fallback pool", fb_s:"Switches after three failed attempts on the main pool and returns when it answers again", fallbackStratumURL:"Fallback host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (address.name)", fallbackStratumPassword:"Pool password", on_fallback:"Mining on the fallback pool", active_pool:"Active pool", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
+  imp_wifi:"Wi-Fi", imp_pool:"pool", imp_fallback:"fallback pool", imp_hostname:"hostname",
+  bd_title:"Which board is this?", bd_some:"WarpAxe could not tell the board for sure. The chips stay off until you choose it; the boards that fit are listed first.", bd_none:"WarpAxe recognised none of its boards on this device. The chips stay off until you choose one.", bd_imported:"Taken from the previous firmware: {w}.", bd_fits:"fits", bd_untested:"not run with WarpAxe yet", bd_set:"Use this board and restart", bd_note:"A wrong board can damage the miner: choose the one printed on the circuit board.", bd_ask:"Start as {m}? The miner restarts and powers the chips.",
   online:"Online update", latest:"Latest release", upd_none:"no release found yet", up_to_date:"up to date", upd_new:"new", checked:"checked {t}", check_now:"Check now", install_ver:"Install {v}", ask_install:"Install firmware {v} now? The miner restarts afterwards.", upd_notes:"What's new", updateCheck:"Look for updates automatically", upd_s:"Asks git.warppool.org at start and every 12 hours. Installing is always your click.", ph_checking:"Checking …", ph_downloading:"Downloading {p} %", ph_verifying:"Checking the checksum …", ph_flashing:"Writing {p} % · do not power off", ph_failed:"Failed: ", upd_avail:"Update available",
   displayLanguage:"Display language", timezone:"Time zone", btcPrice:"BTC price and fees on the display", btc_s:"Asks mempool.space every 10 minutes. Off: the miner talks to its pool only.", priceCurrency:"Currency",
   demo:"Preview special screens", demo_s:"20 s on the device display", ev_block:"Block found", ev_overheat:"Overheat", ev_off:"Chips off", ev_ota:"Firmware update", demo_on:"Showing on the device for 20 s",
@@ -167,6 +169,8 @@ de: {
   accepted:"Angenommen", reject_reasons:"Ablehnungsgründe", none:"keine", last_reject:"Letzte Ablehnung", reconnects:"Neuverbindungen", clean_jobs:"Blockwechsel",
   pool_settings:"Pool-Einstellungen", pool_hint:"Pool-Änderungen gelten nach einem Neustart.",
   stratumURL:"Pool-Host", stratumPort:"Port", main_pool:"Haupt-Pool", fb_pool:"Ausweich-Pool", useFallbackStratum:"Ausweich-Pool verwenden", fb_s:"Wechselt nach drei Fehlversuchen am Haupt-Pool und kehrt zurück, sobald er wieder antwortet", fallbackStratumURL:"Ausweich-Host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (Adresse.Name)", fallbackStratumPassword:"Pool-Passwort", on_fallback:"Minet über den Ausweich-Pool", active_pool:"Aktiver Pool", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
+  imp_wifi:"WLAN", imp_pool:"Pool", imp_fallback:"Ausweich-Pool", imp_hostname:"Hostname",
+  bd_title:"Welches Board ist das?", bd_some:"WarpAxe konnte das Board nicht sicher erkennen. Die Chips bleiben aus, bis du es wählst; passende Boards stehen oben.", bd_none:"WarpAxe hat auf diesem Gerät keines seiner Boards erkannt. Die Chips bleiben aus, bis du eines wählst.", bd_imported:"Aus der bisherigen Firmware übernommen: {w}.", bd_fits:"passt", bd_untested:"noch nicht mit WarpAxe gelaufen", bd_set:"Dieses Board verwenden und neu starten", bd_note:"Ein falsches Board kann den Miner beschädigen: wähle das, was auf der Platine steht.", bd_ask:"Als {m} starten? Der Miner startet neu und schaltet die Chips ein.",
   online:"Online-Update", latest:"Neueste Version", upd_none:"noch kein Release gefunden", up_to_date:"aktuell", upd_new:"neu", checked:"geprüft {t}", check_now:"Jetzt suchen", install_ver:"{v} installieren", ask_install:"Firmware {v} jetzt installieren? Der Miner startet danach neu.", upd_notes:"Änderungen", updateCheck:"Automatisch nach Updates suchen", upd_s:"Fragt beim Start und alle 12 Stunden bei git.warppool.org nach. Installiert wird nur per Klick.", ph_checking:"Suche …", ph_downloading:"Lade herunter {p} %", ph_verifying:"Prüfe Prüfsumme …", ph_flashing:"Schreibe {p} % · nicht ausschalten", ph_failed:"Fehlgeschlagen: ", upd_avail:"Update verfügbar",
   displayLanguage:"Sprache am Display", timezone:"Zeitzone", btcPrice:"BTC-Kurs und Gebühren am Display", btc_s:"Fragt alle 10 Minuten bei mempool.space an. Aus: Der Miner spricht nur mit seinem Pool.", priceCurrency:"Währung",
   demo:"Sondermeldungen ansehen", demo_s:"20 s auf dem Gerätedisplay", ev_block:"Block gefunden", ev_overheat:"Überhitzung", ev_off:"Chips aus", ev_ota:"Firmware-Update", demo_on:"Läuft 20 s auf dem Gerät",
@@ -253,7 +257,7 @@ function plate(i) {
     <div><div class="lbl">${t("wifi")}</div><div class="num" style="margin-top:4px;display:flex;align-items:center;gap:8px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</div></div></div></section>`;
 }
 function kpis(i) {
-  const th = i.hashRate / 1000, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
+  const th = i.hashRate > 0 || i.chainStopped ? i.hashRate / 1000 : null, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   return `<div class="g4">${k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
@@ -463,6 +467,24 @@ async function pollLog() {
   if (route !== "system" || logPaused) return;
   try { logText = await get("/api/v1/log"); const e = $("#log"); if (e) { const end = e.scrollTop + e.clientHeight >= e.scrollHeight - 20; e.textContent = logText; if (end) e.scrollTop = e.scrollHeight; } } catch (e) {}
 }
+/* First start without a known board: the chips stay off until one is
+   chosen here (the firmware saves it and restarts). */
+function boardBanner() {
+  const d = info?.boardDetect;
+  if (!d || d.status !== "choose") return "";
+  const all = info.boardModels || [], cand = d.candidates || [];
+  const opts = [...cand.map(n => all.find(b => b.name === n)).filter(Boolean), ...all.filter(b => !cand.includes(b.name))];
+  return `<section class="card" style="border-color:rgba(245,185,66,.45);background:rgba(245,185,66,.06);display:flex;flex-direction:column;gap:12px">
+    <h2 class="warn">${t("bd_title")}</h2>
+    <div class="mute" style="font-size:14px">${t(cand.length ? "bd_some" : "bd_none")}</div>
+    ${d.imported?.length ? `<div class="dim" style="font-size:13px">${t("bd_imported", {w: d.imported.map(k => t("imp_" + k)).join(", ")})}</div>` : ""}
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <select id="bdpick" style="height:42px;padding:0 12px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:rgba(5,6,11,.6);color:var(--fg);font:15px Inter,sans-serif">${opts.map(b => `<option value="${esc(b.name)}">${esc(b.model)}${cand.includes(b.name) ? " · " + t("bd_fits") : ""}${b.tested ? "" : " · " + t("bd_untested")}</option>`).join("")}</select>
+      <button type="button" class="btn pri" data-act="bdset">${t("bd_set")}</button>
+    </div>
+    <div class="dim" style="font-size:12px">${t("bd_note")}</div>
+  </section>`;
+}
 let upd = null;
 function onlineHtml() {
   const u = upd, i = info || {};
@@ -517,6 +539,7 @@ async function act(a) {
     if (a === "ocoff") { try { sessionStorage.removeItem("oc"); } catch (e) {} history.replaceState(null, "", location.pathname + "#/settings"); render(); return; }
     if (a === "updcheck") { await post("/api/v1/update/check"); upd = Object.assign(upd || {}, {phase: "checking"}); $("#online").innerHTML = onlineHtml(); return; }
     if (a === "updinstall") { if (!confirm(t("ask_install", {v: upd?.latest?.version || ""}))) return; await post("/api/v1/update/install"); toast(t("ph_downloading", {p: 0}), "ok"); pollUpdate(); return; }
+    if (a === "bdset") { const n = $("#bdpick")?.value; const m = (info.boardModels || []).find(b => b.name === n); if (!n || !confirm(t("bd_ask", {m: m ? m.model : n}))) return; await post("/api/system", {boardModel: n}); await fetch("/api/system/restart", {method: "POST"}).catch(() => {}); toast(t("restarting")); setTimeout(() => location.reload(), 30000); return; }
     if (a === "logpause") { logPaused = !logPaused; render(); return; }
     if (a === "logsave") { const b = new Blob([logText], {type: "text/plain"}); const u = URL.createObjectURL(b); const l = document.createElement("a"); l.href = u; l.download = `${info?.hostname || "warpaxe"}-log.txt`; l.click(); URL.revokeObjectURL(u); return; }
     await load(true); toast(t("saved"), "ok");
@@ -528,7 +551,7 @@ function render() {
   if (!info) { v.innerHTML = ""; return; }
   const editing = document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && v.contains(document.activeElement);
   if (editing) return; // never re-render a form under the cursor
-  v.innerHTML = route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard();
+  v.innerHTML = boardBanner() + (route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : dashboard());
   const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword", "stratumTLS", "fallbackStratumTLS"]); };
   const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "ssid", "wifiPass", "useNTP", "ntpServer", "stratumSuggestedDifficulty"]); };
   const xp = $("#xp"); if (xp) xp.ontoggle = () => { xpOpen = xp.open; };

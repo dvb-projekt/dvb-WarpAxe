@@ -132,7 +132,8 @@ impl Default for Config {
     fn default() -> Self {
         Config {
             hostname: "warpaxe".into(),
-            board_model: "t-display-s3".into(),
+            // Empty: detected on the first start (board::init_bus).
+            board_model: String::new(),
             ssid: String::new(),
             wifi_pass: String::new(),
             stratum_url: "pool.warppool.org".into(),
@@ -182,10 +183,12 @@ impl Default for Config {
 
 static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 static NVS: Mutex<Option<EspNvs<NvsDefault>>> = Mutex::new(None);
+static PART: Mutex<Option<EspDefaultNvsPartition>> = Mutex::new(None);
 const KEY: &str = "config";
 
 /// Load from NVS (or defaults) and remember the NVS handle for saves.
 pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
+    *PART.lock().unwrap() = Some(part.clone());
     let nvs = EspNvs::new(part, "warpaxe", true)?;
     let mut buf = vec![0u8; 4096];
     let cfg = match nvs.get_raw(KEY, &mut buf) {
@@ -303,4 +306,81 @@ pub fn save(cfg: &Config) -> anyhow::Result<()> {
     }
     *CONFIG.lock().unwrap() = Some(cfg.clone());
     Ok(())
+}
+
+/// What the stock firmware (AxeOS or NerdOS) left in its NVS namespace
+/// `main`, read-only. WarpAxe's own settings live in `warpaxe`, so a stock
+/// NVS kept through the first flash is still there.
+pub struct Stock(Option<EspNvs<NvsDefault>>);
+
+impl Stock {
+    pub fn open() -> Stock {
+        let part = PART.lock().unwrap().clone();
+        Stock(part.and_then(|p| EspNvs::new(p, "main", false).ok()))
+    }
+
+    pub fn str(&self, key: &str) -> Option<String> {
+        let nvs = self.0.as_ref()?;
+        let mut buf = [0u8; 160];
+        nvs.get_str(key, &mut buf)
+            .ok()
+            .flatten()
+            .map(|s| s.trim_end_matches('\0').to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    pub fn u16(&self, key: &str) -> Option<u16> {
+        let nvs = self.0.as_ref()?;
+        nvs.get_u16(key)
+            .ok()
+            .flatten()
+            .or_else(|| self.str(key).and_then(|s| s.parse().ok()))
+    }
+}
+
+/// On a first start: take Wi-Fi, pools and hostname from the stock
+/// firmware where WarpAxe has nothing yet. Returns what was taken (never
+/// the values: passwords must not reach the log).
+pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
+    let mut cfg = get();
+    let mut took = Vec::new();
+    if cfg.ssid.is_empty() {
+        if let Some(ssid) = stock.str("wifissid") {
+            cfg.ssid = ssid;
+            cfg.wifi_pass = stock.str("wifipass").unwrap_or_default();
+            took.push("wifi");
+        }
+    }
+    if cfg.stratum_user.is_empty() {
+        if let (Some(url), Some(user)) = (stock.str("stratumurl"), stock.str("stratumuser")) {
+            cfg.stratum_url = url;
+            cfg.stratum_user = user;
+            cfg.stratum_port = stock.u16("stratumport").unwrap_or(cfg.stratum_port);
+            cfg.stratum_pass = stock.str("stratumpass").unwrap_or_else(|| "x".into());
+            cfg.stratum_tls = u8::from(stock.u16("stratumtls") == Some(1));
+            took.push("pool");
+        }
+    }
+    if cfg.fallback_url.is_empty() {
+        if let (Some(url), Some(user)) = (stock.str("fbstratumurl"), stock.str("fbstratumuser")) {
+            cfg.fallback_url = url;
+            cfg.fallback_user = user;
+            cfg.fallback_port = stock.u16("fbstratumport").unwrap_or(cfg.fallback_port);
+            cfg.fallback_pass = stock.str("fbstratumpass").unwrap_or_else(|| "x".into());
+            cfg.fallback_tls = u8::from(stock.u16("fbstratumtls") == Some(1));
+            took.push("fallback");
+        }
+    }
+    if cfg.hostname == Config::default().hostname {
+        if let Some(h) = stock.str("hostname") {
+            cfg.hostname = h;
+            took.push("hostname");
+        }
+    }
+    if !took.is_empty() {
+        if let Err(e) = save(&cfg) {
+            log::warn!("config: saving the imported settings failed: {e}");
+        }
+    }
+    took
 }
