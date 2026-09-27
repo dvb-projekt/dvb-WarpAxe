@@ -30,6 +30,7 @@ nav a.on{background:rgba(123,92,255,.18);color:var(--fg);font-weight:600}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
 select,input,button{font:inherit}
 .lang{height:36px;padding:0 8px;border-radius:10px;border:1px solid rgba(255,255,255,.12);background:transparent;color:var(--fg)}
+#sf{display:flex;flex-direction:column;gap:18px}
 main{max-width:1280px;margin:0 auto;padding:24px 28px 48px;display:flex;flex-direction:column;gap:18px}
 .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px}
 .lbl{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);font-weight:600}
@@ -120,6 +121,7 @@ en: {
   accepted:"Accepted", reject_reasons:"Reject reasons", none:"none", last_reject:"Last reject", reconnects:"Reconnects", clean_jobs:"Block changes",
   pool_settings:"Pool settings", pool_hint:"Pool changes take effect after a restart.",
   stratumURL:"Pool host", stratumPort:"Port", main_pool:"Main pool", fb_pool:"Fallback pool", useFallbackStratum:"Use a fallback pool", fb_s:"Switches after three failed attempts on the main pool and returns when it answers again", fallbackStratumURL:"Fallback host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (address.name)", fallbackStratumPassword:"Pool password", on_fallback:"Mining on the fallback pool", active_pool:"Active pool", stratumUser:"Worker (address.name)", stratumPassword:"Pool password", keep_pw:"Leave empty to keep",
+  default:"default", current:"current", oc_hint:"Manufacturer steps.", oc_warn:"OC mode: free clock and voltage values and expert settings. Values outside the manufacturer's range can overheat or damage the miner.", oc_off:"Leave OC mode",
   tuning:"Clock and voltage", tuning_hint_lim:"Board limits: up to {f} MHz, {lo}–{hi} mV. Applied immediately.", tuning_hint:"Applied immediately.",
   frequency:"Frequency (MHz)", coreVoltage:"Core voltage (mV)", options_hint:"Stock firmware steps: {a}–{b}, above up to {f}", measured:"Measured: {v} mV",
   tuner_note:"If WarpTune regulates this miner, it may change clock and voltage again.",
@@ -158,6 +160,7 @@ de: {
   accepted:"Angenommen", reject_reasons:"Ablehnungsgründe", none:"keine", last_reject:"Letzte Ablehnung", reconnects:"Neuverbindungen", clean_jobs:"Blockwechsel",
   pool_settings:"Pool-Einstellungen", pool_hint:"Pool-Änderungen gelten nach einem Neustart.",
   stratumURL:"Pool-Host", stratumPort:"Port", main_pool:"Haupt-Pool", fb_pool:"Ausweich-Pool", useFallbackStratum:"Ausweich-Pool verwenden", fb_s:"Wechselt nach drei Fehlversuchen am Haupt-Pool und kehrt zurück, sobald er wieder antwortet", fallbackStratumURL:"Ausweich-Host", fallbackStratumPort:"Port", fallbackStratumUser:"Worker (Adresse.Name)", fallbackStratumPassword:"Pool-Passwort", on_fallback:"Minet über den Ausweich-Pool", active_pool:"Aktiver Pool", stratumUser:"Worker (Adresse.Name)", stratumPassword:"Pool-Passwort", keep_pw:"Leer lassen = unverändert",
+  default:"Standard", current:"aktuell", oc_hint:"Stufen des Herstellers.", oc_warn:"OC-Modus: freie Werte für Takt und Spannung sowie Experten-Einstellungen. Werte außerhalb der Herstellerangaben können den Miner überhitzen oder beschädigen.", oc_off:"OC-Modus beenden",
   tuning:"Takt und Spannung", tuning_hint_lim:"Board-Grenzen: bis {f} MHz, {lo}–{hi} mV. Wird sofort übernommen.", tuning_hint:"Wird sofort übernommen.",
   frequency:"Frequenz (MHz)", coreVoltage:"Kernspannung (mV)", options_hint:"Stufen der Hersteller-Firmware: {a}–{b}, darüber bis {f}", measured:"Gemessen: {v} mV",
   tuner_note:"Wenn WarpTune diesen Miner regelt, kann es Takt und Spannung wieder ändern.",
@@ -234,7 +237,7 @@ function plate(i) {
     <div class="mute" style="font-size:14px">${sub}</div></div>
   <div class="meta"><div><div class="lbl">${t("uptime")}</div><div class="num" style="margin-top:4px">${upt(i.uptimeSeconds)}</div></div>
     <div><div class="lbl">${t("firmware")}</div><div class="num" style="margin-top:4px">${esc(i.version)}</div></div>
-    <div><div class="lbl">${t("wifi")}</div><div class="num" style="margin-top:4px">${i.wifiRSSI ? i.wifiRSSI + " dBm" : "–"}</div></div></div></section>`;
+    <div><div class="lbl">${t("wifi")}</div><div class="num" style="margin-top:4px;display:flex;align-items:center;gap:8px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</div></div></div></section>`;
 }
 function kpis(i) {
   const th = i.hashRate / 1000, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 ? i.power / th : null;
@@ -328,6 +331,12 @@ function poolRows(i) {
 
 /* ---------- forms ---------- */
 const fld = (k, v, o = {}) => `<label class="f">${o.label || t(k)}<input name="${k}" type="${o.type || "text"}" value="${esc(v)}" ${o.min != null ? `min="${o.min}"` : ""} ${o.max != null ? `max="${o.max}"` : ""} ${o.step != null ? `step="${o.step}"` : ""} ${o.type === "number" ? `inputmode="${o.step ? "decimal" : "numeric"}"` : ""} autocomplete="off">${o.hint ? `<small>${o.hint}</small>` : ""}</label>`;
+/* A preset list as AxeOS offers it without ?oc; a value set outside the
+   presets (by WarpTune or in OC mode) stays selectable as "current". */
+const sel = (k, v, opts, def, o = {}) => { const list = [...new Set([...opts, v].filter(x => x > 0))].sort((a, b) => a - b); return `<label class="f">${t(k)}<select name="${k}" data-num="1">${list.map(x => `<option value="${x}"${x === v ? " selected" : ""}>${x}${x === def ? ` (${t("default")})` : ""}${!opts.includes(x) ? ` (${t("current")})` : ""}</option>`).join("")}</select>${o.hint ? `<small>${o.hint}</small>` : ""}</label>`; };
+/* AxeOS presets per chip (device_config.h), for boards whose profile
+   brings none of its own. */
+const CHIP_PRESETS = {BM1370: {f: [400, 490, 525, 550, 600, 625, 690], v: [1000, 1060, 1100, 1150, 1200, 1250], df: 525, dv: 1150}, BM1373: {f: [327, 350, 375, 380, 400, 410], v: [1000, 1060, 1100, 1150, 1200, 1250], df: 327, dv: 1000}};
 const tog = (k, on, s, full) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${on ? "checked" : ""}></label>`;
 const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
 const SECRET = ["stratumPassword", "wifiPass", "fallbackStratumPassword"];
@@ -335,7 +344,7 @@ function collect(form, cfg) {
   const body = {};
   for (const el of form.elements) {
     if (!el.name || !(el.name in cfg)) continue;
-    const v = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+    const v = el.type === "checkbox" ? el.checked : (el.type === "number" || el.dataset.num) ? Number(el.value) : el.value;
     if (SECRET.includes(el.name)) { if (v !== "") body[el.name] = v; continue; }
     if (v !== cfg[el.name]) body[el.name] = v;
   }
@@ -367,11 +376,15 @@ function settingsPage() {
   const c = state?.config || {}, i = info, two = i.fanrpm2 != null;
   let tuneHint = t("tuning_hint"), fHint = "", vHint = t("measured", {v: i.coreVoltageActual});
   if (asic) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
+  const oc = ocMode(), cp = CHIP_PRESETS[i.ASICModel] || {f: [], v: []};
+  const pre = asic?.frequencyOptions?.length ? {f: asic.frequencyOptions, v: asic.voltageOptions || cp.v, df: asic.defaultFrequency, dv: asic.defaultVoltage} : cp;
   return `<form id="sf">` +
-  sec(t("tuning"), tuneHint, fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint}),
+  (oc ? `<div class="note" style="background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.35);align-items:center;flex-wrap:wrap"><b class="err">OC</b><span class="mute" style="flex:1">${t("oc_warn")}</span><button type="button" class="btn" data-act="ocoff" style="height:36px">${t("oc_off")}</button></div>` : "") +
+  sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint})
+      : sel("frequency", c.frequency, pre.f, pre.df, {hint: t("oc_hint")}) + sel("coreVoltage", c.coreVoltage, pre.v, pre.dv, {hint: vHint})),
     `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
   sec(t("fan_temp"), t(two ? "fan_temp_hint_two" : "fan_temp_hint_one"), tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85}) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")})) +
-  xpSec(c, i, two) +
+  (oc ? xpSec(c, i, two) : "") +
   sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440})) +
   sec(t("network"), t("network_hint"), `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
     fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")}) + fld("hostname", c.hostname) + `<div></div>` +
@@ -388,15 +401,23 @@ function xpSec(c, i, two) {
   return `<details class="card"${xpOpen ? " open" : ""} id="xp"><summary><h2>${t("xp")}</h2><div class="dim">${t("xp_hint")}</div></summary><div class="form">${body}</div></details>`;
 }
 let xpOpen = false;
+/* The expert section shows only with ?oc in the address, as AxeOS and
+   NerdOS hide their overclock settings (…/?oc or …/#/settings?oc); it
+   stays on for the browser tab once seen. */
+function ocMode() {
+  if (/[?&]oc(?:[=&]|$)/.test(location.search + location.hash.replace(/^[^?]*/, ""))) { try { sessionStorage.setItem("oc", "1"); } catch (e) {} return true; }
+  try { return sessionStorage.getItem("oc") === "1"; } catch (e) { return false; }
+}
 
 let nets = null, scanning = false;
-function bars(r) { const n = r >= -60 ? 4 : r >= -70 ? 3 : r >= -80 ? 2 : 1; return `<span style="display:flex;align-items:flex-end;gap:2px;height:14px">${[0, 1, 2, 3].map(k => `<span style="width:3px;height:${4 + k * 3}px;border-radius:1px;background:${k < n ? "var(--ok)" : "rgba(255,255,255,.18)"}"></span>`).join("")}</span>`; }
+const rssiCol = r => r >= -67 ? "var(--ok)" : r >= -75 ? "var(--warn)" : "var(--err)";
+function bars(r) { const n = r >= -60 ? 4 : r >= -70 ? 3 : r >= -80 ? 2 : 1, c = rssiCol(r); return `<span style="display:flex;align-items:flex-end;gap:2px;height:14px">${[0, 1, 2, 3].map(k => `<span style="width:3px;height:${4 + k * 3}px;border-radius:1px;background:${k < n ? c : "rgba(255,255,255,.18)"}"></span>`).join("")}</span>`; }
 function netsHtml() {
   if (scanning) return `<span class="dim" style="font-size:13px">${t("scanning")}</span>`;
   if (typeof nets === "string") return `<span class="err" style="font-size:13px">${esc(nets)}</span>`;
   if (!nets) return "";
   const cur = state?.config?.ssid;
-  return nets.map(n => `<button type="button" data-ssid="${esc(n.ssid)}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;text-align:left;color:var(--fg);font:14px 'JetBrains Mono',monospace;${n.ssid === cur ? "background:rgba(123,92,255,.14);border:1px solid rgba(123,92,255,.4)" : "background:transparent;border:1px solid rgba(255,255,255,.06)"}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.ssid)}</span><span class="dim" style="font:12px Inter,sans-serif">${esc(n.authmode)}</span>${bars(n.rssi)}<span class="dim" style="font-size:12px;width:62px;text-align:right">${n.rssi} dBm</span></button>`).join("");
+  return nets.map(n => `<button type="button" data-ssid="${esc(n.ssid)}" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;cursor:pointer;text-align:left;color:var(--fg);font:14px 'JetBrains Mono',monospace;${n.ssid === cur ? "background:rgba(123,92,255,.14);border:1px solid rgba(123,92,255,.4)" : "background:transparent;border:1px solid rgba(255,255,255,.06)"}"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(n.ssid)}</span><span class="dim" style="font:12px Inter,sans-serif">${esc(n.authmode)}</span>${bars(n.rssi)}<span style="font-size:12px;width:62px;text-align:right;color:${rssiCol(n.rssi)}">${n.rssi} dBm</span></button>`).join("");
 }
 async function scan() {
   scanning = true; const e = $("#nets"); if (e) e.innerHTML = netsHtml();
@@ -447,6 +468,7 @@ async function act(a) {
     if (a === "on") await post("/api/v1/chips/on");
     if (a === "overheat") await post("/api/v1/overheat/reset");
     if (a === "best") { if (!confirm(t("ask_best"))) return; await post("/api/v1/bestdiff/reset"); }
+    if (a === "ocoff") { try { sessionStorage.removeItem("oc"); } catch (e) {} history.replaceState(null, "", location.pathname + "#/settings"); render(); return; }
     if (a === "logpause") { logPaused = !logPaused; render(); return; }
     if (a === "logsave") { const b = new Blob([logText], {type: "text/plain"}); const u = URL.createObjectURL(b); const l = document.createElement("a"); l.href = u; l.download = `${info?.hostname || "warpaxe"}-log.txt`; l.click(); URL.revokeObjectURL(u); return; }
     await load(true); toast(t("saved"), "ok");
