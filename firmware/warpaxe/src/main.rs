@@ -36,10 +36,57 @@ fn set_step(s: &'static str) {
     info!("step: {s}");
 }
 
+/// Seconds after boot the splash stays up (the display thread starts
+/// about a second in, so it shows for four to five).
+const SPLASH_S: u64 = 6;
+static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565");
+static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
+
 fn draw(d: &mut display::Display) {
+    if diag::uptime_s() < SPLASH_S {
+        draw_splash(d);
+        return;
+    }
     match d {
         display::Display::Lcd(l) => draw_lcd(l),
         display::Display::Oled(o) => draw_oled(o),
+    }
+}
+
+/// The wordmark with the model and firmware version under it, in the
+/// board family's colour (as the web UI's type plate).
+fn draw_splash(d: &mut display::Display) {
+    let cfg = config::get();
+    let profile = board::profile();
+    let version = env!("CARGO_PKG_VERSION");
+    match d {
+        display::Display::Lcd(l) => {
+            use display::*;
+            l.orient(cfg.flipscreen, cfg.invertscreen);
+            l.blit(SPLASH_LCD);
+            let col = if profile.name.starts_with("bitaxe") {
+                BTC
+            } else {
+                PLASMA
+            };
+            let model = profile.model.to_ascii_uppercase();
+            l.text((WIDTH - text_width(&model, 2)) / 2, 122, 2, col, &model);
+            let line = format!("FIRMWARE {version}");
+            l.text((WIDTH - text_width(&line, 1)) / 2, 148, 1, GREY, &line);
+        }
+        display::Display::Oled(o) => {
+            o.orient(cfg.flipscreen, cfg.invertscreen);
+            o.bitmap(SPLASH_OLED);
+            let line = format!("{} {version}", profile.model.to_ascii_uppercase());
+            let w = display::text_width(&line, 1).min(128);
+            o.text((128 - w) / 2, 23, 1, &line);
+        }
+    }
+    if let Err(e) = match d {
+        display::Display::Lcd(l) => l.flush().map_err(|e| e.to_string()),
+        display::Display::Oled(o) => o.flush(),
+    } {
+        log::warn!("display: splash: {e}");
     }
 }
 

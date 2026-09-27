@@ -28,6 +28,14 @@ pub const RED: u16 = 0xF800;
 pub const ORANGE: u16 = 0xFD20;
 pub const GREY: u16 = 0x8410;
 pub const NAVY: u16 = 0x0010;
+/// Brand colours of the web UI: `--btc` (Bitaxe) and `--plasma` (Nerd).
+pub const BTC: u16 = 0xF483;
+pub const PLASMA: u16 = 0x071F;
+
+/// Width in pixels of `text` in the 5×7 font at `scale`.
+pub fn text_width(text: &str, scale: usize) -> usize {
+    (text.len() * (crate::font::W + 1) * scale).saturating_sub(scale)
+}
 
 pub struct Lcd {
     panel: tusb::esp_lcd_panel_handle_t,
@@ -165,6 +173,13 @@ impl Lcd {
         }
     }
 
+    /// A whole RGB565 frame in the framebuffer's byte order (the boot
+    /// splash); a short slice leaves the rest as it was.
+    pub fn blit(&mut self, frame: &[u8]) {
+        let n = frame.len().min(self.fb.len());
+        self.fb[..n].copy_from_slice(&frame[..n]);
+    }
+
     pub fn text(&mut self, x: usize, y: usize, scale: usize, color: u16, text: &str) {
         let mut cx = x;
         for &c in text.as_bytes() {
@@ -244,6 +259,9 @@ impl Oled {
         if self.invert != Some(invert) && self.panel.set_invert(invert).is_ok() {
             self.invert = Some(invert);
         }
+    }
+    pub fn bitmap(&mut self, bits: &[u8]) {
+        self.panel.bitmap(bits);
     }
     pub fn clear(&mut self) {
         self.panel.clear();

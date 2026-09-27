@@ -90,6 +90,19 @@ impl<I: I2c> Ssd1306<I> {
         }
     }
 
+    /// A whole frame from a 1-bit, row-major, MSB-first bitmap of
+    /// `WIDTH`×`HEIGHT` pixels (the boot splash).
+    pub fn bitmap(&mut self, bits: &[u8]) {
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let on = bits
+                    .get(y * WIDTH / 8 + x / 8)
+                    .is_some_and(|b| b & (0x80 >> (x % 8)) != 0);
+                self.set_pixel(x, y, on);
+            }
+        }
+    }
+
     /// Draw `text` at (x, y), each font pixel `scale` panel pixels;
     /// 6 × scale pixels per character.
     pub fn text(&mut self, x: usize, y: usize, scale: usize, text: &str) {
@@ -158,6 +171,18 @@ mod tests {
                 _ => panic!("data write expected"),
             }
         }
+    }
+
+    #[test]
+    fn bitmap_sets_exactly_the_marked_pixels() {
+        let mut d = Ssd1306::new(Bus::sink(), ADDR);
+        let mut bits = [0u8; WIDTH * HEIGHT / 8];
+        bits[0] = 0x80; // (0, 0)
+        bits[WIDTH / 8 * 9 + 1] = 0x01; // (15, 9)
+        d.bitmap(&bits);
+        assert_eq!(d.fb[0], 0x01);
+        assert_eq!(d.fb[WIDTH + 15], 0x02);
+        assert_eq!(d.fb.iter().map(|b| b.count_ones()).sum::<u32>(), 2);
     }
 
     #[test]
