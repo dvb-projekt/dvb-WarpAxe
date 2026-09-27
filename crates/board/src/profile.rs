@@ -153,8 +153,10 @@ pub struct Profile {
     pub vr_throttle_c: f32,
     /// Regulator temperature at which mining stops, °C.
     pub vr_max_c: f32,
-    /// Added to the board temperature sensors: NerdOS adds 3 °C on the
-    /// Q13xx carriers, whose sensors sit beside the chips.
+    /// Added to the board temperature sensors: NerdOS adds 10 °C on the
+    /// NerdQAxe++ (`NerdQaxePlus2::getTemperature`) and 3 °C on the
+    /// Q13xx carriers, whose sensors sit beside the chips. The fan
+    /// target and the overheat limit apply to the corrected value.
     pub temp_offset_c: f32,
     /// Chip temperature the fan PID holds (NerdOS `m_pidSettings[0]`).
     pub fan_target_c: f32,
@@ -373,7 +375,10 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     max_temp_c: 70.0,
     vr_throttle_c: 70.0,
     vr_max_c: 70.0,
-    temp_offset_c: 0.0,
+    // NerdOS `NerdQaxePlus2::getTemperature`: TMP1075 + 10 °C ("should
+    // be about right" for the chips). Without it the 70 °C limit would
+    // let the sensors reach what NerdOS calls 80 °C.
+    temp_offset_c: 10.0,
     fan_target_c: 55.0,
     // NerdOS 1.1.0 on a Rev 6.1 board, `/api/system/asic` (2026-09-27).
     frequency_options: &[500, 515, 525, 550, 575, 590, 600],
@@ -405,6 +410,9 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
     default_core_mv: 1210,
     init_core_mv: 0,
     max_power_w: 300,
+    // NerdOS reads the Octaxe sensors as they are (no `getTemperature`
+    // override); not inherited from the NerdQAxe++.
+    temp_offset_c: 0.0,
     // Options depend on the fitted regulator; published once this
     // board is brought up.
     frequency_options: &[],
@@ -563,6 +571,8 @@ mod tests {
         }
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().vr_temp_offset_c, 8);
         assert_eq!(Q1373.temp_offset_c, 3.0);
+        assert_eq!(NERDQAXE_PLUSPLUS.temp_offset_c, 10.0, "NerdOS +10 °C");
+        assert_eq!(NERDOCTAXE_GAMMA.temp_offset_c, 0.0, "not inherited");
         assert_eq!(BITAXE_GAMMA.temp_offset_c, 0.0);
         let alt = |p: &Profile| match p.vr {
             Vr::Tps5364x { alt, .. } => alt,

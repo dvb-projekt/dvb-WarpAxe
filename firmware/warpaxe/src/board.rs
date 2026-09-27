@@ -35,6 +35,10 @@ use crate::config;
 /// The regulator-temperature target of the second fan channel on the
 /// Nerd boards (NerdOS `m_pidSettings[1].targetTemp`).
 const VR_FAN_TARGET_C: f32 = 65.0;
+/// Seconds without a chip temperature reading before the core voltage
+/// goes off: a chain hashing blind is treated like one overheating.
+/// NerdOS has no such guard (a failed sensor reads 0 °C there).
+const TEMP_LOST_S: u32 = 60;
 
 /// What the board reports; `None` where the board has no sensor.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -668,6 +672,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp: Option<f32> = None;
     let mut vr_temp: Option<i32> = None;
     let mut polarity = cfg.invertfanpolarity;
+    let mut temp_lost_s: u32 = 0;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -702,6 +707,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 match t.chip_temp_c() {
                     Ok(c) => {
                         temp = Some(c);
+                        temp_lost_s = 0;
                         update(|s| {
                             if s.last_error.starts_with("temp:") {
                                 s.last_error.clear();
@@ -710,6 +716,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     }
                     Err(e) => {
                         temp = None;
+                        temp_lost_s = temp_lost_s.saturating_add(1);
                         update(|s| s.last_error = format!("temp: {e}"));
                     }
                 }
@@ -722,12 +729,20 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             };
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_max_c);
-            if (hot_chip || hot_vr) && !overheat() {
+            let blind = temp_lost_s >= TEMP_LOST_S;
+            if (hot_chip || hot_vr || blind) && !overheat() {
                 OVERHEAT.store(true, Ordering::Relaxed);
-                log::error!(
-                    "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
-                    profile.vr_max_c
-                );
+                if blind {
+                    log::error!(
+                        "board: no chip temperature for {temp_lost_s} s: core voltage off"
+                    );
+                    update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
+                } else {
+                    log::error!(
+                        "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
+                        profile.vr_max_c
+                    );
+                }
                 if let Some(vr) = vr.as_mut() {
                     vr.off();
                 }
