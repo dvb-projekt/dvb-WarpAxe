@@ -144,8 +144,11 @@ back at any time with `GET /api/v1/display/frame`.
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
   and every 12 hours, the web UI shows the new version and its notes, and
-  one click downloads, verifies (SHA-256) and installs it. Nothing installs
-  by itself: an update restarts the miner.
+  one click downloads, verifies (SHA-256 and the release signature: BIP-340
+  Schnorr with the key built into the firmware, `warpaxe.bin.sig`) and
+  installs it. A release without a signature still installs for now and is
+  marked as unsigned; that tolerance ends once every release carries one.
+  Nothing installs by itself: an update restarts the miner.
 - Upload a `warpaxe.bin` in the web UI, or `curl --data-binary @warpaxe.bin
   http://<miner>/api/system/OTA`.
 - The web UI and its fonts are part of the image: one file, one update.

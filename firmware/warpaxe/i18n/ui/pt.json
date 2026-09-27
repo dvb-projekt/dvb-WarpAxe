@@ -233,5 +233,6 @@
   "fallbackStratumV2RequireAuth": "Exigir autenticação do pool",
   "reqauth_s": "Ligar apenas se o certificado do pool puder ser verificado. Desligado: sem chave, o pool é aceite tal como está.",
   "bd_unsup_title": "Placa reconhecida: {m}",
-  "bd_unsup": "O WarpAxe ainda não consegue operar esta placa, por isso os chips continuam desligados. Reinstale o firmware anterior ou escolha uma placa abaixo só se tiver certeza de que ela foi reconhecida incorretamente."
+  "bd_unsup": "O WarpAxe ainda não consegue operar esta placa, por isso os chips continuam desligados. Reinstale o firmware anterior ou escolha uma placa abaixo só se tiver certeza de que ela foi reconhecida incorretamente.",
+  "upd_unsigned": "Esta versão não tem assinatura; instala-se, mas o minerador não consegue verificar quem a compilou."
 }

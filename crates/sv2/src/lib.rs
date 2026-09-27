@@ -26,6 +26,7 @@ pub mod channel;
 pub mod key;
 pub mod messages;
 pub mod noise;
+pub mod release;
 pub mod wire;
 
 pub use channel::{Client, ClientConfig, Event, Template};

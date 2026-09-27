@@ -14,7 +14,7 @@ workspace = true
 # (Noise_NX_Secp256k1+EllSwift_ChaChaPoly_SHA256, Schnorr-signed cert).
 noise_sv2 = "1.4.2"
 # noise_sv2's key type for the authority key; same major, same type.
-secp256k1 = { version = "0.28", default-features = false }
+secp256k1 = { version = "0.28", default-features = false, features = ["alloc"] }
 # Small precomputed tables: the ESP32-S3 has 3 MiB of app flash, not 4 MB
 # of them. Features unify, so the host tests run with the same tables.
 secp256k1-sys = { version = "0.9", default-features = false, features = ["lowmemory"] }

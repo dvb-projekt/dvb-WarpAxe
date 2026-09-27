@@ -3,9 +3,13 @@
 //! The miner itself asks (at boot and every 12 hours, while `updateCheck`
 //! is on) for the latest release; the web UI shows it. Installing is
 //! always a click: the miner downloads the image, checks it against the
-//! release's SHA-256 file and writes it with the same path as an uploaded
-//! update. A release carries two assets: `warpaxe.bin` (one app image for
-//! every board; the board is configuration) and `warpaxe.bin.sha256`.
+//! release's SHA-256 file and against the release signature, and writes
+//! it with the same path as an uploaded update. A release carries three
+//! assets: `warpaxe.bin` (one app image for every board; the board is
+//! configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig` (BIP-340
+//! Schnorr over the SHA-256, checked with [`RELEASE_KEY`]). A release
+//! without a signature still installs for now, marked unsigned; that
+//! tolerance goes once every published release carries one.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
@@ -22,6 +26,12 @@ use crate::{config, diag, display};
 const LATEST: &str =
     "https://git.warppool.org/api/v1/repos/dvb-projekt/dvb-WarpAxe/releases/latest";
 const ASSET: &str = "warpaxe.bin";
+/// The release signing key (x-only secp256k1). The private half lives on
+/// the maintainer's machine only; `tools/release-firmware.sh` signs.
+const RELEASE_KEY: [u8; 32] = [
+    0xec, 0x42, 0xcf, 0x9c, 0xe2, 0xe7, 0x36, 0x2e, 0x52, 0xab, 0xa1, 0x67, 0x5d, 0xc2, 0x70, 0x53,
+    0x05, 0x8e, 0x31, 0x3c, 0x15, 0xbf, 0x4c, 0x30, 0xb5, 0x27, 0xd4, 0x50, 0xae, 0xf3, 0x27, 0x42,
+];
 const EVERY: Duration = Duration::from_secs(12 * 3600);
 /// Largest image accepted (the app slot is 3 MiB).
 const MAX_IMAGE: usize = 3 * 1024 * 1024;
@@ -37,6 +47,10 @@ pub struct Release {
     pub bin_url: String,
     #[serde(skip)]
     pub sha_url: String,
+    #[serde(skip)]
+    pub sig_url: Option<String>,
+    /// The release carries a signature file.
+    pub signed: bool,
     pub size: u64,
 }
 
@@ -53,6 +67,9 @@ pub struct UpdateState {
     pub phase: String,
     /// Download progress, percent.
     pub progress: u8,
+    /// Outcome of the signature check of the last install: "" (none
+    /// yet), "verified", "missing" (installed unsigned), "invalid".
+    pub signature: String,
 }
 
 static STATE: Mutex<Option<UpdateState>> = Mutex::new(None);
@@ -185,6 +202,7 @@ fn fetch_latest() -> anyhow::Result<Release> {
         find(ASSET).ok_or_else(|| anyhow::anyhow!("release {tag} has no {ASSET}"))?;
     let (sha_url, _) = find(&format!("{ASSET}.sha256"))
         .ok_or_else(|| anyhow::anyhow!("release {tag} has no {ASSET}.sha256"))?;
+    let sig_url = find(&format!("{ASSET}.sig")).map(|(u, _)| u);
     let notes: String = v["body"]
         .as_str()
         .unwrap_or("")
@@ -199,6 +217,8 @@ fn fetch_latest() -> anyhow::Result<Release> {
         published: v["published_at"].as_str().unwrap_or("").to_string(),
         bin_url,
         sha_url,
+        signed: sig_url.is_some(),
+        sig_url,
         size,
     })
 }
@@ -306,6 +326,37 @@ fn install() {
     }
     if image.first() != Some(&0xE9) {
         return fail("download is not an ESP app image".into());
+    }
+    // The signature covers the digest just recomputed, not the file's
+    // claim of it.
+    let digest = warpaxe_sv2::release::digest(&image);
+    match &r.sig_url {
+        Some(url) => {
+            let sig = match get(url, 1024, |_| {}) {
+                Ok(b) => String::from_utf8_lossy(&b).to_string(),
+                Err(e) => return fail(format!("signature download: {e}")),
+            };
+            let Some(sig) = warpaxe_sv2::release::from_hex::<64>(&sig) else {
+                update(|s| s.signature = "invalid".into());
+                return fail("signature file is not 128 hex characters".into());
+            };
+            if !warpaxe_sv2::release::verify(&RELEASE_KEY, &digest, &sig) {
+                update(|s| s.signature = "invalid".into());
+                return fail(format!(
+                    "signature of {} does not verify against the release key",
+                    r.tag
+                ));
+            }
+            update(|s| s.signature = "verified".into());
+            log::info!("update: {} signature verified", r.tag);
+        }
+        None => {
+            update(|s| s.signature = "missing".into());
+            log::warn!(
+                "update: {} carries no signature, installing unsigned",
+                r.tag
+            );
+        }
     }
     log::info!("update: {} verified (sha256 {got}), flashing", r.tag);
     update(|s| s.phase = "flashing".into());
