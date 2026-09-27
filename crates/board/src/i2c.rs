@@ -50,6 +50,8 @@ pub(crate) mod mock {
     pub enum Tx {
         Write(u8, Vec<u8>),
         WriteRead(u8, Vec<u8>, Vec<u8>),
+        /// A register read the device does not acknowledge (absent part).
+        Nack(u8, Vec<u8>),
     }
 
     #[derive(Default)]
@@ -88,6 +90,10 @@ pub(crate) mod mock {
                     assert_eq!((a, w.as_slice()), (addr, wr), "unexpected read");
                     assert_eq!(answer.len(), rd.len(), "answer length");
                     rd.copy_from_slice(&answer);
+                }
+                Some(Tx::Nack(a, w)) => {
+                    assert_eq!((a, w.as_slice()), (addr, wr), "unexpected read");
+                    return Err(());
                 }
                 Some(other) => panic!("expected {other:?}, got read of {wr:?}"),
                 None => rd.iter_mut().for_each(|b| *b = 0),

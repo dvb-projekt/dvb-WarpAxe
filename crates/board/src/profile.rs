@@ -54,7 +54,8 @@ pub enum Thermal {
     Emc2101(emc2101::Config),
     /// TMP1075 sensors (one near the regulator at address offset 1,
     /// more near the chips, detected at init) and an EMC2302 dual fan
-    /// controller: the Nerd multi-chip boards. No driver yet.
+    /// controller: the Nerd multi-chip boards. TMP1075 driver:
+    /// [`crate::tmp1075`]; no EMC2302 driver yet.
     Tmp1075Emc2302,
 }
 
@@ -336,7 +337,7 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
 
 /// Q1370: four BM1370 on 12 V, TPS53647 four-phase behind an FXL6408
 /// expander (reset 0, regulator 1, LDO 2), EMC2302, 600 MHz / 1150 mV,
-/// 150 W. No regulator or expander driver yet.
+/// 150 W. Expander driver: [`crate::fxl6408`]; no regulator driver yet.
 pub const Q1370: Profile = Profile {
     name: "q1370",
     asic_count: 4,
@@ -356,8 +357,8 @@ pub const Q1370: Profile = Profile {
 
 /// Q1373 (NerdAxe Gaia): four BM1373 on 12 V, TPS53647 four-phase or
 /// TPS53667 six-phase (expander pin 6 tells), 425 MHz / 1010 mV, brought
-/// up at 1050 mV, 180 W. No regulator or expander driver yet, and the
-/// BM1373 chip profile is still open.
+/// up at 1050 mV, 180 W. Expander driver: [`crate::fxl6408`]; no
+/// regulator driver yet.
 pub const Q1373: Profile = Profile {
     name: "q1373",
     asic: Asic::Bm1373,
