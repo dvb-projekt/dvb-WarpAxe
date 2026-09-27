@@ -957,6 +957,8 @@ pub struct DetectInfo {
     pub candidates: Vec<&'static str>,
     /// Settings taken from the stock firmware.
     pub imported: Vec<&'static str>,
+    /// "unsupported": the board that was recognised.
+    pub model: Option<&'static str>,
 }
 
 static DETECT: Mutex<Option<DetectInfo>> = Mutex::new(None);
@@ -1035,6 +1037,7 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 why,
                 candidates: vec![p.name],
                 imported,
+                model: None,
             });
             p
         }
@@ -1048,6 +1051,18 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 why,
                 candidates: c.iter().map(|p| p.name).collect(),
                 imported,
+                model: None,
+            });
+            &warpaxe_board::profile::UNDETECTED
+        }
+        Detection::Unsupported(model, why) => {
+            log::warn!("board: recognised {model} ({why}), which WarpAxe does not support yet; chips stay off");
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status: "unsupported",
+                why,
+                candidates: Vec::new(),
+                imported,
+                model: Some(model),
             });
             &warpaxe_board::profile::UNDETECTED
         }

@@ -221,5 +221,7 @@
   "resume": "Continuar",
   "download": "Baixar",
   "restarting": "Reiniciando…",
-  "days": "d"
+  "days": "d",
+  "bd_unsup_title": "Placa reconhecida: {m}",
+  "bd_unsup": "O WarpAxe ainda não consegue operar esta placa, por isso os chips continuam desligados. Reinstale o firmware anterior ou escolha uma placa abaixo só se tiver certeza de que ela foi reconhecida incorretamente."
 }

@@ -221,5 +221,7 @@
   "resume": "Reanudar",
   "download": "Descargar",
   "restarting": "Reiniciando…",
-  "days": "d"
+  "days": "d",
+  "bd_unsup_title": "Placa reconocida: {m}",
+  "bd_unsup": "WarpAxe todavía no puede hacer funcionar esta placa, así que sus chips siguen apagados. Vuelve a instalar el firmware anterior, o elige una placa abajo solo si estás seguro de que se reconoció mal."
 }

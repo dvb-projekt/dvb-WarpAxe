@@ -221,5 +221,7 @@
  "resume": "继续",
  "download": "下载",
  "restarting": "正在重启…",
- "days": "天"
+ "days": "天",
+ "bd_unsup_title": "已识别：{m}",
+ "bd_unsup": "WarpAxe 暂不支持此主板，因此芯片保持关闭。请刷回之前的固件；只有在确定识别有误时，才在下方选择主板。"
 }

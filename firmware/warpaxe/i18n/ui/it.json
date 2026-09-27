@@ -221,5 +221,7 @@
   "resume": "Riprendi",
   "download": "Scarica",
   "restarting": "Riavvio…",
-  "days": "g"
+  "days": "g",
+  "bd_unsup_title": "Scheda riconosciuta: {m}",
+  "bd_unsup": "WarpAxe non può ancora far funzionare questa scheda, quindi i chip restano spenti. Reinstalla il firmware precedente, oppure scegli una scheda qui sotto solo se sei sicuro che sia stata riconosciuta in modo errato."
 }

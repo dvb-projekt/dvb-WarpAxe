@@ -44,6 +44,9 @@ pub enum Detection {
     /// These boards fit (best guess first; none = nothing recognised); ask
     /// before powering anything.
     Choose(&'static [&'static Profile], &'static str),
+    /// A board WarpAxe recognises but cannot run yet (named); nothing is
+    /// powered.
+    Unsupported(&'static str, &'static str),
 }
 
 /// From the stock firmware's NVS (AxeOS keys, as stored). `None` when the
@@ -80,6 +83,14 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
         return Detection::Choose(&[&NERDAXE_GAMMA], "TPS546 and EMC2101 on the Nerd bus");
     }
     if has(nerd_bus, addr::EMC2302) && has(nerd_bus, addr::TMP1075) {
+        if has(nerd_bus, addr::TPS546) {
+            // NerdOS finds a TPS546 instead of the TPS53647 on the Rev 7
+            // NerdQAxe++; WarpAxe has no profile for it yet.
+            return Detection::Unsupported(
+                "NerdQAxe++ Rev 7",
+                "TPS546 next to EMC2302 and TMP1075 on the Nerd bus",
+            );
+        }
         if has(nerd_bus, addr::FXL6408) {
             return Detection::Choose(
                 &[&Q1370, &Q1373],
@@ -158,6 +169,12 @@ mod tests {
     #[test]
     fn only_tested_boards_are_ever_taken() {
         assert!(TESTED.contains(&BITAXE_GAMMA.name));
+    }
+
+    #[test]
+    fn a_rev7_nerdqaxe_is_named_not_offered() {
+        let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075, addr::TPS546]);
+        assert!(matches!(d, Detection::Unsupported("NerdQAxe++ Rev 7", _)));
     }
 
     #[test]
