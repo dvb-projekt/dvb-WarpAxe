@@ -1,0 +1,16 @@
+# Renders the firmware's display screens on the host, from the unchanged
+# firmware sources (screens.rs, gfx/) with sample values in place of the
+# sensors: a preview before anything goes onto a device.
+#   cargo run --release -- OUT_DIR
+[package]
+name = "display-preview"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+warpaxe-board = { path = "../../crates/board" }
+esp-idf-svc = { path = "esp-stub", package = "esp-stub" }
+log = "0.4"

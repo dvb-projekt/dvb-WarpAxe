@@ -381,7 +381,7 @@ impl Ui {
             } else {
                 "Press a key to close"
             };
-            fade_text(c, &LABEL9, W / 2, 120, gfx::MUTE, hint, a * 0.8);
+            fade_text(c, &LABEL11, W / 2, 120, gfx::MUTE, hint, a * 0.8);
         }
     }
 
@@ -523,7 +523,7 @@ fn badge(c: &mut Canvas) {
 fn page_head(c: &mut Canvas, title: &str, n: usize) {
     badge(c);
     c.text(
-        &LABEL10,
+        &LABEL12,
         82,
         17,
         gfx::PLASMA,
@@ -531,7 +531,7 @@ fn page_head(c: &mut Canvas, title: &str, n: usize) {
         Align::Left,
     );
     if let Some(t) = clock_text() {
-        c.text(&MONO9, 252, 18, gfx::MUTE, &t, Align::Right);
+        c.text(&MONO11, 252, 18, gfx::MUTE, &t, Align::Right);
     }
     dots(c, 264, 11, n);
     c.rect(12, 25, 298, 1, gfx::WHITE, 16);
@@ -549,7 +549,7 @@ fn dots(c: &mut Canvas, x: i32, y: i32, n: usize) {
 }
 
 fn kv(c: &mut Canvas, label: &str, val: &str, y: i32, col: u16, x0: i32, x1: i32) {
-    c.text(&LABEL10, x0, y, gfx::MUTE, label, Align::Left);
+    c.text(&LABEL11, x0, y, gfx::MUTE, label, Align::Left);
     c.text(&VAL12, x1, y, col, val, Align::Right);
 }
 
@@ -566,7 +566,7 @@ fn cockpit(c: &mut Canvas) {
     let p = board::profile();
     badge(c);
     c.text(
-        &LABEL10,
+        &LABEL12,
         82,
         16,
         family_color(),
@@ -574,10 +574,10 @@ fn cockpit(c: &mut Canvas) {
         Align::Left,
     );
     if let Some(t) = clock_text() {
-        c.text(&MONO9, 206, 16, gfx::MUTE, &t, Align::Right);
+        c.text(&MONO11, 262, 16, gfx::MUTE, &t, Align::Right);
     }
     let hash_lbl = "HASHRATE";
-    c.text(&LABEL9, 12, 34, gfx::DIM, hash_lbl, Align::Left);
+    c.text(&LABEL11, 12, 34, gfx::DIM, hash_lbl, Align::Left);
     let (v, unit) = hashrate(m.hashrate_ghs);
     let w = c.text(&HERO, 11, 70, gfx::FG, &v, Align::Left);
     c.text(&UNIT13, 16 + w, 70, gfx::MUTE, unit, Align::Left);
@@ -631,16 +631,16 @@ fn cockpit(c: &mut Canvas) {
             c.disc(e.0, e.1, 2.2, gfx::FG, 255);
         }
     }
-    c.text(&LABEL9, x0 + gw, y0 - 3, gfx::DIM, "1 h", Align::Right);
+    c.text(&LABEL11, x0 + gw, y0 - 3, gfx::DIM, "1 h", Align::Right);
 
     // Right column.
     let rx = 222;
     c.rect(rx - 8, 8, 1, 124, gfx::WHITE, 12);
     dots(c, 270, 10, 0);
     let big = |c: &mut Canvas, label: &str, val: &str, unit: &str, y: i32, col: u16| {
-        c.text(&LABEL9, rx, y, gfx::DIM, label, Align::Left);
+        c.text(&LABEL11, rx, y, gfx::DIM, label, Align::Left);
         let w = c.text(&VAL16, rx, y + 17, col, val, Align::Left);
-        c.text(&LABEL9, rx + w + 3, y + 17, gfx::MUTE, unit, Align::Left);
+        c.text(&LABEL11, rx + w + 3, y + 17, gfx::MUTE, unit, Align::Left);
     };
     let t = b.temp_c;
     big(
@@ -697,20 +697,27 @@ fn cockpit(c: &mut Canvas) {
         255,
     );
     let host = st.pool.split(':').next().unwrap_or("").to_string();
-    let w = c.text(&MONO9, 20, 160, gfx::MUTE, &host, Align::Left);
+    let w = c.text(&MONO11, 20, 160, gfx::MUTE, &host, Align::Left);
+    let mut left_end = 20 + w;
     if st.tls {
         lock_icon(c, 24 + w, 161, gfx::OK);
+        left_end += 11;
     }
-    c.text(
-        &MONO9,
-        196,
-        160,
-        gfx::FG,
-        &format!("{}/{}", st.shares_accepted, st.shares_rejected),
-        Align::Right,
-    );
     let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_else(|| "–".into());
-    c.text(&MONO9, 310, 160, gfx::DIM, &ip, Align::Right);
+    let ip_x = 310 - MONO11.width(&ip);
+    c.text(&MONO11, 310, 160, gfx::DIM, &ip, Align::Right);
+    // Shares centred in the gap between pool and IP, if they fit.
+    let shares = format!("{}/{}", st.shares_accepted, st.shares_rejected);
+    if MONO11.width(&shares) + 16 <= ip_x - left_end {
+        c.text(
+            &MONO11,
+            (left_end + ip_x) / 2,
+            160,
+            gfx::FG,
+            &shares,
+            Align::Center,
+        );
+    }
 }
 
 fn bitcoin(c: &mut Canvas) {
@@ -718,7 +725,7 @@ fn bitcoin(c: &mut Canvas) {
     let g = de();
     page_head(c, "Bitcoin", 1);
     c.text(
-        &LABEL9,
+        &LABEL11,
         12,
         42,
         gfx::DIM,
@@ -743,7 +750,7 @@ fn bitcoin(c: &mut Canvas) {
         let next = (epoch + 1) * 210_000;
         let left = next - h;
         let frac = (h - epoch * 210_000) as f32 / 210_000.0;
-        c.text(&LABEL9, 180, 42, gfx::DIM, "HALVING", Align::Left);
+        c.text(&LABEL11, 180, 42, gfx::DIM, "HALVING", Align::Left);
         let blocks = format!(
             "{} {}",
             num(left as f64, 0),
@@ -757,7 +764,7 @@ fn bitcoin(c: &mut Canvas) {
             if g { "Monate" } else { "months" },
             (frac * 100.0).round()
         );
-        c.text(&LABEL9, 180, 72, gfx::MUTE, &sub, Align::Left);
+        c.text(&LABEL11, 180, 72, gfx::MUTE, &sub, Align::Left);
         c.rect(12, 82, 296, 4, gfx::WHITE, 20);
         c.rect(12, 82, (296.0 * frac) as i32, 4, gfx::BTC, 255);
     }
@@ -951,15 +958,15 @@ fn device(c: &mut Canvas) {
     );
     if let (Some(rpm), Some(pct)) = (b.fan2_rpm, b.fan2_pct) {
         let v = fan(rpm, pct);
-        kv(
-            c,
-            if g { "Lüfter M1" } else { "Fan M1" },
-            &v,
-            116,
-            if rpm == 0 { gfx::DIM } else { gfx::FG },
-            r2,
-            e,
-        );
+        let label = if g { "Lüfter M1" } else { "Fan M1" };
+        if rpm == 0 && pct > 0 {
+            // "not connected" in the narrower label face: it would run
+            // into the label in the value face.
+            c.text(&LABEL11, r2, 116, gfx::MUTE, label, Align::Left);
+            c.text(&LABEL11, e, 116, gfx::DIM, &v, Align::Right);
+        } else {
+            kv(c, label, &v, 116, gfx::FG, r2, e);
+        }
     }
     c.rect(12, 130, 298, 1, gfx::WHITE, 16);
     let (target, hot) = limits();
@@ -974,7 +981,7 @@ fn device(c: &mut Canvas) {
     } else {
         format!("Fans fixed {} % · shutdown {hot:.0} °C", cfg.fanspeed)
     };
-    c.text(&LABEL9, 12, 150, gfx::MUTE, &line, Align::Left);
+    c.text(&LABEL10, 12, 150, gfx::MUTE, &line, Align::Left);
     c.text(
         &MONO9,
         12,
@@ -997,11 +1004,11 @@ fn pool(c: &mut Canvas) {
     if st.tls {
         lock_icon(c, x, 46, gfx::OK);
         x += 11;
-        x += c.text(&LABEL9, x, 46, gfx::OK, "TLS", Align::Left) + 6;
+        x += c.text(&LABEL11, x, 46, gfx::OK, "TLS", Align::Left) + 6;
     }
     if st.using_fallback {
         c.text(
-            &LABEL9,
+            &LABEL11,
             x,
             46,
             gfx::WARN,
@@ -1175,7 +1182,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
             } else {
                 "Fans 100 % · release in the web UI under System"
             };
-            c.text(&LABEL9, W / 2, 112, gfx::MUTE, l2, Align::Center);
+            c.text(&LABEL11, W / 2, 112, gfx::MUTE, l2, Align::Center);
         }
         Event::ChipsOff => {
             c.fill(gfx::rgb(0x0b, 0x0c, 0x14));
@@ -1199,7 +1206,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
             } else {
                 "Device stays reachable · switch on in the web UI"
             };
-            c.text(&LABEL9, W / 2, 106, gfx::MUTE, l, Align::Center);
+            c.text(&LABEL11, W / 2, 106, gfx::MUTE, l, Align::Center);
             let n = net::state();
             let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_default();
             c.text(&VAL12, W / 2, 128, gfx::FG, &ip, Align::Center);
@@ -1239,7 +1246,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                     }
                 }
             };
-            c.text(&LABEL9, W / 2, 110, gfx::MUTE, &l, Align::Center);
+            c.text(&LABEL11, W / 2, 110, gfx::MUTE, &l, Align::Center);
         }
         Event::Block(_) => {}
     }
