@@ -143,7 +143,7 @@ mod config {
     }
     pub fn get() -> Config {
         Config {
-            display_language: "de".into(),
+            display_language: std::env::var("PREVIEW_LANG").unwrap_or_else(|_| "en".into()),
             pid_target_temp: 58,
             overheat_temp: 70,
             flipscreen: false,
@@ -151,9 +151,9 @@ mod config {
             core_voltage: 1250,
             autofanspeed: true,
             fanspeed: 100,
-            stratum_user: "bc1qtgmlr7cw7wkflaxp28zjzxyfrnvxq657vfeqz0.NerdQaxe++".into(),
+            stratum_user: "bc1qexampleaddressxxxxxxxxxxxxxxxxxxxxxxxx.NerdQaxe++".into(),
             fallback_user: String::new(),
-            ssid: "Heimnetz".into(),
+            ssid: "HomeNet".into(),
         }
     }
     pub fn best_diff() -> u64 {
