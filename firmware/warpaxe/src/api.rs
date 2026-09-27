@@ -70,6 +70,47 @@ pub fn system_info() -> serde_json::Value {
     })
 }
 
+/// NerdOS `/api/system/asic`, for boards whose stock firmware publishes
+/// clock and voltage choices (a tuner builds its ladder from them).
+fn asic_options() -> Option<serde_json::Value> {
+    let p = board::profile();
+    if p.frequency_options.is_empty() {
+        return None;
+    }
+    Some(json!({
+        "ASICModel": board::chip().name, "deviceModel": p.name, "asicCount": p.asic_count,
+        "defaultFrequency": p.default_frequency_mhz, "defaultVoltage": p.default_core_mv,
+        "absMaxFrequency": p.abs_max_frequency_mhz,
+        "absMinVoltage": p.abs_min_core_mv, "absMaxVoltage": p.abs_max_core_mv,
+        "ecoFrequency": 0, "ecoVoltage": 0,
+        "frequencyOptions": p.frequency_options, "voltageOptions": p.voltage_options,
+    }))
+}
+
+/// A PATCH outside the board's absolute limits is refused whole, as
+/// NerdOS `validateVoltage` / `absMaxAsicFrequency` do.
+fn limits_refuse(v: &serde_json::Value) -> Option<String> {
+    let p = board::profile();
+    if let Some(f) = v.get("frequency").and_then(|f| f.as_u64()) {
+        if p.abs_max_frequency_mhz > 0 && f > u64::from(p.abs_max_frequency_mhz) {
+            return Some(format!(
+                "frequency {f} MHz above the board's {} MHz",
+                p.abs_max_frequency_mhz
+            ));
+        }
+    }
+    if let Some(mv) = v.get("coreVoltage").and_then(|m| m.as_u64()) {
+        let lo = u64::from(p.abs_min_core_mv);
+        let hi = u64::from(p.abs_max_core_mv);
+        if (lo > 0 && mv < lo) || (hi > 0 && mv > hi) {
+            return Some(format!(
+                "coreVoltage {mv} mV outside the board's {lo}–{hi} mV"
+            ));
+        }
+    }
+    None
+}
+
 fn running_partition() -> String {
     EspOta::new()
         .and_then(|o| o.get_running_slot())
@@ -159,6 +200,14 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         Ok::<(), EspIOError>(())
     })?;
 
+    server.fn_handler("/api/system/asic", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        match asic_options() {
+            Some(v) => reply_json(req, 200, &v),
+            None => reply_json(req, 404, &json!({"error": "no options for this board"})),
+        }
+    })?;
+
     server.fn_handler("/api/system/info", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         reply_json(req, 200, &system_info())
@@ -197,6 +246,10 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let body = read_body(&mut req, 4096)?;
         match serde_json::from_slice::<serde_json::Value>(&body) {
+            Ok(v) if limits_refuse(&v).is_some() => {
+                let why = limits_refuse(&v).unwrap_or_default();
+                reply_json(req, 400, &json!({ "error": why }))
+            }
             Ok(v) => match config::patch(&v) {
                 Ok(cfg) => {
                     crate::display::touch();

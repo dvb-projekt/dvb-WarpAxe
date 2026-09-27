@@ -158,6 +158,17 @@ pub struct Profile {
     pub temp_offset_c: f32,
     /// Chip temperature the fan PID holds (NerdOS `m_pidSettings[0]`).
     pub fan_target_c: f32,
+    /// The stock firmware's clock choices, MHz (NerdOS
+    /// `/api/system/asic` `frequencyOptions`); empty = not published.
+    pub frequency_options: &'static [u32],
+    /// The stock firmware's core-voltage choices, mV; empty = none.
+    pub voltage_options: &'static [u16],
+    /// Highest clock the firmware accepts, MHz; 0 = no limit.
+    pub abs_max_frequency_mhz: u32,
+    /// Lowest core voltage the firmware accepts, mV; 0 = no limit.
+    pub abs_min_core_mv: u16,
+    /// Highest core voltage the firmware accepts, mV; 0 = no limit.
+    pub abs_max_core_mv: u16,
 }
 
 impl Profile {
@@ -234,6 +245,11 @@ pub const BITAXE_GAMMA: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -265,6 +281,11 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -310,6 +331,11 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -349,6 +375,12 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     vr_max_c: 70.0,
     temp_offset_c: 0.0,
     fan_target_c: 55.0,
+    // NerdOS 1.1.0 on a Rev 6.1 board, `/api/system/asic` (2026-09-27).
+    frequency_options: &[500, 515, 525, 550, 575, 590, 600],
+    voltage_options: &[1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200],
+    abs_max_frequency_mhz: 800,
+    abs_min_core_mv: 1050,
+    abs_max_core_mv: 1400,
 };
 
 /// NerdOctaxe-γ: eight BM1370 on 12 V, TPS53667 six-phase (or TPS53647
@@ -373,6 +405,13 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
     default_core_mv: 1210,
     init_core_mv: 0,
     max_power_w: 300,
+    // Options depend on the fitted regulator; published once this
+    // board is brought up.
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -396,6 +435,13 @@ pub const Q1370: Profile = Profile {
     max_power_w: 150,
     temp_offset_c: 3.0,
     fan_target_c: 55.0,
+    // Options depend on the fitted regulator; published once this
+    // board is brought up.
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -426,6 +472,13 @@ pub const Q1373: Profile = Profile {
     max_power_w: 180,
     temp_offset_c: 3.0,
     fan_target_c: 60.0,
+    // Options depend on the fitted regulator; published once this
+    // board is brought up.
+    frequency_options: &[],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 0,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -495,6 +548,15 @@ mod tests {
         assert_eq!(Q1370.temp_offset_c, 3.0);
         assert_eq!(Q1370.fan_target_c, 55.0);
         assert_eq!(NERDQAXE_PLUSPLUS.fan_target_c, 55.0);
+        assert_eq!(NERDQAXE_PLUSPLUS.abs_max_frequency_mhz, 800);
+        assert!(
+            NERDOCTAXE_GAMMA.frequency_options.is_empty(),
+            "not inherited"
+        );
+        assert!(
+            BITAXE_GAMMA.frequency_options.is_empty(),
+            "Gamma keeps its ladder"
+        );
         assert_eq!(NERDOCTAXE_GAMMA.fan_target_c, 55.0);
         for p in [&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &Q1370, &Q1373] {
             assert_eq!((p.max_temp_c, p.vr_max_c), (70.0, 70.0), "{}", p.name);
