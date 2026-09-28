@@ -277,7 +277,7 @@ back at any time with `GET /api/v1/display/frame`.
 |---|---|---|---|
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ Rev 6.1 | 4× BM1370 | TPS53647 | **runs 24/7** |
-| NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 | recognised, not supported yet (chips stay off) |
+| NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOctaxe Gamma | 8× BM1370 | TPS53667 | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |

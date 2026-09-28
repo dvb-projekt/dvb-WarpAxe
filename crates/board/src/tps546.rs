@@ -18,6 +18,8 @@ const OPERATION_ON: u8 = 0x80;
 const ON_OFF_CONFIG: u8 = 0x01 | 0x02 | 0x08 | 0x10;
 const DEVICE_ID_D24A: [u8; 6] = [0x54, 0x49, 0x54, 0x6D, 0x24, 0x41];
 const DEVICE_ID_D24S: [u8; 6] = [0x54, 0x49, 0x54, 0x6D, 0x24, 0x62];
+/// A third id NerdOS's Rev 7 driver has seen on TPS546D24A parts.
+const DEVICE_ID_D24A_ALT: [u8; 6] = [0x54, 0x49, 0x54, 0x6B, 0x24, 0x41];
 
 /// The operating window written at init. Volts, amps, kHz.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -73,6 +75,29 @@ impl Config {
         stack_config: 0x0000,
         sync_config: 0x10,
         compensation: None,
+    };
+
+    /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
+    /// `create_dual_config` (12 V input window, two phases stacked,
+    /// multi-phase sync, the compensation block) with the output window
+    /// raised to 2–3 V and 2.4 V at init, because the four chips sit in
+    /// two series voltage domains (VOUT = 2 × core).
+    pub const NERDQAXE_PLUSPLUS_REV7: Config = Config {
+        vin_on: 11.0,
+        vin_off: 10.5,
+        vin_uv_warn: 11.0,
+        vin_ov_fault: 14.0,
+        scale_loop: 0.125,
+        vout_min: 2.0,
+        vout_max: 3.0,
+        vout_command: 2.4,
+        iout_oc_warn: 90.0,
+        iout_oc_fault: 100.0,
+        frequency_khz: 650,
+        phase: 0xFF,
+        stack_config: 0x0001,
+        sync_config: 0xD0,
+        compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
     };
 }
 
@@ -203,7 +228,7 @@ impl<I: I2c> Tps546<I> {
         if id[0] != 6 {
             return Err(Error::BadLength);
         }
-        if id[1..] != DEVICE_ID_D24A && id[1..] != DEVICE_ID_D24S {
+        if id[1..] != DEVICE_ID_D24A && id[1..] != DEVICE_ID_D24S && id[1..] != DEVICE_ID_D24A_ALT {
             return Err(Error::WrongDevice);
         }
         self.write_byte(pm::OPERATION, OPERATION_OFF)?;
@@ -378,6 +403,46 @@ mod tests {
         );
         // Conversion is still off: no OPERATION_ON in the log.
         assert!(!log.contains(&Tx::Write(ADDR, vec![pm::OPERATION, 0x80])));
+    }
+
+    #[test]
+    fn rev7_config_writes_the_dual_phase_registers_and_accepts_the_third_id() {
+        let mut a = vec![6u8];
+        a.extend_from_slice(&DEVICE_ID_D24A_ALT);
+        let bus = Bus::new(vec![
+            Tx::WriteRead(ADDR, vec![pm::IC_DEVICE_ID], a),
+            Tx::Write(ADDR, vec![pm::OPERATION, 0x00]),
+            Tx::Write(ADDR, vec![pm::ON_OFF_CONFIG, 0x1B]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MODE], vec![0x17]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NERDQAXE_PLUSPLUS_REV7);
+        vr.init().unwrap();
+        let log = vr.release().log;
+        let find = |cmd: u8| {
+            log.iter().find_map(|t| match t {
+                Tx::Write(_, b) if b[0] == cmd => Some(b[1..].to_vec()),
+                _ => None,
+            })
+        };
+        assert_eq!(find(pm::STACK_CONFIG), Some(vec![0x01, 0x00]));
+        assert_eq!(find(pm::SYNC_CONFIG), Some(vec![0xD0]));
+        assert_eq!(find(pm::PHASE), Some(vec![0xFF]));
+        assert_eq!(
+            find(pm::COMPENSATION_CONFIG),
+            Some(vec![5, 0x12, 0x34, 0x42, 0x25, 0x04])
+        );
+        // VIN_ON 11 V = 704 · 2⁻⁶ = 0xD2C0; VIN_UV_WARN written (11 V).
+        assert_eq!(find(pm::VIN_ON), Some(vec![0xC0, 0xD2]));
+        assert_eq!(find(pm::VIN_UV_WARN_LIMIT), Some(vec![0xC0, 0xD2]));
+        // VOUT_COMMAND 2.4 V × 512 = 1228 = 0x04CC; VOUT_MIN 2 V = 0x0400.
+        assert_eq!(find(pm::VOUT_COMMAND), Some(vec![0xCC, 0x04]));
+        assert_eq!(find(pm::VOUT_MIN), Some(vec![0x00, 0x04]));
+        // IOUT fault 100 A = 800 · 2⁻³ = 0xEB20.
+        assert_eq!(find(pm::IOUT_OC_FAULT_LIMIT), Some(vec![0x20, 0xEB]));
+        // The output window is the raised one: 1.2 V (one domain) refused.
+        let mut vr = Tps546::new(Bus::sink(), Config::NERDQAXE_PLUSPLUS_REV7);
+        assert_eq!(vr.set_vout(1.2), Err(Error::OutOfRange));
+        assert!(vr.set_vout(2.4).is_ok());
     }
 
     #[test]

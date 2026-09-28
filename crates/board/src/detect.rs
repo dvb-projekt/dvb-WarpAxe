@@ -12,7 +12,8 @@
 //! and the chips stay unpowered until someone picks one.
 
 use crate::profile::{
-    Profile, BITAXE_GAMMA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS, Q1370, Q1373,
+    Profile, BITAXE_GAMMA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
+    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
 };
 
 /// I²C addresses the probe asks for.
@@ -85,9 +86,9 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
     if has(nerd_bus, addr::EMC2302) && has(nerd_bus, addr::TMP1075) {
         if has(nerd_bus, addr::TPS546) {
             // NerdOS finds a TPS546 instead of the TPS53647 on the Rev 7
-            // NerdQAxe++; WarpAxe has no profile for it yet.
-            return Detection::Unsupported(
-                "NerdQAxe++ Rev 7",
+            // NerdQAxe++. Unique, but the profile has never run: one click.
+            return Detection::Choose(
+                &[&NERDQAXE_PLUSPLUS_REV7],
                 "TPS546 next to EMC2302 and TMP1075 on the Nerd bus",
             );
         }
@@ -172,9 +173,10 @@ mod tests {
     }
 
     #[test]
-    fn a_rev7_nerdqaxe_is_named_not_offered() {
+    fn a_rev7_nerdqaxe_is_offered_not_taken() {
         let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075, addr::TPS546]);
-        assert!(matches!(d, Detection::Unsupported("NerdQAxe++ Rev 7", _)));
+        assert!(matches!(d, Detection::Choose([p], _) if p.name == NERDQAXE_PLUSPLUS_REV7.name));
+        assert!(!TESTED.contains(&NERDQAXE_PLUSPLUS_REV7.name), "never run");
     }
 
     #[test]

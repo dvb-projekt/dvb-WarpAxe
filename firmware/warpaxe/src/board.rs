@@ -293,9 +293,19 @@ impl Pin {
     }
 }
 
+/// Which board a TPS546 sits on: the numbers the stock firmware reports
+/// differ.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Flavor {
+    /// Bitaxe / NerdAxe: `current` = IOUT, power = VOUT × IOUT + offset.
+    Bitaxe,
+    /// NerdQAxe++ Rev 7: NerdOS reports the input current, POUT / VIN.
+    NerdRev7,
+}
+
 /// The core regulator, whichever the board carries.
 enum Regulator {
-    Tps546(Tps546<SharedI2c>),
+    Tps546(Tps546<SharedI2c>, Flavor),
     Tps5364x {
         vr: Tps53647<SharedI2c>,
         enable: Pin,
@@ -307,7 +317,7 @@ enum Regulator {
 impl Regulator {
     fn temperature_c(&mut self) -> Option<i32> {
         match self {
-            Regulator::Tps546(vr) => vr.temperature_c().ok(),
+            Regulator::Tps546(vr, _) => vr.temperature_c().ok(),
             // NerdOS reads the TMP1075 behind the regulator, with the
             // board's correction; the part's own sensor is the fallback.
             Regulator::Tps5364x { vr, bus, .. } => {
@@ -321,13 +331,13 @@ impl Regulator {
     }
     fn vin(&mut self) -> Option<f32> {
         match self {
-            Regulator::Tps546(vr) => vr.vin().ok(),
+            Regulator::Tps546(vr, _) => vr.vin().ok(),
             Regulator::Tps5364x { vr, .. } => vr.vin().ok(),
         }
     }
     fn vout(&mut self) -> Option<f32> {
         match self {
-            Regulator::Tps546(vr) => vr.vout().ok(),
+            Regulator::Tps546(vr, _) => vr.vout().ok(),
             Regulator::Tps5364x { vr, .. } => vr.vout().ok(),
         }
     }
@@ -335,7 +345,11 @@ impl Regulator {
     /// IIN on the Nerd regulators.
     fn current_a(&mut self) -> Option<f32> {
         match self {
-            Regulator::Tps546(vr) => vr.iout().ok(),
+            Regulator::Tps546(vr, Flavor::Bitaxe) => vr.iout().ok(),
+            Regulator::Tps546(vr, Flavor::NerdRev7) => {
+                let vin = vr.vin().ok().filter(|v| *v > 0.0)?;
+                Some(vr.vout().ok()? * vr.iout().ok()? / vin)
+            }
             Regulator::Tps5364x { vr, .. } => vr.iin().ok(),
         }
     }
@@ -343,7 +357,7 @@ impl Regulator {
     /// the regulator's input power on the Nerd boards (NerdOS).
     fn power_w(&mut self, vout: Option<f32>, current: Option<f32>, offset: f32) -> Option<f32> {
         match self {
-            Regulator::Tps546(_) => match (vout, current) {
+            Regulator::Tps546(_, _) => match (vout, current) {
                 (Some(v), Some(i)) => Some(v * i + offset),
                 _ => None,
             },
@@ -354,7 +368,7 @@ impl Regulator {
     /// warning and a fault share the bit).
     fn status(&mut self) -> Option<(u16, Option<u8>)> {
         let word = match self {
-            Regulator::Tps546(vr) => vr.status_word().ok()?,
+            Regulator::Tps546(vr, _) => vr.status_word().ok()?,
             Regulator::Tps5364x { vr, .. } => vr.status_word().ok()?,
         };
         let temp = if word & power_fault::status::TEMP != 0 {
@@ -366,7 +380,7 @@ impl Regulator {
     }
     fn status_register(&mut self, cmd: u8) -> Option<u8> {
         match self {
-            Regulator::Tps546(vr) => vr.status_register(cmd).ok(),
+            Regulator::Tps546(vr, _) => vr.status_register(cmd).ok(),
             Regulator::Tps5364x { vr, .. } => vr.status_register(cmd).ok(),
         }
     }
@@ -392,7 +406,7 @@ impl Regulator {
     /// Clear latched faults before the output goes back on.
     fn clear_faults(&mut self) {
         let ok = match self {
-            Regulator::Tps546(vr) => vr.clear_faults().is_ok(),
+            Regulator::Tps546(vr, _) => vr.clear_faults().is_ok(),
             Regulator::Tps5364x { vr, .. } => vr.clear_faults().is_ok(),
         };
         if !ok {
@@ -401,7 +415,7 @@ impl Regulator {
     }
     fn set_core(&mut self, volts: f32) -> Result<(), String> {
         match self {
-            Regulator::Tps546(vr) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
+            Regulator::Tps546(vr, _) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
             Regulator::Tps5364x { vr, .. } => {
                 vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
             }
@@ -410,7 +424,7 @@ impl Regulator {
     /// Core voltage back on at `volts` after [`off`](Self::off).
     fn on(&mut self, volts: f32) -> Result<(), String> {
         match self {
-            Regulator::Tps546(vr) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
+            Regulator::Tps546(vr, _) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
             Regulator::Tps5364x { vr, enable, .. } => {
                 enable.set(true);
                 vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
@@ -421,7 +435,7 @@ impl Regulator {
     /// their enable line (NerdOS `setVoltage(0)`).
     fn off(&mut self) {
         match self {
-            Regulator::Tps546(vr) => {
+            Regulator::Tps546(vr, _) => {
                 let _ = vr.set_vout(0.0);
             }
             Regulator::Tps5364x { enable, .. } => {
@@ -541,10 +555,10 @@ pub fn start() {
     let Some(bus) = i2c() else {
         return;
     };
-    if matches!(profile.vr, Vr::Tps5364x { .. }) {
-        start_nerd(profile, bus);
-    } else {
-        start_bitaxe(profile, bus);
+    match profile.vr {
+        Vr::Tps5364x { .. } => start_nerd(profile, bus),
+        Vr::Tps546Nerd { .. } => start_nerd_rev7(profile, bus),
+        _ => start_bitaxe(profile, bus),
     }
 }
 
@@ -612,7 +626,9 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
             }
         }
     }
-    let vr = vr.filter(|_| state().has_vr).map(Regulator::Tps546);
+    let vr = vr
+        .filter(|_| state().has_vr)
+        .map(|vr| Regulator::Tps546(vr, Flavor::Bitaxe));
 
     let mut thermal = profile.emc2101().map(|c| Emc2101::new(bus.clone(), c));
     if let Some(t) = thermal.as_mut() {
@@ -738,7 +754,18 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
     std::thread::sleep(Duration::from_millis(500));
     reset_chain(0, 250);
 
-    // Sensors and fans: full speed until the first reading.
+    let thermal = nerd_thermal(profile, &bus, cfg.invertfanpolarity);
+    let regulator = Regulator::Tps5364x {
+        vr,
+        enable: en,
+        bus,
+    };
+    spawn_run(profile, Some(regulator), Some(thermal));
+}
+
+/// The Nerd carrier's sensors and fans: TMP1075 detection and the
+/// EMC2302 at full speed until the first reading.
+fn nerd_thermal(profile: &'static Profile, bus: &SharedI2c, invert_polarity: bool) -> Thermal {
     let mut sensor_bus = bus.clone();
     let sensors = tmp1075::detect(&mut sensor_bus);
     log::info!("board: TMP1075 at {:02x?}", sensors.as_slice());
@@ -746,25 +773,92 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
     if let Ok((product, mfr)) = fans.identify() {
         log::info!("board: EMC2302 product {product:#04x} manufacturer {mfr:#04x}");
     }
-    let fans_ok = fans.init(cfg.invertfanpolarity).is_ok()
+    let fans_ok = fans.init(invert_polarity).is_ok()
         && fans.set_fan_percent(Fan::One, 100).is_ok()
         && fans.set_fan_percent(Fan::Two, 100).is_ok();
     if !fans_ok {
         log::error!("board: EMC2302 init failed");
         update(|s| s.last_error = "emc2302 init failed".into());
     }
-    let thermal = Thermal::Nerd {
+    Thermal::Nerd {
         fans,
         sensors,
         bus: bus.clone(),
         offset: profile.temp_offset_c,
+    }
+}
+
+/// The NerdQAxe++ Rev 7 power-up, NerdOS `NerdQaxePlus2::initAsics`:
+/// regulator enable and LDO off, chain in reset; 250 ms; LDO on; 100 ms;
+/// enable on; 50 ms; TPS546 init; the bring-up voltage over both
+/// domains; 500 ms; release reset; 250 ms. The enable line then stays
+/// high; OPERATION switches the output. Never run on hardware yet.
+fn start_nerd_rev7(profile: &'static Profile, bus: SharedI2c) {
+    let Vr::Tps546Nerd {
+        regulator,
+        enable,
+        ldo_enable,
+    } = profile.vr
+    else {
+        return;
     };
-    let regulator = Regulator::Tps5364x {
-        vr,
-        enable: en,
-        bus,
+    let cfg = config::get();
+    let fail = |what: String| {
+        log::error!("board: {what}; the chain stays unpowered");
+        update(|s| {
+            s.has_vr = false;
+            s.last_error = what;
+        });
     };
-    spawn_run(profile, Some(regulator), Some(thermal));
+    let en = Pin::Esp(enable);
+    let ldo = ldo_enable.map(Pin::Esp);
+    if !en.output(false) {
+        return fail("regulator enable pin".into());
+    }
+    if let Some(l) = &ldo {
+        l.output(false);
+    }
+    std::thread::sleep(Duration::from_millis(250));
+    if let Some(l) = &ldo {
+        l.set(true);
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    en.set(true);
+    std::thread::sleep(Duration::from_millis(50));
+
+    let mut vr = Tps546::new(bus.clone(), regulator);
+    let probe = format!("device_id={:?}", vr.device_id());
+    log::info!("board: TPS546 (Rev 7) probe {probe}");
+    update(|s| s.vr_probe = probe);
+    match vr.init() {
+        Ok(status) => {
+            log::info!("board: TPS546 up, status {status:#06x}");
+            update(|s| {
+                s.vr_status = status;
+                s.vr_part = "TPS546, 2 voltage domains".into();
+            });
+        }
+        Err(e) => {
+            let cmd = vr.last_command();
+            en.set(false);
+            return fail(format!("tps546 init at {cmd:#04x}: {e:?}"));
+        }
+    }
+    let mv = profile.init_core_mv.max(cfg.core_voltage);
+    if let Err(e) = vr.set_vout(profile.vout_for_core_mv(mv)) {
+        en.set(false);
+        return fail(format!("tps546 set_vout {mv} mV: {e:?}"));
+    }
+    log::info!("board: core {mv} mV");
+    std::thread::sleep(Duration::from_millis(500));
+    reset_chain(0, 250);
+
+    let thermal = nerd_thermal(profile, &bus, cfg.invertfanpolarity);
+    spawn_run(
+        profile,
+        Some(Regulator::Tps546(vr, Flavor::NerdRev7)),
+        Some(thermal),
+    );
 }
 
 fn spawn_run(profile: &'static Profile, vr: Option<Regulator>, thermal: Option<Thermal>) {

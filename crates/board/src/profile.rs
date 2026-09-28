@@ -29,6 +29,17 @@ pub enum Vr {
     None,
     /// TPS546D24A over PMBus, driver in [`crate::tps546`].
     Tps546(tps546::Config),
+    /// TPS546D24A behind the Nerd carrier's enable and LDO lines: the
+    /// NerdQAxe++ Rev 7 (NerdOS `drivers/rev7/TPS546`). Enable stays high
+    /// once up; the output is switched by OPERATION like on the Bitaxe.
+    Tps546Nerd {
+        /// The regulator window (two stacked phases, 12 V in).
+        regulator: tps546::Config,
+        /// Regulator enable GPIO.
+        enable: u8,
+        /// LDO enable GPIO (chip I/O rails).
+        ldo_enable: Option<u8>,
+    },
     /// TPS53647 (up to 4 phases) or TPS53667 (6 phases) over PMBus,
     /// the Nerd multi-chip boards; driver in [`crate::tps53647`].
     /// `enable`/`ldo_enable` are ESP GPIOs, or expander pins when
@@ -188,7 +199,7 @@ impl Profile {
     /// The regulator this crate can drive, if the board has one.
     pub fn tps546(&self) -> Option<tps546::Config> {
         match self.vr {
-            Vr::Tps546(c) => Some(c),
+            Vr::Tps546(c) | Vr::Tps546Nerd { regulator: c, .. } => Some(c),
             _ => None,
         }
     }
@@ -397,6 +408,38 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     abs_max_core_mv: 1400,
 };
 
+/// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
+/// TPS546 (NerdOS `Rev7TPS546`, VOUT = 2 × core), the Rev 6 carrier
+/// pins (enable GPIO10, LDO GPIO13), 1200 mV default, 120 W, fan target
+/// 65 °C, regulator limit 105 °C, clock up to 1000 MHz (NerdOS
+/// `applyRev7Profile`). Profile only: never run under WarpAxe.
+pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
+    name: "nerdqaxe-plusplus-rev7",
+    model: "NerdQAxe++ Rev 7",
+    vr: Vr::Tps546Nerd {
+        regulator: tps546::Config::NERDQAXE_PLUSPLUS_REV7,
+        enable: 10,
+        ldo_enable: Some(13),
+    },
+    voltage_domains: 2,
+    default_core_mv: 1200,
+    init_core_mv: 1200,
+    max_power_w: 120,
+    vr_throttle_c: 105.0,
+    vr_max_c: 105.0,
+    fan_target_c: 65.0,
+    frequency_options: &[
+        500, 515, 525, 550, 575, 590, 600, 625, 650, 675, 700, 725, 750, 775, 800, 825, 850, 875,
+        900, 925, 950, 975, 1000,
+    ],
+    voltage_options: &[
+        1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200, 1210, 1220, 1230, 1240, 1250, 1260,
+        1270, 1280, 1290, 1300,
+    ],
+    abs_max_frequency_mhz: 1000,
+    ..NERDQAXE_PLUSPLUS
+};
+
 /// NerdOctaxe-γ: eight BM1370 on 12 V, TPS53667 six-phase (or TPS53647
 /// four-phase when VR_DETECT GPIO3 reads low:
 /// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W.
@@ -524,6 +567,7 @@ pub const ALL: &[Profile] = &[
     T_DISPLAY_S3_DEVKIT,
     NERDAXE_GAMMA,
     NERDQAXE_PLUSPLUS,
+    NERDQAXE_PLUSPLUS_REV7,
     NERDOCTAXE_GAMMA,
     Q1370,
     Q1373,
@@ -558,7 +602,7 @@ mod tests {
 
     #[test]
     fn tps546_defaults_lie_inside_the_regulator_window() {
-        for p in [&BITAXE_GAMMA, &NERDAXE_GAMMA] {
+        for p in [&BITAXE_GAMMA, &NERDAXE_GAMMA, &NERDQAXE_PLUSPLUS_REV7] {
             let vr = p.tps546().unwrap();
             let v = p.vout_for_core_mv(p.default_core_mv);
             assert!(v >= vr.vout_min && v <= vr.vout_max, "{}", p.name);
@@ -615,6 +659,12 @@ mod tests {
             0
         );
         assert!(NERDAXE_GAMMA.tps53647().is_none());
+        // Rev 7: the Nerd carrier with a TPS546 and two voltage domains.
+        assert_eq!(NERDQAXE_PLUSPLUS_REV7.vout_for_core_mv(1200), 2.4);
+        assert_eq!(NERDQAXE_PLUSPLUS_REV7.core_mv_for_vout(2.4), 1200);
+        assert!(NERDQAXE_PLUSPLUS_REV7.tps53647().is_none());
+        assert_eq!(NERDQAXE_PLUSPLUS_REV7.i2c, Some(NERD_I2C));
+        assert_eq!(NERDQAXE_PLUSPLUS_REV7.thermal, Thermal::Tmp1075Emc2302);
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().phases, 6);
         assert_eq!(Q1373.tps53647().unwrap().phases, 4);
         assert!(NERDAXE_GAMMA.emc2101().is_some());
