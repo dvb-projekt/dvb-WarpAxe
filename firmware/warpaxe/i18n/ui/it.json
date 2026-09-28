@@ -273,5 +273,6 @@
   "sw_sort_temp": "Ordina: temperatura",
   "sw_add_miner": "+ Miner",
   "sw_chip": "Chip",
-  "sw_vr": "Regolatore"
+  "sw_vr": "Regolatore",
+  "nav_network": "Rete"
 }

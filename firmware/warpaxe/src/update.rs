@@ -117,18 +117,19 @@ pub fn request_install() -> bool {
     true
 }
 
-/// "v1.2.3" / "1.2.3-beta" → (1, 2, 3); anything else sorts lowest.
-fn semver(s: &str) -> (u32, u32, u32) {
-    let core = s
-        .trim_start_matches('v')
-        .split(['-', '+'])
-        .next()
-        .unwrap_or("");
+/// "v1.2.3" → (1, 2, 3, 1); "1.2.3-rc4" → (1, 2, 3, 0): a pre-release sorts
+/// below its release, so a miner on a test build is offered the release
+/// (SemVer precedence). Anything else sorts lowest.
+fn semver(s: &str) -> (u32, u32, u32, u8) {
+    let s = s.trim_start_matches('v');
+    let pre = s.split('+').next().unwrap_or("").contains('-');
+    let core = s.split(['-', '+']).next().unwrap_or("");
     let mut it = core.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
     (
         it.next().unwrap_or(0),
         it.next().unwrap_or(0),
         it.next().unwrap_or(0),
+        u8::from(!pre),
     )
 }
 

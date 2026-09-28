@@ -66,6 +66,8 @@ pub fn system_info() -> serde_json::Value {
         "fans": nerd_fans(&cfg, profile, &b),
         "invertfanpolarity": u8::from(cfg.invertfanpolarity), "minFanSpeed": cfg.min_fan_speed,
         "pidTargetTemp": if cfg.pid_target_temp > 0 { u32::from(cfg.pid_target_temp) } else { profile.fan_target_c.round() as u32 },
+        // ESP-Miner's name for the fan target; tuners clamp their own target to it.
+        "temptarget": if cfg.pid_target_temp > 0 { u32::from(cfg.pid_target_temp) } else { profile.fan_target_c.round() as u32 },
         "pidP": cfg.pid_p, "pidI": cfg.pid_i, "pidD": cfg.pid_d,
         "autofanspeed2": cfg.autofanspeed2, "manualFanSpeed2": cfg.manual_fan_speed2, "manualFanSpeed": cfg.fanspeed,
         "vrTargetTemp": vr_target(&cfg),

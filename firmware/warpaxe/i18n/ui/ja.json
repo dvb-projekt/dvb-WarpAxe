@@ -273,5 +273,6 @@
   "sw_sort_temp": "並べ替え：温度",
   "sw_add_miner": "+ マイナー",
   "sw_chip": "チップ",
-  "sw_vr": "電圧レギュレータ"
+  "sw_vr": "電圧レギュレータ",
+  "nav_network": "ネットワーク"
 }

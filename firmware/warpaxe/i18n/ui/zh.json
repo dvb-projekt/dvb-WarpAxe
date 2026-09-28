@@ -273,5 +273,6 @@
   "sw_sort_temp": "排序：温度",
   "sw_add_miner": "+ 矿机",
   "sw_chip": "芯片",
-  "sw_vr": "稳压器"
+  "sw_vr": "稳压器",
+  "nav_network": "网络"
 }

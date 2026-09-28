@@ -273,5 +273,6 @@
   "sw_sort_temp": "Trier : température",
   "sw_add_miner": "+ Mineur",
   "sw_chip": "Puce",
-  "sw_vr": "Régulateur"
+  "sw_vr": "Régulateur",
+  "nav_network": "Réseau"
 }
