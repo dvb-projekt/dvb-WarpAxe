@@ -28,6 +28,12 @@ header img{height:40px;width:auto;display:block}
 nav{display:flex;gap:4px;overflow-x:auto}
 nav a{padding:8px 14px;border-radius:10px;color:var(--mute);font-weight:500;font-size:14px;white-space:nowrap}
 nav a.on{background:rgba(123,92,255,.18);color:var(--fg);font-weight:600}
+/* The tabs keep their room; name and address give way (one line, then "…"). */
+.hostip{min-width:0;flex:0 1 auto;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.grow{min-width:0}
+@media (min-width:1101px){nav{flex-shrink:0}}
+@media (max-width:1320px){.hostip{display:none}}
+@media (max-width:1100px){header{flex-wrap:wrap}nav{order:3;width:100%}}
 .grow{flex:1}
 .pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-size:13px;font-weight:600;white-space:nowrap}
 .pill::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
