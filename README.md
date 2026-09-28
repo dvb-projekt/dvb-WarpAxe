@@ -10,9 +10,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-253%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-272%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.3-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.4-7B5CFF"></a>
 </p>
 
 ---
@@ -29,9 +29,10 @@ authority key checked, Stratum V1 over TLS, a fallback pool that hands back
 to the main pool — and differs where it counts for running a fleet:
 **signed online updates** the miner fetches and checks itself, **one image
 for every board** with the board found on the first start and Wi-Fi and
-pool taken over from the previous AxeOS/NerdOS settings, a regulator and
-sensor layer that **rejects implausible readings** instead of acting on
-them, the web UI **over the USB cable** as well as over Wi-Fi, and one web
+pool taken over from the previous AxeOS/NerdOS settings, a
+**password-protected setup hotspot** when there is no network to join, a
+regulator and sensor layer that **rejects implausible readings** instead of
+acting on them, the web UI **over the USB cable** as well as over Wi-Fi, and one web
 UI in eight languages for the Bitaxe and the Nerd series. The device
 display has animated special screens (yes, a found block gets a warp jump).
 See [Compared with the stock firmware](#compared-with-the-stock-firmware)
@@ -42,13 +43,13 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.3).** It mines 24/7 on one Bitaxe Gamma and one
+> **Status: early (v0.1.4).** It mines 24/7 on one Bitaxe Gamma and one
 > NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune. Other boards have a profile but have
 > not run it — see [Supported boards](#supported-boards) before you flash.
 
 ## Compared with the stock firmware
 
-As of 2026-09-27, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-09-28, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -62,6 +63,8 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
 | Settings of the previous firmware | — | — | **taken over** (Wi-Fi, pools, hostname) |
+| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
+| Wi-Fi setup without a network | open hotspot, or Bluetooth | not checked | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
@@ -71,9 +74,29 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 Where the stock firmware is ahead: far more boards and years of use by a
 large community; AxeOS has a swarm view, themes, the BAP accessory port
 and Wi-Fi setup over Bluetooth; NerdOS has two-factor login for updates,
-dual-pool mining, InfluxDB/Grafana export and alerts. AxeOS recovers from an
-overheat stop on its own. WarpAxe is early; if you need any of that,
+dual-pool mining, InfluxDB/Grafana export and alerts. WarpAxe is early; if
+you need any of that,
 stay with the stock firmware.
+
+## With WarpTune
+
+[WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool/src/branch/main/scripts/warptune-setup.md#what-each-firmware-gives-warptune),
+the clock-and-voltage regulator of dvb-WarpPool, works on the stock
+firmware in full — it talks the AxeOS API, and WarpAxe keeps that API. The
+difference is what the firmware says about itself: WarpAxe reports these
+states explicitly, so WarpTune does not have to guess them from the power
+draw:
+
+- **Overheat stop**: `overheat_mode` while it lasts, `overheatTrips` and
+  `overheatCause` (hot or a lost sensor). WarpTune holds during the stop,
+  and after a hot stop takes the clock one step down (two from the second
+  stop in an hour); a lost sensor is no reason to step down.
+- **Chips off or the chain still coming up**: `chainStopped` and
+  `chainPhase`, so a chain that is powering up is not taken for a dead chip.
+- **Fallback pool** and **reject reasons**, as on current AxeOS.
+
+The table on the WarpPool side lists, firmware by firmware, what WarpTune
+gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 ## Screenshots
 
@@ -153,8 +176,12 @@ back at any time with `GET /api/v1/display/frame`.
   expander.
 - Fan PID with ESP-Miner's gains, a second output that follows the regulator
   temperature, minimum speed, polarity.
-- Overheat shutdown of the core voltage, a guard for a lost chip sensor
-  (60 s blind = off), and plausibility windows for every reading: a
+- Overheat shutdown of the core voltage and a guard for a lost chip sensor
+  (60 s blind = off). The chips start again on their own once chip and
+  regulator are 10 °C below their limits (at least 60 s off; after a lost
+  sensor only with real readings back); the third stop within an hour stays
+  off until it is cleared by hand.
+- Plausibility windows for every reading: a
   regulator that answers garbage while it powers up is reported as "no
   reading", never as a value a tuner could act on.
 - Switch the chips off and on again from the web UI or the API; the device
@@ -171,7 +198,19 @@ back at any time with `GET /api/v1/display/frame`.
   /api/system`, `/api/system/asic`, `/api/v2/settings`, restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
-  key / demo, online update.
+  key / demo, online update, download mode for the web flasher.
+- States a tuner would otherwise have to guess from the power draw are in
+  `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
+  `overheatTrips` (stops in the last hour), `overheatCause` (hot or a lost
+  sensor), `overheatLatched`, `isUsingFallbackStratum`,
+  `sharesRejectedReasons`.
+- **Setup hotspot**: with no network in the settings, or none reached within
+  three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
+  ten-digit password made at every start and shown only on the device
+  display. A phone that joins it gets the Wi-Fi setup page by itself
+  (captive portal); after saving, the miner restarts, joins the network and
+  closes the hotspot. The log names the address behind every restart,
+  download-mode and overheat-reset request.
 
 ### Device display
 - NerdQAxe++ LCD: cockpit with the last hour's hashrate, Bitcoin, device,
@@ -233,8 +272,8 @@ up and updates itself:
    the miner when it is done. The flasher serves the current release; its
    image carries the same signature the online update checks. Coming from
    the stock firmware, the flasher usually puts the miner into download
-   mode by itself; otherwise hold BOOT, press RST, release BOOT (or open
-   `http://<miner>/bootloader` on a miner that runs WarpAxe). A miner that
+   mode by itself; otherwise hold BOOT, press RST, release BOOT (on a miner
+   that already runs WarpAxe: *System → Download mode*). A miner that
    stays dark after a cancelled install is still in download mode: take it
    off power completely — power supply **and** USB cable — for a few
    seconds. Without a browser: `warpaxe-factory.bin` from the
@@ -249,7 +288,9 @@ up and updates itself:
    chips stay off until you answer.
 4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
-   network adapter).
+   network adapter). If there was no Wi-Fi to take over, or it cannot be
+   reached, the miner opens its setup hotspot after three minutes: join
+   `WarpAxe-XXXX` with the password on its display and choose your network.
 
 **Updates** after that come from the web UI: *System → Online update →
 Install*, or upload `warpaxe.bin` from the
