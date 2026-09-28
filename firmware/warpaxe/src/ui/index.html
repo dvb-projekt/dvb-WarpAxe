@@ -124,6 +124,36 @@ label.t input:checked::after{left:23px}
 @media (max-width:1100px){.hostip{display:none}.plate{flex-wrap:wrap}.meta{width:100%;text-align:left;grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media (max-width:960px){header{flex-wrap:wrap}nav{order:3;width:100%}.g4{grid-template-columns:repeat(2,minmax(0,1fr))}.g3{grid-template-columns:1fr}.g2{grid-template-columns:1fr}.span2{grid-column:auto}.meta{grid-template-columns:repeat(3,auto);gap:16px}}
 @media (max-width:640px){header{position:static;padding:10px 16px;gap:8px 10px;flex-wrap:wrap}header img{height:30px}.pill{padding:5px 10px;font-size:12px}.lang{height:32px}nav{margin:0 -4px}nav a{padding:8px 10px}main{padding:16px}.plate{flex-wrap:wrap;gap:16px;padding:18px}.meta{text-align:left;width:100%}.form{grid-template-columns:1fr}.hostip{display:none}.kpi .v b{font-size:26px}}
+
+/* dashboard, warp design (preview) */
+.dh{position:relative;border:1px solid var(--line);border-radius:22px;padding:22px 26px 18px;background:linear-gradient(135deg,rgba(123,92,255,.16),rgba(0,224,255,.05) 55%,rgba(15,18,38,.62));display:flex;flex-direction:column;gap:18px;overflow:hidden}
+.dh::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--fc)}
+.dh::after{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 45% 60% at 0% 0%,var(--fc),transparent 70%);opacity:.10;pointer-events:none}
+.dhid{display:flex;align-items:center;gap:18px;flex-wrap:wrap;position:relative;z-index:1}
+.dhchips{display:grid;gap:5px}
+.dhchips i{display:block;width:16px;height:16px;border-radius:4px;border:1px solid var(--fc);background:rgba(255,255,255,.04);position:relative}
+.dhchips i::after{content:"";position:absolute;inset:calc(50% - 3px);border-radius:50%;background:var(--dc)}
+.dhname{display:flex;flex-direction:column;gap:4px;flex:1;min-width:180px}
+.dhname h1{font-size:26px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dhmeta{display:flex;gap:22px;flex-wrap:wrap;font-size:13px}
+.dhmeta b{display:block;font:400 15px "JetBrains Mono",monospace;margin-top:3px;color:var(--fg)}
+.dhmid{display:flex;justify-content:space-between;align-items:flex-end;gap:18px 28px;flex-wrap:wrap;position:relative;z-index:1}
+.dhbig{font:700 64px/1 "Space Grotesk",Inter,sans-serif;background:linear-gradient(90deg,#fff,var(--plasma) 45%,var(--warp));-webkit-background-clip:text;background-clip:text;color:transparent}
+.dhsub{font-size:13px;color:var(--dim);margin-top:6px}
+.dhsub .ok{color:var(--ok)}
+.dhfacts{display:grid;grid-template-columns:repeat(4,auto);gap:10px 28px}
+.dhfacts b{display:block;font:400 20px "JetBrains Mono",monospace;margin-top:4px}
+.dhfacts small{display:block;font-size:12px;color:var(--dim);margin-top:2px}
+.dhchart{position:relative;z-index:1;border-top:1px solid var(--line);padding-top:12px}
+.dhchart .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:4px}
+.ins{display:flex;flex-direction:column;gap:14px;min-width:0}
+.ins h2{display:flex;justify-content:space-between;align-items:baseline}
+.ins h2 small{font:400 12px Inter,sans-serif;color:var(--dim)}.ins h2 small.ok{color:var(--ok)}.ins h2 small.err{color:var(--err)}
+.plink{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:12px;background:rgba(0,224,255,.06);border:1px solid rgba(0,224,255,.18)}
+.plink .dot{width:10px;height:10px;border-radius:50%;background:var(--ok);box-shadow:0 0 10px var(--ok)}
+.plink .host{font:400 14px "JetBrains Mono",monospace;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media (max-width:960px){.dhfacts{grid-template-columns:repeat(2,auto)}.dhbig{font-size:52px}}
+@media (max-width:640px){.dh{padding:18px 16px 14px}.dhbig{font-size:44px}.dhfacts{grid-template-columns:repeat(2,minmax(0,1fr));width:100%}.dhmeta{width:100%}}
 </style>
 </head>
 <body>
@@ -385,17 +415,41 @@ function fanrow(name, note, pct, rpm, optional) {
 }
 function dashboard() {
   const i = info; if (!i) return "";
+  const f = family(i), p = phase(i), dot = p.c === "ok" ? "var(--ok)" : p.c === "err" ? "var(--err)" : "var(--warn)";
+  const n = Math.max(1, i.asicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1;
+  const cz = n > 1 ? 16 : 34, chips = `<div class="dhchips" style="grid-template-columns:repeat(${cols},${cz}px);--dc:${dot}">${Array.from({length: n}, () => `<i style="width:${cz}px;height:${cz}px;border-radius:${n > 1 ? 4 : 8}px"></i>`).join("")}</div>`;
+  const sub = [`${esc(i.ASICModel)} × ${n}`, i.vrPart ? esc(i.vrPart.replace(/^Tps/i, "TPS").replace(/ (\d+) phases/, " · $1 " + (lang === "de" ? "Phasen" : "phases"))) : "", i.nominalVoltage ? i.nominalVoltage + " V" : ""].filter(Boolean).join(" · ");
+  const th = i.hashRate > 0 || i.chainStopped ? i.hashRate / 1000 : null, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
+  const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), rejPct = tot ? i.sharesRejected / tot * 100 : 0, ofExp = th && exp ? th / exp * 100 : null;
   const two = i.fanrpm2 != null, vrTarget = two ? 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
   const fans = two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2, true) : fanrow(t("fan"), t("fan_chips"), i.fanspeed, i.fanrpm);
   const curNote = two ? t("cur_in") : t("cur_out");
-  return plate(i) + kpis(i) + `<div class="g3">
-  <section class="card span2" style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2>${t("history")}</h2>
-    <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
-    <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</section>
-  <section class="card" style="display:flex;flex-direction:column;gap:18px"><h2>${t("temperature")}</h2>${tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section></div>
-  <div class="g3"><section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("fans")}</h2>${fans}</section>
-  <section class="card"><h2 style="margin-bottom:8px">${t("power")}</h2><div class="row"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V</span></div><div class="row"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div><div class="row"><span class="mute">${t("current")}</span><span class="num">${nf(i.current == null ? null : i.current / 1000, 1)} A (${curNote})</span></div><div class="row"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>
-  <section class="card"><h2 style="margin-bottom:8px">${t("pool")}</h2>${poolRows(i)}</section></div>`;
+  const s = state?.stratum || {}, sv2 = /sv2/i.test(i.stratumProtocolActive || ""), tls = sv2 || i.stratumTLS > 0;
+  return `<div style="display:flex;flex-direction:column;gap:18px">
+  <section class="dh" style="--fc:${f.col}">
+    <div class="dhid">${chips}<div class="dhname"><h1>${esc(i.boardName || i.boardVersion)}<span class="fam" style="color:${f.col};border-color:${f.col}">${t(f.key)}</span></h1><div class="mute" style="font-size:13px">${sub}</div></div>
+      <div class="dhmeta"><div><span class="lbl">${t("uptime")}</span><b>${upt(i.uptimeSeconds)}</b></div><div><span class="lbl">${t("firmware")}</span><b>${esc(i.version)}</b></div><div><span class="lbl">${t("wifi")}</span><b style="display:flex;align-items:center;gap:6px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</b></div></div></div>
+    <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${nf(th, 2)}</span><span class="swunit">TH/s</span></div>
+      <div class="dhsub">${t("expected")} ${nf(exp, 2)} TH/s${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}</div></div>
+      <div class="dhfacts"><div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
+        <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>
+        <div><span class="lbl">${t("shares")}</span><b>${nf(i.sharesAccepted)}</b><small>${nf(i.sharesRejected)} ${t("rejected")} · ${nf(rejPct, 2)} %</small></div>
+        <div><span class="lbl">${t("bestdiff")}</span><b style="color:var(--btc)">${sfx(i.bestSessionDiff)}</b><small>${t("alltime")} ${sfx(i.bestDiff)}</small></div></div></div>
+    <div class="dhchart"><div class="top"><span class="lbl">${t("history")}</span><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
+      <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</div>
+  </section>
+  <div class="g3">
+    <section class="card ins"><h2>${t("temperature")}</h2>${tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
+    <section class="card ins"><h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>
+      <div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>
+    <section class="card ins"><h2>${t("pool")}<small class="${i.stratumConnected ? "ok" : "err"}">${t(i.stratumConnected ? "connected" : "disconnected")}</small></h2>
+      <div class="plink"><span class="dot" style="${!i.stratumConnected ? "background:var(--err);box-shadow:0 0 10px var(--err)" : i.isUsingFallbackStratum ? "background:var(--warn);box-shadow:0 0 10px var(--warn)" : ""}"></span><span class="host">${esc(i.isUsingFallbackStratum ? i.activePool : `${i.stratumURL}:${i.stratumPort}`)}</span><span class="num" style="font-size:12px;color:var(--plasma);white-space:nowrap">${i.stratumProtocolActive === "SV2" ? "Sv2 · Noise" : "V1"}${i.stratumTLSActive ? " · TLS" : ""}</span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(i.isUsingFallbackStratum ? i.fallbackStratumUser : i.stratumUser))}</span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty)}</span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("shares")}</span><span class="num">${nf(i.sharesAccepted)} / <span class="${i.sharesRejected ? "warn" : ""}">${nf(i.sharesRejected)}</span></span></div></section>
+  </div></div>`;
 }
 function worker(u) { u = String(u || ""); const [a, ...r] = u.split("."); return a.length > 14 ? a.slice(0, 6) + "…" + a.slice(-4) + (r.length ? "." + r.join(".") : "") : u; }
 function poolRows(i) {
