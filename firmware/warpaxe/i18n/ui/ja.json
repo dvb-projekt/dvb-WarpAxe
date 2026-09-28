@@ -261,11 +261,17 @@
   "sw_remove": "削除",
   "sw_full": "リストに登録できるのは最大 {n} 台です。",
   "sw_empty": "ほかのマイナーはまだありません。アドレスで追加するか、ネットワークを検索してください。",
-  "sw_devices": "デバイス",
-  "sw_total_hash": "合計ハッシュレート",
   "sw_total_power": "合計電力",
   "sw_filter": "絞り込み",
   "sw_refresh": "更新",
   "sw_every": "{s} 秒ごと",
-  "sw_open": "このマイナーの Web UI を開く"
+  "sw_open": "このマイナーの Web UI を開く",
+  "sw_formation": "編隊 · {n} 台",
+  "sw_record": "最高記録",
+  "sw_sort_hash": "並べ替え：ハッシュレート",
+  "sw_sort_name": "並べ替え：名前",
+  "sw_sort_temp": "並べ替え：温度",
+  "sw_add_miner": "+ マイナー",
+  "sw_chip": "チップ",
+  "sw_vr": "電圧レギュレータ"
 }

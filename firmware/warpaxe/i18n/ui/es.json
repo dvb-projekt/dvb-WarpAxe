@@ -261,11 +261,17 @@
   "sw_remove": "Quitar",
   "sw_full": "La lista admite como máximo {n} mineros.",
   "sw_empty": "Todavía no hay otros mineros. Añade uno por su dirección o busca en la red.",
-  "sw_devices": "Dispositivos",
-  "sw_total_hash": "Hashrate total",
   "sw_total_power": "Potencia total",
   "sw_filter": "Filtrar",
   "sw_refresh": "Actualizar",
   "sw_every": "cada {s} s",
-  "sw_open": "Abrir su interfaz web"
+  "sw_open": "Abrir su interfaz web",
+  "sw_formation": "Formación · {n} mineros",
+  "sw_record": "Récord",
+  "sw_sort_hash": "Ordenar: hashrate",
+  "sw_sort_name": "Ordenar: nombre",
+  "sw_sort_temp": "Ordenar: temperatura",
+  "sw_add_miner": "+ Minero",
+  "sw_chip": "Chip",
+  "sw_vr": "Regulador"
 }

@@ -261,11 +261,17 @@
   "sw_remove": "移除",
   "sw_full": "列表最多可容纳 {n} 台矿机。",
   "sw_empty": "还没有其他矿机。可按地址添加，或搜索网络。",
-  "sw_devices": "设备",
-  "sw_total_hash": "总算力",
   "sw_total_power": "总功率",
   "sw_filter": "筛选",
   "sw_refresh": "刷新",
   "sw_every": "每 {s} 秒",
-  "sw_open": "打开其 Web 界面"
+  "sw_open": "打开其 Web 界面",
+  "sw_formation": "编队 · {n} 台矿机",
+  "sw_record": "最高纪录",
+  "sw_sort_hash": "排序：算力",
+  "sw_sort_name": "排序：名称",
+  "sw_sort_temp": "排序：温度",
+  "sw_add_miner": "+ 矿机",
+  "sw_chip": "芯片",
+  "sw_vr": "稳压器"
 }

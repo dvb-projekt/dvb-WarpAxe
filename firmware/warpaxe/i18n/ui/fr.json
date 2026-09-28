@@ -261,11 +261,17 @@
   "sw_remove": "Retirer",
   "sw_full": "La liste contient au maximum {n} mineurs.",
   "sw_empty": "Aucun autre mineur pour l’instant. Ajoutez-en un par son adresse ou recherchez sur le réseau.",
-  "sw_devices": "Appareils",
-  "sw_total_hash": "Hashrate total",
   "sw_total_power": "Puissance totale",
   "sw_filter": "Filtrer",
   "sw_refresh": "Actualiser",
   "sw_every": "toutes les {s} s",
-  "sw_open": "Ouvrir son interface web"
+  "sw_open": "Ouvrir son interface web",
+  "sw_formation": "Formation · {n} mineurs",
+  "sw_record": "Record",
+  "sw_sort_hash": "Trier : hashrate",
+  "sw_sort_name": "Trier : nom",
+  "sw_sort_temp": "Trier : température",
+  "sw_add_miner": "+ Mineur",
+  "sw_chip": "Puce",
+  "sw_vr": "Régulateur"
 }
