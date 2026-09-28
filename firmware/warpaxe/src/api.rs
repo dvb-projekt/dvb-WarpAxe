@@ -525,7 +525,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             .unwrap_or(3600);
         reply_json(req, 200, &crate::history::json(span))
     })?;
-    server.fn_handler("/api/v1/overheat/reset", Method::Post, |req| {
+    server.fn_handler("/api/v1/overheat/reset", Method::Post, |mut req| {
+        log::warn!("api: overheat reset requested from {}", peer(&mut req));
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         board::reset_overheat();
         reply_json(req, 200, &json!({"overheat": board::overheat()}))
@@ -547,8 +548,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         reply_json(req, 200, &json!({"bestDiff": 0}))
     })?;
 
-    server.fn_handler("/api/system/restart", Method::Post, |req| {
+    server.fn_handler("/api/system/restart", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::warn!("api: restart requested from {}", peer(&mut req));
         let mut r = req.into_ok_response()?;
         r.write_all(b"restarting\n")?;
         r.flush()?;
@@ -728,8 +730,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 }
 
 fn bootloader(
-    req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+    mut req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
 ) -> Result<(), EspIOError> {
+    log::warn!("api: download mode requested from {}", peer(&mut req));
     let mut r = req.into_ok_response()?;
     r.write_all(b"rebooting into ROM download mode; clear RTC_CNTL_OPTION1_REG before the reset that should start the app\n")?;
     r.flush()?;
