@@ -143,7 +143,9 @@ pub struct Profile {
     pub init_core_mv: u16,
     /// Board input class, V (5 for Bitaxe, 12 for the 12 V boards).
     pub nominal_voltage_v: u8,
-    /// Board power limit, W.
+    /// Board power class, W, as the stock firmware reports it (AxeOS /
+    /// NerdOS `maxPower`). Reported only; nothing throttles on it — the
+    /// temperature limits and the regulator's own protection do that.
     pub max_power_w: u16,
     /// Added to VOUT×IOUT: what the rest of the board draws.
     pub power_offset_w: f32,

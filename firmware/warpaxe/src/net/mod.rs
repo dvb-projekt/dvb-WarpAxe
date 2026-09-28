@@ -36,3 +36,15 @@ pub(crate) fn set_wifi(connected: bool, ip: Option<String>, rssi: Option<i32>) {
     s.wifi_ip = ip;
     s.wifi_rssi = rssi;
 }
+
+/// The setup hotspot while it is up: its name and password, for the
+/// device display only (never in the API).
+static HOTSPOT: Mutex<Option<(String, String)>> = Mutex::new(None);
+
+pub fn hotspot() -> Option<(String, String)> {
+    HOTSPOT.lock().unwrap().clone()
+}
+
+pub(crate) fn set_hotspot(h: Option<(String, String)>) {
+    *HOTSPOT.lock().unwrap() = h;
+}

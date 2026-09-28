@@ -150,7 +150,7 @@
   "invertfan_s": "Per ventole che funzionano al contrario rispetto all'impostazione",
   "pidTargetTemp": "Temperatura chip obiettivo (°C)",
   "overheat_temp": "Temperatura di spegnimento (°C)",
-  "overheat_s": "Chip o regolatore oltre questo valore: tensione core spenta",
+  "overheat_s": "Chip o regolatore oltre questo valore: tensione core spenta finché entrambi non scendono di 10 °C",
   "minFanSpeed": "Velocità minima ventola (%)",
   "minFan_s": "Le ventole grandi potrebbero non partire sotto il 25 % circa",
   "fanspeed": "Velocità fissa ventola (%)",
@@ -234,5 +234,11 @@
   "reqauth_s": "Attivato: il miner si connette solo dopo che il certificato del pool è stato verificato con la chiave. Disattivato: una chiave impostata viene comunque verificata non appena l'orologio è regolato; senza chiave il pool è considerato attendibile senza verifica.",
   "bd_unsup_title": "Scheda riconosciuta: {m}",
   "bd_unsup": "WarpAxe non può ancora far funzionare questa scheda, quindi i chip restano spenti. Reinstalla il firmware precedente, oppure scegli una scheda qui sotto solo se sei sicuro che sia stata riconosciuta in modo errato.",
-  "upd_unsigned": "Questa release non è firmata: si può installare, ma il miner non può verificare chi l'ha compilata."
+  "upd_unsigned": "Questa release non è firmata: si può installare, ma il miner non può verificare chi l'ha compilata.",
+  "st_overheat_latched": "Surriscaldato 3× in un'ora: resta spento",
+  "dlmode": "Modalità download",
+  "dlmode_s": "Per reinstallare via USB con il flasher web (warppool.org/warpaxe)",
+  "ask_dlmode": "Passare alla modalità download? Il miner smette di minare e attende il flasher web sul cavo USB. Al termine il flasher lo riavvia; se resta spento, scollega l'alimentatore e il cavo USB.",
+  "dlmode_on": "Modalità download: collega ora il flasher web",
+  "ask_net_restart": "Riavviare ora e connettersi a {n}? L'hotspot di configurazione si chiude appena il miner è in rete."
 }

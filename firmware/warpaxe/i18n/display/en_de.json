@@ -34,5 +34,12 @@
  "Preparing flash · do not power off": "Speicher wird vorbereitet · nicht ausschalten",
  "{p} % · do not power off": "{p} % · nicht ausschalten",
  "CORE OFF": "KERN AUS",
- "FIRMWARE UPDATE": "FIRMWARE-UPDATE"
+ "FIRMWARE UPDATE": "FIRMWARE-UPDATE",
+ "Fans 100 % · starts again once cooled": "Lüfter 100 % · läuft nach dem Abkühlen wieder an",
+ "WI-FI SETUP": "WLAN-EINRICHTUNG",
+ "Join {n}": "Verbinden mit {n}",
+ "Password": "Passwort",
+ "then open http://192.168.4.1": "dann http://192.168.4.1 öffnen",
+ "PASSWORD": "PASSWORT",
+ "THEN OPEN": "DANN ÖFFNEN"
 }

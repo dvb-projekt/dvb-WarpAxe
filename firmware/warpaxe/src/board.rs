@@ -24,6 +24,7 @@ use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2302::{Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
+use warpaxe_board::overheat::{Cause, Guard, Reading};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::Tps53647;
 use warpaxe_board::tps546::Tps546;
@@ -63,8 +64,11 @@ pub struct BoardState {
     pub vr_status: u16,
     /// Regulator population found at boot (Nerd boards).
     pub vr_part: String,
-    /// Mining stopped and the regulator switched off; stays until reboot.
+    /// Mining stopped and the regulator switched off; starts again on its
+    /// own once cooled (see `warpaxe_board::overheat`).
     pub overheat: bool,
+    /// Too many overheat stops in a row: stays off until cleared by hand.
+    pub overheat_latched: bool,
     /// Chips switched off by hand.
     pub shutdown: bool,
     pub last_error: String,
@@ -74,6 +78,8 @@ pub struct BoardState {
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
 static OVERHEAT: AtomicBool = AtomicBool::new(false);
+/// When the chips may run again after an overheat stop.
+static GUARD: Mutex<Guard> = Mutex::new(Guard::new());
 /// Chips switched off by hand (web UI / API), not by a limit.
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// The core rail is up; the miner starts the chain only then.
@@ -109,7 +115,8 @@ pub fn chip() -> &'static ChipProfile {
     }
 }
 
-/// True once a temperature limit was crossed; stays until reset.
+/// True once a temperature limit was crossed, until the board has cooled
+/// down (or the stop is cleared by hand).
 pub fn overheat() -> bool {
     OVERHEAT.load(Ordering::Relaxed)
 }
@@ -139,6 +146,7 @@ pub fn set_shutdown(off: bool) {
 /// next sample trips it again.
 pub fn reset_overheat() {
     CLEAR_LOST.store(true, Ordering::Relaxed);
+    GUARD.lock().unwrap().clear();
     OVERHEAT.store(false, Ordering::Relaxed);
     update(|s| {
         if s.last_error.starts_with("temp:") {
@@ -727,6 +735,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut vr_temp: Option<i32> = None;
     let mut polarity = cfg.invertfanpolarity;
     let mut temp_lost_s: u32 = 0;
+    let t0 = Instant::now();
+    // The regulator has reported a temperature since boot: a missing one
+    // then counts as unknown, not as cool.
+    let mut vr_temp_seen = false;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -804,8 +816,16 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_max_c);
             let blind = temp_lost_s >= TEMP_LOST_S;
+            vr_temp_seen |= vr_temp.is_some();
+            let now_s = t0.elapsed().as_secs() as u32;
             if (hot_chip || hot_vr || blind) && !overheat() {
                 OVERHEAT.store(true, Ordering::Relaxed);
+                let mut g = GUARD.lock().unwrap();
+                g.trip(now_s, if blind { Cause::Blind } else { Cause::Hot });
+                if g.latched() {
+                    log::error!("board: third overheat stop within an hour: stays off until cleared by hand");
+                }
+                drop(g);
                 if blind {
                     log::error!("board: no chip temperature for {temp_lost_s} s: core voltage off");
                     update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
@@ -822,7 +842,34 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if let Some(t) = thermal.as_mut() {
                     t.set_fans(100, 100);
                 }
+            } else if overheat() {
+                let mut g = GUARD.lock().unwrap();
+                let cooled = g.may_resume(
+                    now_s,
+                    &Reading {
+                        chip_c: temp,
+                        chip_limit_c: chip_limit,
+                        vr_c: vr_temp.map(|c| c as f32),
+                        vr_limit_c: profile.vr_max_c,
+                        vr_expected: vr_temp_seen,
+                    },
+                );
+                if cooled {
+                    g.resumed();
+                    drop(g);
+                    temp_lost_s = 0;
+                    OVERHEAT.store(false, Ordering::Relaxed);
+                    log::warn!(
+                        "board: cooled down (chip {temp:?} °C, regulator {vr_temp:?} °C): core voltage back on"
+                    );
+                    update(|s| {
+                        if s.last_error.starts_with("temp:") {
+                            s.last_error.clear();
+                        }
+                    });
+                }
             }
+            let latched = GUARD.lock().unwrap().latched();
             update(|s| {
                 s.temp_c = temp;
                 s.vr_temp_c = vr_temp;
@@ -834,6 +881,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.fan2_rpm = rpm.1;
                 s.fan_auto = cfg.autofanspeed;
                 s.overheat = overheat();
+                s.overheat_latched = latched;
                 s.shutdown = shutdown();
                 if let Some(st) = status {
                     s.vr_status = st;

@@ -150,7 +150,7 @@
   "invertfan_s": "Para ventoinhas que giram ao contrário do ajuste",
   "pidTargetTemp": "Temperatura alvo dos chips (°C)",
   "overheat_temp": "Temperatura de desligamento (°C)",
-  "overheat_s": "Chips ou regulador acima dela: tensão do núcleo cortada",
+  "overheat_s": "Chips ou regulador acima dela: tensão do núcleo cortada até ambos esfriarem 10 °C",
   "minFanSpeed": "Velocidade mínima da ventoinha (%)",
   "minFan_s": "Ventoinhas grandes podem não girar abaixo de uns 25 %",
   "fanspeed": "Velocidade fixa da ventoinha (%)",
@@ -234,5 +234,11 @@
   "reqauth_s": "Ligado: conectar só depois que o certificado do pool for verificado com a chave. Desligado: uma chave configurada ainda é verificada assim que o relógio estiver acertado; sem chave, o pool é considerado confiável sem verificação.",
   "bd_unsup_title": "Placa reconhecida: {m}",
   "bd_unsup": "O WarpAxe ainda não consegue operar esta placa, por isso os chips continuam desligados. Reinstale o firmware anterior ou escolha uma placa abaixo só se tiver certeza de que ela foi reconhecida incorretamente.",
-  "upd_unsigned": "Esta versão não tem assinatura; ela pode ser instalada, mas o minerador não consegue verificar quem a compilou."
+  "upd_unsigned": "Esta versão não tem assinatura; ela pode ser instalada, mas o minerador não consegue verificar quem a compilou.",
+  "st_overheat_latched": "Superaquecido 3× em uma hora: fica desligado",
+  "dlmode": "Modo de download",
+  "dlmode_s": "Para reinstalar via USB com o instalador web (warppool.org/warpaxe)",
+  "ask_dlmode": "Mudar para o modo de download? O minerador para de minerar e aguarda o instalador web pelo cabo USB. Depois, o instalador o reinicia; se ele continuar apagado, desconecte a fonte de alimentação e o cabo USB.",
+  "dlmode_on": "Modo de download: conecte o instalador web agora",
+  "ask_net_restart": "Reiniciar agora e conectar a {n}? O ponto de acesso de configuração fecha assim que o minerador estiver na rede."
 }

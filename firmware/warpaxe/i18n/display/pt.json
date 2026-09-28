@@ -34,5 +34,12 @@
  "Preparing flash · do not power off": "Preparando a memória · não desligue",
  "{p} % · do not power off": "{p} % · não desligue",
  "CORE OFF": "NÚCLEO DESL.",
- "FIRMWARE UPDATE": "ATUALIZANDO FW"
+ "FIRMWARE UPDATE": "ATUALIZANDO FW",
+ "Fans 100 % · starts again once cooled": "Ventoinhas 100 % · religa após esfriar",
+ "WI-FI SETUP": "CONEXÃO WI-FI",
+ "Join {n}": "Conecte a {n}",
+ "Password": "Senha",
+ "then open http://192.168.4.1": "depois abra http://192.168.4.1",
+ "PASSWORD": "SENHA",
+ "THEN OPEN": "DEPOIS ABRA"
 }

@@ -150,7 +150,7 @@
   "invertfan_s": "Para ventiladores que funcionan al revés del ajuste",
   "pidTargetTemp": "Temperatura objetivo de chips (°C)",
   "overheat_temp": "Temperatura de apagado (°C)",
-  "overheat_s": "Chips o regulador por encima: se corta el voltaje del núcleo",
+  "overheat_s": "Chips o regulador por encima: se corta el voltaje del núcleo hasta que ambos bajen 10 °C",
   "minFanSpeed": "Velocidad mínima del ventilador (%)",
   "minFan_s": "Los ventiladores grandes pueden no arrancar por debajo de un 25 %",
   "fanspeed": "Velocidad fija del ventilador (%)",
@@ -234,5 +234,11 @@
   "reqauth_s": "Activado: conectar solo después de verificar el certificado del pool con la clave. Desactivado: una clave configurada se sigue verificando en cuanto el reloj esté en hora; sin clave se confía en el pool sin verificarlo.",
   "bd_unsup_title": "Placa reconocida: {m}",
   "bd_unsup": "WarpAxe todavía no puede hacer funcionar esta placa, así que sus chips siguen apagados. Vuelve a instalar el firmware anterior, o elige una placa abajo solo si estás seguro de que se reconoció mal.",
-  "upd_unsigned": "Esta versión no lleva firma; se puede instalar, pero el minero no puede comprobar quién la compiló."
+  "upd_unsigned": "Esta versión no lleva firma; se puede instalar, pero el minero no puede comprobar quién la compiló.",
+  "st_overheat_latched": "Sobrecalentado 3× en una hora: permanece apagado",
+  "dlmode": "Modo de descarga",
+  "dlmode_s": "Para reinstalar por USB con el flasheador web (warppool.org/warpaxe)",
+  "ask_dlmode": "¿Cambiar al modo de descarga? El minero deja de minar y espera al flasheador web por el cable USB. Después, el flasheador lo reinicia; si se queda apagado, desconecta la fuente de alimentación y el cable USB.",
+  "dlmode_on": "Modo de descarga: conecta ahora el flasheador web",
+  "ask_net_restart": "¿Reiniciar ahora y conectarse a {n}? El punto de acceso de configuración se cierra en cuanto el minero esté en la red."
 }

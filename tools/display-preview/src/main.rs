@@ -15,6 +15,7 @@ mod display_i18n;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 static GAMMA: AtomicBool = AtomicBool::new(false);
+static HOTSPOT: AtomicBool = AtomicBool::new(false);
 static FRAME: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
 static UPTIME: AtomicU64 = AtomicU64::new(11_535);
 
@@ -176,15 +177,16 @@ mod board {
         pub fan_rpm: u16,
         pub fan2_pct: Option<u8>,
         pub fan2_rpm: Option<u16>,
+        pub overheat_latched: bool,
     }
     pub fn gamma() -> bool {
         crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn state() -> BoardState {
         if gamma() {
-            BoardState { temp_c: Some(62.3), vr_temp_c: Some(55), vin_mv: Some(5120.0), vout_mv: Some(1140.0), iout_ma: Some(20500.0), power_w: Some(23.4), fan_pct: 100, fan_rpm: 5020, fan2_pct: None, fan2_rpm: None }
+            BoardState { temp_c: Some(62.3), vr_temp_c: Some(55), vin_mv: Some(5120.0), vout_mv: Some(1140.0), iout_ma: Some(20500.0), power_w: Some(23.4), fan_pct: 100, fan_rpm: 5020, fan2_pct: None, fan2_rpm: None, overheat_latched: false }
         } else {
-            BoardState { temp_c: Some(56.2), vr_temp_c: Some(50), vin_mv: Some(12050.0), vout_mv: Some(1238.0), iout_ma: Some(9140.0), power_w: Some(109.5), fan_pct: 59, fan_rpm: 1831, fan2_pct: Some(25), fan2_rpm: Some(0) }
+            BoardState { temp_c: Some(56.2), vr_temp_c: Some(50), vin_mv: Some(12050.0), vout_mv: Some(1238.0), iout_ma: Some(9140.0), power_w: Some(109.5), fan_pct: 59, fan_rpm: 1831, fan2_pct: Some(25), fan2_rpm: Some(0), overheat_latched: false }
         }
     }
     pub fn profile() -> &'static Profile {
@@ -227,6 +229,11 @@ mod net {
         let ip = if crate::board::gamma() { "192.168.178.42" } else { "192.168.178.41" };
         NetState { wifi_ip: Some(ip.into()), usb_ip: None, wifi_rssi: Some(-66) }
     }
+    pub fn hotspot() -> Option<(String, String)> {
+        crate::HOTSPOT
+            .load(std::sync::atomic::Ordering::Relaxed)
+            .then(|| ("WarpAxe-6C98".into(), "K7QM-R2XD".into()))
+    }
 }
 
 mod stratum {
@@ -241,6 +248,7 @@ mod stratum {
         pub block_height: u64,
         pub network_difficulty: f64,
         pub scriptsig: String,
+        pub sv2: bool,
     }
     pub fn state() -> StratumState {
         StratumState {
@@ -254,6 +262,7 @@ mod stratum {
             block_height: 968_857,
             network_difficulty: 132.76e12,
             scriptsig: "dvbprojekt-WarpPool".into(),
+            sv2: !crate::board::gamma(),
         }
     }
 }
@@ -294,6 +303,10 @@ fn main() {
         shot += 1;
     }
     *display::DEMO.lock().unwrap() = None;
+    HOTSPOT.store(true, Ordering::Relaxed);
+    ui.frame(&mut d);
+    save(&dir, "lcd-ev-setup");
+    HOTSPOT.store(false, Ordering::Relaxed);
 
     // OLED: every slide of the rotation.
     GAMMA.store(true, Ordering::Relaxed);
@@ -303,6 +316,20 @@ fn main() {
         ui.frame(&mut o);
         save(&dir, &format!("oled-{i}"));
         ui.key(screens::Key::Home);
+    }
+    *display::DEMO.lock().unwrap() = Some(("overheat".into(), u64::MAX));
+    ui.frame(&mut o);
+    save(&dir, "oled-ev-overheat");
+    *display::DEMO.lock().unwrap() = None;
+    HOTSPOT.store(true, Ordering::Relaxed);
+    let start = std::time::Instant::now();
+    for (page, at) in [0.2f32, 3.2, 6.2].into_iter().enumerate() {
+        while start.elapsed().as_secs_f32() < at {
+            ui.frame(&mut o);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        ui.frame(&mut o);
+        save(&dir, &format!("oled-ev-setup-{page}"));
     }
     println!("frames in {dir}");
 }

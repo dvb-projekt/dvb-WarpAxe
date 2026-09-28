@@ -33,6 +33,8 @@ enum Event {
     Block(u64),
     Overheat,
     ChipsOff,
+    /// The setup hotspot is up: how to join it.
+    Setup,
 }
 
 #[derive(Clone, Copy)]
@@ -311,6 +313,9 @@ impl Ui {
         }
         if board::shutdown() {
             return Some(Event::ChipsOff);
+        }
+        if net::hotspot().is_some() {
+            return Some(Event::Setup);
         }
         None
     }
@@ -1220,10 +1225,17 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 &l1,
                 W - 16,
             );
-            let l2 = l(
-                "Fans 100 % · clear it in the web UI under System",
-                "Lüfter 100 % · Freigabe im Web-UI unter System",
-            );
+            let l2 = if b.overheat_latched {
+                l(
+                    "Fans 100 % · clear it in the web UI under System",
+                    "Lüfter 100 % · Freigabe im Web-UI unter System",
+                )
+            } else {
+                l(
+                    "Fans 100 % · starts again once cooled",
+                    "Lüfter 100 % · läuft nach dem Abkühlen wieder an",
+                )
+            };
             fit_text(
                 c,
                 &[&LABEL11, &LABEL10, &MONO9],
@@ -1267,6 +1279,49 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
             let n = net::state();
             let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_default();
             c.text(&VAL12, W / 2, 128, gfx::FG, &ip, Align::Center);
+        }
+        Event::Setup => {
+            c.fill(gfx::rgb(0x0b, 0x0c, 0x1c));
+            let (ssid, pass) = net::hotspot().unwrap_or_default();
+            c.text(
+                &TITLE,
+                W / 2,
+                30,
+                gfx::FG,
+                l("WI-FI SETUP", "WLAN-EINRICHTUNG"),
+                Align::Center,
+            );
+            let join = l("Join {n}", "Verbinden mit {n}").replace("{n}", &ssid);
+            fit_text(
+                c,
+                &[&VAL12, &LABEL11, &LABEL10],
+                W / 2,
+                58,
+                gfx::FG,
+                &join,
+                W - 16,
+            );
+            c.text(
+                &LABEL11,
+                W / 2,
+                80,
+                gfx::MUTE,
+                l("Password", "Passwort"),
+                Align::Center,
+            );
+            c.text(&TITLE, W / 2, 110, gfx::WARN, &pass, Align::Center);
+            fit_text(
+                c,
+                &[&LABEL11, &LABEL10, &MONO9],
+                W / 2,
+                140,
+                gfx::MUTE,
+                l(
+                    "then open http://192.168.4.1",
+                    "dann http://192.168.4.1 öffnen",
+                ),
+                W - 16,
+            );
         }
         Event::Ota(pct) => {
             c.fill(gfx::rgb(0x0b, 0x0c, 0x1c));
@@ -1468,6 +1523,20 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
             oled_center(o, 6, &oled_str(l("CHIPS OFF", "CHIPS AUS")));
             let n = net::state();
             oled_center(o, 19, &n.wifi_ip.or(n.usb_ip).unwrap_or_default());
+        }
+        Event::Setup => {
+            // Two lines only: name, password and address take turns.
+            let (ssid, pass) = net::hotspot().unwrap_or_default();
+            let (a, b) = match (t / 3.0) as i32 % 3 {
+                0 => (oled_str(l("WI-FI SETUP", "WLAN-EINRICHTUNG")), ssid),
+                1 => (oled_str(l("PASSWORD", "PASSWORT")), pass),
+                _ => (
+                    oled_str(l("THEN OPEN", "DANN ÖFFNEN")),
+                    "192.168.4.1".into(),
+                ),
+            };
+            oled_center(o, 6, &a);
+            oled_center(o, 19, &b);
         }
         Event::Ota(p) => {
             oled_center(o, 4, &oled_str(l("FIRMWARE UPDATE", "FIRMWARE-UPDATE")));

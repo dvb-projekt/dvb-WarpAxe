@@ -210,17 +210,17 @@ fn main() {
         log::error!("usb netif failed: {e}");
     }
 
+    // Always: without a network in the config (or one that cannot be
+    // reached after boot) Wi-Fi opens the setup hotspot.
     let cfg = config::get();
-    if !cfg.ssid.is_empty() {
-        set_step("WIFI");
-        net::wifi::start(
-            peripherals.modem,
-            sysloop.clone(),
-            nvs.clone(),
-            cfg.ssid.clone(),
-            cfg.wifi_pass.clone(),
-        );
-    }
+    set_step("WIFI");
+    net::wifi::start(
+        peripherals.modem,
+        sysloop.clone(),
+        nvs.clone(),
+        cfg.ssid.clone(),
+        cfg.wifi_pass.clone(),
+    );
 
     set_step("API");
     let _server = match api::start() {

@@ -60,7 +60,7 @@ pub fn system_info() -> serde_json::Value {
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w, "voltage": b.vin_mv, "current": b.iout_ma,
         "temp": b.temp_c, "vrTemp": b.vr_temp_c.unwrap_or(0),
-        "overheat_mode": u8::from(b.overheat), "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
+        "overheat_mode": u8::from(b.overheat), "overheatLatched": b.overheat_latched, "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
         "vrOverheatTemp": profile.vr_max_c.round() as u32, "boardError": b.last_error,
         "fanrpm2": b.fan2_rpm, "fanspeed2": b.fan2_pct, "vrPart": b.vr_part,
         "fans": nerd_fans(&cfg, profile, &b),
@@ -457,6 +457,24 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             Err(e) => reply_json(req, 400, &json!({"error": format!("bad json: {e}")})),
         }
     })?;
+
+    // Captive-portal probes of phones and laptops that joined the setup
+    // hotspot (its DNS sends every name here): a redirect to the web UI
+    // makes them open it as a sign-in page.
+    for probe in [
+        "/generate_204",
+        "/gen_204",
+        "/hotspot-detect.html",
+        "/library/test/success.html",
+        "/ncsi.txt",
+        "/connecttest.txt",
+        "/redirect",
+    ] {
+        server.fn_handler(probe, Method::Get, |req| {
+            req.into_response(302, None, &[("Location", "http://192.168.4.1/")])?;
+            Ok::<(), EspIOError>(())
+        })?;
+    }
 
     server.fn_handler("/assets/*", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);

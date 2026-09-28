@@ -33,6 +33,10 @@ static ES: &[(&str, &str)] = &[
         "Vent. 100 % · desbloquear en la web, en Sistema",
     ),
     (
+        "Fans 100 % · starts again once cooled",
+        "Vent. 100 % · reanuda al enfriarse",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Vent. auto · objetivo {t} °C · apagado {h} °C",
     ),
@@ -42,10 +46,13 @@ static ES: &[(&str, &str)] = &[
     ),
     ("Fees", "Comisiones"),
     ("Input", "Entrada"),
+    ("Join {n}", "Conéctate a {n}"),
     ("Network difficulty", "Dificultad de red"),
     ("Network hashrate", "Hashrate de red"),
     ("OVERHEAT", "SOBRECALENTADO"),
+    ("PASSWORD", "CONTRASEÑA"),
     ("POWER", "POTENCIA"),
+    ("Password", "Contraseña"),
     ("Pool difficulty", "Dificultad del pool"),
     ("Power", "Potencia"),
     (
@@ -54,10 +61,16 @@ static ES: &[(&str, &str)] = &[
     ),
     ("Press a key to close", "Pulsa una tecla para cerrar"),
     ("Regulator", "Regulador"),
+    ("THEN OPEN", "LUEGO ABRE"),
     ("Uptime", "En marcha"),
+    ("WI-FI SETUP", "CONEXIÓN WI-FI"),
     ("blocks", "bloques"),
     ("months", "meses"),
     ("not connected", "no conectado"),
+    (
+        "then open http://192.168.4.1",
+        "luego abre http://192.168.4.1",
+    ),
     ("{p} % · do not power off", "{p} % · no apagar"),
 ];
 
@@ -93,6 +106,10 @@ static FR: &[(&str, &str)] = &[
         "Ventil. 100 % · débloquer dans l'UI web > Système",
     ),
     (
+        "Fans 100 % · starts again once cooled",
+        "Ventil. 100 % · repart une fois refroidi",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventilateurs auto · cible {t} °C · arrêt {h} °C",
     ),
@@ -102,10 +119,13 @@ static FR: &[(&str, &str)] = &[
     ),
     ("Fees", "Frais"),
     ("Input", "Entrée"),
+    ("Join {n}", "Rejoindre {n}"),
     ("Network difficulty", "Difficulté réseau"),
     ("Network hashrate", "Hashrate réseau"),
     ("OVERHEAT", "SURCHAUFFE"),
+    ("PASSWORD", "MOT DE PASSE"),
     ("POWER", "PUISSANCE"),
+    ("Password", "Mot de passe"),
     ("Pool difficulty", "Difficulté du pool"),
     ("Power", "Puissance"),
     (
@@ -114,10 +134,16 @@ static FR: &[(&str, &str)] = &[
     ),
     ("Press a key to close", "Appuyez sur une touche pour fermer"),
     ("Regulator", "Régulateur"),
+    ("THEN OPEN", "PUIS OUVRIR"),
     ("Uptime", "Uptime"),
+    ("WI-FI SETUP", "RÉGLAGE WI-FI"),
     ("blocks", "blocs"),
     ("months", "mois"),
     ("not connected", "non branché"),
+    (
+        "then open http://192.168.4.1",
+        "puis ouvrir http://192.168.4.1",
+    ),
     ("{p} % · do not power off", "{p} % · ne pas éteindre"),
 ];
 
@@ -153,6 +179,10 @@ static IT: &[(&str, &str)] = &[
         "Ventole 100 % · sblocca nella web UI in Sistema",
     ),
     (
+        "Fans 100 % · starts again once cooled",
+        "Ventole 100 % · riparte appena raffreddato",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventole auto · obiettivo {t} °C · spegnimento {h} °C",
     ),
@@ -162,10 +192,13 @@ static IT: &[(&str, &str)] = &[
     ),
     ("Fees", "Fee"),
     ("Input", "Ingresso"),
+    ("Join {n}", "Collegati a {n}"),
     ("Network difficulty", "Difficoltà di rete"),
     ("Network hashrate", "Hashrate di rete"),
     ("OVERHEAT", "SURRISCALDATO"),
+    ("PASSWORD", "PASSWORD"),
     ("POWER", "POTENZA"),
+    ("Password", "Password"),
     ("Pool difficulty", "Difficoltà del pool"),
     ("Power", "Potenza"),
     (
@@ -174,10 +207,16 @@ static IT: &[(&str, &str)] = &[
     ),
     ("Press a key to close", "Premi un tasto per chiudere"),
     ("Regulator", "Regolatore"),
+    ("THEN OPEN", "POI APRI"),
     ("Uptime", "Uptime"),
+    ("WI-FI SETUP", "IMPOSTA WI-FI"),
     ("blocks", "blocchi"),
     ("months", "mesi"),
     ("not connected", "non collegata"),
+    (
+        "then open http://192.168.4.1",
+        "poi apri http://192.168.4.1",
+    ),
     ("{p} % · do not power off", "{p} % · non spegnere"),
 ];
 
@@ -213,6 +252,10 @@ static PT: &[(&str, &str)] = &[
         "Ventoinhas 100 % · liberar na interface web em Sistema",
     ),
     (
+        "Fans 100 % · starts again once cooled",
+        "Ventoinhas 100 % · religa após esfriar",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventoinhas auto · alvo {t} °C · desliga em {h} °C",
     ),
@@ -222,10 +265,13 @@ static PT: &[(&str, &str)] = &[
     ),
     ("Fees", "Taxas"),
     ("Input", "Entrada"),
+    ("Join {n}", "Conecte a {n}"),
     ("Network difficulty", "Dificuldade da rede"),
     ("Network hashrate", "Hashrate da rede"),
     ("OVERHEAT", "SUPERAQUECIDO"),
+    ("PASSWORD", "SENHA"),
     ("POWER", "POTÊNCIA"),
+    ("Password", "Senha"),
     ("Pool difficulty", "Dificuldade do pool"),
     ("Power", "Potência"),
     (
@@ -234,10 +280,16 @@ static PT: &[(&str, &str)] = &[
     ),
     ("Press a key to close", "Pressione uma tecla para fechar"),
     ("Regulator", "Regulador"),
+    ("THEN OPEN", "DEPOIS ABRA"),
     ("Uptime", "Tempo ativo"),
+    ("WI-FI SETUP", "CONEXÃO WI-FI"),
     ("blocks", "blocos"),
     ("months", "meses"),
     ("not connected", "não conectada"),
+    (
+        "then open http://192.168.4.1",
+        "depois abra http://192.168.4.1",
+    ),
     ("{p} % · do not power off", "{p} % · não desligue"),
 ];
 

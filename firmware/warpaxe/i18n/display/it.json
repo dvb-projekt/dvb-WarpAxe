@@ -34,5 +34,12 @@
  "Preparing flash · do not power off": "Preparazione flash · non spegnere",
  "{p} % · do not power off": "{p} % · non spegnere",
  "CORE OFF": "CORE SPENTO",
- "FIRMWARE UPDATE": "AGGIORNAMENTO FW"
+ "FIRMWARE UPDATE": "AGGIORNAMENTO FW",
+ "Fans 100 % · starts again once cooled": "Ventole 100 % · riparte appena raffreddato",
+ "WI-FI SETUP": "IMPOSTA WI-FI",
+ "Join {n}": "Collegati a {n}",
+ "Password": "Password",
+ "then open http://192.168.4.1": "poi apri http://192.168.4.1",
+ "PASSWORD": "PASSWORD",
+ "THEN OPEN": "POI APRI"
 }
