@@ -274,5 +274,14 @@
   "sw_add_miner": "+ Minero",
   "sw_chip": "Chip",
   "sw_vr": "Regulador",
-  "nav_network": "Red"
+  "nav_network": "Red",
+  "st_power_fault": "Fallo del regulador: chips apagados",
+  "st_power_fault_latched": "Fallo del regulador 3× en una hora: permanece apagado",
+  "pf_warn": "Aviso del regulador",
+  "pf_off": "el regulador se apagó por sí mismo",
+  "pf_vout_ov": "sobretensión de salida",
+  "pf_iout_oc": "sobrecorriente de salida",
+  "pf_vin_uv": "subtensión de entrada",
+  "pf_temp": "sobretemperatura del regulador",
+  "pf_temp_warn": "aviso de temperatura del regulador"
 }

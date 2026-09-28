@@ -41,5 +41,8 @@
  "then open http://192.168.4.1": "poi apri http://192.168.4.1",
  "PASSWORD": "PASSWORD",
  "THEN OPEN": "POI APRI",
- "Password · 10 digits": "Password · 10 cifre"
+ "Password · 10 digits": "Password · 10 cifre",
+ "REGULATOR FAULT": "GUASTO REGOLATORE",
+ "Regulator fault · core voltage off": "Guasto regolatore · tensione core spenta",
+ "Fans 100 % · tries again after a minute": "Ventole 100 % · riprova tra un minuto"
 }

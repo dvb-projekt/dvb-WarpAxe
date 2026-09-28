@@ -274,5 +274,14 @@
   "sw_add_miner": "+ 矿机",
   "sw_chip": "芯片",
   "sw_vr": "稳压器",
-  "nav_network": "网络"
+  "nav_network": "网络",
+  "st_power_fault": "稳压器故障：芯片已关闭",
+  "st_power_fault_latched": "一小时内稳压器故障 3 次：保持关闭",
+  "pf_warn": "稳压器警告",
+  "pf_off": "稳压器已自行关闭",
+  "pf_vout_ov": "输出过压",
+  "pf_iout_oc": "输出过流",
+  "pf_vin_uv": "输入欠压",
+  "pf_temp": "稳压器过热",
+  "pf_temp_warn": "稳压器温度警告"
 }

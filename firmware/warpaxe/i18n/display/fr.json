@@ -41,5 +41,8 @@
  "then open http://192.168.4.1": "puis ouvrir http://192.168.4.1",
  "PASSWORD": "MOT DE PASSE",
  "THEN OPEN": "PUIS OUVRIR",
- "Password · 10 digits": "Mot de passe · 10 chiffres"
+ "Password · 10 digits": "Mot de passe · 10 chiffres",
+ "REGULATOR FAULT": "DÉFAUT RÉGULATEUR",
+ "Regulator fault · core voltage off": "Défaut régulateur · tension cœur coupée",
+ "Fans 100 % · tries again after a minute": "Ventilateurs 100 % · nouvel essai dans une minute"
 }

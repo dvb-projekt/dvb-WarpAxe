@@ -274,5 +274,14 @@
   "sw_add_miner": "+ Mineur",
   "sw_chip": "Puce",
   "sw_vr": "Régulateur",
-  "nav_network": "Réseau"
+  "nav_network": "Réseau",
+  "st_power_fault": "Défaut régulateur : puces coupées",
+  "st_power_fault_latched": "Défaut régulateur 3× en une heure : reste coupé",
+  "pf_warn": "Avertissement régulateur",
+  "pf_off": "le régulateur s'est coupé de lui-même",
+  "pf_vout_ov": "surtension de sortie",
+  "pf_iout_oc": "surintensité de sortie",
+  "pf_vin_uv": "sous-tension d'entrée",
+  "pf_temp": "surchauffe du régulateur",
+  "pf_temp_warn": "avertissement de température du régulateur"
 }

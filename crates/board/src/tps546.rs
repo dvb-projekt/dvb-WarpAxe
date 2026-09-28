@@ -305,6 +305,12 @@ impl<I: I2c> Tps546<I> {
         self.read_word(pm::STATUS_WORD)
     }
 
+    /// One of the STATUS_* byte registers (STATUS_VOUT, _IOUT, _INPUT,
+    /// _TEMPERATURE, _CML, _MFR_SPECIFIC), for a fault snapshot.
+    pub fn status_register(&mut self, cmd: u8) -> Result<u8, Error<I::Error>> {
+        self.read_byte(cmd)
+    }
+
     /// Clear latched faults.
     pub fn clear_faults(&mut self) -> Result<(), Error<I::Error>> {
         Ok(self.bus.write(ADDR, &[pm::CLEAR_FAULTS])?)

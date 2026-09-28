@@ -1,7 +1,8 @@
 //! When the chips may run again after an overheat stop.
 //!
 //! An overheat (chip or regulator over its limit, or no chip temperature
-//! for too long) switches the core voltage off. AxeOS starts again on its
+//! for too long) switches the core voltage off; a regulator fault
+//! ([`crate::power_fault`]) takes the same path. AxeOS starts again on its
 //! own once the regulator is 10 °C below its limit and at least 30 s have
 //! passed; NerdOS stays off. The guard here follows AxeOS with a longer
 //! pause, asks the chip to have cooled as well, wants real readings before
@@ -27,6 +28,8 @@ pub enum Cause {
     Hot,
     /// No chip temperature for too long.
     Blind,
+    /// The regulator reported a fault (see [`crate::power_fault`]).
+    PowerFault,
 }
 
 /// What the board reads now, for [`Guard::may_resume`].

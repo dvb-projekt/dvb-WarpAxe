@@ -41,5 +41,8 @@
  "then open http://192.168.4.1": "dann http://192.168.4.1 öffnen",
  "PASSWORD": "PASSWORT",
  "THEN OPEN": "DANN ÖFFNEN",
- "Password · 10 digits": "Passwort · 10 Ziffern"
+ "Password · 10 digits": "Passwort · 10 Ziffern",
+ "REGULATOR FAULT": "REGLERFEHLER",
+ "Regulator fault · core voltage off": "Reglerfehler · Kernspannung aus",
+ "Fans 100 % · tries again after a minute": "Lüfter 100 % · neuer Versuch nach einer Minute"
 }

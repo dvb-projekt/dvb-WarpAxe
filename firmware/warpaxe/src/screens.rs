@@ -1202,20 +1202,33 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 c.rect(x, y, w, h, gfx::ERR, a);
             }
             let b = board::state();
+            let power = b.overheat_cause == Some("power");
             c.text(
                 &TITLE,
                 W / 2,
                 62,
                 gfx::ERR,
-                l("OVERHEAT", "ÜBERHITZUNG"),
+                if power {
+                    l("REGULATOR FAULT", "REGLERFEHLER")
+                } else {
+                    l("OVERHEAT", "ÜBERHITZUNG")
+                },
                 Align::Center,
             );
             let tc = b.temp_c.map_or("–".into(), |t| num(f64::from(t), 1));
-            let l1 = l(
-                "Chip {t} °C · core voltage off",
-                "Chip {t} °C · Kernspannung aus",
-            )
-            .replace("{t}", &tc);
+            let l1 = if power {
+                l(
+                    "Regulator fault · core voltage off",
+                    "Reglerfehler · Kernspannung aus",
+                )
+                .to_string()
+            } else {
+                l(
+                    "Chip {t} °C · core voltage off",
+                    "Chip {t} °C · Kernspannung aus",
+                )
+                .replace("{t}", &tc)
+            };
             fit_text(
                 c,
                 &[&VAL12, &LABEL11, &LABEL10],
@@ -1229,6 +1242,11 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 l(
                     "Fans 100 % · clear it in the web UI under System",
                     "Lüfter 100 % · Freigabe im Web-UI unter System",
+                )
+            } else if power {
+                l(
+                    "Fans 100 % · tries again after a minute",
+                    "Lüfter 100 % · neuer Versuch nach einer Minute",
                 )
             } else {
                 l(

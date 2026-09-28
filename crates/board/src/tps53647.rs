@@ -396,6 +396,11 @@ impl<I: I2c> Tps53647<I> {
         Ok(self.read_word(pm::STATUS_WORD)? & !0x0002)
     }
 
+    /// One of the STATUS_* byte registers, unmasked, for a fault snapshot.
+    pub fn status_register(&mut self, cmd: u8) -> Result<u8, Error<I::Error>> {
+        self.read_byte(cmd)
+    }
+
     /// The detail status registers, unmasked.
     pub fn status(&mut self) -> Result<Status, Error<I::Error>> {
         Ok(Status {

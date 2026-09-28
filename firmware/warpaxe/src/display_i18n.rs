@@ -37,6 +37,10 @@ static ES: &[(&str, &str)] = &[
         "Vent. 100 % · reanuda al enfriarse",
     ),
     (
+        "Fans 100 % · tries again after a minute",
+        "Vent. 100 % · reintenta en un minuto",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Vent. auto · objetivo {t} °C · apagado {h} °C",
     ),
@@ -60,7 +64,12 @@ static ES: &[(&str, &str)] = &[
         "Preparando memoria flash · no apagar",
     ),
     ("Press a key to close", "Pulsa una tecla para cerrar"),
+    ("REGULATOR FAULT", "FALLO DEL REGULADOR"),
     ("Regulator", "Regulador"),
+    (
+        "Regulator fault · core voltage off",
+        "Fallo del regulador · voltaje núcleo cortado",
+    ),
     ("THEN OPEN", "LUEGO ABRE"),
     ("Uptime", "En marcha"),
     ("WI-FI SETUP", "CONEXIÓN WI-FI"),
@@ -110,6 +119,10 @@ static FR: &[(&str, &str)] = &[
         "Ventil. 100 % · repart une fois refroidi",
     ),
     (
+        "Fans 100 % · tries again after a minute",
+        "Ventilateurs 100 % · nouvel essai dans une minute",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventilateurs auto · cible {t} °C · arrêt {h} °C",
     ),
@@ -133,7 +146,12 @@ static FR: &[(&str, &str)] = &[
         "Préparation mémoire · ne pas éteindre",
     ),
     ("Press a key to close", "Appuyez sur une touche pour fermer"),
+    ("REGULATOR FAULT", "DÉFAUT RÉGULATEUR"),
     ("Regulator", "Régulateur"),
+    (
+        "Regulator fault · core voltage off",
+        "Défaut régulateur · tension cœur coupée",
+    ),
     ("THEN OPEN", "PUIS OUVRIR"),
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "RÉGLAGE WI-FI"),
@@ -183,6 +201,10 @@ static IT: &[(&str, &str)] = &[
         "Ventole 100 % · riparte appena raffreddato",
     ),
     (
+        "Fans 100 % · tries again after a minute",
+        "Ventole 100 % · riprova tra un minuto",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventole auto · obiettivo {t} °C · spegnimento {h} °C",
     ),
@@ -206,7 +228,12 @@ static IT: &[(&str, &str)] = &[
         "Preparazione flash · non spegnere",
     ),
     ("Press a key to close", "Premi un tasto per chiudere"),
+    ("REGULATOR FAULT", "GUASTO REGOLATORE"),
     ("Regulator", "Regolatore"),
+    (
+        "Regulator fault · core voltage off",
+        "Guasto regolatore · tensione core spenta",
+    ),
     ("THEN OPEN", "POI APRI"),
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "IMPOSTA WI-FI"),
@@ -256,6 +283,10 @@ static PT: &[(&str, &str)] = &[
         "Ventoinhas 100 % · religa após esfriar",
     ),
     (
+        "Fans 100 % · tries again after a minute",
+        "Ventoinhas 100 % · tenta de novo em um minuto",
+    ),
+    (
         "Fans automatic · target {t} °C · shutdown {h} °C",
         "Ventoinhas auto · alvo {t} °C · desliga em {h} °C",
     ),
@@ -279,7 +310,12 @@ static PT: &[(&str, &str)] = &[
         "Preparando a memória · não desligue",
     ),
     ("Press a key to close", "Pressione uma tecla para fechar"),
+    ("REGULATOR FAULT", "FALHA DO REGULADOR"),
     ("Regulator", "Regulador"),
+    (
+        "Regulator fault · core voltage off",
+        "Falha do regulador · tensão do núcleo cortada",
+    ),
     ("THEN OPEN", "DEPOIS ABRA"),
     ("Uptime", "Tempo ativo"),
     ("WI-FI SETUP", "CONEXÃO WI-FI"),

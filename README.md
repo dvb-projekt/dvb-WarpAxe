@@ -64,6 +64,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
 | Settings of the previous firmware | — | — | **taken over** (Wi-Fi, pools, hostname) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
+| Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot, or Bluetooth | not checked | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
@@ -88,7 +89,8 @@ states explicitly, so WarpTune does not have to guess them from the power
 draw:
 
 - **Overheat stop**: `overheat_mode` while it lasts, `overheatTrips` and
-  `overheatCause` (hot or a lost sensor). WarpTune holds during the stop,
+  `overheatCause` (hot, a lost sensor, or a regulator fault: `power`, with
+  the conditions in `powerFaultCodes`). WarpTune holds during the stop,
   and after a hot stop takes the clock one step down (two from the second
   stop in an hour); a lost sensor is no reason to step down.
 - **Chips off or the chain still coming up**: `chainStopped` and
@@ -228,8 +230,9 @@ back at any time with `GET /api/v1/display/frame`.
   list (`/api/v1/swarm`).
 - States a tuner would otherwise have to guess from the power draw are in
   `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
-  `overheatTrips` (stops in the last hour), `overheatCause` (hot or a lost
-  sensor), `overheatLatched`, `isUsingFallbackStratum`,
+  `overheatTrips` (stops in the last hour), `overheatCause` (hot, a lost
+  sensor or a regulator fault), `overheatLatched`, `power_fault` (AxeOS's
+  field and wording) with `powerFaultCodes`, `isUsingFallbackStratum`,
   `sharesRejectedReasons`, and `temptarget` (the fan target, under
   ESP-Miner's name) so a tuner keeps its own target above it.
 - **Setup hotspot**: with no network in the settings, or none reached within

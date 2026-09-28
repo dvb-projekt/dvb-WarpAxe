@@ -25,6 +25,8 @@ use warpaxe_board::emc2302::{Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
 use warpaxe_board::overheat::{Cause, Guard, Reading};
+use warpaxe_board::pmbus;
+use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::Tps53647;
 use warpaxe_board::tps546::Tps546;
@@ -76,6 +78,12 @@ pub struct BoardState {
     pub overheat_cause: Option<&'static str>,
     /// Chips switched off by hand.
     pub shutdown: bool,
+    /// The regulator's fault or warning text (AxeOS `power_fault`, its
+    /// wording); `None` when the status is clear.
+    pub power_fault: Option<String>,
+    /// The conditions behind it as codes: off, vout_ov, iout_oc, vin_uv,
+    /// temp, temp_warn.
+    pub power_fault_codes: Vec<&'static str>,
     pub last_error: String,
     /// What the regulator answered to each probe at boot.
     pub vr_probe: String,
@@ -342,10 +350,53 @@ impl Regulator {
             Regulator::Tps5364x { vr, .. } => vr.pin().ok(),
         }
     }
-    fn status(&mut self) -> Option<u16> {
+    /// STATUS_WORD, with STATUS_TEMPERATURE when its TEMP bit is set (a
+    /// warning and a fault share the bit).
+    fn status(&mut self) -> Option<(u16, Option<u8>)> {
+        let word = match self {
+            Regulator::Tps546(vr) => vr.status_word().ok()?,
+            Regulator::Tps5364x { vr, .. } => vr.status_word().ok()?,
+        };
+        let temp = if word & power_fault::status::TEMP != 0 {
+            self.status_register(pmbus::STATUS_TEMPERATURE)
+        } else {
+            None
+        };
+        Some((word, temp))
+    }
+    fn status_register(&mut self, cmd: u8) -> Option<u8> {
         match self {
-            Regulator::Tps546(vr) => vr.status_word().ok(),
-            Regulator::Tps5364x { vr, .. } => vr.status_word().ok(),
+            Regulator::Tps546(vr) => vr.status_register(cmd).ok(),
+            Regulator::Tps5364x { vr, .. } => vr.status_register(cmd).ok(),
+        }
+    }
+    /// The STATUS_* detail registers on one line, logged once per fault
+    /// (AxeOS `TPS546_log_snapshot`).
+    fn status_snapshot(&mut self) -> String {
+        let mut s = String::new();
+        for (name, cmd) in [
+            ("VOUT", pmbus::STATUS_VOUT),
+            ("IOUT", pmbus::STATUS_IOUT),
+            ("INPUT", pmbus::STATUS_INPUT),
+            ("TEMP", pmbus::STATUS_TEMPERATURE),
+            ("CML", pmbus::STATUS_CML),
+            ("MFR", pmbus::STATUS_MFR_SPECIFIC),
+        ] {
+            match self.status_register(cmd) {
+                Some(v) => s.push_str(&format!(" {name}={v:#04x}")),
+                None => s.push_str(&format!(" {name}=?")),
+            }
+        }
+        s
+    }
+    /// Clear latched faults before the output goes back on.
+    fn clear_faults(&mut self) {
+        let ok = match self {
+            Regulator::Tps546(vr) => vr.clear_faults().is_ok(),
+            Regulator::Tps5364x { vr, .. } => vr.clear_faults().is_ok(),
+        };
+        if !ok {
+            log::warn!("board: CLEAR_FAULTS failed");
         }
     }
     fn set_core(&mut self, volts: f32) -> Result<(), String> {
@@ -744,6 +795,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // The regulator has reported a temperature since boot: a missing one
     // then counts as unknown, not as cool.
     let mut vr_temp_seen = false;
+    // The regulator's own verdict; the output was enabled at start.
+    let mut pf = Monitor::new();
+    if POWERED.load(Ordering::Relaxed) {
+        pf.enabled(0);
+    }
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -823,10 +879,60 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let blind = temp_lost_s >= TEMP_LOST_S;
             vr_temp_seen |= vr_temp.is_some();
             let now_s = t0.elapsed().as_secs() as u32;
-            if (hot_chip || hot_vr || blind) && !overheat() {
+            // The regulator's own verdict (AxeOS `power_fault`), judged only
+            // while the output is meant to be on. A fault takes the overheat
+            // path; a warning is only reported.
+            let mut power_fault = false;
+            if let (Some((word, tstat)), Some(reg)) = (status, vr.as_mut()) {
+                if POWERED.load(Ordering::Relaxed) && !overheat() && !shutdown() {
+                    let (verdict, changed) = pf.observe(now_s, word, tstat);
+                    match verdict {
+                        Verdict::Fault(f) | Verdict::Warning(f) => {
+                            let what = f
+                                .iter()
+                                .map(Condition::describe)
+                                .collect::<Vec<_>>()
+                                .join("; ");
+                            power_fault = matches!(verdict, Verdict::Fault(_));
+                            if changed {
+                                let snap = reg.status_snapshot();
+                                if power_fault {
+                                    log::error!(
+                                        "board: REGULATOR FAULT status {word:#06x}:{snap}: {what}"
+                                    );
+                                } else {
+                                    log::warn!("board: regulator warning status {word:#06x}:{snap}: {what}");
+                                }
+                            }
+                            update(|s| {
+                                s.power_fault = Some(what);
+                                s.power_fault_codes = f.iter().map(Condition::code).collect();
+                            });
+                        }
+                        Verdict::Clear => {
+                            if changed {
+                                log::info!("board: regulator status clear again");
+                            }
+                            update(|s| {
+                                s.power_fault = None;
+                                s.power_fault_codes.clear();
+                            });
+                        }
+                        Verdict::Busy | Verdict::Disabled => {}
+                    }
+                }
+            }
+            if (hot_chip || hot_vr || blind || power_fault) && !overheat() {
                 OVERHEAT.store(true, Ordering::Relaxed);
+                let cause = if blind {
+                    Cause::Blind
+                } else if hot_chip || hot_vr {
+                    Cause::Hot
+                } else {
+                    Cause::PowerFault
+                };
                 let mut g = GUARD.lock().unwrap();
-                g.trip(now_s, if blind { Cause::Blind } else { Cause::Hot });
+                g.trip(now_s, cause);
                 if g.latched() {
                     log::error!("board: third overheat stop within an hour: stays off until cleared by hand");
                 }
@@ -834,6 +940,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if blind {
                     log::error!("board: no chip temperature for {temp_lost_s} s: core voltage off");
                     update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
+                } else if cause == Cause::PowerFault {
+                    log::error!(
+                        "board: regulator fault: core voltage off, retry after {} s",
+                        warpaxe_board::overheat::MIN_OFF_S
+                    );
                 } else {
                     log::error!(
                         "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
@@ -843,6 +954,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if let Some(vr) = vr.as_mut() {
                     vr.off();
                 }
+                pf.disabled();
                 POWERED.store(false, Ordering::Relaxed);
                 if let Some(t) = thermal.as_mut() {
                     t.set_fans(100, 100);
@@ -879,6 +991,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 let cause = g.stopped().map(|c| match c {
                     Cause::Hot => "hot",
                     Cause::Blind => "sensor",
+                    Cause::PowerFault => "power",
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
             };
@@ -897,7 +1010,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.overheat_trips = trips;
                 s.overheat_cause = cause;
                 s.shutdown = shutdown();
-                if let Some(st) = status {
+                if let Some((st, _)) = status {
                     s.vr_status = st;
                 }
             });
@@ -913,22 +1026,29 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if let Some(vr) = vr.as_mut() {
                 vr.off();
             }
+            pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             let ok = match vr.as_mut() {
-                Some(vr) => match vr.on(profile.vout_for_core_mv(applied_mv)) {
-                    Ok(()) => true,
-                    Err(e) => {
-                        log::error!("board: core voltage back on failed: {e}");
-                        false
+                Some(vr) => {
+                    // Latched fault bits stay until cleared; a fault that
+                    // is still there trips the guard again after the grace.
+                    vr.clear_faults();
+                    match vr.on(profile.vout_for_core_mv(applied_mv)) {
+                        Ok(()) => true,
+                        Err(e) => {
+                            log::error!("board: core voltage back on failed: {e}");
+                            false
+                        }
                     }
-                },
+                }
                 None => true,
             };
             if ok {
                 // Let the rail settle before the miner resets the chain.
                 std::thread::sleep(Duration::from_millis(500));
+                pf.enabled(t0.elapsed().as_secs() as u32);
                 POWERED.store(true, Ordering::Relaxed);
                 log::warn!("board: core voltage back on, {applied_mv} mV");
             }

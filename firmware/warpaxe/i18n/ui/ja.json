@@ -274,5 +274,14 @@
   "sw_add_miner": "+ マイナー",
   "sw_chip": "チップ",
   "sw_vr": "電圧レギュレータ",
-  "nav_network": "ネットワーク"
+  "nav_network": "ネットワーク",
+  "st_power_fault": "レギュレータ障害：チップ停止",
+  "st_power_fault_latched": "1時間以内に3回レギュレータ障害：オフのまま",
+  "pf_warn": "レギュレータ警告",
+  "pf_off": "レギュレータが自ら停止しました",
+  "pf_vout_ov": "出力過電圧",
+  "pf_iout_oc": "出力過電流",
+  "pf_vin_uv": "入力低電圧",
+  "pf_temp": "レギュレータ過熱",
+  "pf_temp_warn": "レギュレータ温度警告"
 }

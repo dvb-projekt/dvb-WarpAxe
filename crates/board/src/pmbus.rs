@@ -91,6 +91,8 @@ pub const STATUS_INPUT: u8 = 0x7C;
 /// PMBus command code.
 pub const STATUS_TEMPERATURE: u8 = 0x7D;
 /// PMBus command code.
+pub const STATUS_CML: u8 = 0x7E;
+/// PMBus command code.
 pub const STATUS_MFR_SPECIFIC: u8 = 0x80;
 /// PMBus command code.
 pub const READ_VIN: u8 = 0x88;

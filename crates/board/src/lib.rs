@@ -18,6 +18,7 @@ pub mod fxl6408;
 pub mod i2c;
 pub mod overheat;
 pub mod pmbus;
+pub mod power_fault;
 pub mod profile;
 pub mod setup;
 pub mod ssd1306;

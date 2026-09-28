@@ -274,5 +274,14 @@
   "sw_add_miner": "+ Miner",
   "sw_chip": "Chip",
   "sw_vr": "Regolatore",
-  "nav_network": "Rete"
+  "nav_network": "Rete",
+  "st_power_fault": "Guasto regolatore: chip spenti",
+  "st_power_fault_latched": "Guasto regolatore 3× in un'ora: resta spento",
+  "pf_warn": "Avviso regolatore",
+  "pf_off": "il regolatore si è spento da solo",
+  "pf_vout_ov": "sovratensione in uscita",
+  "pf_iout_oc": "sovracorrente in uscita",
+  "pf_vin_uv": "sottotensione in ingresso",
+  "pf_temp": "sovratemperatura del regolatore",
+  "pf_temp_warn": "avviso temperatura del regolatore"
 }
