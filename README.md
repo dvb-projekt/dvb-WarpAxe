@@ -4,7 +4,7 @@
 
 <p align="center">
   <strong>Open-source Rust firmware for BM1370 Bitcoin miners</strong><br>
-  Bitaxe Gamma · NerdQAxe++ · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
@@ -12,7 +12,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-272%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.6-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.7-7B5CFF"></a>
 </p>
 
 ---
@@ -43,9 +43,11 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.6).** It mines 24/7 on one Bitaxe Gamma and one
-> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune. Other boards have a profile but have
-> not run it — see [Supported boards](#supported-boards) before you flash.
+> **Status: early (v0.1.7).** It mines 24/7 on one Bitaxe Gamma and one
+> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, and since 28 September
+> on one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator). Other boards have a
+> profile but have not run it — see [Supported boards](#supported-boards)
+> before you flash.
 
 ## Compared with the stock firmware
 
@@ -62,7 +64,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
-| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools, hostname) |
+| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools — also AxeOS 2.15's —, hostname, clock and voltage, fans and temperature limits, display) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
@@ -70,7 +72,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards | 2 tested (see below) |
+| Supported boards | ~20 board versions | 11 boards | 3 tested (see below) |
 
 Where the stock firmware is ahead: far more boards and years of use by a
 large community; AxeOS has a scoreboard, themes, the BAP accessory port
@@ -193,7 +195,9 @@ back at any time with `GET /api/v1/display/frame`.
 - Sensors and fans: EMC2101, EMC2302 (two outputs), TMP1075, FXL6408 GPIO
   expander.
 - Fan PID with ESP-Miner's gains, a second output that follows the regulator
-  temperature, minimum speed, polarity.
+  temperature — or, with *Link the fans*, runs at the chip fan's speed for
+  cases where every fan cools the whole board (Y-cables) — minimum speed,
+  polarity.
 - Overheat shutdown of the core voltage and a guard for a lost chip sensor
   (60 s blind = off). The chips start again on their own once chip and
   regulator are 10 °C below their limits (at least 60 s off; after a lost
@@ -278,7 +282,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ Rev 6.1 | 4× BM1370 | TPS53647 | **runs 24/7** |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOctaxe Gamma | 8× BM1370 | TPS53667 | profile only, not run yet |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28 (the 4-phase TPS53647 variant has not run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 
@@ -311,8 +315,10 @@ up and updates itself:
    seconds. Without a browser: `warpaxe-factory.bin` from the
    release at offset 0 with esptool (this one starts with empty settings),
    or [Build from source](#build-from-source).
-3. On the first start WarpAxe takes **Wi-Fi, pools and hostname** from the
-   previous firmware and finds the **board**: from the model AxeOS stored at
+3. On the first start WarpAxe takes **Wi-Fi, pools, hostname, clock and
+   voltage, fan settings, temperature limits and display orientation** from
+   the previous firmware (not the fan PID gains, which belong to its own
+   loop) and finds the **board**: from the model AxeOS stored at
    the factory, or from the chips that answer on the board's I²C bus
    (read-only probes on pins that switch nothing). A Bitaxe Gamma starts
    mining at once. For the Nerd boards the web UI asks once which board it

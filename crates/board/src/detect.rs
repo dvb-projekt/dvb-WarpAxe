@@ -35,7 +35,7 @@ pub mod addr {
 }
 
 /// Boards that have run WarpAxe; only these are taken without asking.
-pub const TESTED: &[&str] = &["bitaxe-gamma", "nerdqaxe-plusplus"];
+pub const TESTED: &[&str] = &["bitaxe-gamma", "nerdqaxe-plusplus", "nerdoctaxe-gamma"];
 
 /// The outcome of a first-start detection.
 #[derive(Debug, Clone, PartialEq)]
