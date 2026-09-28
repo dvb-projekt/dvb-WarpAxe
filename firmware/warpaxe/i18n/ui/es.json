@@ -288,5 +288,10 @@
   "linkFans_s": "M1 gira a la velocidad de M2, que sigue la temperatura de los chips. Para cajas en las que todos los ventiladores refrigeran toda la placa, p. ej. con cables en Y.",
   "imp_tuning": "frecuencia y voltaje",
   "imp_fans": "ventiladores y límites de temperatura",
-  "imp_display": "orientación de la pantalla"
+  "imp_display": "orientación de la pantalla",
+  "cb_payout": "Pago si encuentras un bloque",
+  "cb_payout_short": "Pago por bloque",
+  "cb_to_you": "a tu dirección",
+  "cb_value": "Valor del coinbase",
+  "cb_witness": "compromiso de testigos (OP_RETURN)"
 }

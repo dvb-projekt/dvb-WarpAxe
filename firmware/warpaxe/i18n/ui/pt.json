@@ -288,5 +288,10 @@
   "linkFans_s": "M1 gira à velocidade de M2, que segue a temperatura dos chips. Para gabinetes em que todas as ventoinhas arrefecem a placa inteira, p. ex. com cabos em Y.",
   "imp_tuning": "clock e tensão",
   "imp_fans": "ventoinhas e limites de temperatura",
-  "imp_display": "orientação da tela"
+  "imp_display": "orientação da tela",
+  "cb_payout": "Pagamento se encontrar um bloco",
+  "cb_payout_short": "Pagamento por bloco",
+  "cb_to_you": "para o seu endereço",
+  "cb_value": "Valor do coinbase",
+  "cb_witness": "compromisso de testemunha (OP_RETURN)"
 }

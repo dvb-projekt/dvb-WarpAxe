@@ -288,5 +288,10 @@
   "linkFans_s": "M1 gira alla velocità di M2, che segue la temperatura dei chip. Per i case in cui tutte le ventole raffreddano l'intera scheda, ad es. con cavi a Y.",
   "imp_tuning": "frequenza e tensione",
   "imp_fans": "ventole e limiti di temperatura",
-  "imp_display": "orientamento del display"
+  "imp_display": "orientamento del display",
+  "cb_payout": "Pagamento se trovi un blocco",
+  "cb_payout_short": "Pagamento per blocco",
+  "cb_to_you": "al tuo indirizzo",
+  "cb_value": "Valore del coinbase",
+  "cb_witness": "impegno witness (OP_RETURN)"
 }

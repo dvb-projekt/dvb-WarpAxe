@@ -288,5 +288,10 @@
   "linkFans_s": "M1 tourne à la vitesse de M2, qui suit la température des puces. Pour les boîtiers où tous les ventilateurs refroidissent toute la carte, par ex. avec des câbles en Y.",
   "imp_tuning": "fréquence et tension",
   "imp_fans": "ventilateurs et limites de température",
-  "imp_display": "orientation de l'écran"
+  "imp_display": "orientation de l'écran",
+  "cb_payout": "Versement si vous trouvez un bloc",
+  "cb_payout_short": "Versement par bloc",
+  "cb_to_you": "à votre adresse",
+  "cb_value": "Valeur du coinbase",
+  "cb_witness": "engagement de témoin (OP_RETURN)"
 }
