@@ -737,12 +737,16 @@ fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
     took
 }
 
-/// Screen orientation and colours: NerdOS `flipscreen`, AxeOS `rotation`
-/// (degrees; 180 is upside down), `invertscreen` in both.
+/// Screen orientation, colours and when it goes dark. `flipscreen` in
+/// NerdOS and pre-2.15 AxeOS is 1 for the normal way up (the panel itself
+/// is mounted turned), so it means the opposite of WarpAxe's switch;
+/// AxeOS 2.15 has `rotation` in degrees (0 = normal). Screen-off: AxeOS
+/// `displayTimeout` (-1 always on, 0 off, else minutes), NerdOS
+/// `autoscreenoff` (0 = never). WarpAxe's 0 means never off.
 fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
     let mut took = false;
     if let Some(f) = stock.num("flipscreen") {
-        cfg.flipscreen = f != 0.0;
+        cfg.flipscreen = f == 0.0;
         took = true;
     } else if let Some(r) = stock.num("rotation") {
         cfg.flipscreen = r == 180.0;
@@ -750,6 +754,13 @@ fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
     }
     if let Some(i) = stock.num("invertscreen") {
         cfg.invertscreen = i != 0.0;
+        took = true;
+    }
+    if let Some(t) = stock.num("displayTimeout") {
+        cfg.display_timeout = if t < 0.0 { 0 } else { (t as u32).max(1) };
+        took = true;
+    } else if stock.num("autoscreenoff") == Some(0.0) {
+        cfg.display_timeout = 0;
         took = true;
     }
     took
