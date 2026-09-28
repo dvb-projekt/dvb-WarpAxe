@@ -113,13 +113,18 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans, display, network" width="760"><br>
+  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display" width="760"><br>
   <em>Settings — clock and voltage as the manufacturer's steps (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/web-network.png" alt="Network: Wi-Fi, hostname, time by NTP and time zone" width="760"><br>
+  <em>Network — Wi-Fi with a list of networks found, hostname, time by NTP and time zone.</em>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, live log" width="760"><br>
-  <em>System — online update from the releases, upload, maintenance (switch the chips off without losing the device, reset overheat) and the live log.</em>
+  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off without losing the device, reset overheat) and the live log.</em>
 </p>
 
 <p align="center">
