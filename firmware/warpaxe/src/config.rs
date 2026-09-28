@@ -241,6 +241,17 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     );
     *CONFIG.lock().unwrap() = Some(cfg);
     *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
+    // Read once here, on the main task: a thread whose stack is in PSRAM must
+    // not touch flash (the cache is off while it reads), and the update
+    // watcher is such a thread (0.1.5 rebooted every minute once the record
+    // existed).
+    let mut buf = [0u8; 64];
+    *LAST_INSTALL.lock().unwrap() = nvs
+        .get_str(LAST_INSTALL_KEY, &mut buf)
+        .ok()
+        .flatten()
+        .map(|s| s.trim_end_matches('\0').to_string())
+        .unwrap_or_default();
     *NVS.lock().unwrap() = Some(nvs);
     Ok(())
 }
@@ -271,14 +282,11 @@ const LAST_INSTALL_KEY: &str = "lastinstall";
 
 /// The last install's record, empty when the running image was flashed
 /// by hand or before this record existed.
+static LAST_INSTALL: Mutex<String> = Mutex::new(String::new());
+
+/// The install record read at boot (from RAM: safe on any thread).
 pub fn last_install() -> String {
-    let mut buf = [0u8; 64];
-    NVS.lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|nvs| nvs.get_str(LAST_INSTALL_KEY, &mut buf).ok().flatten())
-        .map(|s| s.trim_end_matches('\0').to_string())
-        .unwrap_or_default()
+    LAST_INSTALL.lock().unwrap().clone()
 }
 
 /// Record what the online update is about to boot into.
