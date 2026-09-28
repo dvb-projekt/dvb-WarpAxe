@@ -74,7 +74,10 @@ espflash flash --no-skip --port /dev/cu.usbmodemXXXX --flash-size 16mb \
 
 The `write_mem` clears the force-download flag the firmware sets for
 `/bootloader` (it lives in the RTC domain and survives resets); the
-watchdog reset starts the app, a DTR/RTS reset on this board would not.
+watchdog reset starts the app, a DTR/RTS reset on this board would not. Without esptool the flag only goes away when the ESP32-S3 loses power
+completely: power supply **and** USB cable, since the USB cable alone keeps
+the controller powered. The web flasher (`web/flasher`) clears the flag and
+does the watchdog reset itself after writing.
 
 Every later update goes over USB without touching the board:
 

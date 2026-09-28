@@ -1,0 +1,492 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WarpAxe Flasher</title>
+<link rel="icon" href="favicon.svg">
+<style>
+:root{--void:#05060B;--deep:#0F1226;--warp:#7B5CFF;--plasma:#00E0FF;--fg:#E8EEF7;--mute:#9CA8BD;--ok:#50E3A4;--warn:#F5B942;--err:#FF5A5A;--line:rgba(255,255,255,.08);--card:rgba(15,18,38,.78);color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html{background:var(--void)}
+body{margin:0;color:var(--fg);font:15px/1.55 Inter,-apple-system,system-ui,sans-serif;background:radial-gradient(ellipse 80% 45% at 50% -10%,rgba(123,92,255,.18),transparent 60%),var(--void);-webkit-font-smoothing:antialiased}
+a{color:var(--plasma)}
+main{max-width:760px;margin:0 auto;padding:32px 20px 56px;display:flex;flex-direction:column;gap:18px}
+header{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header img{height:40px;width:auto}
+.grow{flex:1}
+h1,h2{font-family:"Space Grotesk",Inter,sans-serif;letter-spacing:-.02em;margin:0}
+h1{font-size:28px}h2{font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.card p,.card ol,.card ul{margin:0}
+ol,ul{padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.mute{color:var(--mute)}
+.warn{border-color:rgba(245,185,66,.4)}
+.warn h2{color:var(--warn)}
+code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;background:rgba(255,255,255,.06);padding:1px 5px;border-radius:5px}
+.install{align-items:flex-start}
+.btn{display:inline-block;padding:12px 22px;border:0;border-radius:12px;background:var(--warp);color:#fff;font:600 15px Inter,system-ui,sans-serif;cursor:pointer}
+.btn:hover{filter:brightness(1.12)}
+.ver{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;color:var(--mute)}
+.lang{height:34px;padding:0 8px;border-radius:10px;border:1px solid rgba(255,255,255,.14);background:transparent;color:var(--fg);font:inherit}
+.nosupport{color:var(--err)}
+.btn:disabled{opacity:.5;cursor:default;filter:none}
+.prog{width:100%;height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden}
+.prog>div{height:100%;width:0;background:linear-gradient(90deg,var(--warp),var(--plasma));transition:width .2s}
+.status{min-height:1.5em}
+.status.ok{color:var(--ok)}.status.err{color:var(--err)}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="wordmark.webp" alt="WarpAxe">
+    <div class="grow"></div>
+    <select class="lang" id="lang" aria-label="Language">
+      <option value="en">English</option>
+      <option value="de">Deutsch</option>
+      <option value="es">Español</option>
+      <option value="fr">Français</option>
+      <option value="it">Italiano</option>
+      <option value="pt">Português (Brasil)</option>
+      <option value="ja">日本語</option>
+      <option value="zh">中文</option>
+    </select>
+  </header>
+
+  <h1 data-t="title"></h1>
+  <p class="mute" data-t="intro"></p>
+
+  <section class="card warn">
+    <h2 data-t="warn_h"></h2>
+    <ul>
+      <li data-t="warn_early"></li>
+      <li data-t="warn_boards"></li>
+      <li data-t="warn_backup"></li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2 data-t="prep_h"></h2>
+    <ol>
+      <li data-t="prep_browser"></li>
+      <li data-t="prep_gamma"></li>
+      <li data-t="prep_nerd"></li>
+      <li data-t="prep_again"></li>
+    </ol>
+  </section>
+
+  <section class="card install">
+    <h2 data-t="inst_h"></h2>
+    <p data-t="inst_keep"></p>
+    <button class="btn" id="go" data-t="inst_btn"></button>
+    <div class="prog" id="prog" hidden><div id="bar"></div></div>
+    <p class="status" id="st" aria-live="polite"></p>
+    <p class="nosupport" id="nos" hidden></p>
+    <span class="ver" id="ver"></span>
+    <p class="mute" data-t="help_stuck"></p>
+  </section>
+
+  <section class="card">
+    <h2 data-t="after_h"></h2>
+    <ol>
+      <li data-t="after_start"></li>
+      <li data-t="after_ui"></li>
+      <li data-t="after_update"></li>
+    </ol>
+  </section>
+
+  <p class="mute" data-t="foot"></p>
+</main>
+<script type="module">
+import { ESPLoader, Transport } from "./esptool/bundle.js";
+import { md5hex } from "./md5.js";
+const T = {
+  en: {
+    title: "Install WarpAxe",
+    intro: "WarpAxe is open-source firmware for BM1370 miners with Stratum V2, signed online updates and an AxeOS-compatible API. This page installs it over USB from your browser; after that, updates come from the miner's own web UI.",
+    warn_h: "Before you start",
+    warn_early: "WarpAxe is at an early stage. It runs 24/7 on a Bitaxe Gamma and a NerdQAxe++ Rev 6.1; other boards are untested.",
+    warn_boards: "Supported: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Recognised but not mining yet: NerdQAxe++ Rev 7, NerdOctaxe, Q13xx boards — the chips stay off.",
+    warn_backup: "Keep a way back: back up the whole flash first with <code>tools/flash-backup.sh</code> from the repository, or keep the stock firmware file from its maker at hand to flash it back.",
+    prep_h: "Prepare",
+    prep_browser: "Use Chrome or Edge on a computer (Web Serial). Safari, Firefox and phones cannot flash.",
+    prep_gamma: "Bitaxe Gamma: keep its power supply connected and use a USB-A to USB-C cable (the Gamma does not power up its USB port from a C-to-C cable).",
+    prep_nerd: "Nerd series: connect the USB-C port of the display board.",
+    prep_again: "Download mode: coming from the stock firmware, the flasher usually switches the miner over by itself. If connecting fails, or the miner already runs WarpAxe: hold BOOT, press RST briefly, release BOOT — or open <code>http://&lt;miner&gt;/bootloader</code>. For a normal update, the online update in the web UI is easier.",
+    inst_h: "Install",
+    inst_keep: "The install leaves the settings partition alone: WarpAxe takes over the Wi-Fi, pool and hostname of your stock firmware on the first start. When it is done, the flasher restarts the miner by itself.",
+    inst_btn: "Connect and install",
+    unsupported: "This browser cannot talk to USB devices. Use Chrome or Edge on a computer.",
+    after_h: "After the install",
+    after_start: "On the first start WarpAxe finds the board. A Bitaxe Gamma starts mining at once; on the Nerd boards the web UI asks once which board it is, and the chips stay off until you answer.",
+    after_ui: "Open the web UI at the miner's address in your network, or at <code>http://192.168.7.1</code> over the USB cable.",
+    after_update: "Later versions: System → Online update. They are signed; the miner checks the signature before it flashes.",
+    foot: "WarpAxe is GPL-3.0. Source, release notes and checksums: <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "Miner stays dark after a cancelled install? It is still in download mode. Take it off power completely — power supply <em>and</em> USB cable — for a few seconds.",
+    st_pick: "Choose the miner in the browser's list (“USB JTAG/serial debug unit”).",
+    st_connect: "Connecting …",
+    st_chip: "Connected: {chip}. Loading the firmware …",
+    st_wrongchip: "This is not an ESP32-S3 ({chip}). Nothing was written.",
+    st_nodl: "No answer from the miner. Put it into download mode (hold BOOT, press RST, release BOOT) and try again.",
+    st_write: "Writing … {p} %",
+    st_restart: "Written and checked. Restarting the miner …",
+    st_done: "Done: WarpAxe {v} is installed. The miner starts now; its web UI is reachable after about a minute.",
+    st_cancel: "No device chosen.",
+    st_error: "Install stopped: {e}. If the miner stays dark, take it off power completely (power supply and USB cable).",
+  },
+  de: {
+    title: "WarpAxe installieren",
+    intro: "WarpAxe ist eine Open-Source-Firmware für BM1370-Miner mit Stratum V2, signierten Online-Updates und AxeOS-kompatibler API. Diese Seite installiert sie über USB aus dem Browser; danach kommen Updates über die Weboberfläche des Miners.",
+    warn_h: "Bevor du anfängst",
+    warn_early: "WarpAxe ist noch früh. Sie läuft rund um die Uhr auf einem Bitaxe Gamma und einem NerdQAxe++ Rev 6.1; andere Boards sind ungetestet.",
+    warn_boards: "Unterstützt: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Erkannt, aber noch ohne Mining: NerdQAxe++ Rev 7, NerdOctaxe, Q13xx-Boards – die Chips bleiben aus.",
+    warn_backup: "Halte dir einen Weg zurück offen: Sichere vorher den ganzen Flash mit <code>tools/flash-backup.sh</code> aus dem Repository, oder halte die Original-Firmware des Herstellers bereit, um sie zurückzuspielen.",
+    prep_h: "Vorbereiten",
+    prep_browser: "Chrome oder Edge auf einem Computer verwenden (Web Serial). Safari, Firefox und Smartphones können nicht flashen.",
+    prep_gamma: "Bitaxe Gamma: Netzteil angeschlossen lassen und ein USB-A-auf-USB-C-Kabel nehmen (mit einem C-auf-C-Kabel schaltet der Gamma seinen USB-Anschluss nicht ein).",
+    prep_nerd: "Nerd-Serie: den USB-C-Anschluss der Display-Platine verbinden.",
+    prep_again: "Download-Modus: Von der Original-Firmware aus schaltet der Flasher den Miner meist selbst um. Klappt das Verbinden nicht, oder läuft schon WarpAxe: BOOT halten, RST kurz drücken, BOOT loslassen – oder <code>http://&lt;miner&gt;/bootloader</code> öffnen. Für ein normales Update ist das Online-Update in der Weboberfläche einfacher.",
+    inst_h: "Installieren",
+    inst_keep: "Die Installation lässt den Einstellungsbereich unberührt: WarpAxe übernimmt beim ersten Start WLAN, Pool und Hostnamen der Original-Firmware. Danach startet der Flasher den Miner selbst neu.",
+    inst_btn: "Verbinden und installieren",
+    unsupported: "Dieser Browser kann nicht mit USB-Geräten sprechen. Bitte Chrome oder Edge auf einem Computer verwenden.",
+    after_h: "Nach der Installation",
+    after_start: "Beim ersten Start erkennt WarpAxe das Board. Ein Bitaxe Gamma legt sofort los; bei den Nerd-Boards fragt die Weboberfläche einmal nach dem Board, bis dahin bleiben die Chips aus.",
+    after_ui: "Die Weboberfläche unter der Adresse des Miners im Netzwerk öffnen, oder über das USB-Kabel unter <code>http://192.168.7.1</code>.",
+    after_update: "Spätere Versionen: System → Online-Update. Sie sind signiert; der Miner prüft die Signatur vor dem Flashen.",
+    foot: "WarpAxe steht unter der GPL-3.0. Quellcode, Release-Notes und Prüfsummen: <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "Bleibt der Miner nach einer abgebrochenen Installation dunkel? Dann steckt er noch im Download-Modus. Nimm ihn für ein paar Sekunden ganz vom Strom – Netzteil <em>und</em> USB-Kabel.",
+    st_pick: "Wähle den Miner in der Liste des Browsers („USB JTAG/serial debug unit“).",
+    st_connect: "Verbinde …",
+    st_chip: "Verbunden: {chip}. Lade die Firmware …",
+    st_wrongchip: "Das ist kein ESP32-S3 ({chip}). Es wurde nichts geschrieben.",
+    st_nodl: "Keine Antwort vom Miner. Versetze ihn in den Download-Modus (BOOT halten, RST drücken, BOOT loslassen) und versuche es erneut.",
+    st_write: "Schreibe … {p} %",
+    st_restart: "Geschrieben und geprüft. Starte den Miner neu …",
+    st_done: "Fertig: WarpAxe {v} ist installiert. Der Miner startet jetzt; seine Weboberfläche ist nach etwa einer Minute erreichbar.",
+    st_cancel: "Kein Gerät gewählt.",
+    st_error: "Installation abgebrochen: {e}. Bleibt der Miner dunkel, nimm ihn ganz vom Strom (Netzteil und USB-Kabel).",
+  },
+  es: {
+    title: "Instalar WarpAxe",
+    intro: "WarpAxe es un firmware de código abierto para mineros con BM1370, con Stratum V2, actualizaciones en línea firmadas y una API compatible con AxeOS. Esta página lo instala por USB desde tu navegador; después, las actualizaciones se hacen desde la propia interfaz web del minero.",
+    warn_h: "Antes de empezar",
+    warn_early: "WarpAxe está en una fase temprana. Funciona 24/7 en un Bitaxe Gamma y en un NerdQAxe++ Rev 6.1; el resto de placas no se ha probado.",
+    warn_boards: "Compatibles: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Se reconocen pero aún no minan: NerdQAxe++ Rev 7, NerdOctaxe y placas Q13xx — los chips se quedan apagados.",
+    warn_backup: "Asegúrate de poder volver atrás: primero haz una copia de toda la flash con <code>tools/flash-backup.sh</code> del repositorio, o ten a mano el archivo del firmware original del fabricante para volver a flashearlo.",
+    prep_h: "Preparación",
+    prep_browser: "Usa Chrome o Edge en un ordenador (Web Serial). Con Safari, Firefox o desde el móvil no se puede flashear.",
+    prep_gamma: "Bitaxe Gamma: deja la fuente de alimentación conectada y usa un cable USB-A a USB-C (con un cable C a C, el Gamma no alimenta su puerto USB).",
+    prep_nerd: "Serie Nerd: conecta el puerto USB-C de la placa de la pantalla.",
+    prep_again: "Modo de descarga: si vienes del firmware original, el instalador suele pasar el minero a este modo por sí solo. Si la conexión falla o el minero ya ejecuta WarpAxe: mantén pulsado BOOT, pulsa brevemente RST y suelta BOOT, o abre <code>http://&lt;miner&gt;/bootloader</code>. Para una actualización normal, es más fácil la actualización en línea de la interfaz web.",
+    inst_h: "Instalar",
+    inst_keep: "La instalación no toca la partición de ajustes: en el primer arranque, WarpAxe adopta el Wi-Fi, el pool y el nombre de host de tu firmware original. Al terminar, el instalador reinicia el minero por sí solo.",
+    inst_btn: "Conectar e instalar",
+    unsupported: "Este navegador no puede comunicarse con dispositivos USB. Usa Chrome o Edge en un ordenador.",
+    after_h: "Después de instalar",
+    after_start: "En el primer arranque, WarpAxe detecta la placa. Un Bitaxe Gamma empieza a minar enseguida; en las placas Nerd, la interfaz web te pregunta una sola vez qué placa es, y los chips se quedan apagados hasta que respondas.",
+    after_ui: "Abre la interfaz web en la dirección del minero dentro de tu red, o en <code>http://192.168.7.1</code> a través del cable USB.",
+    after_update: "Versiones posteriores: Sistema → Actualización en línea. Vienen firmadas; el minero comprueba la firma antes de flashear.",
+    foot: "WarpAxe tiene licencia GPL-3.0. Código fuente, notas de versión y sumas de verificación: <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "¿El minero se queda apagado tras cancelar la instalación? Sigue en modo de descarga. Desconéctalo por completo de la corriente (fuente de alimentación <em>y</em> cable USB) durante unos segundos.",
+    st_pick: "Elige el minero en la lista del navegador («USB JTAG/serial debug unit»).",
+    st_connect: "Conectando…",
+    st_chip: "Conectado: {chip}. Cargando el firmware…",
+    st_wrongchip: "Esto no es un ESP32-S3 ({chip}). No se ha escrito nada.",
+    st_nodl: "El minero no responde. Ponlo en modo de descarga (mantén BOOT, pulsa RST, suelta BOOT) y vuelve a intentarlo.",
+    st_write: "Flasheando… {p} %",
+    st_restart: "Escrito y verificado. Reiniciando el minero…",
+    st_done: "Listo: WarpAxe {v} está instalado. El minero arranca ahora; su interfaz web estará accesible en un minuto aproximadamente.",
+    st_cancel: "No se eligió ningún dispositivo.",
+    st_error: "Instalación detenida: {e}. Si el minero sigue apagado, desconéctalo por completo de la corriente (fuente de alimentación y cable USB).",
+  },
+  fr: {
+    title: "Installer WarpAxe",
+    intro: "WarpAxe est un firmware open source pour les mineurs à BM1370, avec Stratum V2, des mises à jour en ligne signées et une API compatible AxeOS. Cette page l’installe en USB depuis votre navigateur ; ensuite, les mises à jour se font directement depuis l’interface web du mineur.",
+    warn_h: "Avant de commencer",
+    warn_early: "WarpAxe n’en est qu’à ses débuts. Il tourne 24 h/24 sur un Bitaxe Gamma et un NerdQAxe++ Rev 6.1 ; les autres cartes n’ont pas été testées.",
+    warn_boards: "Modèles pris en charge : Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Reconnus mais pas encore en minage : NerdQAxe++ Rev 7, NerdOctaxe, cartes Q13xx — les puces restent éteintes.",
+    warn_backup: "Prévoyez un retour en arrière : sauvegardez d’abord toute la flash avec <code>tools/flash-backup.sh</code> du dépôt, ou gardez sous la main le fichier du firmware d’origine du fabricant pour pouvoir le reflasher.",
+    prep_h: "Préparation",
+    prep_browser: "Utilisez Chrome ou Edge sur un ordinateur (Web Serial). Safari, Firefox et les téléphones ne permettent pas de flasher.",
+    prep_gamma: "Bitaxe Gamma : laissez son alimentation branchée et utilisez un câble USB-A vers USB-C (avec un câble C vers C, le Gamma n’alimente pas son port USB).",
+    prep_nerd: "Série Nerd : branchez le port USB-C de la carte d’affichage.",
+    prep_again: "Mode téléchargement : depuis le firmware d’origine, l’outil bascule généralement le mineur tout seul. Si la connexion échoue, ou si le mineur tourne déjà sous WarpAxe : maintenez BOOT, appuyez brièvement sur RST, relâchez BOOT — ou ouvrez <code>http://&lt;miner&gt;/bootloader</code>. Pour une mise à jour normale, la mise à jour en ligne depuis l’interface web est plus simple.",
+    inst_h: "Installation",
+    inst_keep: "L’installation ne touche pas à la partition des réglages : au premier démarrage, WarpAxe reprend le Wi-Fi, le pool et le nom d’hôte de votre firmware d’origine. Une fois terminé, l’outil redémarre le mineur de lui-même.",
+    inst_btn: "Connecter et installer",
+    unsupported: "Ce navigateur ne peut pas communiquer avec les périphériques USB. Utilisez Chrome ou Edge sur un ordinateur.",
+    after_h: "Après l’installation",
+    after_start: "Au premier démarrage, WarpAxe détecte la carte. Un Bitaxe Gamma commence à miner aussitôt ; sur les cartes Nerd, l’interface web vous demande une seule fois de quelle carte il s’agit, et les puces restent éteintes tant que vous n’avez pas répondu.",
+    after_ui: "Ouvrez l’interface web à l’adresse du mineur sur votre réseau, ou à <code>http://192.168.7.1</code> via le câble USB.",
+    after_update: "Versions suivantes : Système → Mise à jour en ligne. Elles sont signées ; le mineur vérifie la signature avant de flasher.",
+    foot: "WarpAxe est sous licence GPL-3.0. Code source, notes de version et sommes de contrôle : <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "Le mineur reste éteint après une installation annulée ? Il est encore en mode téléchargement. Coupez-le complètement de l’alimentation — bloc d’alimentation <em>et</em> câble USB — pendant quelques secondes.",
+    st_pick: "Choisissez le mineur dans la liste du navigateur (« USB JTAG/serial debug unit »).",
+    st_connect: "Connexion…",
+    st_chip: "Connecté : {chip}. Chargement du firmware…",
+    st_wrongchip: "Ce n’est pas un ESP32-S3 ({chip}). Rien n’a été écrit.",
+    st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement (maintenez BOOT, appuyez sur RST, relâchez BOOT) et réessayez.",
+    st_write: "Flashage… {p} %",
+    st_restart: "Écrit et vérifié. Redémarrage du mineur…",
+    st_done: "Terminé : WarpAxe {v} est installé. Le mineur démarre ; son interface web sera accessible dans une minute environ.",
+    st_cancel: "Aucun appareil choisi.",
+    st_error: "Installation interrompue : {e}. Si le mineur reste éteint, coupez-le complètement de l’alimentation (bloc d’alimentation et câble USB).",
+  },
+  it: {
+    title: "Installa WarpAxe",
+    intro: "WarpAxe è un firmware open source per miner con BM1370, con Stratum V2, aggiornamenti online firmati e un'API compatibile con AxeOS. Questa pagina lo installa via USB dal tuo browser; dopo, gli aggiornamenti si fanno direttamente dall'interfaccia web del miner.",
+    warn_h: "Prima di iniziare",
+    warn_early: "WarpAxe è ancora in fase iniziale. Gira 24/7 su un Bitaxe Gamma e su un NerdQAxe++ Rev 6.1; le altre schede non sono state testate.",
+    warn_boards: "Supportate: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Riconosciute ma non ancora in mining: NerdQAxe++ Rev 7, NerdOctaxe, schede Q13xx — i chip restano spenti.",
+    warn_backup: "Tieniti una via di ritorno: prima fai un backup dell'intera flash con <code>tools/flash-backup.sh</code> del repository, oppure tieni a portata di mano il file del firmware originale del produttore per poterlo riflashare.",
+    prep_h: "Preparazione",
+    prep_browser: "Usa Chrome o Edge su un computer (Web Serial). Con Safari, Firefox o da smartphone non si può flashare.",
+    prep_gamma: "Bitaxe Gamma: lascia collegato l'alimentatore e usa un cavo da USB-A a USB-C (con un cavo C-C il Gamma non alimenta la sua porta USB).",
+    prep_nerd: "Serie Nerd: collega la porta USB-C della scheda del display.",
+    prep_again: "Modalità download: se parti dal firmware originale, di solito il flasher porta il miner in questa modalità da solo. Se la connessione non riesce, o se il miner esegue già WarpAxe: tieni premuto BOOT, premi brevemente RST, rilascia BOOT — oppure apri <code>http://&lt;miner&gt;/bootloader</code>. Per un aggiornamento normale è più semplice l’aggiornamento online dall’interfaccia web.",
+    inst_h: "Installazione",
+    inst_keep: "L’installazione non tocca la partizione delle impostazioni: al primo avvio WarpAxe riprende Wi-Fi, pool e nome host del firmware originale. Al termine, il flasher riavvia il miner da solo.",
+    inst_btn: "Connetti e installa",
+    unsupported: "Questo browser non può comunicare con i dispositivi USB. Usa Chrome o Edge su un computer.",
+    after_h: "Dopo l'installazione",
+    after_start: "Al primo avvio WarpAxe riconosce la scheda. Un Bitaxe Gamma inizia subito a minare; sulle schede Nerd l'interfaccia web ti chiede una sola volta di quale scheda si tratta, e i chip restano spenti finché non rispondi.",
+    after_ui: "Apri l'interfaccia web all'indirizzo del miner nella tua rete, oppure su <code>http://192.168.7.1</code> tramite il cavo USB.",
+    after_update: "Versioni successive: Sistema → Aggiornamento online. Sono firmate; il miner verifica la firma prima di flashare.",
+    foot: "WarpAxe è rilasciato sotto licenza GPL-3.0. Sorgenti, note di rilascio e checksum: <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "Il miner resta spento dopo un’installazione annullata? È ancora in modalità download. Scollegalo completamente dall’alimentazione — alimentatore <em>e</em> cavo USB — per qualche secondo.",
+    st_pick: "Scegli il miner nell’elenco del browser (“USB JTAG/serial debug unit”).",
+    st_connect: "Connessione…",
+    st_chip: "Connesso: {chip}. Caricamento del firmware…",
+    st_wrongchip: "Questo non è un ESP32-S3 ({chip}). Non è stato scritto nulla.",
+    st_nodl: "Nessuna risposta dal miner. Mettilo in modalità download (tieni premuto BOOT, premi RST, rilascia BOOT) e riprova.",
+    st_write: "Scrittura… {p}%",
+    st_restart: "Scritto e verificato. Riavvio del miner…",
+    st_done: "Fatto: WarpAxe {v} è installato. Il miner si sta avviando; la sua interfaccia web sarà raggiungibile tra circa un minuto.",
+    st_cancel: "Nessun dispositivo scelto.",
+    st_error: "Installazione interrotta: {e}. Se il miner resta spento, scollegalo completamente dall’alimentazione (alimentatore e cavo USB).",
+  },
+  pt: {
+    title: "Instalar o WarpAxe",
+    intro: "O WarpAxe é um firmware open source para mineradores BM1370 com Stratum V2, atualizações online assinadas e uma API compatível com o AxeOS. Esta página instala o firmware via USB direto do navegador; depois disso, as atualizações vêm da própria interface web do minerador.",
+    warn_h: "Antes de começar",
+    warn_early: "O WarpAxe ainda está em fase inicial. Ele roda 24/7 em um Bitaxe Gamma e em um NerdQAxe++ Rev 6.1; as outras placas não foram testadas.",
+    warn_boards: "Suportadas: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Reconhecidas, mas ainda sem minerar: NerdQAxe++ Rev 7, NerdOctaxe, placas Q13xx — os chips ficam desligados.",
+    warn_backup: "Garanta um caminho de volta: antes, faça um backup completo da flash com <code>tools/flash-backup.sh</code> do repositório, ou deixe à mão o arquivo do firmware original do fabricante para gravá-lo de novo.",
+    prep_h: "Preparação",
+    prep_browser: "Use o Chrome ou o Edge em um computador (Web Serial). Safari, Firefox e celulares não conseguem gravar o firmware.",
+    prep_gamma: "Bitaxe Gamma: mantenha a fonte conectada e use um cabo USB-A para USB-C (com um cabo C-C, o Gamma não ativa a porta USB).",
+    prep_nerd: "Série Nerd: conecte na porta USB-C da placa do display.",
+    prep_again: "Modo de download: vindo do firmware original, o instalador normalmente coloca o minerador nesse modo sozinho. Se a conexão falhar, ou se o minerador já rodar o WarpAxe: segure BOOT, aperte RST rapidamente e solte BOOT — ou abra <code>http://&lt;miner&gt;/bootloader</code>. Para uma atualização normal, a atualização online pela interface web é mais fácil.",
+    inst_h: "Instalar",
+    inst_keep: "A instalação não mexe na partição de configurações: na primeira inicialização, o WarpAxe assume o Wi-Fi, o pool e o hostname do seu firmware original. Ao terminar, o instalador reinicia o minerador sozinho.",
+    inst_btn: "Conectar e instalar",
+    unsupported: "Este navegador não consegue se comunicar com dispositivos USB. Use o Chrome ou o Edge em um computador.",
+    after_h: "Depois da instalação",
+    after_start: "Na primeira inicialização, o WarpAxe identifica a placa. Um Bitaxe Gamma começa a minerar na hora; nas placas Nerd, a interface web pergunta uma vez qual é a placa, e os chips ficam desligados até você responder.",
+    after_ui: "Abra a interface web no endereço do minerador na sua rede, ou em <code>http://192.168.7.1</code> pelo cabo USB.",
+    after_update: "Versões futuras: Sistema → Atualização online. Elas são assinadas; o minerador verifica a assinatura antes de gravar.",
+    foot: "O WarpAxe é GPL-3.0. Código-fonte, notas de versão e checksums: <a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>.",
+    ver: "Firmware {v}",
+    help_stuck: "O minerador ficou apagado depois de uma instalação cancelada? Ele ainda está em modo de download. Desligue-o totalmente da energia — fonte <em>e</em> cabo USB — por alguns segundos.",
+    st_pick: "Escolha o minerador na lista do navegador (“USB JTAG/serial debug unit”).",
+    st_connect: "Conectando…",
+    st_chip: "Conectado: {chip}. Carregando o firmware…",
+    st_wrongchip: "Isto não é um ESP32-S3 ({chip}). Nada foi gravado.",
+    st_nodl: "O minerador não respondeu. Coloque-o em modo de download (segure BOOT, aperte RST, solte BOOT) e tente de novo.",
+    st_write: "Gravando… {p}%",
+    st_restart: "Gravado e verificado. Reiniciando o minerador…",
+    st_done: "Pronto: o WarpAxe {v} está instalado. O minerador está iniciando; a interface web fica acessível em cerca de um minuto.",
+    st_cancel: "Nenhum dispositivo escolhido.",
+    st_error: "Instalação interrompida: {e}. Se o minerador continuar apagado, desligue-o totalmente da energia (fonte e cabo USB).",
+  },
+  ja: {
+    title: "WarpAxe をインストール",
+    intro: "WarpAxe は BM1370 搭載マイナー向けのオープンソースファームウェアです。Stratum V2、署名付きオンライン更新、AxeOS 互換の API に対応しています。このページではブラウザから USB 経由でインストールします。以降の更新はマイナー自身の Web UI から行えます。",
+    warn_h: "始める前に",
+    warn_early: "WarpAxe はまだ初期段階です。Bitaxe Gamma と NerdQAxe++ Rev 6.1 では 24 時間 365 日稼働していますが、その他のボードは未検証です。",
+    warn_boards: "対応：Bitaxe Gamma (60x)、NerdQAxe++ Rev 6.1。認識はするもののまだマイニングできないもの：NerdQAxe++ Rev 7、NerdOctaxe、Q13xx 系ボード — チップはオフのままです。",
+    warn_backup: "元に戻せるようにしておいてください。事前にリポジトリの <code>tools/flash-backup.sh</code> でフラッシュ全体をバックアップするか、メーカー純正ファームウェアのファイルを手元に用意して書き戻せるようにしておきましょう。",
+    prep_h: "準備",
+    prep_browser: "パソコンで Chrome または Edge を使ってください（Web Serial）。Safari、Firefox、スマートフォンでは書き込みできません。",
+    prep_gamma: "Bitaxe Gamma：電源はつないだまま、USB-A to USB-C ケーブルを使ってください（C to C ケーブルでは Gamma の USB ポートが有効になりません）。",
+    prep_nerd: "Nerd シリーズ：ディスプレイ基板の USB-C ポートに接続します。",
+    prep_again: "ダウンロードモード：純正ファームウェアからの場合、通常は書き込みツールがマイナーを自動で切り替えます。接続に失敗する場合や、マイナーがすでに WarpAxe で動作している場合は、BOOT を押したまま RST を短く押し、BOOT を離してください。または <code>http://&lt;miner&gt;/bootloader</code> を開いてください。通常のアップデートなら、Web UI のオンラインアップデートの方が簡単です。",
+    inst_h: "インストール",
+    inst_keep: "インストールでは設定パーティションには手を加えません。WarpAxe は初回起動時に、純正ファームウェアの Wi-Fi・プール・ホスト名をそのまま引き継ぎます。完了すると、書き込みツールがマイナーを自動で再起動します。",
+    inst_btn: "接続してインストール",
+    unsupported: "このブラウザは USB デバイスと通信できません。パソコンで Chrome または Edge を使ってください。",
+    after_h: "インストール後",
+    after_start: "初回起動時に WarpAxe がボードを判別します。Bitaxe Gamma はすぐにマイニングを始めます。Nerd 系ボードでは Web UI でどのボードかを一度だけ尋ねられ、回答するまでチップはオフのままです。",
+    after_ui: "ネットワーク内のマイナーのアドレス、または USB ケーブル経由なら <code>http://192.168.7.1</code> で Web UI を開きます。",
+    after_update: "今後のバージョン：システム → オンライン更新。更新は署名付きで、マイナーは書き込む前に署名を検証します。",
+    foot: "WarpAxe のライセンスは GPL-3.0 です。ソースコード、リリースノート、チェックサム：<a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>",
+    ver: "ファームウェア {v}",
+    help_stuck: "インストールを中止した後、マイナーの画面が消えたままですか？まだダウンロードモードのままです。電源アダプター<em>と</em> USB ケーブルの両方を抜き、数秒間完全に電源を切ってください。",
+    st_pick: "ブラウザーの一覧からマイナー（「USB JTAG/serial debug unit」）を選んでください。",
+    st_connect: "接続中…",
+    st_chip: "接続しました：{chip}。ファームウェアを読み込んでいます…",
+    st_wrongchip: "ESP32-S3 ではありません（{chip}）。何も書き込んでいません。",
+    st_nodl: "マイナーから応答がありません。ダウンロードモードにして（BOOT を押したまま RST を押し、BOOT を離す）、もう一度お試しください。",
+    st_write: "書き込み中… {p}%",
+    st_restart: "書き込みと検証が完了しました。マイナーを再起動しています…",
+    st_done: "完了：WarpAxe {v} をインストールしました。マイナーが起動します。約 1 分後に Web UI にアクセスできます。",
+    st_cancel: "デバイスが選択されていません。",
+    st_error: "インストールを中断しました：{e}。マイナーの画面が消えたままの場合は、電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
+  },
+  zh: {
+    title: "安装 WarpAxe",
+    intro: "WarpAxe 是面向 BM1370 矿机的开源固件，支持 Stratum V2、带签名的在线更新和兼容 AxeOS 的 API。本页面通过浏览器经 USB 安装固件；之后的更新直接在矿机自带的 Web 界面里完成。",
+    warn_h: "开始之前",
+    warn_early: "WarpAxe 目前还处于早期阶段。它已在一台 Bitaxe Gamma 和一台 NerdQAxe++ Rev 6.1 上 24/7 运行；其他板子尚未测试。",
+    warn_boards: "已支持：Bitaxe Gamma (60x)、NerdQAxe++ Rev 6.1。能识别但暂不能挖矿：NerdQAxe++ Rev 7、NerdOctaxe、Q13xx 系列板——芯片保持关闭。",
+    warn_backup: "留好退路：先用仓库里的 <code>tools/flash-backup.sh</code> 备份整个 flash，或者提前准备好厂家的原版固件文件，以便刷回去。",
+    prep_h: "准备",
+    prep_browser: "请在电脑上使用 Chrome 或 Edge（Web Serial）。Safari、Firefox 和手机都无法刷机。",
+    prep_gamma: "Bitaxe Gamma：保持电源接通，并使用 USB-A 转 USB-C 线（用 C 对 C 线时，Gamma 不会启用 USB 口）。",
+    prep_nerd: "Nerd 系列：连接显示屏板上的 USB-C 口。",
+    prep_again: "下载模式：如果当前是原厂固件，刷写工具通常会自动把矿机切换到该模式。如果连接失败，或矿机已经在运行 WarpAxe：按住 BOOT，短按 RST，再松开 BOOT——或打开 <code>http://&lt;miner&gt;/bootloader</code>。日常更新用网页界面里的在线更新更方便。",
+    inst_h: "安装",
+    inst_keep: "安装不会改动设置分区：WarpAxe 首次启动时会沿用原厂固件的 Wi-Fi、矿池和主机名。完成后，刷写工具会自动重启矿机。",
+    inst_btn: "连接并安装",
+    unsupported: "此浏览器无法与 USB 设备通信。请在电脑上使用 Chrome 或 Edge。",
+    after_h: "安装之后",
+    after_start: "首次启动时，WarpAxe 会自动识别板子。Bitaxe Gamma 会立即开始挖矿；Nerd 系列板子会在 Web 界面里询问一次具体型号，回答之前芯片保持关闭。",
+    after_ui: "通过矿机在局域网中的地址打开 Web 界面，或用 USB 线连接后访问 <code>http://192.168.7.1</code>。",
+    after_update: "后续版本：系统 → 在线更新。更新带有签名，矿机在刷写前会先校验签名。",
+    foot: "WarpAxe 采用 GPL-3.0 许可。源码、发布说明和校验和：<a href=\"https://git.warppool.org/dvb-projekt/dvb-WarpAxe\">git.warppool.org/dvb-projekt/dvb-WarpAxe</a>。",
+    ver: "固件 {v}",
+    help_stuck: "取消安装后矿机一直黑屏？它仍处于下载模式。请将它完全断电（电源<em>和</em> USB 线都拔掉）几秒钟。",
+    st_pick: "在浏览器的列表中选择矿机（“USB JTAG/serial debug unit”）。",
+    st_connect: "正在连接…",
+    st_chip: "已连接：{chip}。正在加载固件…",
+    st_wrongchip: "这不是 ESP32-S3（{chip}）。未写入任何内容。",
+    st_nodl: "矿机没有响应。请让它进入下载模式（按住 BOOT，按一下 RST，松开 BOOT），然后重试。",
+    st_write: "正在刷写… {p}%",
+    st_restart: "已写入并校验。正在重启矿机…",
+    st_done: "完成：WarpAxe {v} 已安装。矿机正在启动，大约一分钟后即可访问其网页界面。",
+    st_cancel: "未选择设备。",
+    st_error: "安装已中止：{e}。如果矿机一直黑屏，请将它完全断电（电源和 USB 线都拔掉）。",
+  },
+};
+let version = "";
+function apply(lang) {
+  const t = T[lang] || T.en;
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t[el.dataset.t]; });
+  document.getElementById("ver").textContent = version ? t.ver.replace("{v}", version) : "";
+}
+const sel = document.getElementById("lang");
+let lang = (navigator.language || "en").slice(0, 2);
+try { lang = localStorage.getItem("warpaxe-flasher-lang") || lang; } catch (e) {}
+if (!T[lang]) lang = "en";
+sel.value = lang;
+sel.addEventListener("change", () => {
+  try { localStorage.setItem("warpaxe-flasher-lang", sel.value); } catch (e) {}
+  apply(sel.value);
+});
+apply(lang);
+fetch("manifest.json").then(r => r.json()).then(m => { version = m.version; apply(sel.value); }).catch(() => {});
+
+// The install: esptool-js over Web Serial. Writes the manifest's parts
+// (bootloader, partition table, empty OTA data, app), never the NVS
+// partition, checks each part's MD5 against the flash, then clears the
+// forced-download flag (set by /bootloader, it survives resets) and
+// restarts the chip with the RTC watchdog — the sequence esptool uses on
+// the ESP32-S3.
+const RTC = 0x60008000;
+const $ = (id) => document.getElementById(id);
+function st(key, vars = {}, cls = "") {
+  const t = T[sel.value] || T.en;
+  let s = t[key] || T.en[key];
+  for (const [k, v] of Object.entries(vars)) s = s.replace("{" + k + "}", v);
+  $("st").textContent = s;
+  $("st").className = "status " + cls;
+}
+if (!("serial" in navigator)) {
+  $("go").disabled = true;
+  $("nos").hidden = false;
+  $("nos").dataset.t = "unsupported";
+  apply(sel.value);
+}
+$("go").addEventListener("click", async () => {
+  let port;
+  st("st_pick");
+  try {
+    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+  } catch (e) {
+    st("st_cancel", {}, "err");
+    return;
+  }
+  $("go").disabled = true;
+  const transport = new Transport(port, false);
+  let stage = "connect";
+  try {
+    st("st_connect");
+    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200 });
+    let chip;
+    try {
+      chip = await loader.main("default_reset");
+    } catch (e) {
+      stage = "nodl";
+      throw e;
+    }
+    if (!/ESP32-S3/i.test(chip)) {
+      st("st_wrongchip", { chip }, "err");
+      return;
+    }
+    st("st_chip", { chip });
+    stage = "write";
+    const m = await (await fetch("manifest.json", { cache: "no-store" })).json();
+    const parts = m.builds.find((b) => b.chipFamily === "ESP32-S3").parts;
+    const files = [];
+    for (const p of parts) {
+      const r = await fetch(p.path, { cache: "no-store" });
+      if (!r.ok) throw new Error(p.path + ": HTTP " + r.status);
+      files.push({ data: new Uint8Array(await r.arrayBuffer()), address: p.offset });
+    }
+    const total = files.reduce((n, f) => n + f.data.length, 0);
+    const done = files.map(() => 0);
+    $("prog").hidden = false;
+    await loader.writeFlash({
+      fileArray: files,
+      flashSize: "keep",
+      flashMode: "keep",
+      flashFreq: "keep",
+      eraseAll: false,
+      compress: true,
+      reportProgress: (i, written, size) => {
+        done[i] = (written / size) * files[i].data.length;
+        const pct = Math.floor((done.reduce((a, b) => a + b, 0) / total) * 100);
+        $("bar").style.width = pct + "%";
+        st("st_write", { p: pct });
+      },
+      calculateMD5Hash: md5hex,
+    });
+    stage = "restart";
+    st("st_restart");
+    await loader.writeReg(RTC + 0x12c, 0, 0x1);
+    await loader.writeReg(RTC + 0xb0, 0x50d83aa1);
+    await loader.writeReg(RTC + 0x9c, 2000);
+    await loader.writeReg(RTC + 0x98, ((1 << 31) | (5 << 28) | (1 << 8) | 2) >>> 0);
+    try { await loader.writeReg(RTC + 0xb0, 0); } catch (e) { /* the chip may already be resetting */ }
+    st("st_done", { v: version || m.version }, "ok");
+  } catch (e) {
+    if (stage === "restart") st("st_done", { v: version }, "ok");
+    else if (stage === "nodl") st("st_nodl", {}, "err");
+    else st("st_error", { e: (e && e.message) || String(e) }, "err");
+  } finally {
+    try { await transport.disconnect(); } catch (e) {}
+    $("go").disabled = false;
+  }
+});
+</script>
+</body>
+</html>

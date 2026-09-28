@@ -24,15 +24,18 @@ tools that talk to a Bitaxe keep working — including
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool), the
 clock-and-voltage regulator of dvb-WarpPool.
 
-What it adds on top: **Stratum V2** or Stratum V1 over **TLS**, each with
-the pool's certificate checked, a **fallback pool** that hands back to the
-main pool on its own, **signed online updates** from the release page, a
-**first start that finds the board by itself** and takes Wi-Fi and pool
-from the previous AxeOS/NerdOS settings, a device display with **animated special
-screens** (yes, a found block gets a warp jump), a regulator and sensor
-layer that rejects implausible readings instead of acting on them, and a
-web UI in eight languages that is the same for the Bitaxe and the Nerd
-series and shows which one you are looking at.
+It does what the stock firmware does — Stratum V2 with the pool's
+authority key checked, Stratum V1 over TLS, a fallback pool that hands back
+to the main pool — and differs where it counts for running a fleet:
+**signed online updates** the miner fetches and checks itself, **one image
+for every board** with the board found on the first start and Wi-Fi and
+pool taken over from the previous AxeOS/NerdOS settings, a regulator and
+sensor layer that **rejects implausible readings** instead of acting on
+them, the web UI **over the USB cable** as well as over Wi-Fi, and one web
+UI in eight languages for the Bitaxe and the Nerd series. The device
+display has animated special screens (yes, a found block gets a warp jump).
+See [Compared with the stock firmware](#compared-with-the-stock-firmware)
+for where it is ahead and where it is not.
 
 The chip protocol, the chain driver and the board drivers are `no_std`
 crates that run under `cargo test` against a simulated chain and a scripted
@@ -42,6 +45,35 @@ miner.
 > **Status: early (v0.1.3).** It mines 24/7 on one Bitaxe Gamma and one
 > NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune. Other boards have a profile but have
 > not run it — see [Supported boards](#supported-boards) before you flash.
+
+## Compared with the stock firmware
+
+As of 2026-09-27, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
+(NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
+
+| | AxeOS | NerdOS | WarpAxe |
+|---|---|---|---|
+| Stratum V2 (Noise, authority key, "require authentication") | yes | yes | yes |
+| Stratum V1 over TLS, certificate checked | yes | yes | yes |
+| Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes |
+| Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from the release page, install on a click) |
+| Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
+| Images | factory image per board version (update image shared) | one per board | **one for all boards** |
+| Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
+| Settings of the previous firmware | — | — | **taken over** (Wi-Fi, pools, hostname) |
+| Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
+| Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
+| Web UI languages | English | 9 | 8 |
+| Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
+| Supported boards | ~20 board versions | 11 boards | 2 tested (see below) |
+
+Where the stock firmware is ahead: far more boards and years of use by a
+large community; AxeOS has a swarm view, themes, the BAP accessory port
+and Wi-Fi setup over Bluetooth; NerdOS has two-factor login for updates,
+dual-pool mining, InfluxDB/Grafana export and alerts. AxeOS recovers from an
+overheat stop on its own. WarpAxe is early; if you need any of that,
+stay with the stock firmware.
 
 ## Screenshots
 
@@ -185,14 +217,29 @@ don't flash them unless you can recover the stock firmware over USB.
 
 ## Install
 
-**First install** still needs a USB cable and the ESP toolchain; after that
-the miner sets itself up:
+**First install** needs a USB cable once; after that the miner sets itself
+up and updates itself:
 
-1. **Back up the stock firmware** — `tools/flash-backup.sh` reads the whole
-   flash (16 MB) over USB, so you can always go back.
-2. Flash WarpAxe over USB (see [Build from source](#build-from-source)) and
-   keep the settings partition: WarpAxe reads what AxeOS or NerdOS left
-   there.
+1. **Keep a way back** — `tools/flash-backup.sh` reads the whole flash
+   (16 MB) over USB; or keep the stock firmware at hand (the
+   [Bitaxe](https://bitaxeorg.github.io/bitaxe-web-flasher/) and
+   [NerdQAxe](https://shufps.github.io/nerdqaxe-web-flasher/) web flashers
+   put it back).
+2. Install WarpAxe from the browser with the **web flasher at
+   [warppool.org/warpaxe](https://warppool.org/warpaxe/)** (Chrome or Edge
+   on a computer). It writes bootloader, partition table and app and
+   leaves the settings partition alone, so WarpAxe reads what AxeOS or
+   NerdOS left there; it checks every part against the flash and restarts
+   the miner when it is done. The flasher serves the current release; its
+   image carries the same signature the online update checks. Coming from
+   the stock firmware, the flasher usually puts the miner into download
+   mode by itself; otherwise hold BOOT, press RST, release BOOT (or open
+   `http://<miner>/bootloader` on a miner that runs WarpAxe). A miner that
+   stays dark after a cancelled install is still in download mode: take it
+   off power completely — power supply **and** USB cable — for a few
+   seconds. Without a browser: `warpaxe-factory.bin` from the
+   release at offset 0 with esptool (this one starts with empty settings),
+   or [Build from source](#build-from-source).
 3. On the first start WarpAxe takes **Wi-Fi, pools and hostname** from the
    previous firmware and finds the **board**: from the model AxeOS stored at
    the factory, or from the chips that answer on the board's I²C bus
@@ -208,7 +255,11 @@ the miner sets itself up:
 Install*, or upload `warpaxe.bin` from the
 [releases page](https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases).
 Every release carries `warpaxe.bin` (one image for all boards — the board is
-configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig`.
+configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig`; for the first
+install also `warpaxe-factory.bin` (bootloader, partition table and app in
+one image) and `web-flasher.tar.gz` (the web flasher as published), with
+their checksums in `install.sha256`. `tools/verify-release.py` checks an
+image's signature without the Rust toolchain.
 
 ## Build from source
 

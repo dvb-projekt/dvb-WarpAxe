@@ -38,6 +38,33 @@ git -C "$ROOT" fetch -q origin
 mkdir -p "$OUT"
 espflash save-image --chip esp32s3 --flash-size 16mb \
     "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" "$OUT/warpaxe.bin" >/dev/null
+# The first install from a stock firmware, over USB: the parts for the web
+# flasher (bootloader, partition table, empty OTA data so the new table
+# boots ota_0, the app) and one merged image for esptool users. The web
+# flasher skips the NVS partition, so AxeOS/NerdOS settings survive for the
+# first-start import; the merged image covers it and starts clean.
+IDF_OUT="$(ls -d "$FW"/target/xtensa-esp32s3-espidf/release/build/esp-idf-sys-*/out | head -1)"
+cp "$IDF_OUT/build/bootloader/bootloader.bin" "$OUT/bootloader.bin"
+cp "$IDF_OUT/build/partition_table/partition-table.bin" "$OUT/partition-table.bin"
+cp "$IDF_OUT/build/ota_data_initial.bin" "$OUT/ota-data-initial.bin"
+python3 -m esptool --chip esp32s3 merge_bin -o "$OUT/warpaxe-factory.bin" --flash_size 16MB \
+    0x0 "$OUT/bootloader.bin" 0x8000 "$OUT/partition-table.bin" \
+    0xf000 "$OUT/ota-data-initial.bin" 0x20000 "$OUT/warpaxe.bin" >/dev/null
+python3 - "$TAG" "$OUT/manifest.json" <<'PY'
+import json, sys
+tag, out = sys.argv[1], sys.argv[2]
+json.dump({
+    "name": "WarpAxe",
+    "version": tag.lstrip("v"),
+    "new_install_prompt_erase": True,
+    "builds": [{"chipFamily": "ESP32-S3", "parts": [
+        {"path": "bootloader.bin", "offset": 0x0},
+        {"path": "partition-table.bin", "offset": 0x8000},
+        {"path": "ota-data-initial.bin", "offset": 0xF000},
+        {"path": "warpaxe.bin", "offset": 0x20000},
+    ]}],
+}, open(out, "w"), indent=2)
+PY
 (cd "$OUT" && shasum -a 256 warpaxe.bin > warpaxe.bin.sha256)
 (cd "$ROOT" && cargo run -q -p warpaxe-sv2 --example release-key -- sign "$KEY" "$OUT/warpaxe.bin" > "$OUT/warpaxe.bin.sig")
 # The key in the firmware must be the one that signed, or every miner
@@ -48,13 +75,26 @@ grep -A 5 'const RELEASE_KEY' "$FW/src/update.rs" | tr -d ' ,\n' | sed 's/0x//g'
 (cd "$ROOT" && cargo run -q -p warpaxe-sv2 --example release-key -- verify "$PUB" "$OUT/warpaxe.bin" "$OUT/warpaxe.bin.sig" >/dev/null)
 echo "image: $(wc -c < "$OUT/warpaxe.bin") bytes, sha256 $(cut -d' ' -f1 "$OUT/warpaxe.bin.sha256")"
 
+# The web flasher as one static directory (page, esptool-js, manifest,
+# parts, the signed image). warppool.org/warpaxe/ unpacks it on deploy
+# after checking warpaxe.bin with tools/verify-release.py against the
+# pinned key.
+FL="$OUT/web-flasher"
+rm -rf "$FL" && mkdir -p "$FL"
+cp -R "$ROOT/web/flasher/." "$FL/"
+cp "$FW/src/ui/assets/wordmark.webp" "$FW/src/ui/assets/favicon.svg" "$FL/"
+cp "$OUT"/{manifest.json,bootloader.bin,partition-table.bin,ota-data-initial.bin,warpaxe.bin,warpaxe.bin.sha256,warpaxe.bin.sig} "$FL/"
+tar -czf "$OUT/web-flasher.tar.gz" -C "$FL" .
+(cd "$OUT" && shasum -a 256 warpaxe-factory.bin web-flasher.tar.gz > install.sha256)
+
 BODY="WarpAxe $TAG"
 [ -n "$NOTES_FILE" ] && BODY="$(cat "$NOTES_FILE")"
 REL="$(python3 -c 'import json,sys; print(json.dumps({"tag_name":sys.argv[1],"target_commitish":sys.argv[2],"name":"WarpAxe "+sys.argv[1],"body":sys.argv[3],"draft":False,"prerelease":False}))' "$TAG" "$COMMIT" "$BODY")"
 ID="$(curl -sf -X POST -H "Authorization: token $TOKEN" -H 'Content-Type: application/json' \
     -d "$REL" "$API/releases" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
-for f in warpaxe.bin warpaxe.bin.sha256 warpaxe.bin.sig; do
+for f in warpaxe.bin warpaxe.bin.sha256 warpaxe.bin.sig warpaxe-factory.bin \
+    web-flasher.tar.gz install.sha256; do
     curl -sf -X POST -H "Authorization: token $TOKEN" \
         -F "attachment=@$OUT/$f" "$API/releases/$ID/assets?name=$f" >/dev/null
 done
-echo "release $TAG (id $ID) published with warpaxe.bin + .sha256 + .sig"
+echo "release $TAG (id $ID) published: update (warpaxe.bin + .sha256 + .sig) and first-install parts"
