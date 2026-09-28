@@ -285,5 +285,8 @@
   "pf_temp": "sobretemperatura do regulador",
   "pf_temp_warn": "aviso de temperatura do regulador",
   "linkFans": "Acoplar ventoinhas",
-  "linkFans_s": "M1 gira à velocidade de M2, que segue a temperatura dos chips. Para gabinetes em que todas as ventoinhas arrefecem a placa inteira, p. ex. com cabos em Y."
+  "linkFans_s": "M1 gira à velocidade de M2, que segue a temperatura dos chips. Para gabinetes em que todas as ventoinhas arrefecem a placa inteira, p. ex. com cabos em Y.",
+  "imp_tuning": "clock e tensão",
+  "imp_fans": "ventoinhas e limites de temperatura",
+  "imp_display": "orientação da tela"
 }

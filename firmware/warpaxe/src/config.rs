@@ -475,6 +475,68 @@ impl Stock {
             .flatten()
             .or_else(|| self.str(key).and_then(|s| s.parse().ok()))
     }
+
+    /// A number whatever width the firmware stored it in: NerdOS and
+    /// AxeOS use u8, u16, u32 and i32, and AxeOS keeps floats as text
+    /// ("525.000000").
+    pub fn num(&self, key: &str) -> Option<f64> {
+        let nvs = self.0.as_ref()?;
+        if let Some(v) = nvs.get_u16(key).ok().flatten() {
+            return Some(f64::from(v));
+        }
+        if let Some(v) = nvs.get_u8(key).ok().flatten() {
+            return Some(f64::from(v));
+        }
+        if let Some(v) = nvs.get_u32(key).ok().flatten() {
+            return Some(f64::from(v));
+        }
+        if let Some(v) = nvs.get_i32(key).ok().flatten() {
+            return Some(f64::from(v));
+        }
+        self.str(key).and_then(|s| s.trim().parse().ok())
+    }
+
+    /// A long string (AxeOS 2.15 keeps each pool as JSON text).
+    pub fn long_str(&self, key: &str) -> Option<String> {
+        let nvs = self.0.as_ref()?;
+        let mut buf = vec![0u8; 1024];
+        nvs.get_str(key, &mut buf)
+            .ok()
+            .flatten()
+            .map(|s| s.trim_end_matches('\0').to_string())
+            .filter(|s| !s.is_empty())
+    }
+}
+
+/// One pool as AxeOS 2.15 stores it (`pool_1` … `pool_8`, JSON text).
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct AxeosPool {
+    #[serde(rename = "stratumProtocol")]
+    protocol: String,
+    #[serde(rename = "stratumURL")]
+    url: String,
+    #[serde(rename = "stratumPort")]
+    port: u16,
+    #[serde(rename = "stratumUser")]
+    user: String,
+    #[serde(rename = "stratumPassword")]
+    pass: String,
+    #[serde(rename = "stratumTLS")]
+    tls: u8,
+    #[serde(rename = "stratumV2AuthorityPubkey")]
+    pubkey: String,
+    #[serde(rename = "stratumV2ChannelType")]
+    channel: String,
+}
+
+/// AxeOS 2.15's pool at a 0-based selector index, if it has a URL.
+fn axeos_pool(stock: &Stock, index: Option<f64>) -> Option<AxeosPool> {
+    let n = index.map_or(0, |i| i as usize) + 1;
+    let text = stock.long_str(&format!("pool_{n}"))?;
+    serde_json::from_str::<AxeosPool>(&text)
+        .ok()
+        .filter(|p| !p.url.is_empty() && !p.user.is_empty())
 }
 
 /// On a first start: take Wi-Fi, pools and hostname from the stock
@@ -488,6 +550,58 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             cfg.ssid = ssid;
             cfg.wifi_pass = stock.str("wifipass").unwrap_or_default();
             took.push("wifi");
+        }
+    }
+    // AxeOS 2.15 keeps its pools as JSON (`pool_N`, selectors `prim_idx`
+    // and `sec_idx`) and may leave the pre-2.15 keys behind stale, so the
+    // new form wins where it exists.
+    if cfg.stratum_user.is_empty() {
+        if let Some(p) = axeos_pool(stock, stock.num("prim_idx")) {
+            cfg.stratum_url = p.url;
+            cfg.stratum_user = p.user;
+            cfg.stratum_port = if p.port > 0 { p.port } else { cfg.stratum_port };
+            cfg.stratum_pass = if p.pass.is_empty() {
+                "x".into()
+            } else {
+                p.pass
+            };
+            cfg.stratum_tls = u8::from(p.tls == 1);
+            if is_sv2(&p.protocol) {
+                cfg.stratum_protocol = "SV2".into();
+            }
+            cfg.stratum_v2_authority_pubkey = p.pubkey;
+            if !p.channel.is_empty() {
+                cfg.stratum_v2_channel_type = p.channel;
+            }
+            took.push("pool");
+        }
+    }
+    if cfg.fallback_url.is_empty() {
+        if let Some(p) = axeos_pool(stock, Some(stock.num("sec_idx").unwrap_or(1.0))) {
+            cfg.fallback_url = p.url;
+            cfg.fallback_user = p.user;
+            cfg.fallback_port = if p.port > 0 {
+                p.port
+            } else {
+                cfg.fallback_port
+            };
+            cfg.fallback_pass = if p.pass.is_empty() {
+                "x".into()
+            } else {
+                p.pass
+            };
+            cfg.fallback_tls = u8::from(p.tls == 1);
+            if is_sv2(&p.protocol) {
+                cfg.fallback_protocol = "SV2".into();
+            }
+            cfg.fallback_v2_authority_pubkey = p.pubkey;
+            if !p.channel.is_empty() {
+                cfg.fallback_v2_channel_type = p.channel;
+            }
+            if let Some(on) = stock.num("usefbstartum") {
+                cfg.use_fallback = on != 0.0;
+            }
+            took.push("fallback");
         }
     }
     if cfg.stratum_user.is_empty() {
@@ -527,10 +641,116 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             took.push("hostname");
         }
     }
+    if import_tuning(stock, &mut cfg) {
+        took.push("tuning");
+    }
+    if import_fans(stock, &mut cfg) {
+        took.push("fans");
+    }
+    if import_display(stock, &mut cfg) {
+        took.push("display");
+    }
     if !took.is_empty() {
         if let Err(e) = save(&cfg) {
             log::warn!("config: saving the imported settings failed: {e}");
         }
+    }
+    took
+}
+
+/// The clock and core voltage the stock firmware ran: the owner's
+/// validated point on this very device (AxeOS 2.10+ `asicfrequency_f`,
+/// older AxeOS and NerdOS `asicfrequency`; `asicvoltage` in both).
+fn import_tuning(stock: &Stock, cfg: &mut Config) -> bool {
+    let d = Config::default();
+    let mut took = false;
+    if cfg.frequency == d.frequency {
+        let f = stock
+            .num("asicfrequency_f")
+            .or_else(|| stock.num("asicfrequency"));
+        if let Some(f) = f.filter(|f| (100.0..=1500.0).contains(f)) {
+            cfg.frequency = f.round() as u32;
+            took = true;
+        }
+    }
+    if cfg.core_voltage == d.core_voltage {
+        if let Some(mv) = stock
+            .num("asicvoltage")
+            .filter(|v| (700.0..=1600.0).contains(v))
+        {
+            cfg.core_voltage = mv as u16;
+            took = true;
+        }
+    }
+    took
+}
+
+/// Fan control and temperature limits. AxeOS: `autofanspeed` (0/1),
+/// `manualfanspeed`, `minfanspeed`, `temptarget`. NerdOS: `autofanspeed`
+/// (a mode, 0 = manual), `fanspeed`, `pid_temp`, `overheat_temp` and the
+/// second output `fan1mode` (0 = manual), `fan1speed`, `fan1_pid_temp`.
+/// Not the PID gains: they belong to the stock firmware's own loop.
+fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
+    let pct = |v: f64| (0.0..=100.0).contains(&v).then_some(v as u8);
+    let temp = |v: f64| (35.0..=90.0).contains(&v).then_some(v as u8);
+    let mut took = false;
+    if let Some(m) = stock.num("autofanspeed") {
+        cfg.autofanspeed = m != 0.0;
+        took = true;
+    }
+    if let Some(v) = stock
+        .num("manualfanspeed")
+        .or_else(|| stock.num("fanspeed"))
+        .and_then(pct)
+    {
+        cfg.fanspeed = v;
+        took = true;
+    }
+    if let Some(v) = stock.num("minfanspeed").and_then(pct) {
+        cfg.min_fan_speed = v;
+        took = true;
+    }
+    if let Some(v) = stock
+        .num("temptarget")
+        .or_else(|| stock.num("pid_temp"))
+        .and_then(temp)
+    {
+        cfg.pid_target_temp = v;
+        took = true;
+    }
+    if let Some(v) = stock.num("overheat_temp").and_then(temp) {
+        cfg.overheat_temp = v;
+        took = true;
+    }
+    if let Some(m) = stock.num("fan1mode") {
+        cfg.autofanspeed2 = m != 0.0;
+        took = true;
+    }
+    if let Some(v) = stock.num("fan1speed").and_then(pct) {
+        cfg.manual_fan_speed2 = v;
+        took = true;
+    }
+    if let Some(v) = stock.num("fan1_pid_temp").and_then(temp) {
+        cfg.vr_target_temp = v;
+        took = true;
+    }
+    took
+}
+
+/// Screen orientation and colours: NerdOS `flipscreen`, AxeOS `rotation`
+/// (degrees; 180 is upside down), `invertscreen` in both.
+fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
+    let mut took = false;
+    if let Some(f) = stock.num("flipscreen") {
+        cfg.flipscreen = f != 0.0;
+        took = true;
+    } else if let Some(r) = stock.num("rotation") {
+        cfg.flipscreen = r == 180.0;
+        took = true;
+    }
+    if let Some(i) = stock.num("invertscreen") {
+        cfg.invertscreen = i != 0.0;
+        took = true;
     }
     took
 }

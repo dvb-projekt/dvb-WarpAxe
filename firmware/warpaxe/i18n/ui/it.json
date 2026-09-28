@@ -285,5 +285,8 @@
   "pf_temp": "sovratemperatura del regolatore",
   "pf_temp_warn": "avviso temperatura del regolatore",
   "linkFans": "Accoppia le ventole",
-  "linkFans_s": "M1 gira alla velocità di M2, che segue la temperatura dei chip. Per i case in cui tutte le ventole raffreddano l'intera scheda, ad es. con cavi a Y."
+  "linkFans_s": "M1 gira alla velocità di M2, che segue la temperatura dei chip. Per i case in cui tutte le ventole raffreddano l'intera scheda, ad es. con cavi a Y.",
+  "imp_tuning": "frequenza e tensione",
+  "imp_fans": "ventole e limiti di temperatura",
+  "imp_display": "orientamento del display"
 }
