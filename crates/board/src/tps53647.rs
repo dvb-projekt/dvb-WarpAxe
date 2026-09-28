@@ -20,9 +20,11 @@ use crate::pmbus::{self as pm, f32_to_linear11};
 
 /// I²C address of the TPS53647 and TPS53667.
 pub const ADDR: u8 = 0x71;
-/// What MFR_SPECIFIC_44 answers on both parts: the variant is a
-/// property of the board, not something the chip tells.
+/// What MFR_SPECIFIC_44 answers on a TPS53647 (NerdOS `TPS53647.h`).
 pub const DEVICE_CODE: u16 = 0x01F0;
+/// What MFR_SPECIFIC_44 answers on a TPS53667 (NerdOS `TPS53667.h`;
+/// read back as 0x01F8 on a NerdOCTAXE-γ Rev 3.1, 2026-09-28).
+pub const DEVICE_CODE_667: u16 = 0x01F8;
 
 // Manufacturer-specific commands (TPS53647/TPS53667 datasheets, NerdOS
 // `pmbus_commands.h`).
@@ -94,6 +96,16 @@ pub enum Variant {
     /// TPS53667, up to six phases; NerdOS also writes the phase-enable
     /// mask, VOUT_MAX, per-phase OC, UVLO and the input-current limits.
     Tps53667,
+}
+
+impl Variant {
+    /// The code MFR_SPECIFIC_44 answers on this part.
+    pub fn device_code(self) -> u16 {
+        match self {
+            Variant::Tps53647 => DEVICE_CODE,
+            Variant::Tps53667 => DEVICE_CODE_667,
+        }
+    }
 }
 
 /// What init writes: the part, its phases and the current limits, as
@@ -292,7 +304,7 @@ impl<I: I2c> Tps53647<I> {
         if !(1..=6).contains(&c.phases) {
             return Err(Error::OutOfRange);
         }
-        if self.device_code()? != DEVICE_CODE {
+        if self.device_code()? != c.variant.device_code() {
             return Err(Error::WrongDevice);
         }
         self.write_command(pm::CLEAR_FAULTS)?;
@@ -460,6 +472,9 @@ mod tests {
     fn code_ok() -> Tx {
         Tx::WriteRead(ADDR, vec![MFR_44_DEVICE_CODE], vec![0xF0, 0x01])
     }
+    fn code_667() -> Tx {
+        Tx::WriteRead(ADDR, vec![MFR_44_DEVICE_CODE], vec![0xF8, 0x01])
+    }
     fn cmd(c: u8) -> Tx {
         Tx::Write(ADDR, vec![c])
     }
@@ -530,7 +545,7 @@ mod tests {
     #[test]
     fn init_tps53667_six_phase_adds_the_667_registers() {
         let script = vec![
-            code_ok(),
+            code_667(),
             cmd(pm::CLEAR_FAULTS),
             cmd(pm::RESTORE_DEFAULT_ALL),
             byte(pm::ON_OFF_CONFIG, 0x17),
@@ -575,6 +590,16 @@ mod tests {
         assert!(!log
             .iter()
             .any(|t| matches!(t, Tx::Write(_, b) if b[0] == MFR_24_PHASE_ENABLE)));
+    }
+
+    #[test]
+    fn each_part_is_checked_against_its_own_code() {
+        // A TPS53667 answering the 647's code, and the other way round,
+        // is refused before anything is written.
+        let mut vr = Tps53647::new(Bus::new(vec![code_ok()]), Config::NERDOCTAXE_GAMMA_6P);
+        assert_eq!(vr.init(), Err(Error::WrongDevice));
+        let mut vr = Tps53647::new(Bus::new(vec![code_667()]), Config::NERDOCTAXE_GAMMA_4P);
+        assert_eq!(vr.init(), Err(Error::WrongDevice));
     }
 
     #[test]
