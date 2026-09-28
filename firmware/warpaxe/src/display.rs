@@ -48,8 +48,19 @@ unsafe extern "C" fn frame_sent(
     false
 }
 
+/// Rows per transfer: the frame goes out in bands through a small buffer
+/// in internal RAM (320 × 10 × 2 = 6.4 KB), as LVGL-based stock firmware
+/// does. Straight from the PSRAM frame buffer the i80 DMA now and then
+/// came up short while Wi-Fi and the miner used PSRAM too: a byte slipped
+/// and the rest of the frame showed in wrong colours, with a moving edge
+/// where it started (seen on the NerdQAxe++, 2026-09-28).
+const BAND: usize = 10;
+
 pub struct Lcd {
     panel: tusb::esp_lcd_panel_handle_t,
+    /// DMA-capable internal RAM for one band; `None` if it could not be
+    /// had, then the frame goes out from PSRAM as before.
+    bounce: Option<&'static mut [u8]>,
     /// 64-byte aligned, in PSRAM, never freed: the i80 DMA wants alignment.
     fb: &'static mut [u8],
     flip: bool,
@@ -132,8 +143,17 @@ impl Lcd {
         // PSRAM-aligned variant is the prime suspect for the black screen.
         let len = WIDTH * HEIGHT * 2;
         let fb: &'static mut [u8] = Box::leak(vec![0u8; len].into_boxed_slice());
+        let bounce = unsafe {
+            let n = WIDTH * BAND * 2;
+            let p = sys::heap_caps_malloc(n, sys::MALLOC_CAP_DMA | sys::MALLOC_CAP_INTERNAL);
+            (!p.is_null()).then(|| core::slice::from_raw_parts_mut(p as *mut u8, n))
+        };
+        if bounce.is_none() {
+            log::warn!("display: no internal RAM for the transfer band, sending from PSRAM");
+        }
         let mut d = Lcd {
             panel,
+            bounce,
             fb,
             flip: false,
             invert: false,
@@ -218,28 +238,50 @@ impl Lcd {
         gpio_out(PIN_BACKLIGHT, on);
     }
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
-        FRAME_SENT.store(false, Ordering::Release);
-        unsafe {
-            check!(tusb::esp_lcd_panel_draw_bitmap(
-                self.panel,
-                0,
-                0,
-                WIDTH as i32,
-                HEIGHT as i32,
-                self.fb.as_ptr() as *const c_void,
-            ));
-        }
         snapshot(self.fb);
-        // A frame is ~109 KB at 10 MHz, about 11 ms; give up after 100 ms
-        // rather than hang the display thread.
-        for _ in 0..100 {
-            if FRAME_SENT.load(Ordering::Acquire) {
-                break;
+        match self.bounce.as_deref_mut() {
+            Some(band) => {
+                for y in (0..HEIGHT).step_by(BAND) {
+                    let rows = BAND.min(HEIGHT - y);
+                    let n = WIDTH * rows * 2;
+                    let at = y * WIDTH * 2;
+                    band[..n].copy_from_slice(&self.fb[at..at + n]);
+                    send(self.panel, y, rows, band.as_ptr())?;
+                }
             }
-            std::thread::sleep(std::time::Duration::from_millis(1));
+            None => send(self.panel, 0, HEIGHT, self.fb.as_ptr())?,
         }
         Ok(())
     }
+}
+
+/// Draw `rows` full-width rows at `y` from `data` and wait until the DMA
+/// has read them (the caller reuses the buffer): ~1 ms per band at
+/// 10 MHz, given up after 50 ms rather than hang the display thread.
+fn send(
+    panel: tusb::esp_lcd_panel_handle_t,
+    y: usize,
+    rows: usize,
+    data: *const u8,
+) -> Result<(), sys::EspError> {
+    FRAME_SENT.store(false, Ordering::Release);
+    unsafe {
+        check!(tusb::esp_lcd_panel_draw_bitmap(
+            panel,
+            0,
+            y as i32,
+            WIDTH as i32,
+            (y + rows) as i32,
+            data as *const c_void,
+        ));
+    }
+    for _ in 0..50 {
+        if FRAME_SENT.load(Ordering::Acquire) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+    Ok(())
 }
 
 /// The Bitaxe's SSD1306 on the board's I²C bus.
