@@ -608,8 +608,10 @@ function render() {
 /* ---------- swarm ---------- */
 // The list lives on this miner (/api/v1/swarm); every miner's state comes
 // straight from it to the browser, as on AxeOS. Read-only: no remote writes.
-const sw = {members: [], max: 32, data: {}, found: [], scan: null, filter: "", every: 10, last: 0};
-try { sw.every = Math.min(60, Math.max(10, Number(localStorage.getItem("swEvery")) || 10)); } catch (e) {}
+const sw = {members: [], max: 32, data: {}, found: [], scan: null, filter: "", every: 30, last: 0, busy: {}};
+// 30 s by default: some stock web servers (ForgeOS on the BitForge Nano) time
+// out when a tuner polls them as well.
+try { sw.every = Math.min(120, Math.max(10, Number(localStorage.getItem("swEvery")) || 30)); } catch (e) {}
 async function swarmLoad() { try { const r = await get("/api/v1/swarm"); sw.members = r.members || []; sw.max = r.max || 32; } catch (e) {} swarmPoll(); }
 async function minerInfo(addr, ms) {
   const c = new AbortController(), tm = setTimeout(() => c.abort(), ms || 3000);
@@ -619,7 +621,8 @@ async function minerInfo(addr, ms) {
 async function swarmPoll() {
   if (route !== "swarm") return;
   sw.last = Date.now();
-  await Promise.all(sw.members.map(async a => { try { sw.data[a] = await minerInfo(a); } catch (e) { sw.data[a] = null; } }));
+  // One request per miner at a time, no retries.
+  await Promise.all(sw.members.filter(a => !sw.busy[a]).map(async a => { sw.busy[a] = true; try { sw.data[a] = await minerInfo(a); } catch (e) { sw.data[a] = null; } finally { sw.busy[a] = false; } }));
   if (route === "swarm") render();
 }
 async function swarmSave(list) {
@@ -678,7 +681,7 @@ function swarmPage() {
     <div class="swgrid">${shown.map(([a, j, self]) => swCard(a, j, self, j ? color(swModel(j)) : "var(--dim)")).join("")}</div>
     ${legend ? `<div style="display:flex;gap:18px;flex-wrap:wrap;justify-content:center;font-size:13px">${legend}</div>` : ""}
     ${sw.members.length ? "" : `<div class="dim" style="font-size:13px">${t("sw_empty")}</div>`}
-    <form id="swf" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button type="button" class="btn pri" data-swscan="1" ${sc && !sc.finished ? "disabled" : ""}>${t("sw_scan")}</button><button type="button" class="btn" data-swrefresh="1">${t("sw_refresh")}</button><label class="mute" style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="range" id="swevery" min="10" max="60" step="5" value="${sw.every}">${t("sw_every", {s: sw.every})}</label><span style="flex:1"></span><input name="addr" class="swin" placeholder="${t("sw_add_ph")}" autocomplete="off" style="min-width:200px"><button type="submit" class="btn">${t("sw_add")}</button></form>
+    <form id="swf" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button type="button" class="btn pri" data-swscan="1" ${sc && !sc.finished ? "disabled" : ""}>${t("sw_scan")}</button><button type="button" class="btn" data-swrefresh="1">${t("sw_refresh")}</button><label class="mute" style="display:flex;align-items:center;gap:8px;font-size:13px"><input type="range" id="swevery" min="10" max="120" step="10" value="${sw.every}">${t("sw_every", {s: sw.every})}</label><span style="flex:1"></span><input name="addr" class="swin" placeholder="${t("sw_add_ph")}" autocomplete="off" style="min-width:200px"><button type="submit" class="btn">${t("sw_add")}</button></form>
     ${scanLine}</section>`;
 }
 async function swarmAdd(list) {
@@ -694,7 +697,7 @@ document.addEventListener("click", async e => {
   if (e.target.closest("[data-swrefresh]")) swarmPoll();
 });
 document.addEventListener("submit", e => { if (e.target.id !== "swf") return; e.preventDefault(); const v = e.target.addr.value.trim(); if (v) swarmAdd([v]); });
-setInterval(() => { if (route === "swarm" && Date.now() - sw.last >= sw.every * 1000) swarmPoll(); }, 1000);
+setInterval(() => { if (route === "swarm" && !document.hidden && Date.now() - sw.last >= sw.every * 1000) swarmPoll(); }, 1000);
 document.addEventListener("input", e => {
   if (e.target.id === "swfilter") { sw.filter = e.target.value; const v = $("#view"); const pos = e.target.selectionStart; render(); const f = $("#swfilter"); if (f) { f.focus(); f.setSelectionRange(pos, pos); } }
   if (e.target.id === "swevery") { sw.every = Number(e.target.value); try { localStorage.setItem("swEvery", sw.every); } catch (er) {} e.target.parentElement.lastChild.textContent = t("sw_every", {s: sw.every}); }
