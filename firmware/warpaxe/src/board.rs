@@ -28,7 +28,7 @@ use warpaxe_board::overheat::{Cause, Guard, Reading};
 use warpaxe_board::pmbus;
 use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
-use warpaxe_board::tps53647::Tps53647;
+use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, ChipProfile};
@@ -711,24 +711,28 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
         let _ = x.lock().unwrap().set_input_pull_up(q13xx::CAN_SLAVE);
     }
 
-    // Which regulator is fitted.
-    let regulator = match alt {
+    // Which regulator is fitted: the strap says; on the Q1373 the device
+    // code then decides the part and the strap only the phase count.
+    let (regulator, other_by_code) = match alt {
         Some(a) => {
             let level = match &expander {
                 Some(x) => x.lock().unwrap().read_pin(a.pin).unwrap_or(!a.level),
                 None => esp_read_pulldown(a.pin),
             };
-            if level == a.level {
-                a.regulator
+            let (by_strap, other) = if level == a.level {
+                (a.regulator, regulator)
             } else {
-                regulator
-            }
+                (regulator, a.regulator)
+            };
+            (by_strap, a.part_by_code.then_some(other))
         }
-        None => regulator,
+        None => (regulator, None),
     };
-    let part = format!("{:?} {} phases", regulator.variant, regulator.phases);
-    log::info!("board: regulator {part}");
-    update(|s| s.vr_part = part);
+    log::info!(
+        "board: regulator by strap {:?} {} phases",
+        regulator.variant,
+        regulator.phases
+    );
 
     std::thread::sleep(Duration::from_millis(250));
     if let Some(l) = &ldo {
@@ -737,9 +741,26 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
     std::thread::sleep(Duration::from_millis(100));
 
     let mut vr = Tps53647::new(bus.clone(), regulator);
-    let probe = format!("device_code={:?}", vr.device_code());
+    let code = vr.device_code();
+    let probe = format!("device_code={code:?}");
     log::info!("board: TPS5364x probe {probe}");
     update(|s| s.vr_probe = probe);
+    let regulator = match (other_by_code, code) {
+        (Some(other), Ok(code)) => {
+            let (resolved, note) = tps53647::resolve_by_code(code, regulator, other);
+            if let Some(note) = note {
+                log::warn!("board: regulator detect: {note} (device code {code:#06x})");
+            }
+            if resolved != regulator {
+                vr = Tps53647::new(vr.release(), resolved);
+            }
+            resolved
+        }
+        _ => regulator,
+    };
+    let part = format!("{:?} {} phases", regulator.variant, regulator.phases);
+    log::info!("board: regulator {part}");
+    update(|s| s.vr_part = part);
     if let Err(e) = vr.init() {
         let cmd = vr.last_command();
         return fail(format!("tps5364x init at {cmd:#04x}: {e:?}"));

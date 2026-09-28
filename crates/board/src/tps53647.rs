@@ -187,6 +187,49 @@ impl Config {
     };
 }
 
+/// The population a board with either part really carries, from the
+/// device code. NerdOS `q1373.cpp` takes the part from MFR_SPECIFIC_44
+/// and only the phase count from the strap, because a TPS53667 may be
+/// populated with four phases. `by_strap` is what the strap alone
+/// selects, `other` the alternative population. Returns the population
+/// to init with and a note when it differs from the strap's reading; an
+/// unknown code keeps `by_strap` (init then refuses it as WrongDevice).
+pub fn resolve_by_code(
+    code: u16,
+    by_strap: Config,
+    other: Config,
+) -> (Config, Option<&'static str>) {
+    if code == by_strap.variant.device_code() {
+        return (by_strap, None);
+    }
+    if code != other.variant.device_code() {
+        return (by_strap, Some("device code matches neither part"));
+    }
+    match other.variant {
+        // A TPS53667 where the strap said TPS53647: the strap's phases,
+        // the 667's IMAX (its Rmon), IFAULT per phase as NerdOS scales it.
+        Variant::Tps53667 => {
+            let phases = by_strap.phases;
+            let ifault = other.ifault * u16::from(phases) / u16::from(other.phases.max(1));
+            (
+                Config {
+                    variant: Variant::Tps53667,
+                    phases,
+                    imax: other.imax,
+                    ifault,
+                    ..other
+                },
+                Some("TPS53667 populated with the strap's phase count"),
+            )
+        }
+        // A TPS53647 cannot run six phases: the four-phase population.
+        Variant::Tps53647 => (
+            other,
+            Some("six-phase strap, but the part is a TPS53647: four phases"),
+        ),
+    }
+}
+
 /// Volts to the VID VOUT_COMMAND takes, rounded to the 5 mV step;
 /// 0 for 0 V (output off). 1.000 V gives 0x96, not the factory 0x97.
 pub fn volts_to_vid(volts: f32) -> u8 {
@@ -729,6 +772,50 @@ mod tests {
         vr.clear_faults().unwrap();
         assert_eq!(vr.last_command(), pm::CLEAR_FAULTS);
         assert_eq!(vr.release().log, vec![cmd(pm::CLEAR_FAULTS)]);
+    }
+
+    #[test]
+    fn device_code_decides_the_part_and_the_strap_the_phases() {
+        // Q1373, strap high (four-phase population) but a TPS53667 answers:
+        // NerdOS q1373.cpp: 667, 4 phases, IMAX 179 (Rmon 33.2 k), IFAULT 4 × 40.
+        let (c, note) = resolve_by_code(DEVICE_CODE_667, Config::Q1373_4P, Config::Q1373_6P);
+        assert_eq!(
+            c,
+            Config {
+                variant: Variant::Tps53667,
+                phases: 4,
+                imax: 179,
+                ifault: 160,
+                ..Config::Q1373_6P
+            }
+        );
+        assert!(note.is_some());
+        // Strap low (six-phase) but a TPS53647 answers: four phases, 647 limits.
+        let (c, note) = resolve_by_code(DEVICE_CODE, Config::Q1373_6P, Config::Q1373_4P);
+        assert_eq!(c, Config::Q1373_4P);
+        assert!(note.is_some());
+        // Strap and code agree: unchanged, no note.
+        assert_eq!(
+            resolve_by_code(DEVICE_CODE_667, Config::Q1373_6P, Config::Q1373_4P),
+            (Config::Q1373_6P, None)
+        );
+        assert_eq!(
+            resolve_by_code(DEVICE_CODE, Config::Q1373_4P, Config::Q1373_6P),
+            (Config::Q1373_4P, None)
+        );
+        // Unknown code: the strap's population stays, init refuses it.
+        let (c, note) = resolve_by_code(0x0000, Config::Q1373_4P, Config::Q1373_6P);
+        assert_eq!(c, Config::Q1373_4P);
+        assert!(note.is_some());
+        let mut vr = Tps53647::new(
+            Bus::new(vec![Tx::WriteRead(
+                ADDR,
+                vec![MFR_44_DEVICE_CODE],
+                vec![0, 0],
+            )]),
+            c,
+        );
+        assert_eq!(vr.init(), Err(Error::WrongDevice));
     }
 
     #[test]

@@ -70,6 +70,10 @@ pub struct VrAlt {
     pub level: bool,
     /// Part, phases and current limits for that population.
     pub regulator: tps53647::Config,
+    /// The part is taken from the regulator's device code and the pin
+    /// only gives the phase count ([`tps53647::resolve_by_code`]), as
+    /// NerdOS does on the Q1373; false = the pin decides both (Octaxe).
+    pub part_by_code: bool,
 }
 
 /// The chip temperature source and fan output.
@@ -457,6 +461,7 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
             pin: 3,
             level: false,
             regulator: tps53647::Config::NERDOCTAXE_GAMMA_4P,
+            part_by_code: false,
         }),
     },
     default_frequency_mhz: 700,
@@ -527,6 +532,7 @@ pub const Q1373: Profile = Profile {
             pin: crate::fxl6408::q13xx::PHASE_DETECT,
             level: false,
             regulator: tps53647::Config::Q1373_6P,
+            part_by_code: true,
         }),
     },
     default_frequency_mhz: 425,
@@ -667,6 +673,13 @@ mod tests {
         assert_eq!(NERDQAXE_PLUSPLUS_REV7.thermal, Thermal::Tmp1075Emc2302);
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().phases, 6);
         assert_eq!(Q1373.tps53647().unwrap().phases, 4);
+        // Only the Q1373 lets the device code overrule the strap (NerdOS).
+        let by_code = |p: &Profile| match p.vr {
+            Vr::Tps5364x { alt: Some(a), .. } => a.part_by_code,
+            _ => false,
+        };
+        assert!(by_code(&Q1373));
+        assert!(!by_code(&NERDOCTAXE_GAMMA));
         assert!(NERDAXE_GAMMA.emc2101().is_some());
         assert_eq!(Q1373.asic_reset, None, "reset sits on the expander");
         assert_eq!(Q1373.asic, Asic::Bm1373);
