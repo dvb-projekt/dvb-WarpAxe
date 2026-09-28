@@ -12,7 +12,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-272%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.4-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.5-7B5CFF"></a>
 </p>
 
 ---
@@ -43,7 +43,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.4).** It mines 24/7 on one Bitaxe Gamma and one
+> **Status: early (v0.1.5).** It mines 24/7 on one Bitaxe Gamma and one
 > NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune. Other boards have a profile but have
 > not run it — see [Supported boards](#supported-boards) before you flash.
 
@@ -72,7 +72,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Supported boards | ~20 board versions | 11 boards | 2 tested (see below) |
 
 Where the stock firmware is ahead: far more boards and years of use by a
-large community; AxeOS has a swarm view, themes, the BAP accessory port
+large community; AxeOS has a scoreboard, themes, the BAP accessory port
 and Wi-Fi setup over Bluetooth; NerdOS has two-factor login for updates,
 dual-pool mining, InfluxDB/Grafana export and alerts. WarpAxe is early; if
 you need any of that,
@@ -108,8 +108,13 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/web-swarm.png" alt="Swarm: the fleet's hashrate, power, efficiency and record difficulty, each miner's share, and one card per miner with sparkline and temperatures" width="760"><br>
+  <em>Swarm — every miner on the network, WarpAxe or stock firmware, read by your browser: the fleet's hashrate and each miner's share of it, sparklines, chip and regulator temperatures against their limits.</em>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans, display, network" width="760"><br>
-  <em>Settings — clock and voltage as the manufacturer's steps; <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
+  <em>Settings — clock and voltage as the manufacturer's steps (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
 </p>
 
 <p align="center">
@@ -200,16 +205,28 @@ back at any time with `GET /api/v1/display/frame`.
   display in the six Latin-script ones).
 - 1 h / 3 h history with hashrate and chip temperature, fan, power and pool
   cards, live log.
+- **Swarm** page for the other miners on the network — AxeOS, NerdOS,
+  ForgeOS or WarpAxe: fleet hashrate, power, J/TH and record difficulty,
+  each miner's share, a card per miner with a sparkline and its
+  temperatures. The browser reads every miner's `/api/system/info` directly
+  (every 30 s by default, not while the tab is hidden, one request per
+  miner at a time); this miner stores only the address list. Read-only: it
+  never changes or restarts another miner. Add miners by address or by a
+  search of the local /24.
+- Tabs in the stock order: Dashboard, Swarm, Network, Pool, Settings,
+  System; the starfield background of dvb-WarpPool.
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
   /api/system`, `/api/system/asic`, `/api/v2/settings`, restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
-  key / demo, online update, download mode for the web flasher.
+  key / demo, online update, download mode for the web flasher, the swarm
+  list (`/api/v1/swarm`).
 - States a tuner would otherwise have to guess from the power draw are in
   `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
   `overheatTrips` (stops in the last hour), `overheatCause` (hot or a lost
   sensor), `overheatLatched`, `isUsingFallbackStratum`,
-  `sharesRejectedReasons`.
+  `sharesRejectedReasons`, and `temptarget` (the fan target, under
+  ESP-Miner's name) so a tuner keeps its own target above it.
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device
