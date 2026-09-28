@@ -737,19 +737,21 @@ fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
     took
 }
 
-/// Screen orientation, colours and when it goes dark. `flipscreen` in
-/// NerdOS and pre-2.15 AxeOS is 1 for the normal way up (the panel itself
-/// is mounted turned), so it means the opposite of WarpAxe's switch;
-/// AxeOS 2.15 has `rotation` in degrees (0 = normal). Screen-off: AxeOS
-/// `displayTimeout` (-1 always on, 0 off, else minutes), NerdOS
-/// `autoscreenoff` (0 = never). WarpAxe's 0 means never off.
+/// Screen orientation, colours and when it goes dark. `flipscreen` (NerdOS,
+/// pre-2.15 AxeOS) means what WarpAxe's switch means: the NerdOCTAXE-γ in
+/// Oliver's case runs flipped under both, and the Bitaxe Gamma's OLED
+/// reads right with it on. AxeOS 2.15 turns the board's own orientation
+/// by `rotation` (0 = as the board comes, which on the Gamma is WarpAxe's
+/// flipped; 180 = the other way). Screen-off: AxeOS `displayTimeout` (-1
+/// always on, 0 off, else minutes), NerdOS `autoscreenoff` (0 = never).
+/// WarpAxe's 0 means never off.
 fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
     let mut took = false;
     if let Some(f) = stock.num("flipscreen") {
-        cfg.flipscreen = f == 0.0;
+        cfg.flipscreen = f != 0.0;
         took = true;
     } else if let Some(r) = stock.num("rotation") {
-        cfg.flipscreen = r == 180.0;
+        cfg.flipscreen = r != 180.0;
         took = true;
     }
     if let Some(i) = stock.num("invertscreen") {
