@@ -64,11 +64,11 @@ static ES: &[(&str, &str)] = &[
         "Preparando memoria flash · no apagar",
     ),
     ("Press a key to close", "Pulsa una tecla para cerrar"),
-    ("REGULATOR FAULT", "FALLO DEL REGULADOR"),
+    ("REGULATOR FAULT", "FALLO REGULADOR"),
     ("Regulator", "Regulador"),
     (
         "Regulator fault · core voltage off",
-        "Fallo del regulador · voltaje núcleo cortado",
+        "Fallo regulador · voltaje núcleo cortado",
     ),
     ("THEN OPEN", "LUEGO ABRE"),
     ("Uptime", "En marcha"),
@@ -120,7 +120,7 @@ static FR: &[(&str, &str)] = &[
     ),
     (
         "Fans 100 % · tries again after a minute",
-        "Ventilateurs 100 % · nouvel essai dans une minute",
+        "Ventil. 100 % · réessaie dans une minute",
     ),
     (
         "Fans automatic · target {t} °C · shutdown {h} °C",

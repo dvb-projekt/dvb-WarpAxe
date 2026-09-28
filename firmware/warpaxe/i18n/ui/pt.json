@@ -278,7 +278,7 @@
   "st_power_fault": "Falha do regulador: chips desligados",
   "st_power_fault_latched": "Falha do regulador 3× em uma hora: fica desligado",
   "pf_warn": "Aviso do regulador",
-  "pf_off": "o regulador desligou-se sozinho",
+  "pf_off": "o regulador se desligou sozinho",
   "pf_vout_ov": "sobretensão na saída",
   "pf_iout_oc": "sobrecorrente na saída",
   "pf_vin_uv": "subtensão na entrada",

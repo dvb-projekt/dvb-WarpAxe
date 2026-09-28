@@ -42,7 +42,7 @@
  "PASSWORD": "CONTRASEÑA",
  "THEN OPEN": "LUEGO ABRE",
  "Password · 10 digits": "Contraseña · 10 dígitos",
- "REGULATOR FAULT": "FALLO DEL REGULADOR",
- "Regulator fault · core voltage off": "Fallo del regulador · voltaje núcleo cortado",
+ "REGULATOR FAULT": "FALLO REGULADOR",
+ "Regulator fault · core voltage off": "Fallo regulador · voltaje núcleo cortado",
  "Fans 100 % · tries again after a minute": "Vent. 100 % · reintenta en un minuto"
 }
