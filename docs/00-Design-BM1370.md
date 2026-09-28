@@ -1628,3 +1628,36 @@ For comparison with AxeOS at the same hand point: fan 99 % at 63.5 °C
 chip under AxeOS, 100 % at 62–63 °C under WarpAxe with the same PID
 target (60 °C) — the fan runs flat out on this board at 640 MHz either
 way.
+
+### 14.17 NerdOS `vrFrequency` is register 0x10, which WarpAxe already computes (2026-09-28)
+
+NerdOS (develop, 762092d) carries a board setting `vrFrequency`
+(`Config::getVrFrequency`, `Board::setVrFrequency` →
+`Asic::setVrFrequency`). It is not a regulator clock: the ASIC driver
+writes it to chip register 0x10 and reads it as a "version rolling
+frequency" in Hz — `reg = 65536 · (15 MHz / 5000) / f`, so the chip's
+version counter is assumed to tick every 5000 IO-clock cycles and roll
+once every `reg` ticks. The BM1370 default there is the old fixed value
+`0x1EB5` (7861, "25 kHz").
+
+Register 0x10 is what ESP-Miner calls the hash counting number (HCN):
+the size of the nonce space one core scans before the chip moves on to
+the next version. ESP-Miner (and WarpAxe, `regs::hash_counting_number`,
+written by `warpaxe-chain` when the clock ramp finishes) compute it from
+the chain instead of fixing it: `2³² / cores_up / chips_up` nonces, at
+the running clock, in units of half the 25 MHz reference, minus the
+BM1370 erratum margin of 2·134. For one BM1370 at 600 MHz that is
+698 782 (`0x000AA99E`); for four chips a quarter of it. The BM1373 keeps
+the S21 Pro stock `0x1EB5` (`hcn_fixed`) because the generic formula
+makes those chips scan overlapping work.
+
+So the two firmwares write the same register with different mental
+models: NerdOS a time-based roll rate with one default for every chain,
+ESP-Miner/WarpAxe a nonce-space size fitted to cores, chips and clock.
+WarpAxe keeps the computed value. A `vrFrequency` setting would only
+let a user overwrite it with a number that does not depend on the
+chain, and nothing measured so far shows a benefit. Decision: no
+setting, no API field; documented here so the next person does not
+mistake it for a regulator parameter. If someone wants to experiment,
+the place is `ChipProfile::hcn_fixed` per chip, with a share-rate
+comparison against the computed value.
