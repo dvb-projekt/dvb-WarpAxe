@@ -17,7 +17,7 @@ use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
     subscribe_request, suggest_difficulty_request, Notify, Request,
 };
-use warpaxe_stratum::{coinbase, parse_line, Incoming, Job, Session};
+use warpaxe_stratum::{coinbase, parse_line, payout, Incoming, Job, Session};
 
 use crate::link::{Link, LinkReader};
 use crate::{board, clock, config, diag, miner};
@@ -41,6 +41,12 @@ pub struct StratumState {
     pub network_difficulty: f64,
     /// Readable text in the coinbase script (the pool's tag).
     pub scriptsig: String,
+    /// Who the current job pays if it finds a block: (satoshis, address)
+    /// per coinbase output, their total and what goes to the worker's own
+    /// address (AxeOS `coinbaseOutputs`, `coinbaseValue*Satoshis`).
+    pub coinbase_outputs: Vec<(u64, String)>,
+    pub coinbase_total_sat: u64,
+    pub coinbase_user_sat: u64,
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
@@ -92,6 +98,19 @@ static NOTIFY: Mutex<Option<(Feed, u64, u64)>> = Mutex::new(None);
 static EXTRANONCE2: Mutex<u32> = Mutex::new(0);
 static SUBMIT: Mutex<Option<Sender<Outgoing>>> = Mutex::new(None);
 static NEXT_ID: Mutex<u64> = Mutex::new(100);
+
+/// Keep a job's payout; a job that does not parse clears it rather than
+/// leaving the previous pool's split on show.
+fn set_payout(st: &mut StratumState, pay: Option<payout::Payout>) {
+    let p = pay.unwrap_or_default();
+    st.coinbase_outputs = p
+        .outputs
+        .into_iter()
+        .map(|o| (o.value, o.address))
+        .collect();
+    st.coinbase_total_sat = p.total;
+    st.coinbase_user_sat = p.user;
+}
 
 pub fn state() -> StratumState {
     STATE.lock().unwrap().clone().unwrap_or_default()
@@ -481,6 +500,7 @@ fn session(
                     .map(coinbase::nbits_difficulty)
                     .unwrap_or(0.0);
                 let tag = coinbase::script_text(&c1, &c2, s.extranonce1.len() + s.extranonce2_size);
+                let pay = payout::payout(&c1, s.extranonce1.len() + s.extranonce2_size, &c2, user);
                 if started.elapsed() < Duration::from_secs(5) || clean {
                     log::info!(
                         "stratum: job {} ntime {} clean {}",
@@ -495,6 +515,7 @@ fn session(
                     st.block_height = height;
                     st.network_difficulty = net_diff;
                     st.scriptsig = tag;
+                    set_payout(st, pay);
                 });
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
@@ -800,6 +821,12 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
                 &t.coinbase_suffix,
                 t.extranonce_prefix.len() + t.extranonce2_size,
             );
+            let pay = payout::payout(
+                &t.coinbase_prefix,
+                t.extranonce_prefix.len() + t.extranonce2_size,
+                &t.coinbase_suffix,
+                user,
+            );
             let mask = t.version_mask;
             if started.elapsed() < Duration::from_secs(5) || clean {
                 log::info!("stratum: sv2 job {job_id} ntime {} clean {clean}", t.ntime);
@@ -811,6 +838,7 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
                 st.block_height = height;
                 st.network_difficulty = net_diff;
                 st.scriptsig = tag;
+                set_payout(st, pay);
             });
         }
         Event::ExtranoncePrefix(p) => {
