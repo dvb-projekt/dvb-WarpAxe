@@ -502,7 +502,7 @@ pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
 /// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W.
 pub const NERDOCTAXE_GAMMA: Profile = Profile {
     name: "nerdoctaxe-gamma",
-    model: "NerdOCTAXE-γ",
+    model: "NerdOctaxe",
     asic_count: 8,
     vr: Vr::Tps5364x {
         regulator: tps53647::Config::NERDOCTAXE_GAMMA_6P,

@@ -178,19 +178,22 @@ mod board {
         pub fan2_pct: Option<u8>,
         pub fan2_rpm: Option<u16>,
         pub overheat_latched: bool,
+        pub overheat_cause: Option<&'static str>,
     }
     pub fn gamma() -> bool {
         crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn state() -> BoardState {
         if gamma() {
-            BoardState { temp_c: Some(62.3), vr_temp_c: Some(55), vin_mv: Some(5120.0), vout_mv: Some(1140.0), iout_ma: Some(20500.0), power_w: Some(23.4), fan_pct: 100, fan_rpm: 5020, fan2_pct: None, fan2_rpm: None, overheat_latched: false }
+            BoardState { temp_c: Some(62.3), vr_temp_c: Some(55), vin_mv: Some(5120.0), vout_mv: Some(1140.0), iout_ma: Some(20500.0), power_w: Some(23.4), fan_pct: 100, fan_rpm: 5020, fan2_pct: None, fan2_rpm: None, overheat_latched: false, overheat_cause: None }
         } else {
-            BoardState { temp_c: Some(56.2), vr_temp_c: Some(50), vin_mv: Some(12050.0), vout_mv: Some(1238.0), iout_ma: Some(9140.0), power_w: Some(109.5), fan_pct: 59, fan_rpm: 1831, fan2_pct: Some(25), fan2_rpm: Some(0), overheat_latched: false }
+            BoardState { temp_c: Some(56.2), vr_temp_c: Some(50), vin_mv: Some(12050.0), vout_mv: Some(1238.0), iout_ma: Some(9140.0), power_w: Some(109.5), fan_pct: 59, fan_rpm: 1831, fan2_pct: Some(25), fan2_rpm: Some(0), overheat_latched: false, overheat_cause: None }
         }
     }
     pub fn profile() -> &'static Profile {
-        let name = if gamma() { "bitaxe-gamma" } else { "nerdqaxe-plusplus" };
+        // PREVIEW_BOARD=nerdoctaxe-gamma renders another Nerd board's titles.
+        let own = if gamma() { "bitaxe-gamma" } else { "nerdqaxe-plusplus" };
+        let name: &str = &*Box::leak(std::env::var("PREVIEW_BOARD").unwrap_or_else(|_| own.into()).into_boxed_str());
         Profile::by_name(name).expect("profile")
     }
     pub fn overheat() -> bool {
