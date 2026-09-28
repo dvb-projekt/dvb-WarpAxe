@@ -163,12 +163,34 @@ fn settings_v2() -> Option<serde_json::Value> {
     }))
 }
 
-/// NerdOS `/api/system/asic`, for boards whose stock firmware publishes
-/// clock and voltage choices (a tuner builds its ladder from them).
+/// ESP-Miner's clock and voltage choices per chip (main/device_config.h,
+/// v2.15), which AxeOS serves under `/api/system/asic`.
+fn axeos_options(chip: &str) -> Option<(&'static [u32], &'static [u32], u32)> {
+    match chip {
+        "BM1370" => Some((
+            &[400, 490, 525, 550, 600, 625, 690],
+            &[1000, 1060, 1100, 1150, 1200, 1250],
+            4,
+        )),
+        _ => None,
+    }
+}
+
+/// `/api/system/asic`: NerdOS's shape (with the board's absolute limits)
+/// for boards whose stock firmware publishes its own choices, AxeOS's
+/// shape for Bitaxe boards. `/api/v2/settings` stays NerdOS-only: WarpTune
+/// takes a device ladder from there and keeps its own table on a Bitaxe.
 fn asic_options() -> Option<serde_json::Value> {
     let p = board::profile();
     if p.frequency_options.is_empty() {
-        return None;
+        let chip = board::chip().name;
+        let (f, v, domains) = axeos_options(chip).filter(|_| p.name.starts_with("bitaxe"))?;
+        return Some(json!({
+            "ASICModel": chip, "deviceModel": p.name, "swarmColor": "green",
+            "asicCount": p.asic_count, "hashDomains": domains,
+            "defaultFrequency": p.default_frequency_mhz, "frequencyOptions": f,
+            "defaultVoltage": p.default_core_mv, "voltageOptions": v,
+        }));
     }
     Some(json!({
         "ASICModel": board::chip().name, "deviceModel": p.name, "asicCount": p.asic_count,

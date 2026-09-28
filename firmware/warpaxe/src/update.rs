@@ -74,6 +74,9 @@ pub struct UpdateState {
     /// how its signature checked, e.g. "v0.1.3 verified"; empty for an
     /// image flashed by hand.
     pub last_install: String,
+    /// The install record as stored in flash, also when it belongs to an
+    /// older image (tools/soak-test.py wants a miner that has one).
+    pub install_record: String,
 }
 
 static STATE: Mutex<Option<UpdateState>> = Mutex::new(None);
@@ -88,6 +91,7 @@ pub fn state() -> UpdateState {
         .unwrap_or_else(|| UpdateState {
             installed: env!("CARGO_PKG_VERSION").into(),
             last_install: config::last_install(),
+            install_record: config::install_record(),
             phase: "idle".into(),
             ..Default::default()
         })
@@ -98,6 +102,7 @@ fn update(f: impl FnOnce(&mut UpdateState)) {
     let s = g.get_or_insert_with(|| UpdateState {
         installed: env!("CARGO_PKG_VERSION").into(),
         last_install: config::last_install(),
+        install_record: config::install_record(),
         phase: "idle".into(),
         ..Default::default()
     });
@@ -137,6 +142,11 @@ pub fn start() {
     let record = config::last_install();
     if !record.is_empty() {
         log::info!("update: running image installed as {record}");
+    } else if !config::install_record().is_empty() {
+        log::info!(
+            "update: running image flashed by hand (last online install: {})",
+            config::install_record()
+        );
     }
     // The watcher only waits and fetches: its stack can live in PSRAM.
     // The install runs on a thread of its own with an internal stack,

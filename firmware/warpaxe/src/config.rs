@@ -284,8 +284,21 @@ const LAST_INSTALL_KEY: &str = "lastinstall";
 /// by hand or before this record existed.
 static LAST_INSTALL: Mutex<String> = Mutex::new(String::new());
 
-/// The install record read at boot (from RAM: safe on any thread).
+/// The install record read at boot (from RAM: safe on any thread), if it
+/// belongs to the running image: after a hand upload or a web-flasher
+/// reinstall the record of an older online install stays in flash but no
+/// longer describes what runs.
 pub fn last_install() -> String {
+    let r = install_record();
+    if r.starts_with(&format!("v{} ", env!("CARGO_PKG_VERSION"))) {
+        r
+    } else {
+        String::new()
+    }
+}
+
+/// The install record as stored, whichever image it was made for.
+pub fn install_record() -> String {
     LAST_INSTALL.lock().unwrap().clone()
 }
 

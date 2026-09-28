@@ -459,7 +459,7 @@ function networkPage() {
 function settingsPage() {
   const c = state?.config || {}, i = info, two = i.fanrpm2 != null;
   let tuneHint = t("tuning_hint"), fHint = "", vHint = t("measured", {v: i.coreVoltageActual});
-  if (asic) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
+  if (asic?.absMaxFrequency) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
   const oc = ocMode(), cp = CHIP_PRESETS[i.ASICModel] || {f: [], v: []};
   const pre = asic?.frequencyOptions?.length ? {f: asic.frequencyOptions, v: asic.voltageOptions || cp.v, df: asic.defaultFrequency, dv: asic.defaultVoltage} : cp;
   return `<form id="sf">` +
