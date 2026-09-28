@@ -425,6 +425,11 @@ function collect(form, cfg) {
 async function save(form, restartKeys) {
   const cfg = state.config, body = collect(form, cfg);
   if (!Object.keys(body).length) return toast(t("nothing"));
+  // One save at a time: a second tap while the first is on its way (the
+  // captive window on a phone gives little feedback) would restart twice.
+  const btn = form.querySelector('button[type="submit"]');
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
   toast(t("saving"));
   try {
     await post("/api/system", body);
@@ -436,6 +441,7 @@ async function save(form, restartKeys) {
     toast(t(Object.keys(body).some(k => restartKeys.includes(k)) ? "saved_restart" : "saved"), "ok");
     await load(true);
   } catch (e) { toast(t("failed") + e.message, "err"); }
+  if (btn) btn.disabled = false;
 }
 const actions = (restart) => `<div class="actions">${restart ? `<button type="button" class="btn" data-act="restart">${t("restart")}</button>` : ""}<button type="submit" class="btn pri">${t("save")}</button></div>`;
 
