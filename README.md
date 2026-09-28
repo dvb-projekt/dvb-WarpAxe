@@ -140,6 +140,12 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/lcd-setup-hotspot.png" alt="Wi-Fi setup screen on the NerdQAxe++ LCD: hotspot name and a ten-digit password" width="480">
+  <img src="docs/screenshots/oled-setup-hotspot.png" alt="Wi-Fi setup on the Bitaxe OLED: name, password and address take turns" width="272"><br>
+  <em>Setup hotspot — name and password (new at every start, example shown) on the LCD; on the OLED they take turns with the address.</em>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/oled-rotation.png" alt="Bitaxe Gamma OLED rotation" width="520"><br>
   <em>Bitaxe Gamma (128×32 OLED) — hashrate large, rotating values, full-width info slides and the wordmark.</em>
 </p>
