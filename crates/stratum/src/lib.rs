@@ -15,6 +15,7 @@ pub mod coinbase;
 pub mod gate;
 pub mod job;
 pub mod message;
+pub mod payout;
 
 pub use gate::WorkGate;
 pub use job::{Job, Session};

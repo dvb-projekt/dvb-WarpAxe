@@ -146,3 +146,28 @@ fn requests_serialise_as_stratum_expects() {
         .to_line()
         .contains("[\"u\",\"x\"]"));
 }
+
+#[test]
+fn the_captured_coinbase_pays_a_mainnet_address() {
+    let v = vector();
+    let tx = hex::decode(v["coinbase_hex"].as_str().unwrap()).unwrap();
+    let outs = warpaxe_stratum::payout::outputs(&tx, "bc").unwrap();
+    // A block reward of at least 3.125 BTC, to a real address.
+    let paid: u64 = outs.iter().map(|o| o.value).sum();
+    assert!(paid >= 312_500_000, "{outs:?}");
+    let first = &outs[0].address;
+    assert!(
+        first.starts_with("bc1") || first.starts_with('1') || first.starts_with('3'),
+        "{first}"
+    );
+    // The job's halves around the extranonce give the same outputs.
+    let n = notify();
+    let head = hex::decode(&n.coinb1).unwrap();
+    let tail = hex::decode(&n.coinb2).unwrap();
+    let en = v["extranonce1"].as_str().unwrap().len() / 2
+        + v["extranonce2_size"].as_u64().unwrap() as usize;
+    let p = warpaxe_stratum::payout::payout(&head, en, &tail, &format!("{first}.worker")).unwrap();
+    assert_eq!(p.outputs, outs);
+    assert_eq!(p.total, paid);
+    assert_eq!(p.user, outs[0].value);
+}
