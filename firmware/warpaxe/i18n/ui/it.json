@@ -102,7 +102,7 @@
   "ask_install": "Installare ora il firmware {v}? Il miner si riavvia al termine.",
   "upd_notes": "Novità",
   "updateCheck": "Cerca aggiornamenti automaticamente",
-  "upd_s": "Interroga git.warppool.org all'avvio e ogni 12 ore. L'installazione avviene sempre con un tuo clic.",
+  "upd_s": "Interroga git.warppool.org all'avvio e ogni ora. L'installazione avviene sempre con un tuo clic.",
   "ph_checking": "Controllo …",
   "ph_downloading": "Download {p} %",
   "ph_verifying": "Verifica del checksum …",

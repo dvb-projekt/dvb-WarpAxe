@@ -102,7 +102,7 @@
   "ask_install": "Instalar o firmware {v} agora? O minerador reinicia em seguida.",
   "upd_notes": "Novidades",
   "updateCheck": "Procurar atualizações automaticamente",
-  "upd_s": "Consulta git.warppool.org na inicialização e a cada 12 horas. A instalação só acontece com o seu clique.",
+  "upd_s": "Consulta git.warppool.org na inicialização e a cada hora. A instalação só acontece com o seu clique.",
   "ph_checking": "Verificando …",
   "ph_downloading": "Baixando {p} %",
   "ph_verifying": "Verificando o checksum …",

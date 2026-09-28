@@ -102,7 +102,7 @@
   "ask_install": "Installer le firmware {v} maintenant ? Le mineur redémarre ensuite.",
   "upd_notes": "Nouveautés",
   "updateCheck": "Rechercher les mises à jour automatiquement",
-  "upd_s": "Interroge git.warppool.org au démarrage puis toutes les 12 heures. Rien n'est installé sans votre clic.",
+  "upd_s": "Interroge git.warppool.org au démarrage puis toutes les heures. Rien n'est installé sans votre clic.",
   "ph_checking": "Vérification …",
   "ph_downloading": "Téléchargement {p} %",
   "ph_verifying": "Vérification de la somme de contrôle …",

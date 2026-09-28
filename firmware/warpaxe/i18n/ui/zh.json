@@ -102,7 +102,7 @@
   "ask_install": "现在安装固件 {v}？安装后矿机将重启。",
   "upd_notes": "更新内容",
   "updateCheck": "自动检查更新",
-  "upd_s": "启动时及每 12 小时查询一次 git.warppool.org。安装始终需要你手动点击。",
+  "upd_s": "启动时及每小时查询一次 git.warppool.org。安装始终需要你手动点击。",
   "ph_checking": "正在检查 …",
   "ph_downloading": "正在下载 {p} %",
   "ph_verifying": "正在校验校验和 …",

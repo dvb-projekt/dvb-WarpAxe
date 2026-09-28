@@ -1,6 +1,6 @@
 //! Firmware updates from the project's Forgejo releases.
 //!
-//! The miner itself asks (at boot and every 12 hours, while `updateCheck`
+//! The miner itself asks (at boot and every hour, while `updateCheck`
 //! is on) for the latest release; the web UI shows it. Installing is
 //! always a click: the miner downloads the image, checks it against the
 //! release's SHA-256 file and against the release signature, and writes
@@ -32,7 +32,7 @@ const RELEASE_KEY: [u8; 32] = [
     0xec, 0x42, 0xcf, 0x9c, 0xe2, 0xe7, 0x36, 0x2e, 0x52, 0xab, 0xa1, 0x67, 0x5d, 0xc2, 0x70, 0x53,
     0x05, 0x8e, 0x31, 0x3c, 0x15, 0xbf, 0x4c, 0x30, 0xb5, 0x27, 0xd4, 0x50, 0xae, 0xf3, 0x27, 0x42,
 ];
-const EVERY: Duration = Duration::from_secs(12 * 3600);
+const EVERY: Duration = Duration::from_secs(3600);
 /// Largest image accepted (the app slot is 3 MiB).
 const MAX_IMAGE: usize = 3 * 1024 * 1024;
 
