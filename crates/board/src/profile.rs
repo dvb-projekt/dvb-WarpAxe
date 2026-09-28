@@ -468,9 +468,12 @@ pub const NERDOCTAXE_GAMMA: Profile = Profile {
     default_core_mv: 1210,
     init_core_mv: 0,
     max_power_w: 300,
-    // NerdOS reads the Octaxe sensors as they are (no `getTemperature`
-    // override); not inherited from the NerdQAxe++.
-    temp_offset_c: 0.0,
+    // NerdOS `NerdOctaxeGamma` derives from `NerdQaxePlus2` and does not
+    // override `getTemperature`, so its TMP1075 reading carries the same
+    // +10 °C as the NerdQAxe++; the per-chip TMP451 path reads 0 on the
+    // Rev 3.1 board. Seen 2026-09-28 on .45: 55 °C here vs 66.3 °C under
+    // NerdOS at the same point.
+    temp_offset_c: 10.0,
     // Options depend on the fitted regulator; published once this
     // board is brought up.
     frequency_options: &[],
@@ -651,7 +654,10 @@ mod tests {
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().vr_temp_offset_c, 8);
         assert_eq!(Q1373.temp_offset_c, 3.0);
         assert_eq!(NERDQAXE_PLUSPLUS.temp_offset_c, 10.0, "NerdOS +10 °C");
-        assert_eq!(NERDOCTAXE_GAMMA.temp_offset_c, 0.0, "not inherited");
+        assert_eq!(
+            NERDOCTAXE_GAMMA.temp_offset_c, 10.0,
+            "inherited from NerdQaxePlus2"
+        );
         assert_eq!(BITAXE_GAMMA.temp_offset_c, 0.0);
         let alt = |p: &Profile| match p.vr {
             Vr::Tps5364x { alt, .. } => alt,
