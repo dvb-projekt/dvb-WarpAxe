@@ -290,6 +290,53 @@ pub fn set_last_install(record: &str) {
     }
 }
 
+const SWARM_KEY: &str = "swarm";
+/// At most this many miners in the swarm list, and this many bytes stored.
+pub const SWARM_MAX: usize = 32;
+const SWARM_MAX_BYTES: usize = 1536;
+
+/// The other miners the web UI's swarm page shows: addresses only, the
+/// browser asks each of them for its state. Its own NVS key, so the
+/// config document stays small.
+pub fn swarm() -> Vec<String> {
+    let mut buf = [0u8; SWARM_MAX_BYTES + 64];
+    NVS.lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|nvs| nvs.get_str(SWARM_KEY, &mut buf).ok().flatten())
+        .and_then(|s| serde_json::from_str::<Vec<String>>(s.trim_end_matches('\0')).ok())
+        .unwrap_or_default()
+}
+
+/// Store the swarm list; addresses are IPv4 or host names, deduplicated.
+pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
+    let mut clean: Vec<String> = Vec::new();
+    for m in members {
+        let m = m.trim().trim_start_matches("http://").trim_end_matches('/');
+        let ok = !m.is_empty()
+            && m.len() <= 64
+            && m.chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+        if !ok {
+            return Err(format!("not an address: {m:?}"));
+        }
+        if !clean.iter().any(|c| c.eq_ignore_ascii_case(m)) {
+            clean.push(m.to_string());
+        }
+    }
+    if clean.len() > SWARM_MAX {
+        return Err(format!("at most {SWARM_MAX} miners"));
+    }
+    let json = serde_json::to_string(&clean).map_err(|e| e.to_string())?;
+    if json.len() > SWARM_MAX_BYTES {
+        return Err("list too long".into());
+    }
+    let mut g = NVS.lock().unwrap();
+    let nvs = g.as_mut().ok_or("no NVS")?;
+    nvs.set_str(SWARM_KEY, &json).map_err(|e| e.to_string())?;
+    Ok(clean)
+}
+
 /// Record a nonce difficulty; writes NVS only when the all-time best rises,
 /// which after the first hours is rare.
 pub fn raise_best_diff(diff: u64) {

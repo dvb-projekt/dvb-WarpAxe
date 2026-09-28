@@ -577,6 +577,40 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
 
     // Online update from the project's releases.
+    // The swarm page's list of other miners (addresses only).
+    server.fn_handler("/api/v1/swarm", Method::Get, |req| {
+        reply_json(
+            req,
+            200,
+            &json!({"members": config::swarm(), "max": config::SWARM_MAX}),
+        )
+    })?;
+    server.fn_handler("/api/v1/swarm", Method::Put, |mut req| {
+        let mut body = [0u8; 2048];
+        let mut n = 0;
+        while n < body.len() {
+            match req.read(&mut body[n..]) {
+                Ok(0) => break,
+                Ok(k) => n += k,
+                Err(_) => break,
+            }
+        }
+        let members = serde_json::from_slice::<serde_json::Value>(&body[..n])
+            .ok()
+            .and_then(|v| serde_json::from_value::<Vec<String>>(v["members"].clone()).ok());
+        match members.map(|m| config::set_swarm(&m)) {
+            Some(Ok(m)) => {
+                log::info!("api: swarm list saved ({} miners)", m.len());
+                reply_json(req, 200, &json!({"members": m}))
+            }
+            Some(Err(e)) => reply_json(req, 400, &json!({"error": e})),
+            None => reply_json(
+                req,
+                400,
+                &json!({"error": "expected {\"members\": [addresses]}"}),
+            ),
+        }
+    })?;
     server.fn_handler("/api/v1/update", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let mut v = serde_json::to_value(crate::update::state()).unwrap_or_default();
