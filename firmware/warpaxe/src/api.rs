@@ -150,16 +150,22 @@ fn vr_target(cfg: &config::Config) -> u32 {
 
 /// NerdOS `GET /api/v2/settings`: the board's own clock and voltage
 /// choices, where a tuner looks for them.
+/// The board's published choices for the regulator found at start.
+fn choices() -> warpaxe_board::profile::Choices {
+    board::profile().choices(board::state().vr_part.starts_with("Tps53667"))
+}
+
 fn settings_v2() -> Option<serde_json::Value> {
     let p = board::profile();
-    if p.frequency_options.is_empty() {
+    let c = choices();
+    if c.frequency_options.is_empty() {
         return None;
     }
     Some(json!({
         "deviceModel": p.name,
         "defaultFrequency": p.default_frequency_mhz, "defaultCoreVoltage": p.default_core_mv,
-        "absMinCoreVoltage": p.abs_min_core_mv, "absMaxCoreVoltage": p.abs_max_core_mv,
-        "frequencyOptions": p.frequency_options, "voltageOptions": p.voltage_options,
+        "absMinCoreVoltage": c.abs_min_core_mv, "absMaxCoreVoltage": c.abs_max_core_mv,
+        "frequencyOptions": c.frequency_options, "voltageOptions": c.voltage_options,
     }))
 }
 
@@ -182,7 +188,8 @@ fn axeos_options(chip: &str) -> Option<(&'static [u32], &'static [u32], u32)> {
 /// takes a device ladder from there and keeps its own table on a Bitaxe.
 fn asic_options() -> Option<serde_json::Value> {
     let p = board::profile();
-    if p.frequency_options.is_empty() {
+    let c = choices();
+    if c.frequency_options.is_empty() {
         let chip = board::chip().name;
         let (f, v, domains) = axeos_options(chip).filter(|_| p.name.starts_with("bitaxe"))?;
         return Some(json!({
@@ -195,17 +202,17 @@ fn asic_options() -> Option<serde_json::Value> {
     Some(json!({
         "ASICModel": board::chip().name, "deviceModel": p.name, "asicCount": p.asic_count,
         "defaultFrequency": p.default_frequency_mhz, "defaultVoltage": p.default_core_mv,
-        "absMaxFrequency": p.abs_max_frequency_mhz,
-        "absMinVoltage": p.abs_min_core_mv, "absMaxVoltage": p.abs_max_core_mv,
+        "absMaxFrequency": c.abs_max_frequency_mhz,
+        "absMinVoltage": c.abs_min_core_mv, "absMaxVoltage": c.abs_max_core_mv,
         "ecoFrequency": 0, "ecoVoltage": 0,
-        "frequencyOptions": p.frequency_options, "voltageOptions": p.voltage_options,
+        "frequencyOptions": c.frequency_options, "voltageOptions": c.voltage_options,
     }))
 }
 
 /// A PATCH outside the board's absolute limits is refused whole, as
 /// NerdOS `validateVoltage` / `absMaxAsicFrequency` do.
 fn limits_refuse(v: &serde_json::Value) -> Option<String> {
-    let p = board::profile();
+    let p = choices();
     if let Some(f) = v.get("frequency").and_then(|f| f.as_u64()) {
         if p.abs_max_frequency_mhz > 0 && f > u64::from(p.abs_max_frequency_mhz) {
             return Some(format!(

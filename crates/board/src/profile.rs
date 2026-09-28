@@ -193,7 +193,60 @@ pub struct Profile {
     pub abs_max_core_mv: u16,
 }
 
+/// Clock and voltage choices a board publishes, with its absolute limits
+/// (NerdOS `/api/system/asic` and `/api/v2/settings`); empty lists and 0
+/// limits for a board whose stock firmware publishes none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Choices {
+    /// Clock steps, MHz.
+    pub frequency_options: &'static [u32],
+    /// Core voltage steps, mV.
+    pub voltage_options: &'static [u16],
+    /// Highest clock a PATCH may set, MHz; 0 = no limit.
+    pub abs_max_frequency_mhz: u32,
+    /// Lowest core voltage a PATCH may set, mV; 0 = no limit.
+    pub abs_min_core_mv: u16,
+    /// Highest core voltage a PATCH may set, mV; 0 = no limit.
+    pub abs_max_core_mv: u16,
+}
+
+/// NerdOS `NerdOctaxeGamma` with the 6-phase TPS53667 fitted: the
+/// extended lists and an 850 MHz ceiling; the voltage limits stay the
+/// NerdQAxe++'s it derives from.
+const OCTAXE_6P_FREQUENCIES: &[u32] = &[525, 550, 575, 600, 625, 650, 675, 700, 725, 750, 775, 800];
+const OCTAXE_6P_VOLTAGES: &[u16] = &[
+    1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200, 1210, 1220, 1230, 1240, 1250, 1260,
+];
+
 impl Profile {
+    /// The choices this board publishes. The NerdOCTAXE-γ's depend on the
+    /// regulator found at start (`tps53667`): the 6-phase part gets
+    /// NerdOS's extended lists, the 4-phase TPS53647 the NerdQAxe++'s it
+    /// inherits there.
+    pub fn choices(&self, tps53667: bool) -> Choices {
+        let own = Choices {
+            frequency_options: self.frequency_options,
+            voltage_options: self.voltage_options,
+            abs_max_frequency_mhz: self.abs_max_frequency_mhz,
+            abs_min_core_mv: self.abs_min_core_mv,
+            abs_max_core_mv: self.abs_max_core_mv,
+        };
+        if self.name != NERDOCTAXE_GAMMA.name {
+            return own;
+        }
+        let base = NERDQAXE_PLUSPLUS.choices(false);
+        if tps53667 {
+            Choices {
+                frequency_options: OCTAXE_6P_FREQUENCIES,
+                voltage_options: OCTAXE_6P_VOLTAGES,
+                abs_max_frequency_mhz: 850,
+                ..base
+            }
+        } else {
+            base
+        }
+    }
+
     /// The profile for a board name from the config; `None` for a
     /// name this firmware does not know.
     pub fn by_name(name: &str) -> Option<&'static Profile> {
@@ -693,5 +746,26 @@ mod tests {
             .iter()
             .filter(|p| p.name != "q1373")
             .all(|p| p.asic == Asic::Bm1370));
+    }
+
+    #[test]
+    fn octaxe_choices_follow_the_fitted_regulator() {
+        let six = NERDOCTAXE_GAMMA.choices(true);
+        assert_eq!(six.frequency_options.first(), Some(&525));
+        assert_eq!(six.frequency_options.last(), Some(&800));
+        assert!(six
+            .frequency_options
+            .contains(&NERDOCTAXE_GAMMA.default_frequency_mhz));
+        assert!(six
+            .voltage_options
+            .contains(&NERDOCTAXE_GAMMA.default_core_mv));
+        assert_eq!(six.abs_max_frequency_mhz, 850);
+        assert_eq!((six.abs_min_core_mv, six.abs_max_core_mv), (1050, 1400));
+        assert_eq!(
+            NERDOCTAXE_GAMMA.choices(false),
+            NERDQAXE_PLUSPLUS.choices(false)
+        );
+        assert_eq!(BITAXE_GAMMA.choices(true), BITAXE_GAMMA.choices(false));
+        assert!(BITAXE_GAMMA.choices(true).frequency_options.is_empty());
     }
 }
