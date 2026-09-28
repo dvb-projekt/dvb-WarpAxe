@@ -62,10 +62,10 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
-| Settings of the previous firmware | — | — | **taken over** (Wi-Fi, pools, hostname) |
+| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools, hostname) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
-| Wi-Fi setup without a network | open hotspot, or Bluetooth | not checked | **WPA2 hotspot**, password shown only on the device display |
+| Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
