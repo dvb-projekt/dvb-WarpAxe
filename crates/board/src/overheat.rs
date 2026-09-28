@@ -86,6 +86,16 @@ impl Guard {
         self.stopped.map(|(_, c)| c)
     }
 
+    /// Stops within the last [`TRIP_WINDOW_S`] before `now`, 0 to
+    /// [`MAX_TRIPS`].
+    pub fn recent_trips(&self, now: u32) -> usize {
+        self.trips
+            .iter()
+            .flatten()
+            .filter(|&&t| now.saturating_sub(t) < TRIP_WINDOW_S)
+            .count()
+    }
+
     /// Too many stops in a row: only [`Guard::clear`] starts it again.
     pub fn latched(&self) -> bool {
         self.latched
@@ -199,7 +209,15 @@ mod tests {
             assert!(g.may_resume(i * 600 + MIN_OFF_S, &cool));
             g.resumed();
         }
+        assert_eq!(g.recent_trips(1200), 2);
         g.trip(1200, Cause::Hot);
+        assert_eq!(g.recent_trips(1200), 3);
+        assert_eq!(
+            g.recent_trips(1200 + TRIP_WINDOW_S - 1),
+            1,
+            "first two aged out"
+        );
+        assert_eq!(g.recent_trips(1200 + TRIP_WINDOW_S), 0);
         assert!(g.latched());
         assert!(!g.may_resume(1200 + 10 * MIN_OFF_S, &cool));
         g.clear();

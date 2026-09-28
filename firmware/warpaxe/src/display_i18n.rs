@@ -52,7 +52,7 @@ static ES: &[(&str, &str)] = &[
     ("OVERHEAT", "SOBRECALENTADO"),
     ("PASSWORD", "CONTRASEÑA"),
     ("POWER", "POTENCIA"),
-    ("Password", "Contraseña"),
+    ("Password · 10 digits", "Contraseña · 10 dígitos"),
     ("Pool difficulty", "Dificultad del pool"),
     ("Power", "Potencia"),
     (
@@ -125,7 +125,7 @@ static FR: &[(&str, &str)] = &[
     ("OVERHEAT", "SURCHAUFFE"),
     ("PASSWORD", "MOT DE PASSE"),
     ("POWER", "PUISSANCE"),
-    ("Password", "Mot de passe"),
+    ("Password · 10 digits", "Mot de passe · 10 chiffres"),
     ("Pool difficulty", "Difficulté du pool"),
     ("Power", "Puissance"),
     (
@@ -198,7 +198,7 @@ static IT: &[(&str, &str)] = &[
     ("OVERHEAT", "SURRISCALDATO"),
     ("PASSWORD", "PASSWORD"),
     ("POWER", "POTENZA"),
-    ("Password", "Password"),
+    ("Password · 10 digits", "Password · 10 cifre"),
     ("Pool difficulty", "Difficoltà del pool"),
     ("Power", "Potenza"),
     (
@@ -271,7 +271,7 @@ static PT: &[(&str, &str)] = &[
     ("OVERHEAT", "SUPERAQUECIDO"),
     ("PASSWORD", "SENHA"),
     ("POWER", "POTÊNCIA"),
-    ("Password", "Senha"),
+    ("Password · 10 digits", "Senha · 10 dígitos"),
     ("Pool difficulty", "Dificuldade do pool"),
     ("Power", "Potência"),
     (

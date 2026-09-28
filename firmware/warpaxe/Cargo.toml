@@ -49,3 +49,8 @@ esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
 component_dirs = "../components"
 bindings_header = "bindings.h"
 bindings_module = "tusb"
+
+# esp-idf-svc 0.51.0 with one change: unknown Wi-Fi events are logged and
+# ignored instead of panicking (see vendor/esp-idf-svc/WARPAXE-PATCH.md).
+[patch.crates-io]
+esp-idf-svc = { path = "vendor/esp-idf-svc" }

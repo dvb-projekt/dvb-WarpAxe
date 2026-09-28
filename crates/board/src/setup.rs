@@ -13,9 +13,6 @@ pub const CLOSE_AFTER_S: u32 = 60;
 /// Where the hotspot serves the web UI.
 pub const AP_IP: [u8; 4] = [192, 168, 4, 1];
 
-/// Password characters: no 0/O, 1/I/L, easy to read off a small display.
-const ALPHABET: &[u8; 31] = b"ABCDEFGHJKMNPQRSTUVWXYZ23456789";
-
 /// The hotspot name: `WarpAxe-` and the last two bytes of the MAC.
 pub fn ssid(mac: [u8; 6]) -> [u8; 12] {
     let mut s = *b"WarpAxe-0000";
@@ -27,14 +24,15 @@ pub fn ssid(mac: [u8; 6]) -> [u8; 12] {
     s
 }
 
-/// A hotspot password `ABCD-EFGH` from two random words: eight
-/// characters of 31, about 40 bits.
-pub fn password(r0: u32, r1: u32) -> [u8; 9] {
-    let mut p = [b'-'; 9];
+/// A hotspot password of ten digits from two random words (about 33
+/// bits): no upper/lower case to get wrong on a phone keyboard, and the
+/// OLED shows capitals only anyway.
+pub fn password(r0: u32, r1: u32) -> [u8; 10] {
+    let mut p = [b'0'; 10];
     let mut n = (u64::from(r0) << 32) | u64::from(r1);
-    for slot in [0, 1, 2, 3, 5, 6, 7, 8] {
-        p[slot] = ALPHABET[(n % 31) as usize];
-        n /= 31;
+    for c in &mut p {
+        *c = b'0' + (n % 10) as u8;
+        n /= 10;
     }
     p
 }
@@ -250,11 +248,7 @@ mod tests {
     fn ssid_and_password_shape() {
         assert_eq!(&ssid([0x80, 0xb5, 0x4e, 0xc4, 0x6c, 0x98]), b"WarpAxe-6C98");
         let p = password(0xdead_beef, 0x0123_4567);
-        assert_eq!(p[4], b'-');
-        assert!(p
-            .iter()
-            .enumerate()
-            .all(|(i, c)| i == 4 || ALPHABET.contains(c)));
+        assert!(p.iter().all(u8::is_ascii_digit));
         assert_ne!(password(1, 2), password(2, 1));
     }
 

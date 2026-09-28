@@ -1306,10 +1306,14 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W / 2,
                 80,
                 gfx::MUTE,
-                l("Password", "Passwort"),
+                l("Password · 10 digits", "Passwort · 10 Ziffern"),
                 Align::Center,
             );
-            c.text(&TITLE, W / 2, 110, gfx::WARN, &pass, Align::Center);
+            // Two groups of five with a gap, no space character: easier to
+            // read off and nothing extra to type.
+            let (a, b) = pass.split_at(pass.len() / 2);
+            c.text(&TITLE, W / 2 - 6, 110, gfx::WARN, a, Align::Right);
+            c.text(&TITLE, W / 2 + 6, 110, gfx::WARN, b, Align::Left);
             fit_text(
                 c,
                 &[&LABEL11, &LABEL10, &MONO9],

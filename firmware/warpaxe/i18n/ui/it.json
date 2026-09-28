@@ -240,5 +240,8 @@
   "dlmode_s": "Per reinstallare via USB con il flasher web (warppool.org/warpaxe)",
   "ask_dlmode": "Passare alla modalità download? Il miner smette di minare e attende il flasher web sul cavo USB. Al termine il flasher lo riavvia; se resta spento, scollega l'alimentatore e il cavo USB.",
   "dlmode_on": "Modalità download: collega ora il flasher web",
-  "ask_net_restart": "Riavviare ora e connettersi a {n}? L'hotspot di configurazione si chiude appena il miner è in rete."
+  "ask_net_restart": "Riavviare ora e connettersi a {n}? L'hotspot di configurazione si chiude appena il miner è in rete.",
+  "hs_title": "Configurazione Wi-Fi",
+  "hs_banner": "Scegli la tua rete qui sotto, inserisci la password se è nuova e premi Salva. Il miner si riavvia e si connette alla rete, e questo hotspot scompare.",
+  "hs_restarting": "Salvato. Il miner si riavvia e si connette a {n}; questo hotspot si chiude. Ricollega il telefono al Wi-Fi di casa."
 }

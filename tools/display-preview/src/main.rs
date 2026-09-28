@@ -232,7 +232,7 @@ mod net {
     pub fn hotspot() -> Option<(String, String)> {
         crate::HOTSPOT
             .load(std::sync::atomic::Ordering::Relaxed)
-            .then(|| ("WarpAxe-6C98".into(), "K7QM-R2XD".into()))
+            .then(|| ("WarpAxe-6C98".into(), "4829175036".into()))
     }
 }
 

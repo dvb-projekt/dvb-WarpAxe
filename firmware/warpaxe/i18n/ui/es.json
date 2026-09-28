@@ -240,5 +240,8 @@
   "dlmode_s": "Para reinstalar por USB con el flasheador web (warppool.org/warpaxe)",
   "ask_dlmode": "¿Cambiar al modo de descarga? El minero deja de minar y espera al flasheador web por el cable USB. Después, el flasheador lo reinicia; si se queda apagado, desconecta la fuente de alimentación y el cable USB.",
   "dlmode_on": "Modo de descarga: conecta ahora el flasheador web",
-  "ask_net_restart": "¿Reiniciar ahora y conectarse a {n}? El punto de acceso de configuración se cierra en cuanto el minero esté en la red."
+  "ask_net_restart": "¿Reiniciar ahora y conectarse a {n}? El punto de acceso de configuración se cierra en cuanto el minero esté en la red.",
+  "hs_title": "Configuración de Wi-Fi",
+  "hs_banner": "Elige tu red abajo, escribe su contraseña si es nueva y pulsa Guardar. Después el minero se reinicia y se conecta a ella, y este punto de acceso desaparece.",
+  "hs_restarting": "Guardado. El minero se reinicia y se conecta a {n}; este punto de acceso se cierra. Vuelve a conectar tu teléfono al Wi-Fi de casa."
 }

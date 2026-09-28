@@ -12,9 +12,12 @@ use std::time::{Duration, Instant};
 
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::modem::Modem;
+use esp_idf_svc::ipv4::{self, Ipv4Addr};
+use esp_idf_svc::netif::{EspNetif, NetifConfiguration, NetifStack};
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{
-    AccessPointConfiguration, AuthMethod, BlockingWifi, ClientConfiguration, Configuration, EspWifi,
+    AccessPointConfiguration, AuthMethod, BlockingWifi, ClientConfiguration, Configuration,
+    EspWifi, WifiDriver,
 };
 use warpaxe_board::setup::{self, Action, Hotspot, AP_IP};
 
@@ -43,7 +46,30 @@ fn run(
     ssid: String,
     pass: String,
 ) {
-    let mut wifi = match EspWifi::new(modem, sysloop.clone(), Some(nvs)) {
+    // The hotspot on 192.168.4.1, handing out itself as DNS server:
+    // esp-idf-svc's default router netif is 192.168.71.1 with 8.8.8.8 as
+    // DNS, which a phone on the hotspot cannot reach, so it reports "no
+    // internet" and never asks the captive-portal DNS.
+    let ap_netif_conf = NetifConfiguration {
+        ip_configuration: Some(ipv4::Configuration::Router(ipv4::RouterConfiguration {
+            subnet: ipv4::Subnet {
+                gateway: Ipv4Addr::from(AP_IP),
+                mask: ipv4::Mask(24),
+            },
+            dhcp_enabled: true,
+            dns: Some(Ipv4Addr::from(AP_IP)),
+            secondary_dns: None,
+        })),
+        ..NetifConfiguration::wifi_default_router()
+    };
+    let wifi = WifiDriver::new(modem, sysloop.clone(), Some(nvs)).and_then(|driver| {
+        EspWifi::wrap_all(
+            driver,
+            EspNetif::new(NetifStack::Sta)?,
+            EspNetif::new_with_conf(&ap_netif_conf)?,
+        )
+    });
+    let mut wifi = match wifi {
         Ok(w) => w,
         Err(e) => {
             log::error!("wifi: init failed: {e}");
@@ -148,7 +174,10 @@ fn run(
                 log::info!("wifi: connected, ip {ip:?}");
             }
             super::set_wifi(true, ip.clone(), rssi());
-        } else if has_ssid && Instant::now() >= next_try {
+        } else if has_ssid && Instant::now() >= next_try && !(hotspot.is_open() && ap_clients() > 0)
+        {
+            // Not while someone is on the hotspot: an attempt scans every
+            // channel for ~20 s and drops the phone that is setting it up.
             match wifi.connect().and_then(|_| wifi.wait_netif_up()) {
                 Ok(()) => continue, // picked up at the top of the loop
                 Err(e) => {
@@ -224,6 +253,18 @@ fn start_dns() -> bool {
             log::error!("dns: thread failed: {e}");
             false
         }
+    }
+}
+
+/// Stations on the setup hotspot.
+fn ap_clients() -> usize {
+    let mut list = esp_idf_svc::sys::wifi_sta_list_t::default();
+    // SAFETY: plain out-parameter; fails harmlessly when the AP is down.
+    let err = unsafe { esp_idf_svc::sys::esp_wifi_ap_get_sta_list(&mut list) };
+    if err == esp_idf_svc::sys::ESP_OK {
+        list.num.max(0) as usize
+    } else {
+        0
     }
 }
 

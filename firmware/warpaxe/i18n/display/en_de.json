@@ -38,8 +38,8 @@
  "Fans 100 % · starts again once cooled": "Lüfter 100 % · läuft nach dem Abkühlen wieder an",
  "WI-FI SETUP": "WLAN-EINRICHTUNG",
  "Join {n}": "Verbinden mit {n}",
- "Password": "Passwort",
  "then open http://192.168.4.1": "dann http://192.168.4.1 öffnen",
  "PASSWORD": "PASSWORT",
- "THEN OPEN": "DANN ÖFFNEN"
+ "THEN OPEN": "DANN ÖFFNEN",
+ "Password · 10 digits": "Passwort · 10 Ziffern"
 }

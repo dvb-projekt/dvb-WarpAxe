@@ -69,6 +69,11 @@ pub struct BoardState {
     pub overheat: bool,
     /// Too many overheat stops in a row: stays off until cleared by hand.
     pub overheat_latched: bool,
+    /// Overheat stops within the last hour (the third latches).
+    pub overheat_trips: u8,
+    /// Why the running stop happened: "hot" or "sensor"; `None` when
+    /// running.
+    pub overheat_cause: Option<&'static str>,
     /// Chips switched off by hand.
     pub shutdown: bool,
     pub last_error: String,
@@ -869,7 +874,14 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     });
                 }
             }
-            let latched = GUARD.lock().unwrap().latched();
+            let (latched, trips, cause) = {
+                let g = GUARD.lock().unwrap();
+                let cause = g.stopped().map(|c| match c {
+                    Cause::Hot => "hot",
+                    Cause::Blind => "sensor",
+                });
+                (g.latched(), g.recent_trips(now_s) as u8, cause)
+            };
             update(|s| {
                 s.temp_c = temp;
                 s.vr_temp_c = vr_temp;
@@ -882,6 +894,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.fan_auto = cfg.autofanspeed;
                 s.overheat = overheat();
                 s.overheat_latched = latched;
+                s.overheat_trips = trips;
+                s.overheat_cause = cause;
                 s.shutdown = shutdown();
                 if let Some(st) = status {
                     s.vr_status = st;

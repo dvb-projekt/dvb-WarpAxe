@@ -38,8 +38,8 @@
  "Fans 100 % · starts again once cooled": "Ventole 100 % · riparte appena raffreddato",
  "WI-FI SETUP": "IMPOSTA WI-FI",
  "Join {n}": "Collegati a {n}",
- "Password": "Password",
  "then open http://192.168.4.1": "poi apri http://192.168.4.1",
  "PASSWORD": "PASSWORD",
- "THEN OPEN": "POI APRI"
+ "THEN OPEN": "POI APRI",
+ "Password · 10 digits": "Password · 10 cifre"
 }
