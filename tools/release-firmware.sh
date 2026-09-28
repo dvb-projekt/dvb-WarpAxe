@@ -12,7 +12,9 @@
 # Token: ~/.config/warppool/forgejo-admin-token; signing key:
 # ~/.config/warppool/warpaxe-release.key (made once with
 # `cargo run -p warpaxe-sv2 --example release-key -- keygen <file>`).
-# Neither is ever printed.
+# Neither is ever printed. Before publishing, the image is uploaded to the
+# test miner SOAK_HOST (default .41) and watched for 5 min
+# (tools/soak-test.py); announce that to anyone else using the miner.
 set -euo pipefail
 
 TAG="${1:?usage: $0 vX.Y.Z [notes-file]}"
@@ -86,6 +88,16 @@ cp "$FW/src/ui/assets/wordmark.webp" "$FW/src/ui/assets/favicon.svg" "$FL/"
 cp "$OUT"/{manifest.json,bootloader.bin,partition-table.bin,ota-data-initial.bin,warpaxe.bin,warpaxe.bin.sha256,warpaxe.bin.sig} "$FL/"
 tar -czf "$OUT/web-flasher.tar.gz" -C "$FL" .
 (cd "$OUT" && shasum -a 256 warpaxe-factory.bin web-flasher.tar.gz > install.sha256)
+
+# Nothing goes out before the exact image has run on a test miner the way
+# users run it: with an install record in flash and the update watcher on
+# (0.1.5 passed every bench test and restarted once a minute in the field).
+# SOAK_HOST picks the miner; SKIP_SOAK=1 only for a release that cannot
+# run on it, and say so in the notes.
+if [ "${SKIP_SOAK:-0}" != 1 ]; then
+    "$ROOT/tools/soak-test.py" "${SOAK_HOST:-192.168.178.41}" --upload "$OUT/warpaxe.bin" \
+        --minutes "${SOAK_MINUTES:-5}" || { echo "soak test failed: not published" >&2; exit 1; }
+fi
 
 BODY="WarpAxe $TAG"
 [ -n "$NOTES_FILE" ] && BODY="$(cat "$NOTES_FILE")"
