@@ -7,6 +7,7 @@
 //! LilyGO's schematic. No LVGL: one RGB565 framebuffer, one bitmap font.
 
 use core::ffi::c_void;
+use core::sync::atomic::{AtomicBool, Ordering};
 use esp_idf_svc::sys::{self as sys, tusb};
 
 pub const WIDTH: usize = 320;
@@ -30,6 +31,21 @@ pub const PLASMA: u16 = 0x071F;
 /// Width in pixels of `text` in the 5×7 font at `scale`.
 pub fn text_width(text: &str, scale: usize) -> usize {
     (text.len() * (crate::font::W + 1) * scale).saturating_sub(scale)
+}
+
+/// Set by the i80 driver when a frame has left the buffer. `flush` waits
+/// for it: the next frame is drawn into the same buffer, and drawing
+/// while the DMA still reads it put half-old, half-new (and now and then
+/// colour-garbled) frames on the panel.
+static FRAME_SENT: AtomicBool = AtomicBool::new(true);
+
+unsafe extern "C" fn frame_sent(
+    _io: tusb::esp_lcd_panel_io_handle_t,
+    _edata: *mut tusb::esp_lcd_panel_io_event_data_t,
+    _ctx: *mut c_void,
+) -> bool {
+    FRAME_SENT.store(true, Ordering::Release);
+    false
 }
 
 pub struct Lcd {
@@ -89,6 +105,7 @@ impl Lcd {
             io_cfg.cs_gpio_num = PIN_CS;
             io_cfg.pclk_hz = 10_000_000;
             io_cfg.trans_queue_depth = 10;
+            io_cfg.on_color_trans_done = Some(frame_sent);
             io_cfg.dc_levels.set_dc_idle_level(0);
             io_cfg.dc_levels.set_dc_cmd_level(0);
             io_cfg.dc_levels.set_dc_dummy_level(0);
@@ -201,6 +218,7 @@ impl Lcd {
         gpio_out(PIN_BACKLIGHT, on);
     }
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
+        FRAME_SENT.store(false, Ordering::Release);
         unsafe {
             check!(tusb::esp_lcd_panel_draw_bitmap(
                 self.panel,
@@ -212,6 +230,14 @@ impl Lcd {
             ));
         }
         snapshot(self.fb);
+        // A frame is ~109 KB at 10 MHz, about 11 ms; give up after 100 ms
+        // rather than hang the display thread.
+        for _ in 0..100 {
+            if FRAME_SENT.load(Ordering::Acquire) {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         Ok(())
     }
 }
