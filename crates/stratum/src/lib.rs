@@ -12,9 +12,11 @@
 #![forbid(unsafe_code)]
 
 pub mod coinbase;
+pub mod gate;
 pub mod job;
 pub mod message;
 
+pub use gate::WorkGate;
 pub use job::{Job, Session};
 pub use message::{parse_line, Incoming, Notify, Request, Response};
 

@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use warpaxe_chain::{Chain, Config as ChainConfig, Event, Phase};
 use warpaxe_stratum::job::hash_difficulty;
-use warpaxe_stratum::{sha256d, Job};
+use warpaxe_stratum::{sha256d, Job, WorkGate};
 
 use crate::uart::ChipUart;
 use crate::{board, config, diag, stratum};
@@ -145,8 +145,7 @@ fn run(mut uart: ChipUart) {
 
         // serial -> (job, notify count when built, uptime s when built)
         let mut jobs: HashMap<u32, (Job, u64, u64)> = HashMap::new();
-        let mut seen_notify = 0u64;
-        let mut seen_clean = stratum::state().clean_jobs;
+        let mut gate = WorkGate::new(stratum::state().clean_jobs);
         let mut applied_diff = pool_diff;
         let mut applied_mhz = cfg.frequency;
         WANTED_MHZ.store(cfg.frequency, Ordering::Relaxed);
@@ -167,9 +166,7 @@ fn run(mut uart: ChipUart) {
             // A new block (clean_jobs) retires everything before this
             // round's nonces are looked at: whatever the chip still returns
             // for the old block is stale at the pool, not worth a submit.
-            let clean_now = stratum::state().clean_jobs;
-            if clean_now != seen_clean {
-                seen_clean = clean_now;
+            if gate.block_changed(stratum::state().clean_jobs) {
                 chain.retire_all();
                 jobs.clear();
             }
@@ -311,7 +308,9 @@ fn run(mut uart: ChipUart) {
                     applied_mhz = want_mhz;
                 }
                 // New notify, or the chips ran out of nonce space: fresh work.
-                let fresh = st.jobs_received != seen_notify;
+                // The counter is only a hint; the work fetched below carries
+                // its own notify number, which decides.
+                let fresh = st.jobs_received != gate.seen_notify();
                 // A set job interval only ever brings work sooner than the
                 // chips' own nonce-space timeout.
                 let interval_ms = cfg_now.job_interval_ms;
@@ -320,8 +319,13 @@ fn run(mut uart: ChipUart) {
                         t.elapsed() >= Duration::from_millis(u64::from(interval_ms))
                     });
                 if fresh || paced || chain.needs_work(now) {
-                    if let Some(job) = stratum::next_job() {
-                        if fresh && job.clean_jobs {
+                    let fetched = stratum::next_job().filter(|(_, seq, _)| {
+                        gate.is_fresh(*seq) || paced || chain.needs_work(now)
+                    });
+                    if let Some((job, seq, clean_seq)) = fetched {
+                        // A block the loop top has not seen yet: retire the
+                        // old work now, and only now (the gate remembers).
+                        if gate.submitting(seq, clean_seq) {
                             chain.retire_all();
                             jobs.clear();
                         }
@@ -337,12 +341,11 @@ fn run(mut uart: ChipUart) {
                                 }
                                 last_work = Some(Instant::now());
                                 update(|s| s.jobs_sent += 1);
-                                jobs.insert(r.serial, (job, st.jobs_received, diag::uptime_s()));
+                                jobs.insert(r.serial, (job, seq, diag::uptime_s()));
                                 if jobs.len() > 32 {
                                     let oldest = r.serial.wrapping_sub(32);
                                     jobs.retain(|k, _| k.wrapping_sub(oldest) < 64);
                                 }
-                                seen_notify = st.jobs_received;
                             }
                             Err(e) => log::warn!("miner: submit work: {e}"),
                         }

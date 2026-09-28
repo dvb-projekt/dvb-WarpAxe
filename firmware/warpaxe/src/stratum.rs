@@ -86,7 +86,9 @@ enum Outgoing {
     },
 }
 
-static NOTIFY: Mutex<Option<Feed>> = Mutex::new(None);
+/// The newest work with its notify number and block-change number,
+/// published together so the miner's view of both stays in step.
+static NOTIFY: Mutex<Option<(Feed, u64, u64)>> = Mutex::new(None);
 static EXTRANONCE2: Mutex<u32> = Mutex::new(0);
 static SUBMIT: Mutex<Option<Sender<Outgoing>>> = Mutex::new(None);
 static NEXT_ID: Mutex<u64> = Mutex::new(100);
@@ -103,9 +105,9 @@ fn update(f: impl FnOnce(&mut StratumState)) {
 
 /// A fresh job from the newest notify: a new extranonce2 every call, so
 /// re-submitting work to the chips never repeats a nonce space.
-pub fn next_job() -> Option<Job> {
+pub fn next_job() -> Option<(Job, u64, u64)> {
     let g = NOTIFY.lock().unwrap();
-    let feed = g.as_ref()?;
+    let (feed, seq, clean_seq) = g.as_ref()?;
     let size = match feed {
         Feed::V1(session, _) => session.extranonce2_size,
         Feed::V2(t) => t.extranonce2_size,
@@ -117,10 +119,30 @@ pub fn next_job() -> Option<Job> {
     let take = en2.len().min(4);
     let n = en2.len();
     en2[n - take..].copy_from_slice(&be[4 - take..]);
-    match feed {
+    let job = match feed {
         Feed::V1(session, notify) => Job::build(session, notify, &en2),
         Feed::V2(t) => t.build(&en2),
-    }
+    }?;
+    Some((job, *seq, *clean_seq))
+}
+
+/// Count a notify (and a block change), publish the work with those
+/// numbers. The miner compares the numbers it fetched with the work
+/// against the counters, so the order of the two writes no longer
+/// matters.
+fn publish(feed: Feed, clean: bool) {
+    let (seq, clean_seq) = {
+        let mut g = STATE.lock().unwrap();
+        let s = g.get_or_insert_with(StratumState::default);
+        s.jobs_received += 1;
+        s.last_job_uptime_s = diag::uptime_s();
+        if clean {
+            s.clean_jobs += 1;
+            s.last_clean_uptime_s = diag::uptime_s();
+        }
+        (s.jobs_received, s.clean_jobs)
+    };
+    *NOTIFY.lock().unwrap() = Some((feed, seq, clean_seq));
 }
 
 /// Queue a share. Silently dropped when no session is up.
@@ -467,23 +489,12 @@ fn session(
                         clean
                     );
                 }
-                // Publish the job BEFORE the counters: the miner treats a
-                // counter change as "new work is there" and builds from
-                // NOTIFY at once; the other order let it rebuild the old
-                // block's job and mark the new notify as seen (stale shares
-                // 5-30 s after every clean).
-                *NOTIFY.lock().unwrap() = Some(Feed::V1(s.clone(), n));
+                publish(Feed::V1(s.clone(), n), clean);
                 update(|st| {
-                    st.jobs_received += 1;
                     st.last_job_id = job_id;
                     st.block_height = height;
                     st.network_difficulty = net_diff;
                     st.scriptsig = tag;
-                    st.last_job_uptime_s = diag::uptime_s();
-                    if clean {
-                        st.clean_jobs += 1;
-                        st.last_clean_uptime_s = diag::uptime_s();
-                    }
                 });
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
@@ -793,21 +804,13 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
             if started.elapsed() < Duration::from_secs(5) || clean {
                 log::info!("stratum: sv2 job {job_id} ntime {} clean {clean}", t.ntime);
             }
-            // The feed first, then the counters the miner watches (the
-            // other order let it rebuild the old job on the new count).
-            *NOTIFY.lock().unwrap() = Some(Feed::V2(t));
+            publish(Feed::V2(t), clean);
             update(|st| {
                 st.version_mask = mask;
-                st.jobs_received += 1;
                 st.last_job_id = job_id;
                 st.block_height = height;
                 st.network_difficulty = net_diff;
                 st.scriptsig = tag;
-                st.last_job_uptime_s = diag::uptime_s();
-                if clean {
-                    st.clean_jobs += 1;
-                    st.last_clean_uptime_s = diag::uptime_s();
-                }
             });
         }
         Event::ExtranoncePrefix(p) => {
