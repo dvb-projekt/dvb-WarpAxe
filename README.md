@@ -12,7 +12,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-272%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.7-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.8-7B5CFF"></a>
 </p>
 
 ---
@@ -43,7 +43,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.7).** It mines 24/7 on one Bitaxe Gamma and one
+> **Status: early (v0.1.8).** It mines 24/7 on one Bitaxe Gamma and one
 > NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, and since 28 September
 > on one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator). Other boards have a
 > profile but have not run it — see [Supported boards](#supported-boards)
@@ -108,7 +108,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-dashboard.png" alt="Dashboard: type plate with chip grid, hashrate, efficiency, shares, best difficulty, history, temperatures, fans, power, pool" width="760"><br>
-  <em>Dashboard — type plate with chip grid and series colour, 1 h / 3 h history with hashrate and chip temperature, fans, power and pool.</em>
+  <em>Dashboard — chip grid and series colour, the hashrate with its share of the expected rate, efficiency, power, shares and best difficulty, the 1 h / 3 h history; below, temperature, fans and power, and the pool with the payout of a found block.</em>
 </p>
 
 <p align="center">
@@ -132,8 +132,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-pool.png" alt="Pool page with main and fallback pool, TLS switches" width="760"><br>
-  <em>Pool — main and fallback pool, each with protocol (Stratum V1 with optional TLS, or Stratum V2 with the pool's authority key); reject reasons and the last reject for diagnosis.</em>
+  <img src="docs/screenshots/web-pool.png" alt="Pool page: connection, shares, coinbase payout and outputs, pool settings" width="760"><br>
+  <em>Pool — the connection (protocol, Noise/TLS, fallback), shares with reject reasons, and who a found block pays: your share, the coinbase value and each output. Below, main and fallback pool, each Stratum V1 with optional TLS or Stratum V2 with the pool's authority key.</em>
 </p>
 
 ### Device display
@@ -214,8 +214,14 @@ back at any time with `GET /api/v1/display/frame`.
   English, German, Spanish, French, Italian, Brazilian Portuguese,
   Japanese and Chinese, each reviewed by a native speaker (the device
   display in the six Latin-script ones).
-- 1 h / 3 h history with hashrate and chip temperature, fan, power and pool
-  cards, live log.
+- Dashboard and Pool page in the warp design: one hero with the hashrate,
+  its share of the expected rate and the 1 h / 3 h history (hashrate as a
+  two-minute average, temperature in steps of at least 0.5 °C, so counting
+  noise does not fill the chart), then temperature, fan/power and pool
+  instruments; live log.
+- **Coinbase payout** of every job, as AxeOS shows it: the share of a found
+  block that goes to your address (green from 95 %, red below), the
+  coinbase value and its outputs, over Stratum V1 and V2.
 - **Swarm** page for the other miners on the network — AxeOS, NerdOS,
   ForgeOS or WarpAxe: fleet hashrate, power, J/TH and record difficulty,
   each miner's share, a card per miner with a sparkline and its
@@ -237,7 +243,8 @@ back at any time with `GET /api/v1/display/frame`.
   `overheatTrips` (stops in the last hour), `overheatCause` (hot, a lost
   sensor or a regulator fault), `overheatLatched`, `power_fault` (AxeOS's
   field and wording) with `powerFaultCodes`, `isUsingFallbackStratum`,
-  `sharesRejectedReasons`, and `temptarget` (the fan target, under
+  `sharesRejectedReasons`, AxeOS's `coinbaseOutputs`,
+  `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`, and `temptarget` (the fan target, under
   ESP-Miner's name) so a tuner keeps its own target above it.
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
