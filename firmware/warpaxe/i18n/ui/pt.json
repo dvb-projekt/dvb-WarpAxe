@@ -283,5 +283,7 @@
   "pf_iout_oc": "sobrecorrente na saída",
   "pf_vin_uv": "subtensão na entrada",
   "pf_temp": "sobretemperatura do regulador",
-  "pf_temp_warn": "aviso de temperatura do regulador"
+  "pf_temp_warn": "aviso de temperatura do regulador",
+  "linkFans": "Acoplar ventoinhas",
+  "linkFans_s": "M1 gira à velocidade de M2, que segue a temperatura dos chips. Para gabinetes em que todas as ventoinhas arrefecem a placa inteira, p. ex. com cabos em Y."
 }

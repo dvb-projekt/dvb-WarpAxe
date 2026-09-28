@@ -1212,7 +1212,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         None => 100,
                     }
                 };
-                (chip, vrf)
+                (chip, if cfg.link_fans { chip } else { vrf })
             };
             // One fan output: the second value just mirrors the first.
             let two = matches!(t, Thermal::Nerd { .. });

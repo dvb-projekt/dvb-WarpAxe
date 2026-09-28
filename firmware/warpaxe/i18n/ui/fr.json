@@ -283,5 +283,7 @@
   "pf_iout_oc": "surintensité de sortie",
   "pf_vin_uv": "sous-tension d'entrée",
   "pf_temp": "surchauffe du régulateur",
-  "pf_temp_warn": "avertissement de température du régulateur"
+  "pf_temp_warn": "avertissement de température du régulateur",
+  "linkFans": "Coupler les ventilateurs",
+  "linkFans_s": "M1 tourne à la vitesse de M2, qui suit la température des puces. Pour les boîtiers où tous les ventilateurs refroidissent toute la carte, par ex. avec des câbles en Y."
 }

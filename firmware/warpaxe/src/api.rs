@@ -70,7 +70,7 @@ pub fn system_info() -> serde_json::Value {
         "temptarget": if cfg.pid_target_temp > 0 { u32::from(cfg.pid_target_temp) } else { profile.fan_target_c.round() as u32 },
         "pidP": cfg.pid_p, "pidI": cfg.pid_i, "pidD": cfg.pid_d,
         "autofanspeed2": cfg.autofanspeed2, "manualFanSpeed2": cfg.manual_fan_speed2, "manualFanSpeed": cfg.fanspeed,
-        "vrTargetTemp": vr_target(&cfg),
+        "vrTargetTemp": vr_target(&cfg), "linkFans": cfg.link_fans,
         "stratumSuggestedDifficulty": cfg.suggested_difficulty, "jobInterval": cfg.job_interval_ms,
         "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.max_temp_c.round() as u32 },
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,

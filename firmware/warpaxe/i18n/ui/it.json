@@ -283,5 +283,7 @@
   "pf_iout_oc": "sovracorrente in uscita",
   "pf_vin_uv": "sottotensione in ingresso",
   "pf_temp": "sovratemperatura del regolatore",
-  "pf_temp_warn": "avviso temperatura del regolatore"
+  "pf_temp_warn": "avviso temperatura del regolatore",
+  "linkFans": "Accoppia le ventole",
+  "linkFans_s": "M1 gira alla velocità di M2, che segue la temperatura dei chip. Per i case in cui tutte le ventole raffreddano l'intera scheda, ad es. con cavi a Y."
 }

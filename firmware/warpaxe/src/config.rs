@@ -134,6 +134,10 @@ pub struct Config {
     /// Regulator temperature the second fan holds, °C; 0 = the default.
     #[serde(rename = "vrTargetTemp")]
     pub vr_target_temp: u8,
+    /// Both fan outputs at the chip fan's speed: M1 follows M2 1:1, for
+    /// cases where every fan cools the whole board (Y-cables).
+    #[serde(rename = "linkFans")]
+    pub link_fans: bool,
     /// Share difficulty asked of the pool after authorizing
     /// (`mining.suggest_difficulty`, AxeOS name); 0 = ask nothing.
     #[serde(rename = "stratumSuggestedDifficulty")]
@@ -204,6 +208,7 @@ impl Default for Config {
             autofanspeed2: true,
             manual_fan_speed2: 100,
             vr_target_temp: 0,
+            link_fans: false,
             suggested_difficulty: 0,
             job_interval_ms: 0,
             asic_count: 0,

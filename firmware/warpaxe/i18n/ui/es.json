@@ -283,5 +283,7 @@
   "pf_iout_oc": "sobrecorriente de salida",
   "pf_vin_uv": "subtensión de entrada",
   "pf_temp": "sobretemperatura del regulador",
-  "pf_temp_warn": "aviso de temperatura del regulador"
+  "pf_temp_warn": "aviso de temperatura del regulador",
+  "linkFans": "Acoplar ventiladores",
+  "linkFans_s": "M1 gira a la velocidad de M2, que sigue la temperatura de los chips. Para cajas en las que todos los ventiladores refrigeran toda la placa, p. ej. con cables en Y."
 }
