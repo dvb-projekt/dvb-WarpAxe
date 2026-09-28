@@ -419,6 +419,11 @@ function settingsPage() {
   if (asic) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
   const oc = ocMode(), cp = CHIP_PRESETS[i.ASICModel] || {f: [], v: []};
   const pre = asic?.frequencyOptions?.length ? {f: asic.frequencyOptions, v: asic.voltageOptions || cp.v, df: asic.defaultFrequency, dv: asic.defaultVoltage} : cp;
+  const net = sec(t("network"), t("network_hint"), `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
+    fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")}) + fld("hostname", c.hostname) + `<div></div>` +
+    tog("useNTP", c.useNTP, t("ntp_s")) + fld("ntpServer", c.ntpServer) + ssel("timezone", c.timezone || TZ[0][0], TZ));
+  // Over the setup hotspot the page has one job: join a network.
+  if (HOTSPOT) return `<form id="sf">` + net + actions(false) + `</form>`;
   return `<form id="sf">` +
   (oc ? `<div class="note" style="background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.35);align-items:center;flex-wrap:wrap"><b class="err">OC</b><span class="mute" style="flex:1">${t("oc_warn")}</span><button type="button" class="btn" data-act="ocoff" style="height:36px">${t("oc_off")}</button></div>` : "") +
   sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint})
@@ -429,9 +434,7 @@ function settingsPage() {
   sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440}) + ssel("displayLanguage", c.displayLanguage || "en", [["en", "English"], ["de", "Deutsch"], ["es", "Español"], ["fr", "Français"], ["it", "Italiano"], ["pt", "Português"]]) +
     tog("btcPrice", c.btcPrice, t("btc_s"), true) + ssel("priceCurrency", c.priceCurrency || "EUR", CUR),
     oc ? `<div style="display:flex;flex-direction:column;gap:10px;margin-top:16px"><span class="lbl">${t("demo")} <span class="dim" style="text-transform:none;letter-spacing:0">· ${t("demo_s")}</span></span><div class="actions" style="justify-content:flex-start;flex-wrap:wrap">${["block", "overheat", "off", "ota"].map(e => `<button type="button" class="btn" data-demo="${e}">${t("ev_" + e)}</button>`).join("")}</div></div>` : "") +
-  sec(t("network"), t("network_hint"), `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
-    fld("ssid", c.ssid) + fld("wifiPass", "", {type: "password", hint: t("keep_pw")}) + fld("hostname", c.hostname) + `<div></div>` +
-    tog("useNTP", c.useNTP, t("ntp_s")) + fld("ntpServer", c.ntpServer) + ssel("timezone", c.timezone || TZ[0][0], TZ)) +
+  net +
   actions(true) + `</form>`;
 }
 
