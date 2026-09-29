@@ -287,7 +287,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Board | ASICs | Regulator | Status |
 |---|---|---|---|
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
-| NerdQAxe++ Rev 6.1 | 4× BM1370 | TPS53647 | **runs 24/7** |
+| NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28 (the 4-phase TPS53647 variant has not run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
