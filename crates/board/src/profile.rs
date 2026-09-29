@@ -202,6 +202,10 @@ pub struct Profile {
     pub temp_offset_c: f32,
     /// Chip temperature the fan PID holds (NerdOS `m_pidSettings[0]`).
     pub fan_target_c: f32,
+    /// Fresh work at least this often, ms (NerdOS `m_asicJobIntervalMs`);
+    /// 0 = the chip's own default. The Octaxe hashed 8 % below NerdOS
+    /// with a new job only every ~22 s and on par at 500 ms.
+    pub job_interval_ms: u16,
     /// The stock firmware's clock choices, MHz (NerdOS
     /// `/api/system/asic` `frequencyOptions`); empty = not published.
     pub frequency_options: &'static [u32],
@@ -351,6 +355,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    job_interval_ms: 0,
     frequency_options: &[],
     voltage_options: &[],
     abs_max_frequency_mhz: 0,
@@ -407,6 +412,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    job_interval_ms: 0,
     frequency_options: &[425, 525, 625],
     voltage_options: &[1000, 1150, 1160],
     abs_max_frequency_mhz: 700,
@@ -445,6 +451,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    job_interval_ms: 0,
     frequency_options: &[],
     voltage_options: &[],
     abs_max_frequency_mhz: 0,
@@ -497,6 +504,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
+    job_interval_ms: 1500,
     frequency_options: &[],
     voltage_options: &[],
     abs_max_frequency_mhz: 0,
@@ -551,6 +559,7 @@ pub const NERDAXE_GAIA: Profile = Profile {
     vr_max_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 65.0,
+    job_interval_ms: 1500,
     frequency_options: &[300, 320, 340, 350, 360, 380, 400, 420],
     voltage_options: &[900, 920, 940, 960],
     abs_max_frequency_mhz: 420,
@@ -602,6 +611,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     // let the sensors reach what NerdOS calls 80 °C.
     temp_offset_c: 10.0,
     fan_target_c: 55.0,
+    job_interval_ms: 500,
     // NerdOS 1.1.0 on a Rev 6.1 board, `/api/system/asic` (2026-09-27).
     frequency_options: &[500, 515, 525, 550, 575, 590, 600],
     voltage_options: &[1120, 1130, 1140, 1150, 1160, 1170, 1180, 1190, 1200],
@@ -631,6 +641,7 @@ pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
     vr_throttle_c: 105.0,
     vr_max_c: 105.0,
     fan_target_c: 65.0,
+    job_interval_ms: 500,
     frequency_options: &[
         500, 515, 525, 550, 575, 590, 600, 625, 650, 675, 700, 725, 750, 775, 800, 825, 850, 875,
         900, 925, 950, 975, 1000,
@@ -704,6 +715,7 @@ pub const Q1370: Profile = Profile {
     max_power_w: 150,
     temp_offset_c: 3.0,
     fan_target_c: 55.0,
+    job_interval_ms: 500,
     // Options depend on the fitted regulator; published once this
     // board is brought up.
     frequency_options: &[],
@@ -743,6 +755,7 @@ pub const Q1373: Profile = Profile {
     max_power_w: 180,
     temp_offset_c: 3.0,
     fan_target_c: 60.0,
+    job_interval_ms: 500,
     // Options depend on the fitted regulator; published once this
     // board is brought up.
     frequency_options: &[],
@@ -785,6 +798,24 @@ pub const ALL: &[Profile] = &[
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn nerd_job_intervals_follow_nerdos() {
+        for (name, ms) in [
+            ("nerdqaxe-plusplus", 500),
+            ("nerdqaxe-plusplus-rev7", 500),
+            ("nerdoctaxe-gamma", 500),
+            ("q1370", 500),
+            ("q1373", 500),
+            ("nerdaxe-gamma", 1500),
+            ("nerdaxe-gaia", 1500),
+            ("bitaxe-gamma", 0),
+            ("bitforge-nano", 0),
+        ] {
+            let p = ALL.iter().find(|p| p.name == name).unwrap();
+            assert_eq!(p.job_interval_ms, ms, "{name}");
+        }
+    }
     use super::*;
 
     #[test]

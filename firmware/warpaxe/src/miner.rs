@@ -346,9 +346,13 @@ fn run(mut uart: ChipUart) {
                 // its own notify number, which decides.
                 let fresh = st.jobs_received != gate.seen_notify();
                 // A set job interval only ever brings work sooner than the
-                // chips' own nonce-space timeout.
+                // chips' own nonce-space timeout: the setting, else the
+                // board's (as its stock firmware), else the chip's.
+                let board_ms = board::profile().job_interval_ms;
                 let interval_ms = if cfg_now.job_interval_ms > 0 {
                     cfg_now.job_interval_ms
+                } else if board_ms > 0 {
+                    board_ms
                 } else {
                     board::chip().job_interval_ms
                 };
