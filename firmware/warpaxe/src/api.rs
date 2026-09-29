@@ -102,7 +102,7 @@ pub fn system_info() -> serde_json::Value {
         "coinbaseValueTotalSatoshis": st.coinbase_total_sat, "coinbaseValueUserSatoshis": st.coinbase_user_sat,
         "blockFound": m.blocks_found, "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
         "stratumConnected": stratum::state().authorized,
-        "version": VERSION, "runningPartition": running_partition(),
+        "version": VERSION, "gitHash": env!("WARPAXE_GIT"), "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": cfg.autofanspeed,
         "resetReason": diag::reset_reason(),
     })
