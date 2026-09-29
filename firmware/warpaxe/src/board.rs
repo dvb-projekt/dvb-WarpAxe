@@ -359,17 +359,24 @@ impl Regulator {
     }
     /// Board power: VOUT × IOUT + offset on the TPS546 boards (ESP-Miner),
     /// the regulator's input power on the Nerd boards (NerdOS).
-    fn power_w(&mut self, vout: Option<f32>, current: Option<f32>, offset: f32) -> Option<f32> {
+    fn power_w(
+        &mut self,
+        vin: Option<f32>,
+        vout: Option<f32>,
+        current: Option<f32>,
+        offset: f32,
+    ) -> Option<f32> {
         match self {
             Regulator::Tps546(_, Flavor::Bitaxe) => match (vout, current) {
                 (Some(v), Some(i)) => Some(v * i + offset),
                 _ => None,
             },
-            // `current` is the input current here; the power is still
-            // VOUT × IOUT + offset (BitMaker `getPin`). Read as 7 W instead
-            // of 28 W on the Gaia before this.
-            Regulator::Tps546(vr, Flavor::Nerd) => match (vout, vr.iout().ok()) {
-                (Some(v), Some(i)) => Some(v * i + offset),
+            // `current` is the input current here: VIN × IIN, what the
+            // board draws. BitMaker's VOUT × IOUT + 5 W read ~6 W high on
+            // the Gaia (32 W against 26 W at 350 MHz), and VOUT × IIN read
+            // 7 W.
+            Regulator::Tps546(_, Flavor::Nerd) => match (vin, current) {
+                (Some(v), Some(i)) => Some(v * i),
                 _ => None,
             },
             Regulator::Tps5364x { vr, .. } => vr.pin().ok(),
@@ -1003,7 +1010,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 vout = plausible(vr.vout(), 0.0, 2.0, "vout");
                 current = plausible(vr.current_a(), -1.0, 150.0, "iout");
                 power = plausible(
-                    vr.power_w(vout, current, profile.power_offset_w),
+                    vr.power_w(vin, vout, current, profile.power_offset_w),
                     0.0,
                     500.0,
                     "power",
