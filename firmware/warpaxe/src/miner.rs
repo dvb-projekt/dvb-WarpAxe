@@ -23,6 +23,13 @@ pub struct MinerState {
     pub difficulty: u32,
     pub nonces: u64,
     pub low_diff: u64,
+    /// Nonces whose header hashes below the chips' own ticket mask: the
+    /// chip should never have reported them (a wrong job or version on
+    /// its side, or a hardware error). Hidden inside `low_diff` before.
+    pub below_ticket: u64,
+    /// Nonces for a work serial this loop no longer knows (retired or
+    /// never handed out): dropped without a hash.
+    pub unknown_job: u64,
     pub shares_sent: u64,
     pub stale: u64,
     pub duplicates: u64,
@@ -188,6 +195,7 @@ fn run(mut uart: ChipUart) {
                 match e {
                     Event::Nonce(f) => {
                         let Some((job, job_seq, job_t)) = jobs.get(&f.work.serial) else {
+                            update(|s| s.unknown_job += 1);
                             continue;
                         };
                         let header = job.header(f.version, f.nonce);
@@ -206,8 +214,12 @@ fn run(mut uart: ChipUart) {
                         let chip_diff = f64::from(1u32 << (31 - requested.leading_zeros()));
                         hashes += chip_diff * 4_294_967_296.0;
                         let want = stratum::state().difficulty.max(1.0);
+                        let below_ticket = diff < chip_diff;
                         update(|s| {
                             s.nonces += 1;
+                            if below_ticket {
+                                s.below_ticket += 1;
+                            }
                             s.last_nonce_uptime_s = diag::uptime_s();
                             s.best_session_diff = s.best_session_diff.max(diff as u64);
                         });
