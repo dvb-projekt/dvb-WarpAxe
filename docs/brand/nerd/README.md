@@ -26,4 +26,6 @@ Sources, both GPLv3:
 registered by solomining.de (Bolt Engineering GmbH) on behalf of OSMU.
 They agreed by e-mail on 2026-09-29, first for NerdQAxe++ and NerdOctaxe
 and then for NerdAxe (Gamma, Gaia) and NerdQX, that WarpAxe shows the
-names and logos on the boot screen of these boards.
+names and logos on the boot screen of these boards. Bitronics, who sell
+the NerdAxe Gaia, agreed by e-mail on 2026-09-30 that WarpAxe shows the
+"NerdAxe Gaia" wordmark on the Gaia's boot screen.
