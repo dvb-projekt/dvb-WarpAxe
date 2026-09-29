@@ -679,7 +679,10 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
         match result {
             Ok(status) => {
                 log::info!("board: TPS546 up, status {status:#06x}");
-                update(|s| s.vr_status = status);
+                update(|s| {
+                    s.vr_status = status;
+                    s.vr_part = "TPS546".into();
+                });
                 let mv = profile.init_core_mv.max(cfg.core_voltage);
                 let volts = profile.vout_for_core_mv(mv);
                 match vr.set_vout(volts) {
@@ -1421,7 +1424,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 fans = want;
                 update(|s| {
                     s.fan_pct = want.0;
-                    s.fan2_pct = two.then_some(want.1);
+                    // The Nano's second fan runs at the first one's speed.
+                    s.fan2_pct = (two || matches!(t, Thermal::Nano(_))).then_some(want.1);
                 });
             }
         }
