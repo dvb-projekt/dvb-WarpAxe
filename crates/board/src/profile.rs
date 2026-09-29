@@ -193,6 +193,12 @@ pub struct Profile {
     pub abs_min_core_mv: u16,
     /// Highest core voltage the firmware accepts, mV; 0 = no limit.
     pub abs_max_core_mv: u16,
+    /// The panel sits the other way round on this carrier than on the
+    /// bare LilyGO: NerdOS and the BitMaker Gaia firmware draw every Nerd
+    /// carrier rotated 180° as their base, so their `flipscreen = 0` is
+    /// upright in the case. XORed with the configured flip (Oliver,
+    /// 2026-09-29: "the 180° turn concerns the whole Nerd series").
+    pub display_flip: bool,
 }
 
 /// Clock and voltage choices a board publishes, with its absolute limits
@@ -328,6 +334,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    display_flip: false,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -365,6 +372,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    display_flip: false,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -416,6 +424,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    display_flip: true,
 };
 
 /// NerdAxe Gaia: one BM1373 on a 12 V carrier (BitMaker fork of NerdOS,
@@ -469,6 +478,9 @@ pub const NERDAXE_GAIA: Profile = Profile {
     abs_max_frequency_mhz: 420,
     abs_min_core_mv: 800,
     abs_max_core_mv: 970,
+    // Seen upside down under WarpAxe with the imported flipscreen = 0
+    // (2026-09-29), like the other Nerd carriers.
+    display_flip: true,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -518,6 +530,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     abs_max_frequency_mhz: 800,
     abs_min_core_mv: 1050,
     abs_max_core_mv: 1400,
+    display_flip: true,
 };
 
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
@@ -733,6 +746,12 @@ mod tests {
         let c = p.choices(false);
         assert_eq!(c.frequency_options, p.frequency_options);
         assert_eq!(c.abs_max_core_mv, 970);
+        // Every Nerd carrier draws rotated 180° as its base; the Bitaxe
+        // and the bare devkit do not.
+        for q in ALL {
+            let nerd = q.i2c == Some(NERD_I2C);
+            assert_eq!(q.display_flip, nerd, "{}", q.name);
+        }
     }
 
     #[test]

@@ -79,7 +79,10 @@ fn draw_splash(d: &mut display::Display) {
     match d {
         display::Display::Lcd(l) => {
             use display::*;
-            l.orient(cfg.flipscreen, cfg.invertscreen);
+            l.orient(
+                cfg.flipscreen ^ crate::board::profile().display_flip,
+                cfg.invertscreen,
+            );
             l.blit(SPLASH_LCD);
             let col = if profile.name.starts_with("bitaxe") {
                 BTC
@@ -103,7 +106,10 @@ fn draw_splash(d: &mut display::Display) {
             l.text((WIDTH - text_width(&line, 1)) / 2, 148, 1, GREY, &line);
         }
         display::Display::Oled(o) => {
-            o.orient(cfg.flipscreen, cfg.invertscreen);
+            o.orient(
+                cfg.flipscreen ^ crate::board::profile().display_flip,
+                cfg.invertscreen,
+            );
             o.bitmap(SPLASH_OLED);
             let line = format!("{} {version}", profile.model.to_ascii_uppercase());
             let w = display::text_width(&line, 1).min(128);

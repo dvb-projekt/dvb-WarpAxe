@@ -347,7 +347,10 @@ impl Ui {
 
     fn lcd(&mut self, l: &mut Lcd) -> Duration {
         let cfg = config::get();
-        l.orient(cfg.flipscreen, cfg.invertscreen);
+        l.orient(
+            cfg.flipscreen ^ crate::board::profile().display_flip,
+            cfg.invertscreen,
+        );
         if self.base.is_empty() {
             self.base = background();
         }
@@ -465,7 +468,10 @@ impl Ui {
 
     fn oled(&mut self, o: &mut Oled) -> Duration {
         let cfg = config::get();
-        o.orient(cfg.flipscreen, cfg.invertscreen);
+        o.orient(
+            cfg.flipscreen ^ crate::board::profile().display_flip,
+            cfg.invertscreen,
+        );
         o.clear();
         let t = self.event_t0.elapsed().as_secs_f32();
         let next = match self.event {

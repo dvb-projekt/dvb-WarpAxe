@@ -114,6 +114,12 @@ pub struct ChipProfile {
     /// ms. ESP-Miner and NerdOS wait up to 1 s per reply; 500 ms has
     /// always been enough for a BM1370 chain.
     pub count_window_ms: u32,
+    /// Switch the chips' UART to the fast rate only after the clock ramp,
+    /// the hash counting number and the version-rolling enable, then wait
+    /// this long before the host follows (NerdOS `BM1373::init` +
+    /// `setMaxBaud`: 500 ms). `None` = before the ramp, right away
+    /// (ESP-Miner's BM1370 order, proven on the Gamma).
+    pub baud_switch_after_ramp_ms: Option<u32>,
     /// Value for the UART register that raises the baud rate, and the
     /// host rate to switch to afterwards.
     pub fast_uart: ([u8; 4], u32),

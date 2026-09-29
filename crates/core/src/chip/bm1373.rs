@@ -85,17 +85,15 @@ const INIT_PER_CHIP: &[InitStep] = &[
     },
 ];
 
-/// After the per-chip block: analog mux, then (runtime) the frequency
-/// ramp, the fixed hash counting number, and version rolling enabled.
+/// After the per-chip block: analog mux. The driver then ramps the
+/// clock, writes the fixed hash counting number, enables version rolling
+/// and switches the UART, in NerdOS's order (`baud_switch_after_ramp_ms`).
 const INIT_POST: &[InitStep] = &[
     // Analog Mux Control
     InitStep::WriteAll {
         reg: reg::ANALOG_MUX_CONTROL,
         value: [0x00, 0x00, 0x00, 0x02],
     },
-    // enable version rolling (NerdOS does this after the frequency
-    // transition; the order against the ramp is not load-bearing)
-    InitStep::VersionMask,
 ];
 
 /// The BM1373 profile.
@@ -124,6 +122,9 @@ pub const BM1373: ChipProfile = ChipProfile {
     hcn_errata: 0,
     // Never seen a reply yet: the full second the reference drivers allow.
     count_window_ms: 1000,
+    // A Gaia (2026-09-29) answered the chip-id read but never hashed with
+    // the switch before the ramp; NerdOS ramps at 115200 and switches last.
+    baud_switch_after_ramp_ms: Some(500),
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
@@ -136,9 +137,21 @@ mod tests {
     use crate::chip::{render, Rendered};
 
     #[test]
-    fn waits_a_full_second_for_chip_ids() {
+    fn waits_a_full_second_for_chip_ids_and_switches_baud_last() {
         assert_eq!(BM1373.count_window_ms, 1000);
         assert_eq!(crate::chip::bm1370::BM1370.count_window_ms, 500);
+        assert_eq!(BM1373.baud_switch_after_ramp_ms, Some(500));
+        assert_eq!(crate::chip::bm1370::BM1370.baud_switch_after_ramp_ms, None);
+        // Version rolling is enabled by the driver after the ramp, not in
+        // the lists: no enable-bit write before the count or after it.
+        let enable = crate::regs::version_mask(crate::regs::BIP320_VERSION_MASK);
+        let enables = render(&BM1373, 1)
+            .filter(|s| match s {
+                Rendered::Cmd { payload, .. } => payload[1] == 0xA4 && payload[2..6] == enable,
+                Rendered::Delay(_) | Rendered::CountChips => false,
+            })
+            .count();
+        assert_eq!(enables, 0);
     }
     use crate::frame::{Group, Op};
 
@@ -178,7 +191,8 @@ mod tests {
             want.push(one(a, 0x3C, [0x80, 0x00, 0x82, 0xAA]));
         }
         want.push(all(0x54, [0x00, 0x00, 0x00, 0x02]));
-        want.push(all(0xA4, [0x90, 0x00, 0xFF, 0xFF]));
+        // NerdOS's tail (frequency ramp, 0x10, version rolling on, then
+        // the baud switch) is the driver's, after the lists.
         let got: Vec<Rendered> = render(&BM1373, 4).collect();
         assert_eq!(got, want);
     }

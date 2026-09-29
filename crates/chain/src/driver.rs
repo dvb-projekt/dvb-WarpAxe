@@ -319,9 +319,20 @@ struct Slot {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Idle,
-    Steps { wait_until: u64 },
-    Counting { until: u64 },
-    Ramp { current_hz: u32, next_at: u64 },
+    Steps {
+        wait_until: u64,
+    },
+    Counting {
+        until: u64,
+    },
+    Ramp {
+        current_hz: u32,
+        next_at: u64,
+    },
+    /// The chips were told the fast rate; the host follows at `until`.
+    BaudSettle {
+        until: u64,
+    },
     Ready,
     Failed,
 }
@@ -404,7 +415,8 @@ impl Chain {
             Mode::Idle => Phase::Idle,
             Mode::Steps { .. } => Phase::Init,
             Mode::Counting { .. } => Phase::Counting,
-            Mode::Ramp { .. } if !self.init_done => Phase::Ramping,
+            Mode::Ramp { .. } | Mode::BaudSettle { .. } if !self.init_done => Phase::Ramping,
+            Mode::BaudSettle { .. } => Phase::Ready,
             Mode::Ramp { .. } | Mode::Ready => Phase::Ready,
             Mode::Failed => Phase::Failed,
         }
@@ -626,6 +638,16 @@ impl Chain {
                     }
                     self.finish_counting(now_us, on_event);
                 }
+                Mode::BaudSettle { until } => {
+                    if now_us < until {
+                        break;
+                    }
+                    uart.set_baud(self.profile.fast_uart.1)
+                        .map_err(Error::Uart)?;
+                    self.mode = Mode::Ready;
+                    self.init_done = true;
+                    on_event(Event::Ready);
+                }
                 Mode::Ramp {
                     current_hz,
                     next_at,
@@ -634,7 +656,7 @@ impl Chain {
                         break;
                     }
                     if current_hz == self.target_hz {
-                        self.finish_ramp(uart, on_event)?;
+                        self.finish_ramp(uart, now_us, on_event)?;
                     } else {
                         let step = self.config.ramp_step_hz.max(1);
                         let next = if self.target_hz > current_hz {
@@ -699,9 +721,11 @@ impl Chain {
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
         self.render = None;
-        let (word, baud) = self.profile.fast_uart;
-        self.write_all(uart, reg::FAST_UART_CONFIGURATION, word)?;
-        uart.set_baud(baud).map_err(Error::Uart)?;
+        if self.profile.baud_switch_after_ramp_ms.is_none() {
+            let (word, baud) = self.profile.fast_uart;
+            self.write_all(uart, reg::FAST_UART_CONFIGURATION, word)?;
+            uart.set_baud(baud).map_err(Error::Uart)?;
+        }
         if self.difficulty != self.profile.default_difficulty {
             let d = self.difficulty;
             self.write_all(uart, reg::TICKET_MASK, regs::ticket_mask(f64::from(d)))?;
@@ -723,6 +747,7 @@ impl Chain {
     fn finish_ramp<U: Uart>(
         &mut self,
         uart: &mut U,
+        now_us: u64,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
         let hcn = self.profile.hcn_fixed.unwrap_or_else(|| {
@@ -734,10 +759,28 @@ impl Chain {
             )
         });
         self.write_all(uart, reg::HASH_COUNTING_NUMBER, hcn.to_be_bytes())?;
-        self.mode = Mode::Ready;
-        if !self.init_done {
-            self.init_done = true;
-            on_event(Event::Ready);
+        match self.profile.baud_switch_after_ramp_ms {
+            // NerdOS's tail for the BM1373, first init only: version
+            // rolling on, the chips told the fast rate, the host follows
+            // after the settle time.
+            Some(settle_ms) if !self.init_done => {
+                self.write_all(
+                    uart,
+                    reg::VERSION_ROLLING,
+                    regs::version_mask(regs::BIP320_VERSION_MASK),
+                )?;
+                self.write_all(uart, reg::FAST_UART_CONFIGURATION, self.profile.fast_uart.0)?;
+                self.mode = Mode::BaudSettle {
+                    until: now_us + u64::from(settle_ms) * 1000,
+                };
+            }
+            _ => {
+                self.mode = Mode::Ready;
+                if !self.init_done {
+                    self.init_done = true;
+                    on_event(Event::Ready);
+                }
+            }
         }
         on_event(Event::FrequencyApplied {
             hz: self.frequency_hz,

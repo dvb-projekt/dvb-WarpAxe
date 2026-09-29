@@ -160,6 +160,7 @@ pub const BM1370: ChipProfile = ChipProfile {
     job_id_step: 24,
     hcn_errata: 2 * 134,
     count_window_ms: 500,
+    baud_switch_after_ramp_ms: None,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
