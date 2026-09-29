@@ -28,6 +28,9 @@ pub struct MinerState {
     pub duplicates: u64,
     pub desyncs: u64,
     pub silent_chips: u8,
+    /// Times the whole chain was started over because every chip had gone
+    /// silent for a minute.
+    pub chain_restarts: u32,
     /// 10-minute window.
     pub hashrate_ghs: f64,
     /// Last 30 s bucket.
@@ -156,6 +159,7 @@ fn run(mut uart: ChipUart) {
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
         let mut last_work: Option<Instant> = None;
+        let mut all_silent_since: Option<Instant> = None;
 
         loop {
             let now = now_us();
@@ -389,6 +393,25 @@ fn run(mut uart: ChipUart) {
                 s.desyncs = st.desyncs;
                 s.silent_chips = chain.chips().iter().filter(|c| c.silent).count() as u8;
             });
+            // Every chip silent for a minute with work going out: the chain
+            // hung (seen on a NerdOctaxe when the USB cable was pulled from
+            // its LilyGO: all eight stopped at once, core still up). Start
+            // over — reset pulse and a fresh init — as chips off/on would.
+            let n = chain.chip_count();
+            let silent = chain.chips().iter().filter(|c| c.silent).count();
+            if n > 0 && silent == usize::from(n) && chain.accepting_work() {
+                let since = *all_silent_since.get_or_insert_with(Instant::now);
+                if since.elapsed() > Duration::from_secs(60) {
+                    log::warn!("miner: all {n} chips silent for 60 s, restarting the chain");
+                    update(|s| {
+                        s.chain_restarts += 1;
+                        s.hashrate_now_ghs = 0.0;
+                    });
+                    break;
+                }
+            } else {
+                all_silent_since = None;
+            }
             std::thread::sleep(Duration::from_millis(2));
         }
     }
