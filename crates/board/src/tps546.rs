@@ -116,8 +116,10 @@ impl Config {
     /// stock ForgeOS is closed, so the window is AxeOS's 12 V one for the
     /// Gamma Turbo (VIN on 11 / off 10.5, UV warn 11, OV fault 14.8,
     /// IOUT 50/55 A) on a single phase (no stacking, no compensation
-    /// block). To be read back against the running part on the first
-    /// start with the chips off.
+    /// block). The output ceiling is 2 V: ForgeOS's running part read
+    /// VOUT_MAX 0x0400 (first start on .44, 2026-09-29, with
+    /// VOUT_COMMAND 0x024C ≈ 1.148 V, ON_OFF_CONFIG 0x1F, PHASE 0).
+    /// The rest is still to be read back against the part's NVM.
     pub const BITFORGE_NANO: Config = Config {
         vin_on: 11.0,
         vin_off: 10.5,
@@ -125,7 +127,7 @@ impl Config {
         vin_ov_fault: 14.8,
         scale_loop: 0.25,
         vout_min: 1.0,
-        vout_max: 3.0,
+        vout_max: 2.0,
         vout_command: 1.2,
         iout_oc_warn: 50.0,
         iout_oc_fault: 55.0,
