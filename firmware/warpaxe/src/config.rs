@@ -450,37 +450,59 @@ pub fn save(cfg: &Config) -> anyhow::Result<()> {
 /// What the stock firmware (AxeOS or NerdOS) left in its NVS namespace
 /// `main`, read-only. WarpAxe's own settings live in `warpaxe`, so a stock
 /// NVS kept through the first flash is still there.
-pub struct Stock(Option<EspNvs<NvsDefault>>);
+pub struct Stock(Option<EspNvs<NvsDefault>>, serde_json::Value);
 
 impl Stock {
+    /// Newer NerdOS builds (and BitMaker's NerdAxe Gaia firmware) keep
+    /// every setting in one JSON blob, `json_cfg`, under the same key
+    /// names; older ones store each key on its own. Both are read.
     pub fn open() -> Stock {
         let part = PART.lock().unwrap().clone();
-        Stock(part.and_then(|p| EspNvs::new(p, "main", false).ok()))
+        let nvs = part.and_then(|p| EspNvs::new(p, "main", false).ok());
+        let json = nvs
+            .as_ref()
+            .and_then(|n| {
+                let mut buf = vec![0u8; 8192];
+                n.get_raw("json_cfg", &mut buf)
+                    .ok()
+                    .flatten()
+                    .map(<[u8]>::to_vec)
+            })
+            .and_then(|b| {
+                let end = b.iter().rposition(|&c| c != 0).map_or(0, |i| i + 1);
+                serde_json::from_slice(&b[..end]).ok()
+            })
+            .unwrap_or(serde_json::Value::Null);
+        Stock(nvs, json)
+    }
+
+    fn json(&self, key: &str) -> Option<&serde_json::Value> {
+        self.1.get(key)
     }
 
     pub fn str(&self, key: &str) -> Option<String> {
-        let nvs = self.0.as_ref()?;
-        let mut buf = [0u8; 160];
-        nvs.get_str(key, &mut buf)
-            .ok()
-            .flatten()
-            .map(|s| s.trim_end_matches('\0').to_string())
+        let own = self.0.as_ref().and_then(|nvs| {
+            let mut buf = [0u8; 160];
+            nvs.get_str(key, &mut buf)
+                .ok()
+                .flatten()
+                .map(|s| s.trim_end_matches('\0').to_string())
+        });
+        own.or_else(|| self.json(key).and_then(|v| v.as_str()).map(str::to_string))
             .filter(|s| !s.is_empty())
     }
 
     pub fn u16(&self, key: &str) -> Option<u16> {
-        let nvs = self.0.as_ref()?;
-        nvs.get_u16(key)
-            .ok()
-            .flatten()
-            .or_else(|| self.str(key).and_then(|s| s.parse().ok()))
+        self.num(key).and_then(|v| u16::try_from(v as i64).ok())
     }
 
     /// A number whatever width the firmware stored it in: NerdOS and
     /// AxeOS use u8, u16, u32 and i32, and AxeOS keeps floats as text
     /// ("525.000000").
     pub fn num(&self, key: &str) -> Option<f64> {
-        let nvs = self.0.as_ref()?;
+        let Some(nvs) = self.0.as_ref() else {
+            return self.json(key).and_then(|v| v.as_f64());
+        };
         if let Some(v) = nvs.get_u16(key).ok().flatten() {
             return Some(f64::from(v));
         }
@@ -493,12 +515,15 @@ impl Stock {
         if let Some(v) = nvs.get_i32(key).ok().flatten() {
             return Some(f64::from(v));
         }
-        self.str(key).and_then(|s| s.trim().parse().ok())
+        self.str(key)
+            .and_then(|s| s.trim().parse().ok())
+            .or_else(|| self.json(key).and_then(|v| v.as_f64()))
     }
 
     /// A long string (AxeOS 2.15 keeps each pool as JSON text).
     pub fn long_str(&self, key: &str) -> Option<String> {
         let nvs = self.0.as_ref()?;
+        // (AxeOS pools only; not in json_cfg.)
         let mut buf = vec![0u8; 1024];
         nvs.get_str(key, &mut buf)
             .ok()
