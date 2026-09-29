@@ -54,6 +54,15 @@ pub struct RxDecoder {
     /// Bytes per frame right now: 11, or 9 while a BM1373 chain answers
     /// the chip-id read.
     frame_len: usize,
+    /// A longer frame also accepted while `frame_len` is the short one:
+    /// when the short window fails its CRC, the bytes are kept until
+    /// this many have arrived and tried again. A BM1373 on a NerdAxe
+    /// Gaia answered the chip-id read with 11 bytes (2026-09-29) where
+    /// ESP-Miner's driver expects 9.
+    alt_len: Option<usize>,
+    /// The length the current window is waiting for (`frame_len`, or
+    /// `alt_len` after a failed short decode).
+    want: usize,
     dropped_since_frame: u32,
     stats: Stats,
 }
@@ -71,6 +80,8 @@ impl RxDecoder {
             buf: [0; RESPONSE_LEN],
             len: 0,
             frame_len: RESPONSE_LEN,
+            alt_len: None,
+            want: RESPONSE_LEN,
             dropped_since_frame: 0,
             stats: Stats {
                 frames: 0,
@@ -94,6 +105,16 @@ impl RxDecoder {
             self.frame_len = len;
             self.reset();
         }
+        self.want = self.frame_len;
+    }
+
+    /// Also accept frames of `len` bytes (longer than the current
+    /// `frame_len`) when the short window fails; `None` switches it off.
+    pub fn set_alt_frame_len(&mut self, len: Option<usize>) {
+        self.alt_len = len
+            .map(|l| l.clamp(crate::frame::SHORT_RESPONSE_LEN, RESPONSE_LEN))
+            .filter(|l| *l > self.frame_len);
+        self.want = self.frame_len;
     }
 
     /// Bytes currently held that may still become a frame.
@@ -138,24 +159,34 @@ impl RxDecoder {
 
         self.buf[self.len] = byte;
         self.len += 1;
-        if self.len < self.frame_len {
+        if self.len < self.want {
             return None;
         }
 
         // Window full and starts with the preamble: verify.
-        match decode_response(&self.buf[..self.frame_len]) {
+        match decode_response(&self.buf[..self.want]) {
             Ok(response) => {
                 let dropped_before = self.dropped_since_frame;
                 self.dropped_since_frame = 0;
                 self.stats.frames += 1;
                 self.len = 0;
+                self.want = self.frame_len;
                 Some(Frame {
                     response,
                     dropped_before,
                 })
             }
             Err(_) => {
+                // A short window that failed may be the head of a long
+                // frame: wait for the rest before giving up on it.
+                if let Some(alt) = self.alt_len {
+                    if self.want < alt {
+                        self.want = alt;
+                        return None;
+                    }
+                }
                 self.stats.crc_failures += 1;
+                self.want = self.frame_len;
                 self.resync();
                 None
             }
@@ -190,7 +221,7 @@ impl RxDecoder {
     /// until the window starts with the preamble again or has fewer than
     /// two bytes. Every byte slid out counts as dropped.
     fn resync(&mut self) {
-        debug_assert_eq!(self.len, self.frame_len);
+        debug_assert!(self.len == self.frame_len || Some(self.len) == self.alt_len);
         let mut start = 1;
         while self.len - start >= 2 && self.buf[start..start + 2] != RX_PREAMBLE {
             start += 1;
@@ -233,6 +264,38 @@ mod tests {
         assert_eq!(got.len(), 1);
         assert!(got[0].response.is_job());
         assert_eq!(d.stats().crc_failures, 0);
+    }
+
+    #[test]
+    fn short_mode_with_the_long_alternative_takes_an_eleven_byte_chip_id_reply() {
+        // A Gaia's BM1373 answered the chip-id read with 11 bytes.
+        let mut d = RxDecoder::new();
+        d.set_frame_len(SHORT_RESPONSE_LEN);
+        d.set_alt_frame_len(Some(RESPONSE_LEN));
+        let mut full = [0u8; RESPONSE_LEN];
+        encode_response(&mut full, &[0x13, 0x72, 0x00, 0x00, 0, 0, 0, 0], 0x00);
+        let got = collect(&mut d, &full);
+        assert_eq!(got.len(), 1, "the long reply decodes whole");
+        assert_eq!(&got[0].response.payload[..2], &[0x13, 0x72]);
+        assert_eq!(d.stats().crc_failures, 0);
+        assert_eq!(d.stats().dropped, 0);
+        // A genuine 9-byte reply still decodes at once, no waiting.
+        let mut short = [0u8; SHORT_RESPONSE_LEN];
+        encode_short_response(&mut short, &[0x13, 0x72, 0x00, 0x10, 0, 0], 0x00);
+        let got = collect(&mut d, &short);
+        assert_eq!(got.len(), 1);
+        assert_eq!(d.stats().frames, 2);
+        // Garbage of eleven bytes: one CRC failure, resync as before.
+        let junk = [0xAA, 0x55, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        let got = collect(&mut d, &junk);
+        assert!(got.is_empty());
+        assert_eq!(d.stats().crc_failures, 1);
+        // Without the alternative the long reply is rejected at nine bytes.
+        let mut plain = RxDecoder::new();
+        plain.set_frame_len(SHORT_RESPONSE_LEN);
+        let got = collect(&mut plain, &full);
+        assert!(got.is_empty());
+        assert_eq!(plain.stats().crc_failures, 1);
     }
 
     fn frame_bytes(payload: [u8; 8], flags: u8) -> [u8; RESPONSE_LEN] {

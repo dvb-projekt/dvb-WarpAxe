@@ -603,6 +603,10 @@ impl Chain {
                         Some(Rendered::CountChips) => {
                             self.found = 0;
                             self.decoder.set_frame_len(self.profile.chip_id_reply_len);
+                            // A chip may answer with the full 11 bytes where
+                            // the profile expects 9 (BM1373 on the Gaia).
+                            self.decoder
+                                .set_alt_frame_len(Some(warpaxe_core::frame::RESPONSE_LEN));
                             self.mode = Mode::Counting {
                                 until: now_us + self.config.count_window_us,
                             };
@@ -657,6 +661,7 @@ impl Chain {
     }
 
     fn finish_counting(&mut self, now_us: u64, on_event: &mut dyn FnMut(Event)) {
+        self.decoder.set_alt_frame_len(None);
         self.decoder
             .set_frame_len(warpaxe_core::frame::RESPONSE_LEN);
         let found = self.found;
