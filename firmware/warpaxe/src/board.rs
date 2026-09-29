@@ -24,7 +24,9 @@ use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2302::{Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
+use warpaxe_board::ina260::Ina260;
 use warpaxe_board::overheat::{Cause, Guard, Reading};
+use warpaxe_board::pca9544::Muxed;
 use warpaxe_board::pmbus;
 use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
@@ -298,10 +300,12 @@ impl Pin {
 
 /// Which board a TPS546 sits on: the numbers the stock firmware reports
 /// differ.
-#[derive(Clone, Copy, PartialEq, Eq)]
 enum Flavor {
     /// Bitaxe / NerdAxe: `current` = IOUT, power = VOUT × IOUT + offset.
     Bitaxe,
+    /// BitForge Nano: an INA260 on the input rail gives voltage, current
+    /// and power (ForgeOS reports those).
+    Ina260(Ina260<SharedI2c>),
     /// Nerd carriers with a TPS546 (NerdQAxe++ Rev 7, NerdAxe Gaia):
     /// NerdOS reports the input current, POUT / VIN.
     Nerd,
@@ -335,6 +339,9 @@ impl Regulator {
     }
     fn vin(&mut self) -> Option<f32> {
         match self {
+            Regulator::Tps546(_, Flavor::Ina260(ina)) => {
+                ina.bus_voltage_mv().ok().map(|mv| mv / 1000.0)
+            }
             Regulator::Tps546(vr, _) => vr.vin().ok(),
             Regulator::Tps5364x { vr, .. } => vr.vin().ok(),
         }
@@ -350,6 +357,9 @@ impl Regulator {
     fn current_a(&mut self) -> Option<f32> {
         match self {
             Regulator::Tps546(vr, Flavor::Bitaxe) => vr.iout().ok(),
+            Regulator::Tps546(_, Flavor::Ina260(ina)) => {
+                ina.current_ma().ok().map(|ma| ma / 1000.0)
+            }
             Regulator::Tps546(vr, Flavor::Nerd) => {
                 let vin = vr.vin().ok().filter(|v| *v > 0.0)?;
                 Some(vr.vout().ok()? * vr.iout().ok()? / vin)
@@ -371,6 +381,7 @@ impl Regulator {
                 (Some(v), Some(i)) => Some(v * i + offset),
                 _ => None,
             },
+            Regulator::Tps546(_, Flavor::Ina260(ina)) => ina.power_mw().ok().map(|mw| mw / 1000.0),
             // `current` is the input current here: VIN × IIN, what the
             // board draws. BitMaker's VOUT × IOUT + 5 W read ~6 W high on
             // the Gaia (32 W against 26 W at 350 MHz), and VOUT × IIN read
@@ -466,6 +477,9 @@ impl Regulator {
 /// Chip temperature and fans, whichever the board carries.
 enum Thermal {
     Emc2101(Emc2101<SharedI2c>),
+    /// BitForge Nano: one EMC2101 per chip behind the PCA9544, each with
+    /// its own fan; the chip temperature is the hotter of the two.
+    Nano([Emc2101<Muxed<SharedI2c>>; 2]),
     Nerd {
         fans: Emc2302<SharedI2c>,
         sensors: Addrs,
@@ -478,6 +492,17 @@ impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
+            Thermal::Nano(sensors) => {
+                let mut best: Option<f32> = None;
+                let mut err = String::new();
+                for s in sensors.iter_mut() {
+                    match s.external_temp_c() {
+                        Ok(c) => best = Some(best.map_or(c, |b| b.max(c))),
+                        Err(e) => err = format!("{e:?}"),
+                    }
+                }
+                best.ok_or(err)
+            }
             Thermal::Nerd {
                 sensors,
                 bus,
@@ -492,6 +517,7 @@ impl Thermal {
     fn rpm(&mut self) -> (u16, Option<u16>) {
         match self {
             Thermal::Emc2101(t) => (t.fan_rpm().unwrap_or(0), None),
+            Thermal::Nano([a, b]) => (a.fan_rpm().unwrap_or(0), Some(b.fan_rpm().unwrap_or(0))),
             Thermal::Nerd { fans, .. } => (
                 fans.rpm(Fan::Two).unwrap_or(0),
                 Some(fans.rpm(Fan::One).unwrap_or(0)),
@@ -501,7 +527,7 @@ impl Thermal {
     /// PWM polarity of the Nerd fan outputs; nothing on the EMC2101.
     fn set_polarity(&mut self, invert: bool) -> bool {
         match self {
-            Thermal::Emc2101(_) => true,
+            Thermal::Emc2101(_) | Thermal::Nano(_) => true,
             Thermal::Nerd { fans, .. } => fans.set_polarity(invert).is_ok(),
         }
     }
@@ -509,6 +535,10 @@ impl Thermal {
     fn set_fans(&mut self, chip: u8, vr: u8) -> bool {
         match self {
             Thermal::Emc2101(t) => t.set_fan_percent(chip).is_ok(),
+            // Both fans follow the chip loop (ForgeOS drives one speed).
+            Thermal::Nano(sensors) => sensors
+                .iter_mut()
+                .fold(true, |ok, s| s.set_fan_percent(chip).is_ok() && ok),
             // NerdOS channel 0 (M2) is the chip's FAN2, channel 1 (M1) FAN1.
             Thermal::Nerd { fans, .. } => {
                 let a = fans.set_fan_percent(Fan::Two, chip).is_ok();
@@ -644,11 +674,36 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
             }
         }
     }
+    // The Nano's input-side monitor; without it the TPS546 numbers stand.
+    let flavor = match profile.vr {
+        Vr::Tps546Ina260 { ina260, .. } => {
+            let mut ina = Ina260::new(bus.clone(), ina260);
+            match ina.init() {
+                Ok(()) => {
+                    log::info!("board: INA260 up");
+                    Flavor::Ina260(ina)
+                }
+                Err(e) => {
+                    log::error!("board: INA260 init failed: {e:?}");
+                    update(|s| s.last_error = format!("ina260: {e:?}"));
+                    Flavor::Bitaxe
+                }
+            }
+        }
+        _ => Flavor::Bitaxe,
+    };
     let vr = vr
         .filter(|_| state().has_vr)
-        .map(|vr| Regulator::Tps546(vr, Flavor::Bitaxe));
+        .map(|vr| Regulator::Tps546(vr, flavor));
 
-    let thermal = emc2101_thermal(profile, &bus);
+    let thermal = match profile.thermal {
+        ThermalKind::DualEmc2101Mux {
+            config,
+            mux,
+            channels,
+        } => nano_thermal(config, mux, channels, &bus),
+        _ => emc2101_thermal(profile, &bus),
+    };
 
     // Regulator up: release the chain from reset with the init timing.
     std::thread::sleep(Duration::from_millis(u64::from(profile.reset_low_ms)));
@@ -808,6 +863,39 @@ fn emc2101_thermal(profile: &'static Profile, bus: &SharedI2c) -> Option<Thermal
         .map(Thermal::Emc2101)
 }
 
+/// The Nano's two EMC2101 behind the PCA9544, fans at full speed until
+/// the first reading; `None` unless both answer.
+fn nano_thermal(
+    config: warpaxe_board::emc2101::Config,
+    mux: u8,
+    channels: [u8; 2],
+    bus: &SharedI2c,
+) -> Option<Thermal> {
+    let mut sensors = channels.map(|ch| Emc2101::new(Muxed::new(bus.clone(), mux, ch), config));
+    for (i, s) in sensors.iter_mut().enumerate() {
+        match s.init().and_then(|()| s.set_fan_percent(100)) {
+            Ok(()) => log::info!(
+                "board: EMC2101 #{} up (mux channel {}), fan 100 %",
+                i + 1,
+                channels[i]
+            ),
+            Err(e) => {
+                log::error!(
+                    "board: EMC2101 #{} (mux channel {}) init failed: {e:?}",
+                    i + 1,
+                    channels[i]
+                );
+                update(|s| {
+                    s.has_thermal = false;
+                    s.last_error = format!("emc2101 #{}: {e:?}", i + 1);
+                });
+                return None;
+            }
+        }
+    }
+    Some(Thermal::Nano(sensors))
+}
+
 /// The Nerd carrier's sensors and fans: TMP1075 detection and the
 /// EMC2302 at full speed until the first reading.
 fn nerd_thermal(profile: &'static Profile, bus: &SharedI2c, invert_polarity: bool) -> Thermal {
@@ -933,6 +1021,11 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     let thermal = match profile.thermal {
         ThermalKind::Tmp1075Emc2302 => Some(nerd_thermal(profile, &bus, cfg.invertfanpolarity)),
         ThermalKind::Emc2101(_) => emc2101_thermal(profile, &bus),
+        ThermalKind::DualEmc2101Mux {
+            config,
+            mux,
+            channels,
+        } => nano_thermal(config, mux, channels, &bus),
         ThermalKind::None => None,
     };
     spawn_run(profile, Some(Regulator::Tps546(vr, Flavor::Nerd)), thermal);

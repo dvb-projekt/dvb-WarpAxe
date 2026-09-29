@@ -12,8 +12,8 @@
 //! and the chips stay unpowered until someone picks one.
 
 use crate::profile::{
-    Profile, BITAXE_GAMMA, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
-    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
+    Profile, BITAXE_GAMMA, BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA,
+    NERDQAXE_PLUSPLUS, NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
 };
 
 /// I²C addresses the probe asks for.
@@ -30,8 +30,14 @@ pub mod addr {
     pub const FXL6408: u8 = 0x43;
     /// SSD1306 OLED (Bitaxe).
     pub const SSD1306: u8 = 0x3C;
+    /// INA260 input power monitor (BitForge Nano).
+    pub const INA260: u8 = 0x40;
+    /// PCA9544 I²C mux in front of the Nano's two EMC2101.
+    pub const PCA9544: u8 = 0x70;
     /// Every address probed, in order.
-    pub const ALL: [u8; 6] = [TPS546, EMC2101, EMC2302, TMP1075, FXL6408, SSD1306];
+    pub const ALL: [u8; 8] = [
+        TPS546, EMC2101, EMC2302, TMP1075, FXL6408, SSD1306, INA260, PCA9544,
+    ];
 }
 
 /// Boards that have run WarpAxe; only these are taken without asking.
@@ -77,6 +83,17 @@ pub fn from_stock(
 /// Nerd pair (44/43).
 pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
     let has = |bus: &[u8], a: u8| bus.contains(&a);
+    // The Nano's EMC2101 hide behind the mux; the INA260 and the mux
+    // itself answer on the Bitaxe pins. Never run: one click.
+    if has(bitaxe_bus, addr::TPS546)
+        && has(bitaxe_bus, addr::PCA9544)
+        && has(bitaxe_bus, addr::INA260)
+    {
+        return Detection::Choose(
+            &[&BITFORGE_NANO],
+            "TPS546, INA260 and a PCA9544 mux on the Bitaxe bus",
+        );
+    }
     if has(bitaxe_bus, addr::TPS546) && has(bitaxe_bus, addr::EMC2101) {
         return Detection::Board(&BITAXE_GAMMA, "TPS546 and EMC2101 on the Bitaxe bus");
     }
@@ -123,6 +140,14 @@ pub fn detect(
     // Gamma); everything else comes back as a choice.
     if let Some(p) = from_stock(stock.0, stock.1, stock.2) {
         return Detection::Board(p, "board model stored by the stock firmware (AxeOS)");
+    }
+    // ForgeOS (and AxeOS before it) store board version 800 for the
+    // BitForge Nano; untested, so offered, not taken.
+    if stock.2.map(str::trim) == Some("800") {
+        return Detection::Choose(
+            &[&BITFORGE_NANO],
+            "board version 800 stored by the stock firmware",
+        );
     }
     from_bus(bitaxe_bus, nerd_bus)
 }
@@ -182,6 +207,22 @@ mod tests {
         let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075, addr::TPS546]);
         assert!(matches!(d, Detection::Choose([p], _) if p.name == NERDQAXE_PLUSPLUS_REV7.name));
         assert!(!TESTED.contains(&NERDQAXE_PLUSPLUS_REV7.name), "never run");
+    }
+
+    #[test]
+    fn a_nano_is_offered_from_its_board_version_or_its_bus_never_taken() {
+        let d = detect(
+            (Some("BITFORGE_NANO"), Some("BM1370"), Some("800")),
+            &[],
+            &[],
+        );
+        assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
+        let d = detect(NONE, &[addr::TPS546, addr::INA260, addr::PCA9544], &[]);
+        assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
+        assert!(!TESTED.contains(&BITFORGE_NANO.name));
+        // A Gamma still needs its EMC2101 on the root bus.
+        let d = detect(NONE, &[addr::TPS546, addr::EMC2101], &[]);
+        assert!(matches!(d, Detection::Board(p, _) if p.name == BITAXE_GAMMA.name));
     }
 
     #[test]

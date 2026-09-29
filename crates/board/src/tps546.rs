@@ -105,6 +105,32 @@ impl Config {
         pin_detect_override: None,
     };
 
+    /// BitForge Nano: one TPS546D24A on the 12 V rail feeding two BM1370
+    /// in parallel (schematic, WantClueTechnologies/BitForge-Nano). The
+    /// stock ForgeOS is closed, so the window is AxeOS's 12 V one for the
+    /// Gamma Turbo (VIN on 11 / off 10.5, UV warn 11, OV fault 14.8,
+    /// IOUT 50/55 A) on a single phase (no stacking, no compensation
+    /// block). To be read back against the running part on the first
+    /// start with the chips off.
+    pub const BITFORGE_NANO: Config = Config {
+        vin_on: 11.0,
+        vin_off: 10.5,
+        vin_uv_warn: 11.0,
+        vin_ov_fault: 14.8,
+        scale_loop: 0.25,
+        vout_min: 1.0,
+        vout_max: 3.0,
+        vout_command: 1.2,
+        iout_oc_warn: 50.0,
+        iout_oc_fault: 55.0,
+        frequency_khz: 650,
+        phase: 0x00,
+        stack_config: 0x0000,
+        sync_config: 0x10,
+        compensation: None,
+        pin_detect_override: Some(0xFFFF),
+    };
+
     /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
     /// `create_dual_config` (12 V input window, two phases stacked,
     /// multi-phase sync, the compensation block) with the output window

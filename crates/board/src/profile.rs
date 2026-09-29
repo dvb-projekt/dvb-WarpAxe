@@ -10,7 +10,7 @@
 //! into the firmware): the firmware then reports the board and refuses
 //! to power the chain, instead of guessing.
 
-use crate::{emc2101, tps53647, tps546};
+use crate::{emc2101, ina260, pca9544, tps53647, tps546};
 
 /// The mining chip on the board; the firmware picks the
 /// `warpaxe_core` chip profile from it.
@@ -29,6 +29,15 @@ pub enum Vr {
     None,
     /// TPS546D24A over PMBus, driver in [`crate::tps546`].
     Tps546(tps546::Config),
+    /// TPS546D24A plus an INA260 on the input rail that measures the
+    /// board's voltage, current and power (BitForge Nano). Driver in
+    /// [`crate::ina260`]; the regulator path is the Bitaxe one.
+    Tps546Ina260 {
+        /// The regulator window.
+        regulator: tps546::Config,
+        /// INA260 I²C address.
+        ina260: u8,
+    },
     /// TPS546D24A on a Nerd carrier with an LDO line to bring up first:
     /// the NerdQAxe++ Rev 7 (NerdOS `drivers/rev7/TPS546`) and the
     /// NerdAxe Gaia. An enable line, where there is one, stays high once
@@ -91,6 +100,17 @@ pub enum Thermal {
     /// controller: the Nerd multi-chip boards. TMP1075 driver:
     /// [`crate::tmp1075`], EMC2302 driver: [`crate::emc2302`].
     Tmp1075Emc2302,
+    /// Two EMC2101, one per chip with its own fan, behind a PCA9544 mux
+    /// (both at the EMC2101's fixed address): the BitForge Nano. Drivers:
+    /// [`crate::emc2101`] through [`crate::pca9544::Muxed`].
+    DualEmc2101Mux {
+        /// Diode tuning for both.
+        config: emc2101::Config,
+        /// Mux address.
+        mux: u8,
+        /// Mux channel of the first and the second sensor.
+        channels: [u8; 2],
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,7 +284,9 @@ impl Profile {
     /// The regulator this crate can drive, if the board has one.
     pub fn tps546(&self) -> Option<tps546::Config> {
         match self.vr {
-            Vr::Tps546(c) | Vr::Tps546Nerd { regulator: c, .. } => Some(c),
+            Vr::Tps546(c)
+            | Vr::Tps546Nerd { regulator: c, .. }
+            | Vr::Tps546Ina260 { regulator: c, .. } => Some(c),
             _ => None,
         }
     }
@@ -334,6 +356,62 @@ pub const BITAXE_GAMMA: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    display_flip: false,
+};
+
+/// BitForge Nano (board version 800 under ForgeOS): two BM1370 in
+/// parallel on a 12 V carrier with the Bitaxe pin set (UART 17/18, reset
+/// GPIO1, I²C 47/48), one TPS546D24A, an INA260 on the input rail, two
+/// EMC2101 behind a PCA9544 mux (channels 2 and 3, one per chip, each
+/// driving its own fan), no display (schematic
+/// WantClueTechnologies/BitForge-Nano, CERN-OHL-S; ForgeOS itself is
+/// closed). Stock 525 MHz / 1150 mV, 60 W; the clock and voltage
+/// choices are WarpTune's vendor table for the board (425/1000,
+/// 525/1150, 625/1160, up to 700 MHz and 1200 mV). Profile only: never
+/// run under WarpAxe; power comes from the INA260, so no offset.
+pub const BITFORGE_NANO: Profile = Profile {
+    name: "bitforge-nano",
+    model: "BitForge Nano",
+    asic: Asic::Bm1370,
+    asic_count: 2,
+    uart_tx: 17,
+    uart_rx: 18,
+    asic_reset: Some(1),
+    reset_low_ms: 100,
+    reset_release_ms: 100,
+    i2c: Some(I2cPins {
+        sda: 47,
+        scl: 48,
+        hz: 100_000,
+    }),
+    vr: Vr::Tps546Ina260 {
+        regulator: tps546::Config::BITFORGE_NANO,
+        ina260: ina260::ADDR,
+    },
+    voltage_domains: 1,
+    thermal: Thermal::DualEmc2101Mux {
+        config: emc2101::Config::BM1370_DIODE,
+        mux: pca9544::ADDR,
+        channels: [2, 3],
+    },
+    display: Display::None,
+    default_frequency_mhz: 525,
+    default_core_mv: 1150,
+    init_core_mv: 0,
+    nominal_voltage_v: 12,
+    max_power_w: 60,
+    power_offset_w: 0.0,
+    throttle_temp_c: 75.0,
+    max_temp_c: 90.0,
+    vr_throttle_c: 105.0,
+    vr_max_c: 145.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 60.0,
+    frequency_options: &[425, 525, 625],
+    voltage_options: &[1000, 1150, 1160],
+    abs_max_frequency_mhz: 700,
+    abs_min_core_mv: 1000,
+    abs_max_core_mv: 1200,
     display_flip: false,
 };
 
@@ -694,6 +772,7 @@ pub const UNDETECTED: Profile = Profile {
 /// Every board a `boardModel` can name.
 pub const ALL: &[Profile] = &[
     BITAXE_GAMMA,
+    BITFORGE_NANO,
     T_DISPLAY_S3_DEVKIT,
     NERDAXE_GAMMA,
     NERDAXE_GAIA,
@@ -717,6 +796,33 @@ mod tests {
         for (i, a) in ALL.iter().enumerate() {
             assert!(ALL[i + 1..].iter().all(|b| b.name != a.name));
         }
+    }
+
+    #[test]
+    fn nano_has_the_bitaxe_pins_two_muxed_sensors_and_an_input_monitor() {
+        let p = &BITFORGE_NANO;
+        assert_eq!((p.uart_tx, p.uart_rx, p.asic_reset), (17, 18, Some(1)));
+        assert_eq!(p.i2c, BITAXE_GAMMA.i2c);
+        assert_eq!(p.asic_count, 2);
+        assert!(p.tps546().is_some());
+        assert!(matches!(p.vr, Vr::Tps546Ina260 { ina260: 0x40, .. }));
+        assert!(matches!(
+            p.thermal,
+            Thermal::DualEmc2101Mux {
+                mux: 0x70,
+                channels: [2, 3],
+                ..
+            }
+        ));
+        assert!(p.emc2101().is_none(), "the sensors sit behind the mux");
+        assert_eq!(p.display, Display::None);
+        assert_eq!(p.power_offset_w, 0.0, "the INA260 measures the input");
+        assert!(p.frequency_options.contains(&p.default_frequency_mhz));
+        assert!(p.voltage_options.contains(&p.default_core_mv));
+        let v = p.vout_for_core_mv(p.default_core_mv);
+        let vr = p.tps546().unwrap();
+        assert!(v >= vr.vout_min && v <= vr.vout_max);
+        assert!(!p.display_flip);
     }
 
     #[test]
