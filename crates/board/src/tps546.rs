@@ -54,9 +54,12 @@ pub struct Config {
     pub sync_config: u8,
     /// COMPENSATION_CONFIG block, only written when set.
     pub compensation: Option<[u8; 5]>,
-    /// PIN_DETECT_OVERRIDE, written when set (ESP-Miner: 0xFFFF, use
-    /// the pin-strapped values); NerdOS's NerdAxe driver leaves it.
+    /// PIN_DETECT_OVERRIDE, written when set (ESP-Miner: 0xFFFF; the
+    /// BitMaker NerdAxe driver: 0x0000).
     pub pin_detect_override: Option<u16>,
+    /// Write STACK_CONFIG, SYNC_CONFIG and PHASE at init (ESP-Miner
+    /// does; the BitMaker NerdAxe driver leaves the part's own values).
+    pub write_phase_config: bool,
 }
 
 impl Config {
@@ -79,13 +82,15 @@ impl Config {
         sync_config: 0x10,
         compensation: None,
         pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
     };
 
     /// NerdOS `drivers/nerdaxe/TPS546` as the NerdAxe Gaia sets it up
     /// (BitMaker fork, `nerdaxegaia.cpp` ae509770): the 5 V driver
     /// defaults with the 12 V input window (on 10.5, off 9.5, UV warn
     /// 10.5, OV fault 14), IOUT 28/33 A, 400 kHz after init, output
-    /// window 0.8–3 V, no PIN_DETECT_OVERRIDE write.
+    /// window 0.8–3 V, PIN_DETECT_OVERRIDE 0x0000, and no STACK / SYNC /
+    /// PHASE writes (`write_entire_config`, read again 2026-09-29).
     pub const NERDAXE_GAIA: Config = Config {
         vin_on: 10.5,
         vin_off: 9.5,
@@ -102,7 +107,8 @@ impl Config {
         stack_config: 0x0000,
         sync_config: 0x10,
         compensation: None,
-        pin_detect_override: None,
+        pin_detect_override: Some(0x0000),
+        write_phase_config: false,
     };
 
     /// BitForge Nano: one TPS546D24A on the 12 V rail feeding two BM1370
@@ -129,6 +135,7 @@ impl Config {
         sync_config: 0x10,
         compensation: None,
         pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
     };
 
     /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
@@ -153,6 +160,7 @@ impl Config {
         sync_config: 0xD0,
         compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
         pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
     };
 }
 
@@ -296,9 +304,11 @@ impl<I: I2c> Tps546<I> {
         self.vout_exp = pm::vout_mode_exponent(mode);
 
         let c = self.cfg;
-        self.write_word(pm::STACK_CONFIG, c.stack_config)?;
-        self.write_byte(pm::SYNC_CONFIG, c.sync_config)?;
-        self.write_byte(pm::PHASE, c.phase)?;
+        if c.write_phase_config {
+            self.write_word(pm::STACK_CONFIG, c.stack_config)?;
+            self.write_byte(pm::SYNC_CONFIG, c.sync_config)?;
+            self.write_byte(pm::PHASE, c.phase)?;
+        }
         self.write_word(pm::FREQUENCY_SWITCH, i32_to_linear11(c.frequency_khz))?;
         if let Some(comp) = c.compensation {
             let mut block = [0u8; 7];
@@ -533,9 +543,16 @@ mod tests {
         // VOUT_MIN 0.8 V × 512 = 409 = 0x0199; VOUT_MAX 3 V = 0x0600.
         assert_eq!(find(pm::VOUT_MIN), Some(vec![0x99, 0x01]));
         assert_eq!(find(pm::VOUT_MAX), Some(vec![0x00, 0x06]));
+        assert_eq!(
+            find(pm::PIN_DETECT_OVERRIDE),
+            Some(vec![0x00, 0x00]),
+            "BitMaker writes 0x0000"
+        );
         assert!(
-            find(pm::PIN_DETECT_OVERRIDE).is_none(),
-            "the NerdAxe driver leaves it"
+            find(pm::STACK_CONFIG).is_none()
+                && find(pm::SYNC_CONFIG).is_none()
+                && find(pm::PHASE).is_none(),
+            "BitMaker leaves the phase registers"
         );
         assert!(find(pm::COMPENSATION_CONFIG).is_none());
         // 0.94 V core is inside the window; 0.5 V is not.
