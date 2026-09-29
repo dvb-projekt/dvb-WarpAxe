@@ -59,6 +59,10 @@ pub struct BoardState {
     /// boards — what AxeOS and NerdOS each report as `current`.
     pub iout_ma: Option<f32>,
     pub power_w: Option<f32>,
+    /// The regulator's output current (IOUT), A, on every board.
+    pub core_current_a: Option<f32>,
+    /// Its over-current warning limit as written at init, A.
+    pub core_current_warn_a: Option<f32>,
     pub fan_pct: u8,
     pub fan_rpm: u16,
     /// The second fan output (Nerd boards: M1, on the regulator PID).
@@ -350,6 +354,21 @@ impl Regulator {
         match self {
             Regulator::Tps546(vr, _) => vr.vout().ok(),
             Regulator::Tps5364x { vr, .. } => vr.vout().ok(),
+        }
+    }
+    /// Output current, A: what the chips draw from the core rail.
+    fn core_current_a(&mut self) -> Option<f32> {
+        match self {
+            Regulator::Tps546(vr, _) => vr.iout().ok(),
+            Regulator::Tps5364x { vr, .. } => vr.iout().ok(),
+        }
+    }
+    /// The output over-current warning limit written at init, A (the
+    /// TPS5364x get one limit for warning and fault).
+    fn core_current_warn_a(&self) -> f32 {
+        match self {
+            Regulator::Tps546(vr, _) => vr.config().iout_oc_warn,
+            Regulator::Tps5364x { vr, .. } => f32::from(vr.config().ifault),
         }
     }
     /// The current the stock firmware reports: IOUT on the TPS546,
@@ -1089,6 +1108,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let mut vout = None;
             let mut current = None;
             let mut power = None;
+            let mut core_current = None;
+            let mut core_current_warn = None;
             let mut status = None;
             vr_temp = None;
             if let Some(vr) = vr.as_mut() {
@@ -1105,8 +1126,15 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 vin = plausible(vr.vin(), 0.0, 30.0, "vin");
                 vout = plausible(vr.vout(), 0.0, 2.0, "vout");
                 current = plausible(vr.current_a(), -1.0, 150.0, "iout");
+                core_current =
+                    plausible(vr.core_current_a(), -1.0, 300.0, "core current").map(|a| a.max(0.0));
+                core_current_warn = Some(vr.core_current_warn_a());
+                // Never negative: with the core off a current reads a hair
+                // below zero, and a tuner counts a missing power as a
+                // failed probe.
                 power = plausible(
-                    vr.power_w(vin, vout, current, profile.power_offset_w),
+                    vr.power_w(vin, vout, current, profile.power_offset_w)
+                        .map(|p| p.max(0.0)),
                     0.0,
                     500.0,
                     "power",
@@ -1269,6 +1297,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.vout_mv = vout.map(|v| v * 1000.0);
                 s.iout_ma = current.map(|a| a * 1000.0);
                 s.power_w = power;
+                s.core_current_a = core_current;
+                s.core_current_warn_a = core_current_warn;
                 s.fan_rpm = rpm.0;
                 s.fan2_rpm = rpm.1;
                 s.fan_auto = cfg.autofanspeed;

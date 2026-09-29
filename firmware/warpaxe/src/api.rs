@@ -60,7 +60,7 @@ pub fn system_info() -> serde_json::Value {
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w, "voltage": b.vin_mv, "current": b.iout_ma,
         "temp": b.temp_c, "vrTemp": b.vr_temp_c.unwrap_or(0),
-        "overheat_mode": u8::from(b.overheat), "overheatLatched": b.overheat_latched, "overheatTrips": b.overheat_trips, "overheatCause": b.overheat_cause, "power_fault": b.power_fault, "powerFaultCodes": b.power_fault_codes, "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
+        "overheat_mode": u8::from(b.overheat), "overheatLatched": b.overheat_latched, "overheatTrips": b.overheat_trips, "overheatCause": b.overheat_cause, "faultCause": fault_cause(&b), "coreCurrentA": b.core_current_a, "coreCurrentWarnA": b.core_current_warn_a, "power_fault": b.power_fault, "powerFaultCodes": b.power_fault_codes, "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
         "vrOverheatTemp": profile.vr_max_c.round() as u32, "boardError": b.last_error,
         "fanrpm2": b.fan2_rpm, "fanspeed2": b.fan2_pct, "vrPart": b.vr_part,
         "fans": nerd_fans(&cfg, profile, &b),
@@ -864,4 +864,20 @@ fn peer(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection>) ->
         }
         _ => "?".into(),
     }
+}
+
+/// Why the regulator stopped the core, while it is stopped for that
+/// (`overheatCause` "power"): "overcurrent", "overvoltage",
+/// "undervoltage" or "overtemp"; null otherwise.
+fn fault_cause(b: &board::BoardState) -> Option<&'static str> {
+    if b.overheat_cause != Some("power") {
+        return None;
+    }
+    b.power_fault_codes.iter().find_map(|c| match *c {
+        "iout_oc" => Some("overcurrent"),
+        "vout_ov" => Some("overvoltage"),
+        "vin_uv" => Some("undervoltage"),
+        "temp" => Some("overtemp"),
+        _ => None,
+    })
 }

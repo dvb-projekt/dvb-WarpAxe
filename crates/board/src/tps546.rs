@@ -196,6 +196,11 @@ impl<I: I2c> Tps546<I> {
         }
     }
 
+    /// The operating window this driver writes at init.
+    pub fn config(&self) -> Config {
+        self.cfg
+    }
+
     /// Give the bus back.
     pub fn release(self) -> I {
         self.bus
