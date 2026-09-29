@@ -1486,6 +1486,24 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
         }
     }
     log::info!("board: probe {sda}/{scl}: {found:02x?}");
+    // Something answers but no regulator where one is expected: list
+    // every address that acknowledges (still read-only), and ask 0x24 for
+    // its PMBus CAPABILITY, which a TPS546 answers even if it ignores a
+    // bare read. For boards whose regulator sits elsewhere (the BitForge
+    // Nano's TPS546 takes its address from NVM).
+    if !found.is_empty() && !found.contains(&warpaxe_board::detect::addr::TPS546) {
+        let all: Vec<u8> = (0x08u8..0x78)
+            .filter(|&a| {
+                let mut b = [0u8; 1];
+                bus.read(a, &mut b, 20).is_ok()
+            })
+            .collect();
+        let mut cap = [0u8; 1];
+        let pmbus = bus
+            .write_read(warpaxe_board::detect::addr::TPS546, &[0x19], &mut cap, 20)
+            .map(|()| cap[0]);
+        log::info!("board: scan {sda}/{scl}: {all:02x?}, 0x24 CAPABILITY {pmbus:02x?}");
+    }
     found
 }
 
