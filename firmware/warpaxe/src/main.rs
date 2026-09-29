@@ -46,8 +46,8 @@ fn set_step(s: &'static str) {
 /// about a second in, so it shows for four to five).
 const SPLASH_S: u64 = 6;
 static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565");
-/// The makers' wordmarks (docs/brand/nerd, used with shufps's
-/// permission): width, height, RGB565 + alpha.
+/// The makers' wordmarks (docs/brand/nerd, used with their authors' and
+/// the trade mark holder's consent): width, height, RGB565 + alpha.
 static MARK_NQPP: (i32, i32, &[u8]) = (
     138,
     30,
@@ -58,6 +58,18 @@ static MARK_OCTAXE: (i32, i32, &[u8]) = (
     34,
     include_bytes!("splash/mark_nerdoctaxe_143x34.rgb565a"),
 );
+static MARK_NERDAXE: (i32, i32, &[u8]) = (
+    143,
+    34,
+    include_bytes!("splash/mark_nerdaxe_143x34.rgb565a"),
+);
+static MARK_GAIA: (i32, i32, &[u8]) = (
+    108,
+    40,
+    include_bytes!("splash/mark_nerdaxe-gaia_108x40.rgb565a"),
+);
+static MARK_NERDQX: (i32, i32, &[u8]) =
+    (86, 38, include_bytes!("splash/mark_nerdqx_86x38.rgb565a"));
 static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
 /// One frame: the splash for the first seconds, then the screens.
@@ -92,6 +104,9 @@ fn draw_splash(d: &mut display::Display) {
             let mark = match profile.name {
                 "nerdqaxe-plusplus" | "nerdqaxe-plusplus-rev7" => Some(MARK_NQPP),
                 "nerdoctaxe-gamma" => Some(MARK_OCTAXE),
+                "nerdaxe-gamma" => Some(MARK_NERDAXE),
+                "nerdaxe-gaia" => Some(MARK_GAIA),
+                "q1370" | "q1373" => Some(MARK_NERDQX),
                 _ => None,
             };
             if let Some((w, h, data)) = mark {

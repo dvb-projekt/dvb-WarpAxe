@@ -96,8 +96,15 @@ def badge(width=66):
 
 
 # The makers' wordmarks for the Nerd boards' boot screen (docs/brand/nerd,
-# used with shufps's permission): black background → alpha.
-MARKS = [("nerdqaxe-plusplus", 30), ("nerdoctaxe", 34)]
+# used with their authors' and the trade mark holder's consent): black
+# background → alpha.
+MARKS = [
+    ("nerdqaxe-plusplus", 30),
+    ("nerdoctaxe", 34),
+    ("nerdaxe", 34),
+    ("nerdqx", 38),
+    ("nerdaxe-gaia", 40),
+]
 
 
 def maker_mark(name, height):
