@@ -12,8 +12,9 @@
 //! and the chips stay unpowered until someone picks one.
 
 use crate::profile::{
-    Profile, BITAXE_GAMMA, BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA,
-    NERDQAXE_PLUSPLUS, NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
+    Profile, BITAXE_GAMMA, BITAXE_GAMMA_DUO, BITAXE_GAMMA_HEX, BITAXE_GAMMA_TURBO, BITAXE_NAJA_DUO,
+    BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
+    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
 };
 
 /// I²C addresses the probe asks for.
@@ -24,6 +25,8 @@ pub mod addr {
     pub const EMC2101: u8 = 0x4C;
     /// EMC2302 dual fan controller (four- and eight-chip Nerd boards).
     pub const EMC2302: u8 = 0x2E;
+    /// EMC2103 (Gamma Turbo, Naja Duo, Gamma Hex): the same address.
+    pub const EMC2103: u8 = 0x2E;
     /// First TMP1075 temperature sensor (Nerd boards).
     pub const TMP1075: u8 = 0x48;
     /// FXL6408 GPIO expander (NerdQX Q1370/Q1373).
@@ -73,10 +76,24 @@ pub fn from_stock(
     if model.eq_ignore_ascii_case("gamma")
         && (asic.is_empty() || asic.eq_ignore_ascii_case("BM1370"))
         && (600..700).contains(&version)
+        && version != 650
     {
         return Some(&BITAXE_GAMMA);
     }
     None
+}
+
+/// Board versions the stock firmware stores for boards WarpAxe carries
+/// a profile for but has never run: offered, not taken.
+pub fn from_stock_choice(boardversion: Option<&str>) -> Option<&'static Profile> {
+    match boardversion?.trim() {
+        "650" => Some(&BITAXE_GAMMA_DUO),
+        "801" => Some(&BITAXE_GAMMA_TURBO),
+        "1201" => Some(&BITAXE_NAJA_DUO),
+        "1300" => Some(&BITAXE_GAMMA_HEX),
+        "800" => Some(&BITFORGE_NANO),
+        _ => None,
+    }
 }
 
 /// From the chips that answered on the Bitaxe pair (47/48) and on the
@@ -96,6 +113,13 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
     }
     if has(bitaxe_bus, addr::TPS546) && has(bitaxe_bus, addr::EMC2101) {
         return Detection::Board(&BITAXE_GAMMA, "TPS546 and EMC2101 on the Bitaxe bus");
+    }
+    // The Gamma Turbo: a TPS546 with an EMC2103 on the original pins.
+    if has(bitaxe_bus, addr::TPS546) && has(bitaxe_bus, addr::EMC2103) {
+        return Detection::Choose(
+            &[&BITAXE_GAMMA_TURBO],
+            "TPS546 and EMC2103 on the Bitaxe bus",
+        );
     }
     if has(nerd_bus, addr::TPS546) && has(nerd_bus, addr::EMC2101) {
         // NerdAxe Gamma (BM1370, 5 V) and NerdAxe Gaia (BM1373, 12 V) look
@@ -120,11 +144,22 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
                 "EMC2302, TMP1075 and the FXL6408 expander",
             );
         }
+        // (the Bitaxe Color boards share this address with their EMC2103,
+        // but carry no TMP1075: see below)
         // NerdOS treats the NerdOctaxe as a NerdQAxe++ with more chips; the
         // regulator does not tell the variant. One click decides.
         return Detection::Choose(
             &[&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA],
             "EMC2302 and TMP1075 on the Nerd bus",
+        );
+    }
+    // The Bitaxe Color carriers put their I²C on the Nerd pins: TPS546
+    // and EMC2103, no TMP1075.
+    if has(nerd_bus, addr::TPS546) && has(nerd_bus, addr::EMC2103) && !has(nerd_bus, addr::TMP1075)
+    {
+        return Detection::Choose(
+            &[&BITAXE_NAJA_DUO, &BITAXE_GAMMA_HEX],
+            "TPS546 and EMC2103 on the Color pins",
         );
     }
     Detection::Choose(&[], "no known chips answered")
@@ -141,12 +176,18 @@ pub fn detect(
     if let Some(p) = from_stock(stock.0, stock.1, stock.2) {
         return Detection::Board(p, "board model stored by the stock firmware (AxeOS)");
     }
-    // ForgeOS (and AxeOS before it) store board version 800 for the
-    // BitForge Nano; untested, so offered, not taken.
-    if stock.2.map(str::trim) == Some("800") {
+    // Board versions of boards that have never run WarpAxe: offered,
+    // not taken.
+    if let Some(p) = from_stock_choice(stock.2) {
         return Detection::Choose(
-            &[&BITFORGE_NANO],
-            "board version 800 stored by the stock firmware",
+            core::slice::from_ref(match p.name {
+                "bitaxe-gamma-duo" => &&BITAXE_GAMMA_DUO,
+                "bitaxe-gamma-turbo" => &&BITAXE_GAMMA_TURBO,
+                "bitaxe-naja-duo" => &&BITAXE_NAJA_DUO,
+                "bitaxe-gamma-hex" => &&BITAXE_GAMMA_HEX,
+                _ => &&BITFORGE_NANO,
+            }),
+            "board version stored by the stock firmware",
         );
     }
     from_bus(bitaxe_bus, nerd_bus)
@@ -223,6 +264,35 @@ mod tests {
         // A Gamma still needs its EMC2101 on the root bus.
         let d = detect(NONE, &[addr::TPS546, addr::EMC2101], &[]);
         assert!(matches!(d, Detection::Board(p, _) if p.name == BITAXE_GAMMA.name));
+    }
+
+    #[test]
+    fn the_axeos_boards_are_offered_by_version_or_bus_never_taken() {
+        for (v, name) in [
+            ("650", "bitaxe-gamma-duo"),
+            ("801", "bitaxe-gamma-turbo"),
+            ("1201", "bitaxe-naja-duo"),
+            ("1300", "bitaxe-gamma-hex"),
+        ] {
+            let d = detect((Some("GammaDuo"), Some("BM1370"), Some(v)), &[], &[]);
+            assert!(
+                matches!(d, Detection::Choose([p], _) if p.name == name),
+                "{v}"
+            );
+            assert!(!TESTED.contains(&name));
+        }
+        // 650 lies inside the Gamma's 600 range but is the Duo.
+        let d = detect((Some("gamma"), Some("BM1370"), Some("650")), &[], &[]);
+        assert!(matches!(d, Detection::Choose([p], _) if p.name == "bitaxe-gamma-duo"));
+        let d = detect(NONE, &[addr::TPS546, addr::EMC2103], &[]);
+        assert!(matches!(d, Detection::Choose([p], _) if p.name == "bitaxe-gamma-turbo"));
+        let d = detect(NONE, &[], &[addr::TPS546, addr::EMC2103]);
+        assert!(
+            matches!(d, Detection::Choose([a, b], _) if a.name == "bitaxe-naja-duo" && b.name == "bitaxe-gamma-hex")
+        );
+        // A Nerd board with a TMP1075 next to the same address stays a Nerd board.
+        let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075]);
+        assert!(matches!(d, Detection::Choose([a, ..], _) if a.name == "nerdqaxe-plusplus"));
     }
 
     #[test]

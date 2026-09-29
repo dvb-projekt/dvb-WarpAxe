@@ -10,7 +10,7 @@
 //! into the firmware): the firmware then reports the board and refuses
 //! to power the chain, instead of guessing.
 
-use crate::{emc2101, ina260, pca9544, tps53647, tps546};
+use crate::{emc2101, emc2103, ina260, pca9544, tps53647, tps546};
 
 /// The mining chip on the board; the firmware picks the
 /// `warpaxe_core` chip profile from it.
@@ -88,7 +88,7 @@ pub struct VrAlt {
 }
 
 /// The chip temperature source and fan output.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Thermal {
     /// None known (the devkit).
     None,
@@ -100,6 +100,9 @@ pub enum Thermal {
     /// controller: the Nerd multi-chip boards. TMP1075 driver:
     /// [`crate::tmp1075`], EMC2302 driver: [`crate::emc2302`].
     Tmp1075Emc2302,
+    /// EMC2103 with two diode channels and one fan output: the Bitaxe
+    /// Gamma Turbo, Naja Duo and Gamma Hex. Driver in [`crate::emc2103`].
+    Emc2103(emc2103::Config),
     /// Two EMC2101, one per chip with its own fan, behind a PCA9544 mux
     /// (both at the EMC2101's fixed address): the BitForge Nano. Drivers:
     /// [`crate::emc2101`] through [`crate::pca9544::Muxed`].
@@ -223,6 +226,19 @@ pub struct Profile {
     /// upright in the case. XORed with the configured flip (Oliver,
     /// 2026-09-29: "the 180° turn concerns the whole Nerd series").
     pub display_flip: bool,
+    /// A GPIO that must enable the chips' power before the regulator
+    /// goes on (ESP-Miner `asic_enable`, Naja Duo and Gamma Hex).
+    pub asic_enable: Option<AsicEnable>,
+}
+
+/// The chip power-enable line: driven to `active_high` 20 ms before the
+/// regulator output goes on, to the other level when it goes off.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AsicEnable {
+    /// ESP GPIO.
+    pub pin: u8,
+    /// The level that enables.
+    pub active_high: bool,
 }
 
 /// Clock and voltage choices a board publishes, with its absolute limits
@@ -311,6 +327,14 @@ impl Profile {
         }
     }
 
+    /// The EMC2103 setup, if the board has one.
+    pub fn emc2103(&self) -> Option<emc2103::Config> {
+        match self.thermal {
+            Thermal::Emc2103(c) => Some(c),
+            _ => None,
+        }
+    }
+
     /// VOUT to command for a core voltage in mV.
     pub fn vout_for_core_mv(&self, core_mv: u16) -> f32 {
         f32::from(core_mv) / 1000.0 * f32::from(self.voltage_domains.max(1))
@@ -362,6 +386,113 @@ pub const BITAXE_GAMMA: Profile = Profile {
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
     display_flip: false,
+    asic_enable: None,
+};
+
+/// Bitaxe Gamma Duo (650): two BM1370 of the XP bin on the 5 V Gamma
+/// carrier (ESP-Miner `FAMILY_GAMMA_DUO`, `ASIC_BM1370XP`): original
+/// pins, TPS546 with the 5 V window, EMC2101 on one chip's diode,
+/// SSD1306. Stock 400 MHz / 1150 mV, clocks 350–410, 40 W, +5 W offset.
+/// Profile only: never run under WarpAxe.
+pub const BITAXE_GAMMA_DUO: Profile = Profile {
+    name: "bitaxe-gamma-duo",
+    model: "Bitaxe Gamma Duo",
+    asic_count: 2,
+    default_frequency_mhz: 400,
+    frequency_options: &[350, 375, 380, 400, 410],
+    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    abs_max_frequency_mhz: 410,
+    abs_min_core_mv: 1000,
+    abs_max_core_mv: 1250,
+    ..BITAXE_GAMMA
+};
+
+/// Bitaxe Gamma Turbo (801): two BM1370 on 12 V, two stacked TPS546
+/// (ESP-Miner `TPS546_CONFIG_GAMMA_TURBO`), EMC2103 with the chip on
+/// diode 2, SSD1306, original pins. Stock 525 MHz / 1150 mV, 60 W,
+/// +10 W offset. Profile only: never run under WarpAxe.
+pub const BITAXE_GAMMA_TURBO: Profile = Profile {
+    name: "bitaxe-gamma-turbo",
+    model: "Bitaxe Gamma Turbo",
+    asic_count: 2,
+    vr: Vr::Tps546(tps546::Config::GAMMA_TURBO),
+    thermal: Thermal::Emc2103(emc2103::Config::GAMMA_TURBO),
+    nominal_voltage_v: 12,
+    max_power_w: 60,
+    power_offset_w: 10.0,
+    frequency_options: &[400, 490, 525, 550, 600, 625, 690],
+    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    abs_max_frequency_mhz: 690,
+    abs_min_core_mv: 1000,
+    abs_max_core_mv: 1250,
+    ..BITAXE_GAMMA
+};
+
+/// The Bitaxe Color carriers (Naja Duo, Gamma Hex): I²C on 44/43 and
+/// the ST7789 over the same i80 pins as the LilyGO T-Display-S3
+/// (ESP-Miner `BITAXE_COLOR_PINS`, `ST7789_I80_PINS`), chip power
+/// enable on GPIO10 (`CONFIG_GPIO_ASIC_ENABLE`), chain reset GPIO1.
+const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
+    pin: 10,
+    active_high: true,
+});
+
+/// Bitaxe Naja Duo (1201): two BM1373 in two series voltage domains on
+/// 12 V, two stacked TPS546 (ESP-Miner `TPS546_CONFIG_NAJA_DUO`, VOUT =
+/// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
+/// Color pins. Stock 327 MHz / 1000 mV, 60 W. Profile only: never run
+/// under WarpAxe; the BM1373 chain path has run on the Gaia (one chip).
+pub const BITAXE_NAJA_DUO: Profile = Profile {
+    name: "bitaxe-naja-duo",
+    model: "Bitaxe Naja Duo",
+    asic: Asic::Bm1373,
+    asic_count: 2,
+    i2c: Some(NERD_I2C),
+    vr: Vr::Tps546(tps546::Config::NAJA_DUO),
+    voltage_domains: 2,
+    thermal: Thermal::Emc2103(emc2103::Config::NAJA_DUO),
+    display: Display::St7789I80,
+    default_frequency_mhz: 327,
+    default_core_mv: 1000,
+    nominal_voltage_v: 12,
+    max_power_w: 60,
+    power_offset_w: 0.0,
+    frequency_options: &[327, 350, 375, 380, 400, 410],
+    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    abs_max_frequency_mhz: 410,
+    abs_min_core_mv: 1000,
+    abs_max_core_mv: 1250,
+    asic_enable: COLOR_ENABLE,
+    ..BITAXE_GAMMA
+};
+
+/// Bitaxe Gamma Hex (1300): six BM1370 in two series voltage domains on
+/// 12 V, four stacked TPS546 (ESP-Miner `TPS546_CONFIG_GAMMA_HEX`),
+/// EMC2103 in direct PWM with the chip on diode 2, ST7789 display drawn
+/// rotated (`display_flip`), Color pins. Stock 690 MHz / 1200 mV, 180 W,
+/// +25 W offset. Profile only: never run under WarpAxe.
+pub const BITAXE_GAMMA_HEX: Profile = Profile {
+    name: "bitaxe-gamma-hex",
+    model: "Bitaxe Gamma Hex",
+    asic_count: 6,
+    i2c: Some(NERD_I2C),
+    vr: Vr::Tps546(tps546::Config::GAMMA_HEX),
+    voltage_domains: 2,
+    thermal: Thermal::Emc2103(emc2103::Config::GAMMA_HEX),
+    display: Display::St7789I80,
+    default_frequency_mhz: 690,
+    default_core_mv: 1200,
+    nominal_voltage_v: 12,
+    max_power_w: 180,
+    power_offset_w: 25.0,
+    frequency_options: &[400, 490, 525, 550, 600, 625, 690],
+    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    abs_max_frequency_mhz: 690,
+    abs_min_core_mv: 1000,
+    abs_max_core_mv: 1250,
+    display_flip: true,
+    asic_enable: COLOR_ENABLE,
+    ..BITAXE_GAMMA
 };
 
 /// BitForge Nano (board version 800 under ForgeOS): two BM1370 in
@@ -419,6 +550,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1200,
     display_flip: false,
+    asic_enable: None,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -458,6 +590,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
     display_flip: false,
+    asic_enable: None,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -511,6 +644,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
     display_flip: true,
+    asic_enable: None,
 };
 
 /// NerdAxe Gaia: one BM1373 on a 12 V carrier (BitMaker fork of NerdOS,
@@ -570,6 +704,7 @@ pub const NERDAXE_GAIA: Profile = Profile {
     // Seen upside down under WarpAxe with the imported flipscreen = 0
     // (2026-09-29), like the other Nerd carriers.
     display_flip: true,
+    asic_enable: None,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -621,6 +756,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     abs_min_core_mv: 1050,
     abs_max_core_mv: 1400,
     display_flip: true,
+    asic_enable: None,
 };
 
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
@@ -787,6 +923,10 @@ pub const UNDETECTED: Profile = Profile {
 /// Every board a `boardModel` can name.
 pub const ALL: &[Profile] = &[
     BITAXE_GAMMA,
+    BITAXE_GAMMA_DUO,
+    BITAXE_GAMMA_TURBO,
+    BITAXE_NAJA_DUO,
+    BITAXE_GAMMA_HEX,
     BITFORGE_NANO,
     T_DISPLAY_S3_DEVKIT,
     NERDAXE_GAMMA,
@@ -828,6 +968,45 @@ mod tests {
         assert_eq!(Profile::by_name("nerdaxe"), None);
         for (i, a) in ALL.iter().enumerate() {
             assert!(ALL[i + 1..].iter().all(|b| b.name != a.name));
+        }
+    }
+
+    #[test]
+    fn the_four_axeos_boards_carry_their_family_table() {
+        for p in [&BITAXE_GAMMA_DUO, &BITAXE_GAMMA_TURBO] {
+            assert_eq!((p.uart_tx, p.uart_rx, p.asic_reset), (17, 18, Some(1)));
+            assert_eq!(p.i2c, BITAXE_GAMMA.i2c, "{}", p.name);
+            assert_eq!(p.display, Display::Ssd1306 { addr: 0x3C });
+            assert!(p.asic_enable.is_none());
+        }
+        for p in [&BITAXE_NAJA_DUO, &BITAXE_GAMMA_HEX] {
+            assert_eq!(p.i2c, Some(NERD_I2C), "{}", p.name);
+            assert_eq!(p.display, Display::St7789I80);
+            assert_eq!(p.asic_enable, COLOR_ENABLE);
+            assert_eq!(p.voltage_domains, 2);
+            assert!(p.emc2103().is_some());
+            let vr = p.tps546().unwrap();
+            let v = p.vout_for_core_mv(p.default_core_mv);
+            assert!(v >= vr.vout_min && v <= vr.vout_max, "{} {v}", p.name);
+        }
+        assert_eq!(BITAXE_GAMMA_DUO.default_frequency_mhz, 400);
+        assert_eq!(BITAXE_GAMMA_DUO.tps546(), Some(tps546::Config::BITAXE_5V));
+        assert_eq!(BITAXE_GAMMA_TURBO.tps546().unwrap().stack_config, 0x0001);
+        assert_eq!(BITAXE_GAMMA_HEX.tps546().unwrap().stack_config, 0x0003);
+        assert_eq!(BITAXE_GAMMA_HEX.asic_count, 6);
+        assert_eq!(BITAXE_NAJA_DUO.asic, Asic::Bm1373);
+        for p in [
+            &BITAXE_GAMMA_DUO,
+            &BITAXE_GAMMA_TURBO,
+            &BITAXE_NAJA_DUO,
+            &BITAXE_GAMMA_HEX,
+        ] {
+            assert!(
+                p.frequency_options.contains(&p.default_frequency_mhz),
+                "{}",
+                p.name
+            );
+            assert!(p.voltage_options.contains(&p.default_core_mv), "{}", p.name);
         }
     }
 
@@ -888,8 +1067,9 @@ mod tests {
         // Every Nerd carrier draws rotated 180° as its base; the Bitaxe
         // and the bare devkit do not.
         for q in ALL {
-            let nerd = q.i2c == Some(NERD_I2C);
-            assert_eq!(q.display_flip, nerd, "{}", q.name);
+            let nerd = q.i2c == Some(NERD_I2C) && !q.name.starts_with("bitaxe-");
+            let hex = q.name == BITAXE_GAMMA_HEX.name;
+            assert_eq!(q.display_flip, nerd || hex, "{}", q.name);
         }
     }
 

@@ -21,6 +21,7 @@ use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::sys::{self, EspError};
 use serde::Serialize;
 use warpaxe_board::emc2101::Emc2101;
+use warpaxe_board::emc2103::Emc2103;
 use warpaxe_board::emc2302::{Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
@@ -108,6 +109,20 @@ static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
+/// The chip power-enable line of the Bitaxe Color boards, with the level
+/// that enables (ESP-Miner `asic_enable`).
+static ASIC_ENABLE: Mutex<Option<(Pin, bool)>> = Mutex::new(None);
+
+/// Drive the chip power-enable line, if the board has one; enabling
+/// waits the 20 ms ESP-Miner gives it before the regulator goes on.
+fn asic_power(on: bool) {
+    if let Some((pin, active_high)) = ASIC_ENABLE.lock().unwrap().as_ref() {
+        pin.set(if on { *active_high } else { !*active_high });
+        if on {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+}
 static PROFILE: Mutex<Option<&'static Profile>> = Mutex::new(None);
 
 pub fn state() -> BoardState {
@@ -499,6 +514,9 @@ impl Regulator {
 /// Chip temperature and fans, whichever the board carries.
 enum Thermal {
     Emc2101(Emc2101<SharedI2c>),
+    /// Gamma Turbo, Naja Duo, Gamma Hex: two diodes, one fan; the driver
+    /// knows which diode is the chip.
+    Emc2103(Emc2103<SharedI2c>),
     /// BitForge Nano: one EMC2101 per chip behind the PCA9544, each with
     /// its own fan; the chip temperature is the hotter of the two.
     Nano([Emc2101<Muxed<SharedI2c>>; 2]),
@@ -514,6 +532,7 @@ impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
+            Thermal::Emc2103(t) => t.chip_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Nano(sensors) => {
                 let mut best: Option<f32> = None;
                 let mut err = String::new();
@@ -539,6 +558,7 @@ impl Thermal {
     fn rpm(&mut self) -> (u16, Option<u16>) {
         match self {
             Thermal::Emc2101(t) => (t.fan_rpm().unwrap_or(0), None),
+            Thermal::Emc2103(t) => (t.fan_rpm().unwrap_or(0), None),
             Thermal::Nano([a, b]) => (a.fan_rpm().unwrap_or(0), Some(b.fan_rpm().unwrap_or(0))),
             Thermal::Nerd { fans, .. } => (
                 fans.rpm(Fan::Two).unwrap_or(0),
@@ -549,7 +569,7 @@ impl Thermal {
     /// PWM polarity of the Nerd fan outputs; nothing on the EMC2101.
     fn set_polarity(&mut self, invert: bool) -> bool {
         match self {
-            Thermal::Emc2101(_) | Thermal::Nano(_) => true,
+            Thermal::Emc2101(_) | Thermal::Emc2103(_) | Thermal::Nano(_) => true,
             Thermal::Nerd { fans, .. } => fans.set_polarity(invert).is_ok(),
         }
     }
@@ -557,6 +577,7 @@ impl Thermal {
     fn set_fans(&mut self, chip: u8, vr: u8) -> bool {
         match self {
             Thermal::Emc2101(t) => t.set_fan_percent(chip).is_ok(),
+            Thermal::Emc2103(t) => t.set_fan_percent(chip).is_ok(),
             // Both fans follow the chip loop (ForgeOS drives one speed).
             Thermal::Nano(sensors) => sensors
                 .iter_mut()
@@ -621,6 +642,14 @@ pub fn start() {
         let pin = Pin::Esp(p);
         pin.output(false); // held in reset until the regulator is up
         *RESET.lock().unwrap() = Some(pin);
+    }
+    if let Some(en) = profile.asic_enable {
+        // ESP-Miner `configure_asic_power_enable`: enabled before the
+        // regulator is set up, 20 ms to settle.
+        let pin = Pin::Esp(en.pin);
+        pin.output(en.active_high);
+        *ASIC_ENABLE.lock().unwrap() = Some((pin, en.active_high));
+        std::thread::sleep(Duration::from_millis(20));
     }
     let Some(bus) = i2c() else {
         return;
@@ -727,6 +756,7 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
             mux,
             channels,
         } => nano_thermal(config, mux, channels, &bus),
+        ThermalKind::Emc2103(config) => emc2103_thermal(config, &bus),
         _ => emc2101_thermal(profile, &bus),
     };
 
@@ -888,6 +918,26 @@ fn emc2101_thermal(profile: &'static Profile, bus: &SharedI2c) -> Option<Thermal
         .map(Thermal::Emc2101)
 }
 
+/// The EMC2103 of the Gamma Turbo / Naja Duo / Gamma Hex, fan at full
+/// speed until the first reading; `None` when it does not answer.
+fn emc2103_thermal(config: warpaxe_board::emc2103::Config, bus: &SharedI2c) -> Option<Thermal> {
+    let mut t = Emc2103::new(bus.clone(), config);
+    match t.init().and_then(|()| t.set_fan_percent(100)) {
+        Ok(()) => {
+            log::info!("board: EMC2103 up, fan 100 %");
+            Some(Thermal::Emc2103(t))
+        }
+        Err(e) => {
+            log::error!("board: EMC2103 init failed: {e:?}");
+            update(|s| {
+                s.has_thermal = false;
+                s.last_error = format!("emc2103: {e:?}");
+            });
+            None
+        }
+    }
+}
+
 /// The Nano's two EMC2101 behind the PCA9544, fans at full speed until
 /// the first reading; `None` unless both answer.
 fn nano_thermal(
@@ -1046,6 +1096,7 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     let thermal = match profile.thermal {
         ThermalKind::Tmp1075Emc2302 => Some(nerd_thermal(profile, &bus, cfg.invertfanpolarity)),
         ThermalKind::Emc2101(_) => emc2101_thermal(profile, &bus),
+        ThermalKind::Emc2103(config) => emc2103_thermal(config, &bus),
         ThermalKind::DualEmc2101Mux {
             config,
             mux,
@@ -1252,6 +1303,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if let Some(vr) = vr.as_mut() {
                     vr.off();
                 }
+                asic_power(false);
                 pf.disabled();
                 POWERED.store(false, Ordering::Relaxed);
                 if let Some(t) = thermal.as_mut() {
@@ -1326,6 +1378,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if let Some(vr) = vr.as_mut() {
                 vr.off();
             }
+            asic_power(false);
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
@@ -1334,6 +1387,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 Some(vr) => {
                     // Latched fault bits stay until cleared; a fault that
                     // is still there trips the guard again after the grace.
+                    asic_power(true);
                     vr.clear_faults();
                     match vr.on(profile.vout_for_core_mv(applied_mv)) {
                         Ok(()) => true,

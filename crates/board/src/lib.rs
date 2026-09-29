@@ -11,6 +11,7 @@
 
 pub mod detect;
 pub mod emc2101;
+pub mod emc2103;
 pub mod emc2302;
 pub mod fan;
 pub mod font;

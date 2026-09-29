@@ -148,6 +148,72 @@ impl Config {
         write_phase_config: true,
     };
 
+    /// ESP-Miner `TPS546_CONFIG_GAMMA_TURBO` (Bitaxe Gamma Turbo, 801):
+    /// two stacked TPS546 on 12 V, one voltage domain.
+    pub const GAMMA_TURBO: Config = Config {
+        vin_on: 11.0,
+        vin_off: 10.5,
+        vin_uv_warn: 11.0,
+        vin_ov_fault: 14.8,
+        scale_loop: 0.25,
+        vout_min: 1.0,
+        vout_max: 3.0,
+        vout_command: 1.2,
+        iout_oc_warn: 50.0,
+        iout_oc_fault: 55.0,
+        frequency_khz: 650,
+        phase: 0xFF,
+        stack_config: 0x0001,
+        sync_config: 0xD0,
+        compensation: Some([0x12, 0x34, 0x42, 0x21, 0x04]),
+        pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
+    };
+
+    /// ESP-Miner `TPS546_CONFIG_NAJA_DUO` (Bitaxe Naja Duo, 1201): two
+    /// stacked phases, two chip voltage domains in series (VOUT = 2 × core).
+    pub const NAJA_DUO: Config = Config {
+        vin_on: 11.0,
+        vin_off: 10.5,
+        vin_uv_warn: 11.0,
+        vin_ov_fault: 14.0,
+        scale_loop: 0.125,
+        vout_min: 1.8,
+        vout_max: 3.0,
+        vout_command: 2.2,
+        iout_oc_warn: 50.0,
+        iout_oc_fault: 55.0,
+        frequency_khz: 650,
+        phase: 0xFF,
+        stack_config: 0x0001,
+        sync_config: 0xD0,
+        compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
+        pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
+    };
+
+    /// ESP-Miner `TPS546_CONFIG_GAMMA_HEX` (Bitaxe Gamma Hex, 1300): four
+    /// stacked phases, two voltage domains.
+    pub const GAMMA_HEX: Config = Config {
+        vin_on: 11.0,
+        vin_off: 10.5,
+        vin_uv_warn: 11.0,
+        vin_ov_fault: 14.0,
+        scale_loop: 0.125,
+        vout_min: 2.0,
+        vout_max: 3.0,
+        vout_command: 2.4,
+        iout_oc_warn: 150.0,
+        iout_oc_fault: 160.0,
+        frequency_khz: 650,
+        phase: 0xFF,
+        stack_config: 0x0003,
+        sync_config: 0xD0,
+        compensation: Some([0x02, 0x64, 0x82, 0x11, 0x06]),
+        pin_detect_override: Some(0xFFFF),
+        write_phase_config: true,
+    };
+
     /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
     /// `create_dual_config` (12 V input window, two phases stacked,
     /// multi-phase sync, the compensation block) with the output window
