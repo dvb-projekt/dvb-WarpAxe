@@ -95,29 +95,6 @@ def badge(width=66):
     return width, h, bytes(out), mark
 
 
-# The makers' wordmarks for the Nerd boards' boot screen (docs/brand/nerd,
-# used with shufps's permission): black background → alpha.
-MARKS = [("nerdqaxe-plusplus", 30), ("nerdoctaxe", 34)]
-
-
-def maker_mark(name, height):
-    src = Image.open(ROOT / f"docs/brand/nerd/{name}-wordmark.png").convert("RGB")
-    w = round(src.width * height / src.height)
-    src = src.resize((w, height), Image.LANCZOS)
-    out, img = bytearray(), Image.new("RGBA", (w, height))
-    px = img.load()
-    for i, (r, g, b) in enumerate(src.get_flattened_data()):
-        a = max(r, g, b)
-        # The source's black is not quite black: keep its noise out.
-        a = 0 if a < 28 else a
-        # Un-premultiply so the edges keep their colour over any background.
-        rr, gg, bb = ((c * 255 // a) if a else 0 for c in (r, g, b))
-        v = ((rr >> 3) << 11) | ((gg >> 2) << 5) | (bb >> 3)
-        out += v.to_bytes(2, "big") + bytes([a])
-        px[i % w, i // w] = (rr, gg, bb, a)
-    return w, height, bytes(out), img
-
-
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     l, o = lcd(), oled()
@@ -126,12 +103,6 @@ def main():
     bw, bh, bdata, bimg = badge()
     (OUT / f"badge_{bw}x{bh}.rgb565a").write_bytes(bdata)
     print(f"badge {bw}x{bh}")
-    for name, height in MARKS:
-        mw, mh, mdata, _ = maker_mark(name, height)
-        for old in OUT.glob(f"mark_{name}_*.rgb565a"):
-            old.unlink()
-        (OUT / f"mark_{name}_{mw}x{mh}.rgb565a").write_bytes(mdata)
-        print(f"mark {name} {mw}x{mh}")
     if "--preview" in sys.argv:
         d = Path(sys.argv[sys.argv.index("--preview") + 1])
         l.resize((960, 510), Image.NEAREST).save(d / "splash-lcd.png")

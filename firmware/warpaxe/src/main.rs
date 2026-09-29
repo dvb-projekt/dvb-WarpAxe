@@ -46,18 +46,6 @@ fn set_step(s: &'static str) {
 /// about a second in, so it shows for four to five).
 const SPLASH_S: u64 = 6;
 static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565");
-/// The makers' wordmarks (docs/brand/nerd, used with shufps's
-/// permission): width, height, RGB565 + alpha.
-static MARK_NQPP: (i32, i32, &[u8]) = (
-    138,
-    30,
-    include_bytes!("splash/mark_nerdqaxe-plusplus_138x30.rgb565a"),
-);
-static MARK_OCTAXE: (i32, i32, &[u8]) = (
-    143,
-    34,
-    include_bytes!("splash/mark_nerdoctaxe_143x34.rgb565a"),
-);
 static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
 /// One frame: the splash for the first seconds, then the screens.
@@ -86,19 +74,8 @@ fn draw_splash(d: &mut display::Display) {
             } else {
                 PLASMA
             };
-            let mark = match profile.name {
-                "nerdqaxe-plusplus" | "nerdqaxe-plusplus-rev7" => Some(MARK_NQPP),
-                "nerdoctaxe-gamma" => Some(MARK_OCTAXE),
-                _ => None,
-            };
-            if let Some((w, h, data)) = mark {
-                // Centred where the model name would stand.
-                l.canvas()
-                    .sprite((WIDTH as i32 - w) / 2, 125 - h / 2, w, h, data);
-            } else {
-                let model = profile.model.to_ascii_uppercase();
-                l.text((WIDTH - text_width(&model, 2)) / 2, 122, 2, col, &model);
-            }
+            let model = profile.model.to_ascii_uppercase();
+            l.text((WIDTH - text_width(&model, 2)) / 2, 122, 2, col, &model);
             let line = format!("FIRMWARE {version}");
             l.text((WIDTH - text_width(&line, 1)) / 2, 148, 1, GREY, &line);
         }
