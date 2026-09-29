@@ -335,7 +335,11 @@ fn run(mut uart: ChipUart) {
                 let fresh = st.jobs_received != gate.seen_notify();
                 // A set job interval only ever brings work sooner than the
                 // chips' own nonce-space timeout.
-                let interval_ms = cfg_now.job_interval_ms;
+                let interval_ms = if cfg_now.job_interval_ms > 0 {
+                    cfg_now.job_interval_ms
+                } else {
+                    board::chip().job_interval_ms
+                };
                 let paced = interval_ms > 0
                     && last_work.is_some_and(|t| {
                         t.elapsed() >= Duration::from_millis(u64::from(interval_ms))

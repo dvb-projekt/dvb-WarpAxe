@@ -120,6 +120,12 @@ pub struct ChipProfile {
     /// `setMaxBaud`: 500 ms). `None` = before the ramp, right away
     /// (ESP-Miner's BM1370 order, proven on the Gamma).
     pub baud_switch_after_ramp_ms: Option<u32>,
+    /// Fresh work this often when the configuration sets no job interval;
+    /// 0 = only on a notify or when the nonce space runs out. NerdOS sends
+    /// every 1200 ms (NerdQAxe) / 1500 ms (Gaia); a BM1373 with its fixed
+    /// hash counting number re-found the same nonces on the Gaia without
+    /// it (87 % duplicates, 2026-09-29).
+    pub job_interval_ms: u16,
     /// Value for the UART register that raises the baud rate, and the
     /// host rate to switch to afterwards.
     pub fast_uart: ([u8; 4], u32),

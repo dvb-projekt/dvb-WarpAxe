@@ -125,6 +125,8 @@ pub const BM1373: ChipProfile = ChipProfile {
     // A Gaia (2026-09-29) answered the chip-id read but never hashed with
     // the switch before the ramp; NerdOS ramps at 115200 and switches last.
     baud_switch_after_ramp_ms: Some(500),
+    // NerdOS `m_asicJobIntervalMs` on the Gaia.
+    job_interval_ms: 1500,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
@@ -141,6 +143,8 @@ mod tests {
         assert_eq!(BM1373.count_window_ms, 1000);
         assert_eq!(crate::chip::bm1370::BM1370.count_window_ms, 500);
         assert_eq!(BM1373.baud_switch_after_ramp_ms, Some(500));
+        assert_eq!(BM1373.job_interval_ms, 1500);
+        assert_eq!(crate::chip::bm1370::BM1370.job_interval_ms, 0);
         assert_eq!(crate::chip::bm1370::BM1370.baud_switch_after_ramp_ms, None);
         // Version rolling is enabled by the driver after the ramp, not in
         // the lists: no enable-bit write before the count or after it.

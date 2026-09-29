@@ -361,7 +361,14 @@ impl Regulator {
     /// the regulator's input power on the Nerd boards (NerdOS).
     fn power_w(&mut self, vout: Option<f32>, current: Option<f32>, offset: f32) -> Option<f32> {
         match self {
-            Regulator::Tps546(_, _) => match (vout, current) {
+            Regulator::Tps546(_, Flavor::Bitaxe) => match (vout, current) {
+                (Some(v), Some(i)) => Some(v * i + offset),
+                _ => None,
+            },
+            // `current` is the input current here; the power is still
+            // VOUT × IOUT + offset (BitMaker `getPin`). Read as 7 W instead
+            // of 28 W on the Gaia before this.
+            Regulator::Tps546(vr, Flavor::Nerd) => match (vout, vr.iout().ok()) {
                 (Some(v), Some(i)) => Some(v * i + offset),
                 _ => None,
             },
