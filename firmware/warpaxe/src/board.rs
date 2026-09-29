@@ -1478,31 +1478,59 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
     ) else {
         return Vec::new();
     };
+    use warpaxe_board::pmbus as pm;
+    /// PMBus CAPABILITY (not used anywhere else).
+    const CAPABILITY: u8 = 0x19;
     let mut found = Vec::new();
+    let tps546 = warpaxe_board::detect::addr::TPS546;
     for a in warpaxe_board::detect::addr::ALL {
         let mut b = [0u8; 1];
-        if bus.read(a, &mut b, 20).is_ok() {
+        // A TPS546 may not acknowledge a bare read (the BitForge Nano's
+        // does not): ask it for its PMBus CAPABILITY instead.
+        let ok = if a == tps546 {
+            bus.write_read(a, &[CAPABILITY], &mut b, 20).is_ok()
+        } else {
+            bus.read(a, &mut b, 20).is_ok()
+        };
+        if ok {
             found.push(a);
         }
     }
     log::info!("board: probe {sda}/{scl}: {found:02x?}");
-    // Something answers but no regulator where one is expected: list
-    // every address that acknowledges (still read-only), and ask 0x24 for
-    // its PMBus CAPABILITY, which a TPS546 answers even if it ignores a
-    // bare read. For boards whose regulator sits elsewhere (the BitForge
-    // Nano's TPS546 takes its address from NVM).
-    if !found.is_empty() && !found.contains(&warpaxe_board::detect::addr::TPS546) {
-        let all: Vec<u8> = (0x08u8..0x78)
-            .filter(|&a| {
-                let mut b = [0u8; 1];
-                bus.read(a, &mut b, 20).is_ok()
-            })
-            .collect();
-        let mut cap = [0u8; 1];
-        let pmbus = bus
-            .write_read(warpaxe_board::detect::addr::TPS546, &[0x19], &mut cap, 20)
-            .map(|()| cap[0]);
-        log::info!("board: scan {sda}/{scl}: {all:02x?}, 0x24 CAPABILITY {pmbus:02x?}");
+    if found.contains(&tps546) {
+        // What the stock firmware left in the regulator (kept while the
+        // 12 V stays), before our init overwrites it. Read-only.
+        let mut out = String::new();
+        for (name, cmd, len) in [
+            ("OPERATION", pm::OPERATION, 1),
+            ("ON_OFF_CONFIG", pm::ON_OFF_CONFIG, 1),
+            ("PHASE", pm::PHASE, 1),
+            ("VOUT_COMMAND", pm::VOUT_COMMAND, 2),
+            ("VOUT_MAX", pm::VOUT_MAX, 2),
+            ("FREQUENCY_SWITCH", pm::FREQUENCY_SWITCH, 2),
+            ("VIN_ON", pm::VIN_ON, 2),
+            ("VIN_OFF", pm::VIN_OFF, 2),
+            ("VOUT_OV_FAULT", pm::VOUT_OV_FAULT_LIMIT, 2),
+            ("VOUT_UV_FAULT", pm::VOUT_UV_FAULT_LIMIT, 2),
+            ("IOUT_OC_FAULT", pm::IOUT_OC_FAULT_LIMIT, 2),
+            ("IOUT_OC_WARN", pm::IOUT_OC_WARN_LIMIT, 2),
+            ("OT_FAULT", pm::OT_FAULT_LIMIT, 2),
+            ("OT_WARN", pm::OT_WARN_LIMIT, 2),
+            ("VIN_OV_FAULT", pm::VIN_OV_FAULT_LIMIT, 2),
+            ("VIN_UV_WARN", pm::VIN_UV_WARN_LIMIT, 2),
+            ("SYNC_CONFIG", 0xE4, 1),
+            ("STACK_CONFIG", 0xEC, 2),
+            ("PIN_DETECT_OVERRIDE", 0xEE, 2),
+        ] {
+            let mut b = [0u8; 2];
+            let r = bus.write_read(tps546, &[cmd], &mut b[..len], 20);
+            match (r, len) {
+                (Ok(()), 1) => out += &format!(" {name}={:02x}", b[0]),
+                (Ok(()), _) => out += &format!(" {name}={:04x}", u16::from_le_bytes(b)),
+                (Err(_), _) => out += &format!(" {name}=?"),
+            }
+        }
+        log::info!("board: TPS546 as found:{out}");
     }
     found
 }
