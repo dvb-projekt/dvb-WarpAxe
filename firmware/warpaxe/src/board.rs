@@ -1499,8 +1499,9 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
     log::info!("board: probe {sda}/{scl}: {found:02x?}");
     if found.contains(&tps546) {
         // What the stock firmware left in the regulator (kept while the
-        // 12 V stays), before our init overwrites it. Read-only.
+        // 12 V stays), before our init overwrites it.
         let mut out = String::new();
+        let mut on = false;
         for (name, cmd, len) in [
             ("OPERATION", pm::OPERATION, 1),
             ("ON_OFF_CONFIG", pm::ON_OFF_CONFIG, 1),
@@ -1524,13 +1525,34 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
         ] {
             let mut b = [0u8; 2];
             let r = bus.write_read(tps546, &[cmd], &mut b[..len], 20);
+            if cmd == pm::OPERATION && r.is_ok() {
+                on = b[0] & 0x80 != 0;
+            }
             match (r, len) {
                 (Ok(()), 1) => out += &format!(" {name}={:02x}", b[0]),
                 (Ok(()), _) => out += &format!(" {name}={:04x}", u16::from_le_bytes(b)),
                 (Err(_), _) => out += &format!(" {name}=?"),
             }
+            // Short lines: the web log cuts long ones.
+            if out.len() > 60 {
+                log::info!("board: TPS546 as found:{out}");
+                out.clear();
+            }
         }
-        log::info!("board: TPS546 as found:{out}");
+        if !out.is_empty() {
+            log::info!("board: TPS546 as found:{out}");
+        }
+        // A stock firmware that was mining when the ESP restarted leaves
+        // the core rail on: the chips sit powered, with nothing watching
+        // their temperature until a board is chosen. Switch it off.
+        if on {
+            match bus.write(tps546, &[pm::OPERATION, 0x00], 20) {
+                Ok(()) => {
+                    log::warn!("board: the stock firmware left the core rail on: switched off")
+                }
+                Err(e) => log::error!("board: core rail left on, switching it off failed: {e}"),
+            }
+        }
     }
     found
 }
