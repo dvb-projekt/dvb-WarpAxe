@@ -386,8 +386,11 @@ impl Regulator {
             // board draws. BitMaker's VOUT × IOUT + 5 W read ~6 W high on
             // the Gaia (32 W against 26 W at 350 MHz), and VOUT × IIN read
             // 7 W.
+            // With the core off IIN reads a hair below zero: that is 0 W,
+            // not a missing reading (tuners count a missing one as a failed
+            // probe).
             Regulator::Tps546(_, Flavor::Nerd) => match (vin, current) {
-                (Some(v), Some(i)) => Some(v * i),
+                (Some(v), Some(i)) => Some((v * i).max(0.0)),
                 _ => None,
             },
             Regulator::Tps5364x { vr, .. } => vr.pin().ok(),
@@ -1314,6 +1317,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 std::thread::sleep(Duration::from_millis(500));
                 pf.enabled(t0.elapsed().as_secs() as u32);
                 POWERED.store(true, Ordering::Relaxed);
+                // Start the fans from full again, as at boot: the PID ran
+                // down to its minimum over cold chips while the core was
+                // off, and a Gaia restarted at 420 MHz then heated its
+                // regulator to 76 °C in 45 s at 25 % fan and tripped its
+                // over-current limit.
+                pid.reset(100.0, profile.fan_target_c);
+                pid_vr.reset(100.0, VR_FAN_TARGET_C);
                 log::warn!("board: core voltage back on, {applied_mv} mV");
             }
         }
@@ -1363,9 +1373,20 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 };
                 (chip, if cfg.link_fans { chip } else { vrf })
             };
-            // One fan output: the second value just mirrors the first.
+            // One fan output: the second value mirrors the first. On the
+            // NerdAxe boards that one fan also cools a regulator running
+            // near its current limit, so it follows whichever of chip and
+            // regulator needs more (the Bitaxe boards keep AxeOS's chip-only
+            // fan).
             let two = matches!(t, Thermal::Nerd { .. });
-            let want = if two { want } else { (want.0, want.0) };
+            let want = if two {
+                want
+            } else if profile.name.starts_with("nerdaxe") {
+                let one = want.0.max(want.1);
+                (one, one)
+            } else {
+                (want.0, want.0)
+            };
             if want != fans && t.set_fans(want.0, want.1) {
                 fans = want;
                 update(|s| {

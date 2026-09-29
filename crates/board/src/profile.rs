@@ -559,7 +559,9 @@ pub const NERDAXE_GAIA: Profile = Profile {
     vr_max_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 65.0,
-    job_interval_ms: 1500,
+    // BitMaker uses 1500 ms; under WarpAxe that made 87 % of the
+    // expected rate at 420 MHz and 500 ms made 102 % (pool, ±5 %).
+    job_interval_ms: 500,
     frequency_options: &[300, 320, 340, 350, 360, 380, 400, 420],
     voltage_options: &[900, 920, 940, 960],
     abs_max_frequency_mhz: 420,
@@ -808,7 +810,7 @@ mod tests {
             ("q1370", 500),
             ("q1373", 500),
             ("nerdaxe-gamma", 1500),
-            ("nerdaxe-gaia", 1500),
+            ("nerdaxe-gaia", 500),
             ("bitaxe-gamma", 0),
             ("bitforge-nano", 0),
         ] {
