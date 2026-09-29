@@ -10,9 +10,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-272%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-302%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.8-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.9-7B5CFF"></a>
 </p>
 
 ---
@@ -43,11 +43,12 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.8).** It mines 24/7 on one Bitaxe Gamma and one
-> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, and since 28 September
-> on one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator). Other boards have a
-> profile but have not run it — see [Supported boards](#supported-boards)
-> before you flash.
+> **Status: early (v0.1.9).** It mines 24/7 on one Bitaxe Gamma and one
+> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, since 28 September on
+> one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator) and since 29 September on
+> one NerdAxe Gaia and one BitForge Nano. Other boards have a profile but
+> have not run it — see [Supported boards](#supported-boards) before you
+> flash.
 
 ## Compared with the stock firmware
 
@@ -289,10 +290,10 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28 (the 4-phase TPS53647 variant has not run) |
-| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | profile only, not run yet |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run) |
+| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's 525 MHz / 1150 mV: about 2.2 TH/s at 43–45 W); offered on the first start, never taken on its own |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
-| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29 (on `main`, in the next release); at 350 MHz / 940 mV the pool counts 2.30 TH/s ± 5 %, as with its stock firmware; clock and voltage capped at 420 MHz / 970 mV |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit; clock and voltage capped at 420 MHz / 970 mV |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 
 Boards marked "profile only" have pins, regulator window and limits taken
