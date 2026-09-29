@@ -174,8 +174,11 @@ pub fn request_core_mv(mv: u16) {
     WANTED_MV.store(mv, Ordering::Relaxed);
 }
 
-/// The chain answered: drop from the bring-up voltage to the configured
-/// one (NerdOS sets the final voltage after the chain init).
+/// The chain init is over, answered or not: drop from the bring-up
+/// voltage to the configured one (NerdOS sets the final voltage after the
+/// chain init). Called on a failed init too — a chain that never answered
+/// must not sit at the bring-up voltage (1000 mV on a Gaia, above its
+/// 970 mV cap) while the miner retries.
 pub fn chain_ready() {
     let core = config::get().core_voltage;
     if profile().init_core_mv > core {

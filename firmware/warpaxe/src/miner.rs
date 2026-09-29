@@ -243,6 +243,7 @@ fn run(mut uart: ChipUart) {
                     }
                     Event::InitFailed(why) => {
                         log::warn!("miner: init failed: {why:?}");
+                        board::chain_ready();
                         update(|s| {
                             s.init_failures += 1;
                             s.last_error = format!("{why:?}");
