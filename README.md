@@ -291,6 +291,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28 (the 4-phase TPS53647 variant has not run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | profile only, not run yet; clock and voltage capped at 420 MHz / 970 mV |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 
 Boards marked "profile only" have pins, regulator window and limits taken

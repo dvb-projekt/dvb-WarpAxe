@@ -29,14 +29,16 @@ pub enum Vr {
     None,
     /// TPS546D24A over PMBus, driver in [`crate::tps546`].
     Tps546(tps546::Config),
-    /// TPS546D24A behind the Nerd carrier's enable and LDO lines: the
-    /// NerdQAxe++ Rev 7 (NerdOS `drivers/rev7/TPS546`). Enable stays high
-    /// once up; the output is switched by OPERATION like on the Bitaxe.
+    /// TPS546D24A on a Nerd carrier with an LDO line to bring up first:
+    /// the NerdQAxe++ Rev 7 (NerdOS `drivers/rev7/TPS546`) and the
+    /// NerdAxe Gaia. An enable line, where there is one, stays high once
+    /// up; the output is switched by OPERATION like on the Bitaxe.
     Tps546Nerd {
-        /// The regulator window (two stacked phases, 12 V in).
+        /// The regulator window.
         regulator: tps546::Config,
-        /// Regulator enable GPIO.
-        enable: u8,
+        /// Regulator enable GPIO, if the board has one (Rev 7: GPIO10;
+        /// the Gaia has none).
+        enable: Option<u8>,
         /// LDO enable GPIO (chip I/O rails).
         ldo_enable: Option<u8>,
     },
@@ -416,6 +418,59 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     abs_max_core_mv: 0,
 };
 
+/// NerdAxe Gaia: one BM1373 on a 12 V carrier (BitMaker fork of NerdOS,
+/// `nerdaxegaia.cpp` at ae509770, the firmware on the reference board).
+/// TPS546 with the 12 V window and 400 kHz ([`tps546::Config::NERDAXE_GAIA`]),
+/// LDO on GPIO12 up before the bus, EMC2101 on the chip diode with one
+/// fan (ideality 0x24, beta off, as on the BM1370), chain reset GPIO1,
+/// UART 17/18, I²C 44/43. Stock 350 MHz / 940 mV, brought up at
+/// 1000 mV, 40 W gauge with +5 W offset, fan target 65 °C and overheat
+/// 75 °C as the reference board runs (the code default is 60 °C).
+/// Clock and core voltage capped at 420 MHz / 970 mV: at 440 MHz /
+/// 970 mV the regulator dropped the core voltage without a fault flag
+/// (WarpTune, 2026-09), so the stock 440 MHz and 980–1040 mV options
+/// are not offered. Profile only: never run under WarpAxe; the BM1373
+/// chain path has only run in simulation.
+pub const NERDAXE_GAIA: Profile = Profile {
+    name: "nerdaxe-gaia",
+    model: "NerdAxe Gaia",
+    asic: Asic::Bm1373,
+    asic_count: 1,
+    uart_tx: 17,
+    uart_rx: 18,
+    asic_reset: Some(1),
+    // NerdOS: 250 + 100 ms in reset before the rail, 250 ms after.
+    reset_low_ms: 350,
+    reset_release_ms: 250,
+    i2c: Some(NERD_I2C),
+    vr: Vr::Tps546Nerd {
+        regulator: tps546::Config::NERDAXE_GAIA,
+        enable: None,
+        ldo_enable: Some(12),
+    },
+    voltage_domains: 1,
+    thermal: Thermal::Emc2101(emc2101::Config::BM1370_DIODE),
+    display: Display::St7789I80,
+    default_frequency_mhz: 350,
+    default_core_mv: 940,
+    init_core_mv: 1000,
+    nominal_voltage_v: 12,
+    max_power_w: 40,
+    power_offset_w: 5.0,
+    throttle_temp_c: 75.0,
+    max_temp_c: 75.0,
+    // NerdOS `m_vr_maxTemp = TPS546_THROTTLE_TEMP`.
+    vr_throttle_c: 105.0,
+    vr_max_c: 105.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 65.0,
+    frequency_options: &[300, 320, 340, 350, 360, 380, 400, 420],
+    voltage_options: &[900, 920, 940, 960],
+    abs_max_frequency_mhz: 420,
+    abs_min_core_mv: 800,
+    abs_max_core_mv: 970,
+};
+
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
 /// GPIO10, LDO GPIO13), TMP1075 + EMC2302, 600 MHz / 1150 mV, brought
 /// up at 1200 mV, 100 W.
@@ -475,7 +530,7 @@ pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
     model: "NerdQAxe++ Rev 7",
     vr: Vr::Tps546Nerd {
         regulator: tps546::Config::NERDQAXE_PLUSPLUS_REV7,
-        enable: 10,
+        enable: Some(10),
         ldo_enable: Some(13),
     },
     voltage_domains: 2,
@@ -628,6 +683,7 @@ pub const ALL: &[Profile] = &[
     BITAXE_GAMMA,
     T_DISPLAY_S3_DEVKIT,
     NERDAXE_GAMMA,
+    NERDAXE_GAIA,
     NERDQAXE_PLUSPLUS,
     NERDQAXE_PLUSPLUS_REV7,
     NERDOCTAXE_GAMMA,
@@ -651,6 +707,35 @@ mod tests {
     }
 
     #[test]
+    fn gaia_is_capped_where_the_regulator_gave_up() {
+        let p = &NERDAXE_GAIA;
+        assert_eq!(p.asic, Asic::Bm1373);
+        assert_eq!(p.asic_count, 1);
+        assert_eq!(p.nominal_voltage_v, 12);
+        assert_eq!(p.abs_max_frequency_mhz, 420);
+        assert_eq!(p.abs_max_core_mv, 970);
+        assert!(p.frequency_options.iter().all(|f| *f <= 420));
+        assert!(p.voltage_options.iter().all(|v| *v <= 970));
+        assert!(p.frequency_options.contains(&p.default_frequency_mhz));
+        assert!(p.voltage_options.contains(&p.default_core_mv));
+        // The bring-up voltage is NerdOS's, above the running cap on purpose.
+        assert_eq!(p.init_core_mv, 1000);
+        assert!(matches!(
+            p.vr,
+            Vr::Tps546Nerd {
+                enable: None,
+                ldo_enable: Some(12),
+                ..
+            }
+        ));
+        assert!(p.tps546().is_some());
+        assert!(p.emc2101().is_some());
+        let c = p.choices(false);
+        assert_eq!(c.frequency_options, p.frequency_options);
+        assert_eq!(c.abs_max_core_mv, 970);
+    }
+
+    #[test]
     fn core_voltage_scales_with_the_domains() {
         assert_eq!(BITAXE_GAMMA.vout_for_core_mv(1150), 1.15);
         assert_eq!(BITAXE_GAMMA.core_mv_for_vout(1.15), 1150);
@@ -664,7 +749,12 @@ mod tests {
 
     #[test]
     fn tps546_defaults_lie_inside_the_regulator_window() {
-        for p in [&BITAXE_GAMMA, &NERDAXE_GAMMA, &NERDQAXE_PLUSPLUS_REV7] {
+        for p in [
+            &BITAXE_GAMMA,
+            &NERDAXE_GAMMA,
+            &NERDAXE_GAIA,
+            &NERDQAXE_PLUSPLUS_REV7,
+        ] {
             let vr = p.tps546().unwrap();
             let v = p.vout_for_core_mv(p.default_core_mv);
             assert!(v >= vr.vout_min && v <= vr.vout_max, "{}", p.name);
@@ -742,9 +832,10 @@ mod tests {
         assert!(NERDAXE_GAMMA.emc2101().is_some());
         assert_eq!(Q1373.asic_reset, None, "reset sits on the expander");
         assert_eq!(Q1373.asic, Asic::Bm1373);
+        assert_eq!(NERDAXE_GAIA.asic, Asic::Bm1373);
         assert!(ALL
             .iter()
-            .filter(|p| p.name != "q1373")
+            .filter(|p| p.asic != Asic::Bm1373)
             .all(|p| p.asic == Asic::Bm1370));
     }
 

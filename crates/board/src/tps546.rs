@@ -54,6 +54,9 @@ pub struct Config {
     pub sync_config: u8,
     /// COMPENSATION_CONFIG block, only written when set.
     pub compensation: Option<[u8; 5]>,
+    /// PIN_DETECT_OVERRIDE, written when set (ESP-Miner: 0xFFFF, use
+    /// the pin-strapped values); NerdOS's NerdAxe driver leaves it.
+    pub pin_detect_override: Option<u16>,
 }
 
 impl Config {
@@ -75,6 +78,31 @@ impl Config {
         stack_config: 0x0000,
         sync_config: 0x10,
         compensation: None,
+        pin_detect_override: Some(0xFFFF),
+    };
+
+    /// NerdOS `drivers/nerdaxe/TPS546` as the NerdAxe Gaia sets it up
+    /// (BitMaker fork, `nerdaxegaia.cpp` ae509770): the 5 V driver
+    /// defaults with the 12 V input window (on 10.5, off 9.5, UV warn
+    /// 10.5, OV fault 14), IOUT 28/33 A, 400 kHz after init, output
+    /// window 0.8–3 V, no PIN_DETECT_OVERRIDE write.
+    pub const NERDAXE_GAIA: Config = Config {
+        vin_on: 10.5,
+        vin_off: 9.5,
+        vin_uv_warn: 10.5,
+        vin_ov_fault: 14.0,
+        scale_loop: 0.25,
+        vout_min: 0.8,
+        vout_max: 3.0,
+        vout_command: 1.2,
+        iout_oc_warn: 28.0,
+        iout_oc_fault: 33.0,
+        frequency_khz: 400,
+        phase: 0x00,
+        stack_config: 0x0000,
+        sync_config: 0x10,
+        compensation: None,
+        pin_detect_override: None,
     };
 
     /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
@@ -98,6 +126,7 @@ impl Config {
         stack_config: 0x0001,
         sync_config: 0xD0,
         compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
+        pin_detect_override: Some(0xFFFF),
     };
 }
 
@@ -109,11 +138,10 @@ const OT_FAULT_C: i32 = 145;
 const OT_FAULT_RESPONSE: u8 = 0xFF; // wait for cooling, retry
 const TON_RISE_MS: i32 = 3;
 const TON_MAX_FAULT_RESPONSE: u8 = 0x3B;
-const PIN_DETECT_OVERRIDE: u16 = 0xFFFF; // use pin values
-                                         // VOUT fault, warn and margin limits. The TPS546 takes them as ratios
-                                         // of VOUT_COMMAND (1.25 = 125 %), written in the VOUT_MODE format like a
-                                         // voltage; a limit written as absolute volts is out of range and the
-                                         // part NACKs it (found on a Gamma: 0x40 refused, readback 640 = 1.25).
+// VOUT fault, warn and margin limits. The TPS546 takes them as ratios
+// of VOUT_COMMAND (1.25 = 125 %), written in the VOUT_MODE format like a
+// voltage; a limit written as absolute volts is out of range and the
+// part NACKs it (found on a Gamma: 0x40 refused, readback 640 = 1.25).
 const OV_FAULT: f32 = 1.25;
 const OV_WARN: f32 = 1.16;
 const MARGIN_HIGH: f32 = 1.10;
@@ -272,7 +300,9 @@ impl<I: I2c> Tps546<I> {
         self.write_byte(pm::TON_MAX_FAULT_RESPONSE, TON_MAX_FAULT_RESPONSE)?;
         self.write_word(pm::TOFF_DELAY, 0)?;
         self.write_word(pm::TOFF_FALL, 0)?;
-        self.write_word(pm::PIN_DETECT_OVERRIDE, PIN_DETECT_OVERRIDE)?;
+        if let Some(v) = c.pin_detect_override {
+            self.write_word(pm::PIN_DETECT_OVERRIDE, v)?;
+        }
         self.read_word(pm::STATUS_WORD)
     }
 
@@ -443,6 +473,44 @@ mod tests {
         let mut vr = Tps546::new(Bus::sink(), Config::NERDQAXE_PLUSPLUS_REV7);
         assert_eq!(vr.set_vout(1.2), Err(Error::OutOfRange));
         assert!(vr.set_vout(2.4).is_ok());
+    }
+
+    #[test]
+    fn gaia_config_writes_the_12v_window_and_no_pin_detect_override() {
+        let bus = Bus::new(vec![
+            id_ok(),
+            Tx::Write(ADDR, vec![pm::OPERATION, 0x00]),
+            Tx::Write(ADDR, vec![pm::ON_OFF_CONFIG, 0x1B]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MODE], vec![0x17]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NERDAXE_GAIA);
+        vr.init().unwrap();
+        let log = vr.release().log;
+        let find = |cmd: u8| {
+            log.iter().find_map(|t| match t {
+                Tx::Write(_, b) if b[0] == cmd => Some(b[1..].to_vec()),
+                _ => None,
+            })
+        };
+        // VIN_ON 10.5 V = 672 · 2⁻⁶ = 0xD2A0; VIN_OV_FAULT 14 V = 896 · 2⁻⁶ = 0xD380.
+        assert_eq!(find(pm::VIN_ON), Some(vec![0xA0, 0xD2]));
+        assert_eq!(find(pm::VIN_UV_WARN_LIMIT), Some(vec![0xA0, 0xD2]));
+        assert_eq!(find(pm::VIN_OV_FAULT_LIMIT), Some(vec![0x80, 0xD3]));
+        // IOUT fault 33 A = 528 · 2⁻⁴ = 0xE210; 400 kHz = 0x0190.
+        assert_eq!(find(pm::IOUT_OC_FAULT_LIMIT), Some(vec![0x10, 0xE2]));
+        assert_eq!(find(pm::FREQUENCY_SWITCH), Some(vec![0x90, 0x01]));
+        // VOUT_MIN 0.8 V × 512 = 409 = 0x0199; VOUT_MAX 3 V = 0x0600.
+        assert_eq!(find(pm::VOUT_MIN), Some(vec![0x99, 0x01]));
+        assert_eq!(find(pm::VOUT_MAX), Some(vec![0x00, 0x06]));
+        assert!(
+            find(pm::PIN_DETECT_OVERRIDE).is_none(),
+            "the NerdAxe driver leaves it"
+        );
+        assert!(find(pm::COMPENSATION_CONFIG).is_none());
+        // 0.94 V core is inside the window; 0.5 V is not.
+        let mut vr = Tps546::new(Bus::sink(), Config::NERDAXE_GAIA);
+        assert!(vr.set_vout(0.94).is_ok());
+        assert_eq!(vr.set_vout(0.5), Err(Error::OutOfRange));
     }
 
     #[test]

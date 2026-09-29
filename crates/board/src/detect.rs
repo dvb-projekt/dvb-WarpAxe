@@ -12,7 +12,7 @@
 //! and the chips stay unpowered until someone picks one.
 
 use crate::profile::{
-    Profile, BITAXE_GAMMA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
+    Profile, BITAXE_GAMMA, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
     NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
 };
 
@@ -81,7 +81,12 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
         return Detection::Board(&BITAXE_GAMMA, "TPS546 and EMC2101 on the Bitaxe bus");
     }
     if has(nerd_bus, addr::TPS546) && has(nerd_bus, addr::EMC2101) {
-        return Detection::Choose(&[&NERDAXE_GAMMA], "TPS546 and EMC2101 on the Nerd bus");
+        // NerdAxe Gamma (BM1370, 5 V) and NerdAxe Gaia (BM1373, 12 V) look
+        // the same on the bus; one click decides, never automatic.
+        return Detection::Choose(
+            &[&NERDAXE_GAMMA, &NERDAXE_GAIA],
+            "TPS546 and EMC2101 on the Nerd bus",
+        );
     }
     if has(nerd_bus, addr::EMC2302) && has(nerd_bus, addr::TMP1075) {
         if has(nerd_bus, addr::TPS546) {
