@@ -112,25 +112,29 @@ impl Config {
     };
 
     /// BitForge Nano: one TPS546D24A on the 12 V rail feeding two BM1370
-    /// in parallel (schematic, WantClueTechnologies/BitForge-Nano). The
-    /// stock ForgeOS is closed, so the window is AxeOS's 12 V one for the
-    /// Gamma Turbo (VIN on 11 / off 10.5, UV warn 11, OV fault 14.8,
-    /// IOUT 50/55 A) on a single phase (no stacking, no compensation
-    /// block). The output ceiling is 2 V: ForgeOS's running part read
-    /// VOUT_MAX 0x0400 (first start on .44, 2026-09-29, with
-    /// VOUT_COMMAND 0x024C ≈ 1.148 V, ON_OFF_CONFIG 0x1F, PHASE 0).
-    /// The rest is still to be read back against the part's NVM.
+    /// in parallel (schematic, WantClueTechnologies/BitForge-Nano; the
+    /// sense lines go straight to the core rail, no external divider).
+    /// ForgeOS is closed; what it left in the running part on the first
+    /// start (2026-09-29, .44): VOUT_COMMAND 1.148 V, VOUT_MAX 2 V,
+    /// PHASE 0, ON_OFF_CONFIG 0x1F. The part's NVM after a power cycle:
+    /// IOUT OC warn 40 A / fault 52 A, VIN OV fault 21 V, VIN on/off
+    /// 2.75/2.5 V, 900 kHz, scale loop 0.5, OT 125/150 °C. Taken here:
+    /// the NVM's current limits, the Gaia's proven 12 V input window
+    /// (on 10.5 / off 9.5, UV warn 10.5, OV fault 14.8), ESP-Miner's
+    /// 650 kHz, scale loop 0.25 and 1–2 V window (proven on the same
+    /// part with direct sensing), our OT 105/145 °C and the shut-down OC
+    /// response.
     pub const BITFORGE_NANO: Config = Config {
-        vin_on: 11.0,
-        vin_off: 10.5,
-        vin_uv_warn: 11.0,
+        vin_on: 10.5,
+        vin_off: 9.5,
+        vin_uv_warn: 10.5,
         vin_ov_fault: 14.8,
         scale_loop: 0.25,
         vout_min: 1.0,
         vout_max: 2.0,
         vout_command: 1.2,
-        iout_oc_warn: 50.0,
-        iout_oc_fault: 55.0,
+        iout_oc_warn: 40.0,
+        iout_oc_fault: 52.0,
         frequency_khz: 650,
         phase: 0x00,
         stack_config: 0x0000,
