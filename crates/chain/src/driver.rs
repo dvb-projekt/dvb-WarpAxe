@@ -75,7 +75,7 @@ impl Config {
             expected_chips: 0,
             frequency_hz: p.stock.0,
             difficulty: p.default_difficulty,
-            count_window_us: 500_000,
+            count_window_us: u64::from(p.count_window_ms) * 1000,
             ramp_start_hz: 56_250_000,
             ramp_step_hz: 6_250_000,
             ramp_delay_us: 100_000,

@@ -122,6 +122,8 @@ pub const BM1373: ChipProfile = ChipProfile {
     pll: PllSpec::bm1370(),
     job_id_step: 24,
     hcn_errata: 0,
+    // Never seen a reply yet: the full second the reference drivers allow.
+    count_window_ms: 1000,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
@@ -132,6 +134,12 @@ pub const BM1373: ChipProfile = ChipProfile {
 mod tests {
     use super::*;
     use crate::chip::{render, Rendered};
+
+    #[test]
+    fn waits_a_full_second_for_chip_ids() {
+        assert_eq!(BM1373.count_window_ms, 1000);
+        assert_eq!(crate::chip::bm1370::BM1370.count_window_ms, 500);
+    }
     use crate::frame::{Group, Op};
 
     /// NerdOS `BM1373::init()` for four chips, as `send6` bytes

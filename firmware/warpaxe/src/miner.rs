@@ -125,7 +125,13 @@ fn run(mut uart: ChipUart) {
         // 115200 again, while the UART still ran at the fast rate of the
         // previous init (every restart after the first failed with
         // NoChips).
-        board::reset_chain(10, profile.reset_release_ms);
+        // A 10 ms pulse restarts a BM1370; a board brought up in NerdOS's
+        // order (the Gaia) holds it as long as its profile says (350 ms).
+        let pulse = match profile.vr {
+            warpaxe_board::Vr::Tps546Nerd { enable: None, .. } => profile.reset_low_ms.max(10),
+            _ => 10,
+        };
+        board::reset_chain(pulse, profile.reset_release_ms);
         if let Err(e) = Uart::set_baud(&mut uart, 115_200) {
             log::warn!("miner: uart back to 115200: {e:?}");
         }
@@ -242,11 +248,22 @@ fn run(mut uart: ChipUart) {
                         log::warn!("miner: expected {expected} chips, found {found}")
                     }
                     Event::InitFailed(why) => {
-                        log::warn!("miner: init failed: {why:?}");
+                        // What the UART saw meanwhile: nothing at all, garbage,
+                        // or frames that failed their CRC tell different stories.
+                        let d = chain.stats().decoder;
+                        log::warn!(
+                            "miner: init failed: {why:?} (rx frames {}, dropped bytes {}, crc failures {})",
+                            d.frames,
+                            d.dropped,
+                            d.crc_failures
+                        );
                         board::chain_ready();
                         update(|s| {
                             s.init_failures += 1;
-                            s.last_error = format!("{why:?}");
+                            s.last_error = format!(
+                                "{why:?} (rx frames {}, dropped {}, crc {})",
+                                d.frames, d.dropped, d.crc_failures
+                            );
                         });
                     }
                     Event::ChipSilent { index } => log::warn!("miner: chip {index} silent"),

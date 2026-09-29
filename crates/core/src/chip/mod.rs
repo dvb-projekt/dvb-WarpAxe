@@ -110,6 +110,10 @@ pub struct ChipProfile {
     pub job_id_step: u8,
     /// Margin subtracted from the hash counting number (2·134 on BM1370).
     pub hcn_errata: u32,
+    /// How long the driver collects chip-id replies after the read-all,
+    /// ms. ESP-Miner and NerdOS wait up to 1 s per reply; 500 ms has
+    /// always been enough for a BM1370 chain.
+    pub count_window_ms: u32,
     /// Value for the UART register that raises the baud rate, and the
     /// host rate to switch to afterwards.
     pub fast_uart: ([u8; 4], u32),

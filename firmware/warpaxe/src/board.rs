@@ -819,14 +819,18 @@ fn nerd_thermal(profile: &'static Profile, bus: &SharedI2c, invert_polarity: boo
     }
 }
 
-/// A TPS546 on a Nerd carrier: the NerdQAxe++ Rev 7 (NerdOS
-/// `NerdQaxePlus2::initAsics`: enable and LDO off, chain in reset;
-/// 250 ms; LDO on; 100 ms; enable on; 50 ms; init; the bring-up voltage;
-/// 500 ms; release reset; 250 ms) and the NerdAxe Gaia (same order
-/// without an enable line: LDO on, 100 ms, init, output off, then the
-/// bring-up voltage, 500 ms, reset released, 250 ms). An enable line
-/// stays high afterwards; OPERATION switches the output. Never run on
-/// hardware yet.
+/// A TPS546 on a Nerd carrier. With an enable line, the NerdQAxe++ Rev 7
+/// (NerdOS `NerdQaxePlus2::initAsics`: enable and LDO off, chain in
+/// reset; 250 ms; LDO on; 100 ms; enable on; 50 ms; init; the bring-up
+/// voltage; 500 ms; release reset; 250 ms). Without one, the NerdAxe
+/// Gaia (BitMaker `nerdaxegaia.cpp` initBoard + initAsics): the LDO
+/// comes up and is never cut ("the chip runs on the LDO alone during
+/// the self-test; cutting it left the chip unpowered and it failed to
+/// enumerate"), 100 ms, init with the output off, 500 ms, reset held
+/// low 350 ms more, the bring-up voltage, 500 ms, reset released,
+/// 250 ms. An enable line stays high afterwards; OPERATION switches the
+/// output. First Gaia run (2026-09-29) with the Rev 7 order ended in
+/// NoChips; this order is the reference firmware's.
 fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     let Vr::Tps546Nerd {
         regulator,
@@ -846,22 +850,31 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     };
     let en = enable.map(Pin::Esp);
     let ldo = ldo_enable.map(Pin::Esp);
-    if let Some(e) = &en {
-        if !e.output(false) {
-            return fail("regulator enable pin".into());
+    match &en {
+        Some(e) => {
+            if !e.output(false) {
+                return fail("regulator enable pin".into());
+            }
+            if let Some(l) = &ldo {
+                l.output(false);
+            }
+            std::thread::sleep(Duration::from_millis(250));
+            if let Some(l) = &ldo {
+                l.set(true);
+            }
+            std::thread::sleep(Duration::from_millis(100));
+            e.set(true);
+            std::thread::sleep(Duration::from_millis(50));
         }
-    }
-    if let Some(l) = &ldo {
-        l.output(false);
-    }
-    std::thread::sleep(Duration::from_millis(250));
-    if let Some(l) = &ldo {
-        l.set(true);
-    }
-    std::thread::sleep(Duration::from_millis(100));
-    if let Some(e) = &en {
-        e.set(true);
-        std::thread::sleep(Duration::from_millis(50));
+        None => {
+            // The LDO straight up, never pulsed low.
+            if let Some(l) = &ldo {
+                if !l.output(true) {
+                    return fail("ldo enable pin".into());
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
     }
 
     let mut vr = Tps546::new(bus.clone(), regulator);
@@ -884,6 +897,14 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
             return fail(format!("tps546 init at {cmd:#04x}: {e:?}"));
         }
     }
+    let mut release_ms = 250;
+    if en.is_none() {
+        // BitMaker initAsics: output off (init left it so), 500 ms, then
+        // the reset held low for the profile's time before the rail.
+        std::thread::sleep(Duration::from_millis(500));
+        std::thread::sleep(Duration::from_millis(u64::from(profile.reset_low_ms)));
+        release_ms = profile.reset_release_ms;
+    }
     let mv = profile.init_core_mv.max(cfg.core_voltage);
     if let Err(e) = vr.set_vout(profile.vout_for_core_mv(mv)) {
         if let Some(en) = &en {
@@ -893,7 +914,7 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     }
     log::info!("board: core {mv} mV");
     std::thread::sleep(Duration::from_millis(500));
-    reset_chain(0, 250);
+    reset_chain(0, release_ms);
 
     let thermal = match profile.thermal {
         ThermalKind::Tmp1075Emc2302 => Some(nerd_thermal(profile, &bus, cfg.invertfanpolarity)),
