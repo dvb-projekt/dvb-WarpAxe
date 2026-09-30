@@ -3,8 +3,9 @@
 </p>
 
 <p align="center">
-  <strong>Open-source Rust firmware for BM1370 Bitcoin miners</strong><br>
-  Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  <strong>Open-source Rust firmware for BM1370 and BM1373 Bitcoin miners</strong><br>
+  Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano<br>
+  <a href="#supported-boards">profiles for 7 more boards</a> · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
@@ -18,9 +19,10 @@
 ---
 
 dvb-WarpAxe is a from-scratch firmware for ESP32-S3 miners with BM1370
-ASICs, written in Rust. It replaces AxeOS (Bitaxe) and NerdOS (NerdQAxe)
-on the device and speaks their HTTP API, so dashboards, tuners and fleet
-tools that talk to a Bitaxe keep working — including
+and BM1373 ASICs, written in Rust. It replaces AxeOS (Bitaxe), NerdOS (the
+Nerd boards) and ForgeOS (BitForge Nano) on the device and speaks their
+HTTP API, so dashboards, tuners and fleet tools that talk to a Bitaxe keep
+working — including
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool), the
 clock-and-voltage regulator of dvb-WarpPool.
 
