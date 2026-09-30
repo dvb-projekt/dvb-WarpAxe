@@ -33,8 +33,18 @@ def call(host, path, method="GET", body=None, timeout=10, ctype="application/jso
     req = urllib.request.Request(f"http://{host}{path}", data=body, method=method)
     if body is not None:
         req.add_header("Content-Type", ctype)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        raw = r.read()
+    # A busy miner (right after a boot, or during an update check) can let
+    # a single GET time out; try reads three times before giving up.
+    tries = 3 if method == "GET" else 1
+    for n in range(tries):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                raw = r.read()
+            break
+        except (urllib.error.URLError, OSError):
+            if n == tries - 1:
+                raise
+            time.sleep(2)
     try:
         return json.loads(raw)
     except ValueError:
