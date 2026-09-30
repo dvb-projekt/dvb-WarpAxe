@@ -226,7 +226,9 @@ back at any time with `GET /api/v1/display/frame`.
   its share of the expected rate and the 1 h / 3 h history (hashrate as a
   two-minute average, temperature in steps of at least 0.5 °C, so counting
   noise does not fill the chart), then temperature, fan/power and pool
-  instruments; live log.
+  instruments; live log. Optional (*Settings → Dashboard*, off by default):
+  the hash counters per chip and domain, a weak domain marked in colour,
+  and the error rate.
 - **Coinbase payout** of every job, as AxeOS shows it: the share of a found
   block that goes to your address (green from 95 %, red below), the
   coinbase value and its outputs, over Stratum V1 and V2.
@@ -256,8 +258,10 @@ back at any time with `GET /api/v1/display/frame`.
   `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`,
   `temptarget` (the fan target, under ESP-Miner's name) so a tuner keeps
   its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
-  `faultCause` (why the regulator stopped) and `gitHash` (the commit the
-  image was built from).
+  `faultCause` (why the regulator stopped), `gitHash` (the commit the
+  image was built from), and AxeOS's `hashrateMonitor` (per chip the
+  hashrate from the chip's own counters, its four domains and the error
+  counter, read once a second) with `errorPercentage`.
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device

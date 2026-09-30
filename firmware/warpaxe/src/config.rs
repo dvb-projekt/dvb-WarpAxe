@@ -80,6 +80,10 @@ pub struct Config {
     /// its pool unless this is on.
     #[serde(rename = "btcPrice")]
     pub btc_price: bool,
+    /// Show the chips' hash counters (per chip and domain) on the web UI's
+    /// dashboard. Off by default; `hashrateMonitor` is in the API either way.
+    #[serde(rename = "showHashCounters")]
+    pub show_hash_counters: bool,
     /// Currency of that price (a key of mempool.space `/api/v1/prices`).
     #[serde(rename = "priceCurrency")]
     pub price_currency: String,
@@ -186,6 +190,7 @@ impl Default for Config {
             ntp_server: "pool.ntp.org".into(),
             timezone: "CET-1CEST,M3.5.0,M10.5.0/3".into(),
             btc_price: false,
+            show_hash_counters: false,
             price_currency: "EUR".into(),
             update_check: true,
             frequency: 525,
