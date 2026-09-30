@@ -261,6 +261,10 @@ back at any time with `GET /api/v1/display/frame`.
   pool and log pages, anti-aliased fonts (Space Grotesk, JetBrains Mono,
   Inter) pre-rendered at build time.
 - Bitaxe OLED: large hashrate, rotating values, info slides, share blink.
+- Boot screen: the WarpAxe logo, and on the colour-display boards the
+  maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
+  NerdAxe Gaia, Bitaxe Naja Duo and Gamma Hex), shown with the makers'
+  consent; the small-OLED Bitaxes show the model name instead.
 - Special screens for block found, overheat, chips off and firmware update;
   display language, time zone, screen timeout.
 - Optional BTC price and fee rates from mempool.space — **off by default**;
@@ -442,7 +446,17 @@ every test vector says where it came from. The Bitcoin whitepaper served by
 the firmware is Satoshi Nakamoto's `bitcoin.pdf` (SHA-256
 `b1674191…f553`).
 
+The makers' wordmarks on the boot screen come from the makers' own
+firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
+firmware themes, the Bitaxe wordmark is ESP-Miner's, unchanged. They are
+shown with the consent of solomining.de (trade mark holder for the Nerd
+names), shufps, Bitronics and skot (Bitaxe). Sources and each consent are
+in [docs/brand/nerd](docs/brand/nerd/README.md) and
+[docs/brand/bitaxe](docs/brand/bitaxe/README.md).
+
 ## License
 
 GPL-3.0-or-later (see [LICENSE](LICENSE)), for the reason above. The fonts
-in `tools/fonts` are under the SIL Open Font License.
+in `tools/fonts` are under the SIL Open Font License. The makers' names and
+wordmarks remain their trade marks; the licence does not grant their use
+(see Provenance).
