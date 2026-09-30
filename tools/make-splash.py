@@ -95,20 +95,25 @@ def badge(width=66):
     return width, h, bytes(out), mark
 
 
-# The makers' wordmarks for the Nerd boards' boot screen (docs/brand/nerd,
-# used with their authors' and the trade mark holder's consent): black
-# background → alpha.
+# The makers' wordmarks for the boot screen (docs/brand/nerd and
+# docs/brand/bitaxe, used with their authors' and the trade mark holders'
+# consent): black or transparent background → alpha.
 MARKS = [
-    ("nerdqaxe-plusplus", 30),
-    ("nerdoctaxe", 34),
-    ("nerdaxe", 34),
-    ("nerdqx", 38),
-    ("nerdaxe-gaia", 40),
+    ("nerd", "nerdqaxe-plusplus", 30),
+    ("nerd", "nerdoctaxe", 34),
+    ("nerd", "nerdaxe", 34),
+    ("nerd", "nerdqx", 38),
+    ("nerd", "nerdaxe-gaia", 40),
+    ("bitaxe", "bitaxe", 40),
 ]
 
 
-def maker_mark(name, height):
-    src = Image.open(ROOT / f"docs/brand/nerd/{name}-wordmark.png").convert("RGB")
+def maker_mark(folder, name, height):
+    raw = Image.open(ROOT / f"docs/brand/{folder}/{name}-wordmark.png").convert("RGBA")
+    # A transparent source goes onto black first, like the others.
+    src = Image.new("RGBA", raw.size, (0, 0, 0, 255))
+    src.alpha_composite(raw)
+    src = src.convert("RGB")
     w = round(src.width * height / src.height)
     src = src.resize((w, height), Image.LANCZOS)
     out, img = bytearray(), Image.new("RGBA", (w, height))
@@ -133,8 +138,8 @@ def main():
     bw, bh, bdata, bimg = badge()
     (OUT / f"badge_{bw}x{bh}.rgb565a").write_bytes(bdata)
     print(f"badge {bw}x{bh}")
-    for name, height in MARKS:
-        mw, mh, mdata, _ = maker_mark(name, height)
+    for folder, name, height in MARKS:
+        mw, mh, mdata, _ = maker_mark(folder, name, height)
         for old in OUT.glob(f"mark_{name}_*.rgb565a"):
             old.unlink()
         (OUT / f"mark_{name}_{mw}x{mh}.rgb565a").write_bytes(mdata)
