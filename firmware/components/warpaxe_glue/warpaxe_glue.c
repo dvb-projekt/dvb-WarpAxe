@@ -5,6 +5,7 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_core_dump.h"
+#include "esp_flash.h"
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -276,7 +277,8 @@ int wa_coredump_log(void)
         free(sum);
         return 0;
     }
-    ESP_LOGE(TAG, "CRASH task=%s cause=%lu pc=%08lx", sum->exc_task, (unsigned long) sum->ex_info.exc_cause, (unsigned long) sum->exc_pc);
+    // Short enough for a ring line: the PC must not be cut.
+    ESP_LOGE(TAG, "CRASH %s cause %lu pc %08lx", sum->exc_task, (unsigned long) sum->ex_info.exc_cause, (unsigned long) sum->exc_pc);
     ESP_LOGE(TAG, "CRASH vaddr=%08lx depth=%lu%s", (unsigned long) sum->ex_info.exc_vaddr, (unsigned long) sum->exc_bt_info.depth, sum->exc_bt_info.corrupted ? " CORRUPT" : "");
     for (uint32_t i = 0; i < sum->exc_bt_info.depth && i < 16; i += 3) {
         ESP_LOGE(TAG, "BT%lu %08lx %08lx %08lx", (unsigned long) i,
@@ -285,8 +287,30 @@ int wa_coredump_log(void)
                  (unsigned long) (i + 2 < sum->exc_bt_info.depth ? sum->exc_bt_info.bt[i + 2] : 0));
     }
     free(sum);
-    esp_core_dump_image_erase();
+    // The dump stays in flash for GET /api/v1/coredump until it is erased
+    // there or a new crash overwrites it.
     return 1;
+}
+
+int wa_coredump_image(uint32_t *addr, uint32_t *size)
+{
+    size_t a = 0, n = 0;
+    if (esp_core_dump_image_check() != ESP_OK || esp_core_dump_image_get(&a, &n) != ESP_OK) {
+        return 0;
+    }
+    *addr = (uint32_t) a;
+    *size = (uint32_t) n;
+    return 1;
+}
+
+int wa_coredump_read(uint32_t addr, void *buf, uint32_t n)
+{
+    return esp_flash_read(NULL, buf, addr, n) == ESP_OK;
+}
+
+void wa_coredump_erase(void)
+{
+    esp_core_dump_image_erase();
 }
 
 esp_err_t wa_usb_console_to_cdc(void)

@@ -238,7 +238,8 @@ back at any time with `GET /api/v1/display/frame`.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
-  list (`/api/v1/swarm`).
+  list (`/api/v1/swarm`), and the last crash's core dump
+  (`GET /api/v1/coredump`, an ELF for `espcoredump.py`; `DELETE` erases it).
 - States a tuner would otherwise have to guess from the power draw are in
   `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
   `overheatTrips` (stops in the last hour), `overheatCause` (hot, a lost

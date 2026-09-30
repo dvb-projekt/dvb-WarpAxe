@@ -54,10 +54,14 @@ pub fn last_run_crashed() -> bool {
 
 static LAST_CRASH: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
 
-/// Log the previous run's core-dump summary (task, cause, PC, backtrace)
-/// into the ring, keep it for the API and the display, and erase it.
-/// Returns true if there was one.
+/// If the previous run crashed: log its core-dump summary (task, cause,
+/// PC, backtrace) into the ring and keep it for the API and the display.
+/// The dump itself stays in flash for `/api/v1/coredump`, so after a clean
+/// restart it is not reported again. Returns true if there was one.
 pub fn log_core_dump() -> bool {
+    if !last_run_crashed() {
+        return false;
+    }
     let before = unsafe { tusb::wa_log_count() };
     let had = unsafe { tusb::wa_coredump_log() != 0 };
     if had {
@@ -72,6 +76,21 @@ pub fn log_core_dump() -> bool {
         *LAST_CRASH.lock().unwrap() = Some(lines.join(" | "));
     }
     had
+}
+
+/// Flash address and size of the stored core dump (ELF), if there is one.
+pub fn core_dump() -> Option<(u32, u32)> {
+    let (mut addr, mut size) = (0u32, 0u32);
+    (unsafe { tusb::wa_coredump_image(&mut addr, &mut size) } != 0).then_some((addr, size))
+}
+
+/// Read part of the stored core dump from flash.
+pub fn read_core_dump(addr: u32, buf: &mut [u8]) -> bool {
+    unsafe { tusb::wa_coredump_read(addr, buf.as_mut_ptr().cast(), buf.len() as u32) != 0 }
+}
+
+pub fn erase_core_dump() {
+    unsafe { tusb::wa_coredump_erase() };
 }
 
 /// The previous run's crash summary, if there was one.

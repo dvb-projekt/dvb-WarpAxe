@@ -341,6 +341,7 @@ pub fn v1_state() -> serde_json::Value {
         },
         "http_hits": diag::HTTP_HITS.load(Ordering::Relaxed),
         "last_crash": diag::last_crash(),
+        "core_dump_bytes": diag::core_dump().map(|(_, n)| n),
         "stratum": stratum::state(),
         "miner": miner::state(),
         "board": board::state(),
@@ -608,6 +609,48 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             }
             None => reply_json(req, 503, &json!({"error": "display off or not drawing"})),
         }
+    })?;
+
+    // The last crash's core dump (ELF) for espcoredump.py, read straight
+    // from flash in pieces; it stays until erased here or overwritten by
+    // the next crash. Runs on the HTTP task (internal stack), never on a
+    // PSRAM thread: flash reads switch the cache off.
+    server.fn_handler("/api/v1/coredump", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let Some((addr, size)) = diag::core_dump() else {
+            return reply_json(req, 404, &json!({"error": "no core dump stored"}));
+        };
+        let len = size.to_string();
+        let mut r = req.into_response(
+            200,
+            None,
+            &[
+                ("Content-Type", "application/octet-stream"),
+                ("Content-Length", &len),
+                (
+                    "Content-Disposition",
+                    "attachment; filename=\"warpaxe-coredump.elf\"",
+                ),
+            ],
+        )?;
+        let mut buf = vec![0u8; 4096];
+        let mut off = 0u32;
+        while off < size {
+            let n = (size - off).min(buf.len() as u32) as usize;
+            if !diag::read_core_dump(addr + off, &mut buf[..n]) {
+                log::warn!("coredump: flash read failed at {off}");
+                break;
+            }
+            r.write_all(&buf[..n])?;
+            off += n as u32;
+        }
+        Ok::<(), EspIOError>(())
+    })?;
+    server.fn_handler("/api/v1/coredump", Method::Delete, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        diag::erase_core_dump();
+        log::info!("coredump: erased");
+        reply_json(req, 200, &json!({"erased": true}))
     })?;
 
     // Online update from the project's releases.

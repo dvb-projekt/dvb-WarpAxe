@@ -48,10 +48,19 @@ void wa_log_push(const char *line);
 /// TinyUSB's debug printf, filtered to NCM/error lines, into the same ring.
 int wa_tu_printf(const char *fmt, ...);
 
-/// If the previous run crashed, log its core-dump summary (task, cause,
-/// PC, backtrace) through ESP_LOGE so it lands in the ring, then erase it.
+/// Log the stored core dump's summary (task, cause, PC, backtrace)
+/// through ESP_LOGE so it lands in the ring. The dump stays in flash.
 /// Returns 1 if there was one.
 int wa_coredump_log(void);
+
+/// Flash address and size of the stored core dump (ELF); 0 if none.
+int wa_coredump_image(uint32_t *addr, uint32_t *size);
+
+/// Read n bytes of flash at addr; 1 on success.
+int wa_coredump_read(uint32_t addr, void *buf, uint32_t n);
+
+/// Erase the stored core dump.
+void wa_coredump_erase(void);
 
 #ifdef __cplusplus
 }
