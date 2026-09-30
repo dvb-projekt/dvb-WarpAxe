@@ -45,12 +45,12 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.10).** It mines 24/7 on one Bitaxe Gamma and one
-> NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, since 28 September on
-> one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator) and since 29 September on
-> one NerdAxe Gaia and one BitForge Nano. Other boards have a profile but
-> have not run it — see [Supported boards](#supported-boards) before you
-> flash.
+> **Status: early (v0.1.10).** It mines 24/7 under WarpTune on five
+> boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
+> 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
+> September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
+> more boards have a profile but have not run it — see
+> [Supported boards](#supported-boards) before you flash.
 
 ## Compared with the stock firmware
 
@@ -75,7 +75,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards | 3 tested (see below) |
+| Supported boards | ~20 board versions | 11 boards | 5 run, 7 more with a profile (see below) |
 
 Where the stock firmware is ahead: far more boards and years of use by a
 large community; AxeOS has a scoreboard, themes, the BAP accessory port
@@ -174,9 +174,10 @@ back at any time with `GET /api/v1/display/frame`.
 ## Features
 
 ### Mining
-- BM1370 chain driver: enumeration, baud switch, PLL solved (not looked up)
-  and ramped, work dispatch, nonce attribution, stale and duplicate
-  filtering, per-chip silence watchdog.
+- BM1370 and BM1373 chain driver: enumeration, baud switch, PLL solved
+  (not looked up) and ramped, work dispatch paced per board as its stock
+  firmware does, nonce attribution, stale and duplicate filtering, per-chip
+  silence watchdog.
 - **Stratum V2** per pool: Noise handshake (secp256k1 + EllSwift,
   ChaCha20-Poly1305), extended channel, the pool's certificate checked
   against its authority key (Base58Check, as pools publish it). "Require
@@ -194,13 +195,17 @@ back at any time with `GET /api/v1/display/frame`.
   block.
 
 ### Board
-- Regulators: TPS546 (Bitaxe Gamma), TPS53647/TPS53667 (Nerd boards).
-- Sensors and fans: EMC2101, EMC2302 (two outputs), TMP1075, FXL6408 GPIO
-  expander.
+- Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
+  Rev 7, BitForge Nano), TPS53647/TPS53667 (NerdQAxe++, NerdOctaxe,
+  NerdQX); the core current and the regulator's warning line in the API
+  where the regulator reports them.
+- Sensors and fans: EMC2101, EMC2103, EMC2302 (two outputs), TMP1075,
+  INA260 (BitForge Nano), FXL6408 GPIO expander.
 - Fan PID with ESP-Miner's gains, a second output that follows the regulator
   temperature — or, with *Link the fans*, runs at the chip fan's speed for
   cases where every fan cools the whole board (Y-cables) — minimum speed,
-  polarity.
+  polarity. Boards with one fan for chip and regulator (NerdAxe) run it for
+  whichever of the two needs more (regulator target 80 °C).
 - Overheat shutdown of the core voltage and a guard for a lost chip sensor
   (60 s blind = off). The chips start again on their own once chip and
   regulator are 10 °C below their limits (at least 60 s off; after a lost
@@ -248,8 +253,11 @@ back at any time with `GET /api/v1/display/frame`.
   sensor or a regulator fault), `overheatLatched`, `power_fault` (AxeOS's
   field and wording) with `powerFaultCodes`, `isUsingFallbackStratum`,
   `sharesRejectedReasons`, AxeOS's `coinbaseOutputs`,
-  `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`, and `temptarget` (the fan target, under
-  ESP-Miner's name) so a tuner keeps its own target above it.
+  `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`,
+  `temptarget` (the fan target, under ESP-Miner's name) so a tuner keeps
+  its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
+  `faultCause` (why the regulator stopped) and `gitHash` (the commit the
+  image was built from).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device
@@ -259,9 +267,10 @@ back at any time with `GET /api/v1/display/frame`.
   download-mode and overheat-reset request.
 
 ### Device display
-- NerdQAxe++ LCD: cockpit with the last hour's hashrate, Bitcoin, device,
-  pool and log pages, anti-aliased fonts (Space Grotesk, JetBrains Mono,
-  Inter) pre-rendered at build time.
+- 320×170 LCD (Nerd boards, Bitaxe Naja Duo and Gamma Hex): cockpit with
+  the last hour's hashrate, Bitcoin, device, pool and log pages,
+  anti-aliased fonts (Space Grotesk, JetBrains Mono, Inter) pre-rendered at
+  build time.
 - Bitaxe OLED: large hashrate, rotating values, info slides, share blink.
 - Boot screen: the WarpAxe logo, and on the colour-display boards the
   maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
@@ -298,13 +307,13 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run) |
-| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's 525 MHz / 1150 mV: about 2.2 TH/s at 43–45 W); offered on the first start, never taken on its own |
+| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); offered on the first start, never taken on its own |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile only, not run yet |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile only, not run yet |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
-| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit; clock and voltage capped at 420 MHz / 970 mV |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 400 MHz; clock and voltage capped at 420 MHz / 970 mV |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 
 Boards marked "profile only" have pins, regulator window and limits taken
@@ -320,7 +329,7 @@ up and updates itself:
    (16 MB) over USB; or keep the stock firmware at hand (the
    [Bitaxe](https://bitaxeorg.github.io/bitaxe-web-flasher/) and
    [NerdQAxe](https://shufps.github.io/nerdqaxe-web-flasher/) web flashers
-   put it back).
+   put it back; for the other boards, the maker's own flasher or image).
 2. Install WarpAxe from the browser with the **web flasher at
    [warppool.org/warpaxe](https://warppool.org/warpaxe/)** (Chrome or Edge
    on a computer). It writes bootloader, partition table and app and
@@ -341,10 +350,12 @@ up and updates itself:
    the previous firmware (not the fan PID gains, which belong to its own
    loop) and finds the **board**: from the model AxeOS stored at
    the factory, or from the chips that answer on the board's I²C bus
-   (read-only probes on pins that switch nothing). A Bitaxe Gamma starts
-   mining at once. For the Nerd boards the web UI asks once which board it
-   is — the NerdQAxe++ and the NerdOctaxe look alike on the bus — and the
-   chips stay off until you answer.
+   (read-only probes on pins that switch nothing). A board found for sure
+   (a Bitaxe Gamma, for instance) starts mining at once. Otherwise — the
+   NerdQAxe++ and the NerdOctaxe look alike on the bus, and a board that
+   has never run WarpAxe is only offered — the web UI asks once which board
+   it is, and the chips stay off until you answer. A core rail the stock
+   firmware left on is switched off meanwhile.
 4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
    network adapter). If there was no Wi-Fi to take over, or it cannot be
@@ -368,7 +379,8 @@ Host crates and tests:
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build -p warpaxe-core --target thumbv7em-none-eabihf   # proves no_std
+cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board \
+    --target thumbv7em-none-eabihf                             # proves no_std
 ```
 
 Firmware (Xtensa, ESP-IDF 5.3 via `esp-idf-svc`; toolchain from
