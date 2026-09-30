@@ -10,9 +10,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-302%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-308%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.9-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.10-7B5CFF"></a>
 </p>
 
 ---
@@ -43,7 +43,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.9).** It mines 24/7 on one Bitaxe Gamma and one
+> **Status: early (v0.1.10).** It mines 24/7 on one Bitaxe Gamma and one
 > NerdQAxe++ (Rev 6.1, on Stratum V2) under WarpTune, since 28 September on
 > one NerdOCTAXE-γ (Rev 3.1, 6-phase regulator) and since 29 September on
 > one NerdAxe Gaia and one BitForge Nano. Other boards have a profile but
