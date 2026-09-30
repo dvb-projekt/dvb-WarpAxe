@@ -74,7 +74,7 @@ pub fn system_info() -> serde_json::Value {
         "stratumSuggestedDifficulty": cfg.suggested_difficulty, "jobInterval": cfg.job_interval_ms,
         "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.max_temp_c.round() as u32 },
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
-        "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent,
+        "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
         "bestDiff": config::best_diff(), "bestSessionDiff": m.best_session_diff,
         "freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(),

@@ -21,6 +21,15 @@ pub const HASH_COUNT_UNIT: f64 = 4_294_967_296.0;
 pub const MAX_DOMAINS: usize = 4;
 /// Readings closer than this are ignored (reference: 1 s).
 const MIN_INTERVAL_US: u64 = 1_000_000;
+/// The slow window: a second rate over the last minute, for controllers
+/// that must not act on one second's reading (the reference has a
+/// `hashrate_1m` for the same reason).
+const WINDOW_US: u64 = 60_000_000;
+/// More counter steps per second than any chip can hash (4096 × 2^32 =
+/// 17.6 TH/s per chip): the counter restarted (chip reset, brown-out
+/// during a voltage step) or the reading was garbage. Such a delta is
+/// not a rate; the reading only re-syncs the baseline.
+const MAX_STEPS_PER_SECOND: u64 = 4096;
 
 /// One counter and the rate derived from its last two readings.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -31,6 +40,12 @@ pub struct Measurement {
     pub time_us: u64,
     /// GH/s from the last two readings; 0 until there are two.
     pub ghs: f32,
+    /// GH/s over the last full minute; 0 until a minute has passed.
+    pub ghs_1m: f32,
+    /// Counter value at the start of the running minute.
+    win_value: u32,
+    /// When the running minute started, µs; 0 = not started.
+    win_time_us: u64,
 }
 
 impl Measurement {
@@ -42,13 +57,46 @@ impl Measurement {
                 return;
             }
             let steps = value.wrapping_sub(self.value);
-            let hashes = f64::from(steps) * HASH_COUNT_UNIT;
-            self.ghs = (hashes / (dt as f64 / 1e6) / 1e9) as f32;
+            if !plausible(steps, dt) {
+                // Counter restarted or garbage: start over from here,
+                // keep the last rates.
+                self.value = value;
+                self.time_us = now_us;
+                self.win_value = value;
+                self.win_time_us = now_us;
+                return;
+            }
+            self.ghs = rate_ghs(steps, dt);
+            let wdt = now_us.saturating_sub(self.win_time_us);
+            if self.win_time_us != 0 && wdt >= WINDOW_US {
+                let wsteps = value.wrapping_sub(self.win_value);
+                if plausible(wsteps, wdt) {
+                    self.ghs_1m = rate_ghs(wsteps, wdt);
+                }
+                self.win_value = value;
+                self.win_time_us = now_us;
+            }
+        } else {
+            self.win_value = value;
+            self.win_time_us = now_us;
         }
         self.value = value;
         self.time_us = now_us;
     }
 }
+
+/// Counter steps over `dt_us` as GH/s.
+fn rate_ghs(steps: u32, dt_us: u64) -> f32 {
+    let hashes = f64::from(steps) * HASH_COUNT_UNIT;
+    (hashes / (dt_us as f64 / 1e6) / 1e9) as f32
+}
+
+/// A delta a chip could actually have hashed in `dt_us`.
+fn plausible(steps: u32, dt_us: u64) -> bool {
+    u64::from(steps) <= MAX_STEPS_PER_SECOND * dt_us.div_ceil(1_000_000)
+}
+
+impl Measurement {}
 
 /// One chip's counters.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
@@ -153,6 +201,27 @@ impl<const N: usize> HashrateMonitor<N> {
         self.chips().iter().map(|c| c.error.ghs).sum()
     }
 
+    /// Sum of the chips' total rates over the last minute, GH/s.
+    pub fn total_1m_ghs(&self) -> f32 {
+        self.chips().iter().map(|c| c.total.ghs_1m).sum()
+    }
+
+    /// Sum of the chips' error rates over the last minute, GH/s.
+    pub fn error_1m_ghs(&self) -> f32 {
+        self.chips().iter().map(|c| c.error.ghs_1m).sum()
+    }
+
+    /// Errors as a percentage of the total over the last minute: what a
+    /// controller should act on. 0 until the first minute is complete.
+    pub fn error_percent_1m(&self) -> f32 {
+        let t = self.total_1m_ghs();
+        if t > 0.0 {
+            self.error_1m_ghs() / t * 100.0
+        } else {
+            0.0
+        }
+    }
+
     /// Errors as a percentage of the total (reference `error_percentage`).
     pub fn error_percent(&self) -> f32 {
         let t = self.total_ghs();
@@ -186,6 +255,60 @@ mod tests {
         // Unknown register, chip beyond the count: not counters.
         assert!(!m.on_register(0, reg::TICKET_MASK, 1, 3_000_000));
         assert!(!m.on_register(2, reg::TOTAL_COUNT, 1, 3_000_000));
+    }
+
+    #[test]
+    fn a_restarted_counter_or_garbage_reading_is_not_a_rate() {
+        let mut m: HashrateMonitor<8> = HashrateMonitor::new(4, 1);
+        m.set_chip_count(8);
+        // Chip 3 reads normally: 300 steps a second.
+        m.on_register(3, reg::TOTAL_COUNT, 100_000, 1_000_000);
+        m.on_register(3, reg::ERROR_COUNT, 5_000, 1_000_000);
+        m.on_register(3, reg::TOTAL_COUNT, 100_300, 2_000_000);
+        m.on_register(3, reg::ERROR_COUNT, 5_003, 2_000_000);
+        let good = m.chips()[3].total.ghs;
+        // The chip restarts during a voltage step: both counters at 0.
+        m.on_register(3, reg::TOTAL_COUNT, 5, 3_000_000);
+        m.on_register(3, reg::ERROR_COUNT, 1, 3_000_000);
+        assert_eq!(m.chips()[3].total.ghs, good, "the wrap is not a rate");
+        assert!(m.error_percent() < 2.0, "{}", m.error_percent());
+        // From the restart on, deltas count again.
+        m.on_register(3, reg::TOTAL_COUNT, 305, 4_000_000);
+        m.on_register(3, reg::ERROR_COUNT, 4, 4_000_000);
+        assert!((m.chips()[3].total.ghs - good).abs() < 0.1);
+        assert!((m.chips()[3].error.ghs - 12.88).abs() < 0.1);
+        // A garbage total reading (bit flipped high) is skipped too.
+        m.on_register(3, reg::TOTAL_COUNT, 305 + 300 + 0x0100_0000, 5_000_000);
+        assert!((m.chips()[3].total.ghs - good).abs() < 0.1);
+    }
+
+    #[test]
+    fn the_minute_window_smooths_one_bad_second() {
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(4, 1);
+        m.set_chip_count(1);
+        let mut total = 0u32;
+        let mut err = 0u32;
+        for s in 0..=61u64 {
+            let now = 1_000_000 + s * 1_000_000;
+            m.on_register(0, reg::TOTAL_COUNT, total, now);
+            m.on_register(0, reg::ERROR_COUNT, err, now);
+            total += 300;
+            // One second with a burst of errors, otherwise 1 %.
+            err += if s == 30 { 150 } else { 3 };
+        }
+        // The instant value saw the burst at second 31 and forgot it.
+        assert!(m.error_percent() < 1.5, "{}", m.error_percent());
+        assert!(m.chips()[0].total.ghs_1m > 0.0, "a minute has passed");
+        let pct = m.error_percent_1m();
+        assert!(
+            pct > 1.5 && pct < 2.5,
+            "burst averaged into the minute: {pct}"
+        );
+        assert!(
+            (m.total_1m_ghs() - 1288.5).abs() < 1.0,
+            "{}",
+            m.total_1m_ghs()
+        );
     }
 
     #[test]

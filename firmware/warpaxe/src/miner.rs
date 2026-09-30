@@ -74,8 +74,10 @@ pub struct MinerState {
     /// per chip.
     pub hashrate_monitor: Vec<AsicMonitor>,
     /// Hash errors as a percentage of the chips' total (AxeOS
-    /// `error_percentage`).
+    /// `error_percentage`), from the last second's readings.
     pub error_percent: f32,
+    /// The same over the last full minute: what a controller acts on.
+    pub error_percent_1m: f32,
     pub blocks_found: u32,
     pub last_block: Option<(u64, u64)>,
 }
@@ -349,9 +351,11 @@ fn run(mut uart: ChipUart) {
                         })
                         .collect();
                     let pct = mon.error_percent();
+                    let pct_1m = mon.error_percent_1m();
                     update(|s| {
                         s.hashrate_monitor = asics;
                         s.error_percent = pct;
+                        s.error_percent_1m = pct_1m;
                     });
                 }
                 let st = stratum::state();
