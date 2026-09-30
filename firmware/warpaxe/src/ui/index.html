@@ -455,8 +455,8 @@ function dashboard() {
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), rejPct = tot ? i.sharesRejected / tot * 100 : 0, ofExp = th && exp ? th / exp * 100 : null;
   // Two fans: on the Nerd boards M2 follows the chips and M1 the
   // regulator; on the BitForge Nano both follow the chips.
-  const nano = (i.boardVersion || "").startsWith("bitforge"), two = i.fanrpm2 != null && !nano, vrTarget = two ? 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
-  const fans = nano ? fanrow(t("fan") + " 1", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow(t("fan") + " 2", t("fan_chips"), i.fanspeed2 ?? i.fanspeed, i.fanrpm2) : two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2, true) : fanrow(t("fan"), t("fan_chips"), i.fanspeed, i.fanrpm);
+  const nano = (i.boardVersion || "").startsWith("bitforge"), two = i.fanrpm2 != null && !nano, vrTarget = two || (i.boardVersion || "").startsWith("nerdaxe") ? i.vrTargetTemp || 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
+  const fans = nano ? fanrow(t("fan") + " 1", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow(t("fan") + " 2", t("fan_chips"), i.fanspeed2 ?? i.fanspeed, i.fanrpm2) : two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2, true) : fanrow(t("fan"), (i.boardVersion || "").startsWith("nerdaxe") ? t("fan_chips") + " · " + t("fan_vreg") : t("fan_chips"), i.fanspeed, i.fanrpm);
   // AxeOS's Bitaxe boards report the regulator's output current; the
   // Nerd boards and the Nano report what the board draws.
   const curNote = (i.boardVersion || "").startsWith("bitaxe") ? t("cur_out") : t("cur_in");

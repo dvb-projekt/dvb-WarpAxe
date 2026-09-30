@@ -141,12 +141,13 @@ fn nerd_fans(
     ])
 }
 
-/// The regulator temperature the second fan output holds, °C.
+/// The regulator temperature the fans hold, °C (the second fan output on
+/// the Nerd boards, the one fan with the chip on the NerdAxe boards).
 fn vr_target(cfg: &config::Config) -> u32 {
     if cfg.vr_target_temp > 0 {
         u32::from(cfg.vr_target_temp)
     } else {
-        board::VR_FAN_TARGET_C.round() as u32
+        board::vr_fan_target_c(board::profile()).round() as u32
     }
 }
 

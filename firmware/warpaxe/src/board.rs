@@ -41,6 +41,18 @@ use crate::config;
 /// The regulator-temperature target of the second fan channel on the
 /// Nerd boards (NerdOS `m_pidSettings[1].targetTemp`).
 pub const VR_FAN_TARGET_C: f32 = 65.0;
+
+/// The regulator temperature the fans hold on this board, °C: 65 on the
+/// Nerd boards' second fan (NerdOS), 80 on the NerdAxe boards, whose one
+/// fan also cools the chip — their regulator runs at 70-75 °C in normal
+/// mining and only shuts down at 105 °C, so 65 held the fan at 100 %.
+pub fn vr_fan_target_c(profile: &Profile) -> f32 {
+    if profile.name.starts_with("nerdaxe") {
+        80.0
+    } else {
+        VR_FAN_TARGET_C
+    }
+}
 /// Seconds without a chip temperature reading before the core voltage
 /// goes off: a chain hashing blind is treated like one overheating.
 /// NerdOS has no such guard (a failed sensor reads 0 °C there).
@@ -1123,7 +1135,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut pid = FanPid::new(f32::from(cfg.min_fan_speed));
     pid.reset(100.0, profile.fan_target_c);
     let mut pid_vr = FanPid::new(f32::from(cfg.min_fan_speed));
-    pid_vr.reset(100.0, VR_FAN_TARGET_C);
+    pid_vr.reset(100.0, vr_fan_target_c(profile));
     let mut applied_mv = cfg.core_voltage.max(profile.init_core_mv);
     let mut fans: (u8, u8) = (100, 100);
     let mut last_sample = Instant::now() - Duration::from_secs(1);
@@ -1410,7 +1422,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 // regulator to 76 °C in 45 s at 25 % fan and tripped its
                 // over-current limit.
                 pid.reset(100.0, profile.fan_target_c);
-                pid_vr.reset(100.0, VR_FAN_TARGET_C);
+                pid_vr.reset(100.0, vr_fan_target_c(profile));
                 log::warn!("board: core voltage back on, {applied_mv} mV");
             }
         }
@@ -1437,7 +1449,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let vr_target_c = if cfg.vr_target_temp > 0 {
                 f32::from(cfg.vr_target_temp)
             } else {
-                VR_FAN_TARGET_C
+                vr_fan_target_c(profile)
             };
             let want = if overheat() {
                 (100, 100)
