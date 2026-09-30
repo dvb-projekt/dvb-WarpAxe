@@ -450,7 +450,8 @@ The makers' wordmarks on the boot screen come from the makers' own
 firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
 firmware themes, the Bitaxe wordmark is ESP-Miner's, unchanged. They are
 shown with the consent of solomining.de (trade mark holder for the Nerd
-names), shufps, Bitronics and skot (Bitaxe). Sources and each consent are
+names), shufps, Bitronics (BitMaker, maker of the Gaia) and skot
+(Bitaxe). Sources and each consent are
 in [docs/brand/nerd](docs/brand/nerd/README.md) and
 [docs/brand/bitaxe](docs/brand/bitaxe/README.md).
 
