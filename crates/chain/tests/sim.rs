@@ -476,3 +476,78 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
         assert!(n > 50, "chip {i} yielded only {n} nonces in 10 s");
     }
 }
+
+/// The chips' hash counters read back the way ESP-Miner's hashrate
+/// monitor reads them: a second reading a second or more after the
+/// first gives each chip's rate, the domains add up to the total, the
+/// error counter follows the injected error rate, and a chip that does
+/// not answer keeps its old reading while the others carry on.
+#[test]
+fn hash_counters_read_back_like_the_reference_monitor() {
+    let mut b = Bench::new(4, Bench::config());
+    b.run_until_ready(20_000);
+    b.uart
+        .sim
+        .chip_mut(2)
+        .inject(Fault::HashErrors { per_mille: 20 });
+    b.mine_ms(300);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    let m = b.drv.monitor();
+    assert_eq!(m.chips().len(), 4);
+    let expected = b.drv.frequency_hz() as f64 * f64::from(BM1370.small_cores) / 1e9;
+    assert!(
+        expected > 100.0,
+        "{expected} GH/s at {} Hz",
+        b.drv.frequency_hz()
+    );
+    for (i, c) in m.chips().iter().enumerate() {
+        let ghs = f64::from(c.total.ghs);
+        assert!(
+            (ghs - expected).abs() / expected < 0.1,
+            "chip {i}: {ghs} GH/s, expected ~{expected}"
+        );
+        let domains: f64 = (0..4).map(|d| f64::from(m.domain_ghs(i, d))).sum();
+        assert!(
+            (domains - ghs).abs() / ghs < 0.05,
+            "chip {i}: domains {domains} vs total {ghs}"
+        );
+        if i == 2 {
+            assert!(c.error.value > 0, "errors counted");
+            let pct = f64::from(c.error.ghs) / ghs * 100.0;
+            assert!((pct - 2.0).abs() < 0.5, "chip 2 error rate {pct} %");
+        } else {
+            assert_eq!(c.error.value, 0, "chip {i} has no errors");
+        }
+    }
+    assert!((f64::from(m.total_ghs()) - 4.0 * expected).abs() / (4.0 * expected) < 0.1);
+    assert!(
+        m.error_percent() > 0.3 && m.error_percent() < 0.7,
+        "{}",
+        m.error_percent()
+    );
+    assert!(b.count(|e| matches!(e, Event::Register { .. })) >= 48);
+
+    // Chip 1 stops answering: its reading stays, the others move on,
+    // and nonces keep flowing.
+    let before = m.chips()[1].total.time_us;
+    let nonces_before = b.count(|e| matches!(e, Event::Nonce(_)));
+    b.uart
+        .sim
+        .chip_mut(1)
+        .inject(Fault::NoResponse { for_us: 10_000_000 });
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    let m = b.drv.monitor();
+    assert_eq!(
+        m.chips()[1].total.time_us,
+        before,
+        "no new reading from chip 1"
+    );
+    assert!(m.chips()[0].total.time_us > before, "chip 0 was read again");
+    assert!(b.count(|e| matches!(e, Event::Nonce(_))) > nonces_before);
+}

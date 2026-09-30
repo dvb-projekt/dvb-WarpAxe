@@ -152,6 +152,7 @@ pub const BM1370: ChipProfile = ChipProfile {
     cores: 128,
     small_cores: 2040,
     domains: 4,
+    domain_hashrate_scale: 1,
     default_difficulty: 256,
     stock: (525_000_000, 1150),
     frequency_options_mhz: &[400, 490, 525, 550, 600, 625, 690],

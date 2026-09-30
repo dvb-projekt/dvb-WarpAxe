@@ -96,6 +96,10 @@ pub struct ChipProfile {
     pub small_cores: u16,
     /// Voltage / clock domains per chip.
     pub domains: u8,
+    /// What a domain counter reading is multiplied by to give the
+    /// domain's hashrate: 1, except 2 on the BM1373 (ESP-Miner
+    /// `main/device_config.h`, `domain_hashrate_scale` 2.0).
+    pub domain_hashrate_scale: u8,
     /// Share difficulty the ticket mask is set to at init.
     pub default_difficulty: u32,
     /// Vendor stock operating point, (Hz, mV).

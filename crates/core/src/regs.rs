@@ -39,8 +39,15 @@ pub mod reg {
     pub const IO_DRIVER_STRENGTH: u8 = 0x58;
     /// PLL3 parameters; the init writes a `5A A5 5A A5` pattern here.
     pub const PLL3_PARAMETER: u8 = 0x68;
-    /// Per-domain nonce counters, read-only, 0x88..=0x8B.
+    /// Per-domain hash counters, read-only, 0x88..=0x8B; one step per
+    /// 2^32 hashes.
     pub const DOMAIN_0_COUNT: u8 = 0x88;
+    /// Domain 1.
+    pub const DOMAIN_1_COUNT: u8 = 0x89;
+    /// Domain 2.
+    pub const DOMAIN_2_COUNT: u8 = 0x8A;
+    /// Domain 3.
+    pub const DOMAIN_3_COUNT: u8 = 0x8B;
     /// Total nonce counter, read-only.
     pub const TOTAL_COUNT: u8 = 0x8C;
     /// Version rolling: `[0x90, 0x00, mask_hi, mask_lo]`.

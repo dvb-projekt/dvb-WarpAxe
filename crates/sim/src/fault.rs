@@ -53,4 +53,11 @@ pub enum Fault {
     /// baud rate. A firmware that switches its own UART anyway loses the
     /// chip.
     BaudSwitchIgnored,
+    /// A share of the chip's hashes are errors: the error counter
+    /// register advances at this rate relative to the total counter.
+    /// What a chip pushed past its stable clock reports.
+    HashErrors {
+        /// Errors per mille of the hashes.
+        per_mille: u16,
+    },
 }

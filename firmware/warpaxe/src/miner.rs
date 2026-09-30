@@ -15,6 +15,18 @@ use crate::uart::ChipUart;
 use crate::{board, config, diag, stratum};
 use warpaxe_chain::Uart;
 
+/// One chip in `hashrateMonitor.asics`, in AxeOS's shape.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct AsicMonitor {
+    /// GH/s from the chip's total counter.
+    pub total: f32,
+    /// The raw error counter value, as AxeOS reports it.
+    #[serde(rename = "errorCount")]
+    pub error_count: u32,
+    /// GH/s per domain, scaled as AxeOS reports them.
+    pub domains: Vec<f32>,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinerState {
     pub phase: String,
@@ -58,6 +70,12 @@ pub struct MinerState {
     pub best_session_diff: u64,
     /// Blocks found since boot (a nonce at or above the network
     /// difficulty), and the last one's height and uptime second.
+    /// The chips' own hash counters (AxeOS `hashrateMonitor`): one entry
+    /// per chip.
+    pub hashrate_monitor: Vec<AsicMonitor>,
+    /// Hash errors as a percentage of the chips' total (AxeOS
+    /// `error_percentage`).
+    pub error_percent: f32,
     pub blocks_found: u32,
     pub last_block: Option<(u64, u64)>,
 }
@@ -172,6 +190,7 @@ fn run(mut uart: ChipUart) {
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
         let mut last_work: Option<Instant> = None;
+        let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
 
         loop {
@@ -311,6 +330,30 @@ fn run(mut uart: ChipUart) {
             }
 
             if chain.accepting_work() {
+                // The chips' hash counters, once a second (the reference
+                // polls at 1 Hz); the replies fill `chain.monitor()`.
+                if last_counters.map_or(true, |t| t.elapsed() >= Duration::from_secs(1)) {
+                    last_counters = Some(Instant::now());
+                    if let Err(e) = chain.request_counters(&mut uart) {
+                        log::warn!("miner: counter read: {e}");
+                    }
+                    let mon = chain.monitor();
+                    let asics: Vec<AsicMonitor> = mon
+                        .chips()
+                        .iter()
+                        .enumerate()
+                        .map(|(i, c)| AsicMonitor {
+                            total: c.total.ghs,
+                            error_count: c.error.value,
+                            domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
+                        })
+                        .collect();
+                    let pct = mon.error_percent();
+                    update(|s| {
+                        s.hashrate_monitor = asics;
+                        s.error_percent = pct;
+                    });
+                }
                 let st = stratum::state();
                 let cfg_now = config::get();
                 let forced = cfg_now.asic_difficulty;

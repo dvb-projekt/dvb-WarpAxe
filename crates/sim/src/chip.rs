@@ -78,6 +78,10 @@ pub struct SimChip {
     silent_until_us: u64,
     last_nonce: Option<[u8; 8]>,
     stats: ChipStats,
+    /// Hashes done but not yet counted into the counter registers.
+    hash_acc: f64,
+    /// Error hashes not yet counted.
+    error_acc: f64,
 }
 
 impl SimChip {
@@ -109,6 +113,8 @@ impl SimChip {
             silent_until_us: 0,
             last_nonce: None,
             stats: ChipStats::default(),
+            hash_acc: 0.0,
+            error_acc: 0.0,
         }
     }
 
@@ -341,6 +347,7 @@ impl SimChip {
     /// Advance simulated time to `now_us`, emitting every nonce that
     /// falls due into `out`.
     pub(crate) fn advance_to(&mut self, now_us: u64, out: &mut Vec<u8>) {
+        self.count_hashes(now_us);
         while self.next_nonce_us <= now_us {
             self.now_us = self.next_nonce_us;
             if self.now_us > self.job_ends_us {
@@ -352,6 +359,56 @@ impl SimChip {
             self.schedule_next_nonce();
         }
         self.now_us = now_us;
+    }
+
+    /// Advance the hash counter registers (0x88..=0x8C, one step per
+    /// 2^32 hashes; 0x4C errors) for the time hashed since the last
+    /// call: the clock times the small cores while a job is active and
+    /// the chip is not hung. This is what the firmware's hashrate
+    /// monitor reads back.
+    fn count_hashes(&mut self, now_us: u64) {
+        let until = if self.job.is_some() {
+            now_us.min(self.job_ends_us)
+        } else {
+            0
+        };
+        if until <= self.now_us {
+            return;
+        }
+        let hz = self.frequency_hz();
+        let hung = self.has(|f| matches!(f, Fault::HangAbove { hz: h } if hz > u64::from(*h)));
+        if hz == 0 || hung {
+            return;
+        }
+        let dt_s = (until - self.now_us) as f64 / 1e6;
+        self.hash_acc += dt_s * hz as f64 * f64::from(self.profile.small_cores);
+        const UNIT: f64 = 4_294_967_296.0;
+        let steps = (self.hash_acc / UNIT).floor();
+        if steps < 1.0 {
+            return;
+        }
+        self.hash_acc -= steps * UNIT;
+        let steps = steps as u32;
+        let total = usize::from(reg::TOTAL_COUNT);
+        self.regs[total] = self.regs[total].wrapping_add(steps);
+        let domains = u32::from(self.profile.domains.clamp(1, 4));
+        for d in 0..domains {
+            let share = steps / domains + u32::from(d < steps % domains);
+            let r = usize::from(reg::DOMAIN_0_COUNT) + d as usize;
+            self.regs[r] = self.regs[r].wrapping_add(share);
+        }
+        if let Some(Fault::HashErrors { per_mille }) = self
+            .faults
+            .iter()
+            .find(|f| matches!(f, Fault::HashErrors { .. }))
+            .copied()
+        {
+            self.error_acc += f64::from(steps) * f64::from(per_mille) / 1000.0;
+            let e = self.error_acc.floor();
+            self.error_acc -= e;
+            let r = usize::from(reg::ERROR_COUNT);
+            self.regs[r] = self.regs[r].wrapping_add(e as u32);
+        }
     }
 
     fn emit_nonce(&mut self, out: &mut Vec<u8>) {

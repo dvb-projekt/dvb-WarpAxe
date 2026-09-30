@@ -27,6 +27,7 @@ use warpaxe_core::pll;
 use warpaxe_core::regs::{self, read_payload, reg, write_payload};
 use warpaxe_core::result::{JobResult, RegisterResult};
 
+use crate::monitor::HashrateMonitor;
 use crate::uart::Uart;
 
 /// Chips the driver can address. Octaxe has 8; 16 leaves room.
@@ -348,6 +349,7 @@ pub struct Chain {
     chip_count: u8,
     found: u8,
     chips: [ChipStatus; MAX_CHIPS],
+    monitor: HashrateMonitor<MAX_CHIPS>,
     recent: [[u64; RECENT]; MAX_CHIPS],
     recent_at: [u8; MAX_CHIPS],
     slots: [Slot; SLOTS],
@@ -374,6 +376,7 @@ impl Chain {
             chip_count: 0,
             found: 0,
             chips: [ChipStatus::default(); MAX_CHIPS],
+            monitor: HashrateMonitor::new(profile.domains, profile.domain_hashrate_scale),
             recent: [[NO_KEY; RECENT]; MAX_CHIPS],
             recent_at: [0; MAX_CHIPS],
             slots: [Slot::default(); SLOTS],
@@ -398,6 +401,8 @@ impl Chain {
         self.chip_count = 0;
         self.found = 0;
         self.chips = [ChipStatus::default(); MAX_CHIPS];
+        self.monitor.reset();
+        self.monitor.set_chip_count(0);
         self.recent = [[NO_KEY; RECENT]; MAX_CHIPS];
         self.recent_at = [0; MAX_CHIPS];
         self.slots = [Slot::default(); SLOTS];
@@ -509,6 +514,28 @@ impl Chain {
             reg::TICKET_MASK,
             regs::ticket_mask(f64::from(difficulty)),
         )
+    }
+
+    /// Ask every chip for its hash counters (total, domains, errors);
+    /// the replies feed [`Chain::monitor`] and also arrive as
+    /// [`Event::Register`]. Once a second, like the reference; a chip
+    /// that does not answer only keeps its old reading.
+    pub fn request_counters<U: Uart>(&mut self, uart: &mut U) -> Result<(), Error<U::Error>> {
+        if !self.accepting_work() {
+            return Ok(());
+        }
+        for i in 0..usize::from(self.chip_count) {
+            let addr = self.profile.command_address(self.chips[i].address);
+            for r in HashrateMonitor::<MAX_CHIPS>::REGISTERS {
+                self.send_cmd(uart, Group::Single, Op::Read, &read_payload(addr, r))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// The chips' hash counters, as last read.
+    pub fn monitor(&self) -> &HashrateMonitor<MAX_CHIPS> {
+        &self.monitor
     }
 
     /// Read a register on every chip; replies arrive as [`Event::Register`].
@@ -699,6 +726,7 @@ impl Chain {
         for (i, c) in self.chips.iter_mut().enumerate().take(usize::from(found)) {
             c.address = self.profile.chip_address(found, i as u8);
         }
+        self.monitor.set_chip_count(found);
         on_event(Event::Enumerated { count: found });
         // The list for the real count, resumed after the count marker:
         // everything before it has already gone out once.
@@ -881,6 +909,9 @@ impl Chain {
             }
         } else {
             let r = RegisterResult::parse(p);
+            if let Some(i) = self.profile.chip_index(self.chip_count, r.asic_address) {
+                self.monitor.on_register(i, r.register, r.value, now_us);
+            }
             on_event(Event::Register {
                 address: r.asic_address,
                 register: r.register,
