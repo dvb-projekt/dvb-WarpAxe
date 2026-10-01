@@ -442,6 +442,10 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
 /// Color pins. Stock 327 MHz / 1000 mV, 60 W. Profile only: never run
 /// under WarpAxe; the BM1373 chain path has run on the Gaia (one chip).
+/// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
+/// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
+/// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 50 A warning).
+/// AxeOS's own overclock mode has no upper bound at all.
 pub const BITAXE_NAJA_DUO: Profile = Profile {
     name: "bitaxe-naja-duo",
     model: "Bitaxe Naja Duo",
@@ -459,7 +463,7 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     power_offset_w: 0.0,
     frequency_options: &[327, 350, 375, 380, 400, 410],
     voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
-    abs_max_frequency_mhz: 410,
+    abs_max_frequency_mhz: 600,
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1250,
     asic_enable: COLOR_ENABLE,
