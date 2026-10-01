@@ -138,8 +138,12 @@ pub struct Config {
     /// Regulator temperature the second fan holds, °C; 0 = the default.
     #[serde(rename = "vrTargetTemp")]
     pub vr_target_temp: u8,
-    /// Both fan outputs at the chip fan's speed: M1 follows M2 1:1, for
-    /// cases where every fan cools the whole board (Y-cables).
+    /// Both fan outputs at the chip fan's speed: M1 follows M2 1:1.
+    /// On, as NerdOS's second channel defaults to LINKED (mirrors
+    /// channel 0): on the NerdOctaxe both headers cool the chips, and a
+    /// second fan left to the regulator's temperature idled at 25 %
+    /// while the chips overheated (v2.2, 2026-10-01). Off = the second
+    /// output follows the regulator temperature (`autofanspeed2`).
     #[serde(rename = "linkFans")]
     pub link_fans: bool,
     /// Share difficulty asked of the pool after authorizing
@@ -213,7 +217,7 @@ impl Default for Config {
             autofanspeed2: true,
             manual_fan_speed2: 100,
             vr_target_temp: 0,
-            link_fans: false,
+            link_fans: true,
             suggested_difficulty: 0,
             job_interval_ms: 0,
             asic_count: 0,
@@ -758,8 +762,11 @@ fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
         cfg.overheat_temp = v;
         took = true;
     }
+    // NerdOS FanController::Mode: 0 manual, 2 PID on the regulator
+    // temperature, 3 linked to channel 0 (its default).
     if let Some(m) = stock.num("fan1mode") {
         cfg.autofanspeed2 = m != 0.0;
+        cfg.link_fans = m == 3.0;
         took = true;
     }
     if let Some(v) = stock.num("fan1speed").and_then(pct) {

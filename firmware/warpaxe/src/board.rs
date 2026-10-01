@@ -1532,12 +1532,15 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             };
             if want != fans && t.set_fans(want.0, want.1) {
                 fans = want;
-                update(|s| {
-                    s.fan_pct = want.0;
-                    // The Nano's second fan runs at the first one's speed.
-                    s.fan2_pct = (two || matches!(t, Thermal::Nano(_))).then_some(want.1);
-                });
             }
+            // Reported every pass, not only on a change: a manual 100 %
+            // equal to the start-up duty was shown as 0 % / "–".
+            let shown = fans;
+            update(|s| {
+                s.fan_pct = shown.0;
+                // The Nano's second fan runs at the first one's speed.
+                s.fan2_pct = (two || matches!(t, Thermal::Nano(_))).then_some(shown.1);
+            });
         }
         std::thread::sleep(Duration::from_millis(u64::from(SAMPLE_MS)));
     }
