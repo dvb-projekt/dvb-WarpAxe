@@ -96,6 +96,16 @@ pub fn system_info() -> serde_json::Value {
         "fallbackStratumProtocol": cfg.fallback_protocol, "fallbackStratumV2AuthorityPubkey": cfg.fallback_v2_authority_pubkey, "fallbackStratumV2ChannelType": cfg.fallback_v2_channel_type, "fallbackStratumV2RequireAuth": cfg.fallback_v2_require_auth,
         "stratumProtocolActive": if st.sv2 { "SV2" } else { "SV1" },
         "isUsingFallbackStratum": u8::from(st.using_fallback), "activePool": st.pool,
+        // NerdOS keeps the fallback flag in a nested `stratum` object;
+        // mirror it so scripts written for NerdOS read the same path.
+        "stratum": {
+            "usingFallback": st.using_fallback,
+            "pools": [{
+                "connected": stratum::state().authorized,
+                "poolDifficulty": st.difficulty, "networkDifficulty": st.network_difficulty,
+                "accepted": st.shares_accepted, "rejected": st.shares_rejected,
+            }],
+        },
         "useFallbackStratum": u8::from(cfg.use_fallback), "fallbackStratumURL": cfg.fallback_url, "fallbackStratumPort": cfg.fallback_port, "fallbackStratumUser": cfg.fallback_user,
         "poolDifficulty": st.difficulty,
         "blockHeight": st.block_height, "networkDifficulty": st.network_difficulty, "scriptsig": st.scriptsig,

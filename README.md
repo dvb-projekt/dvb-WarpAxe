@@ -273,7 +273,8 @@ back at any time with `GET /api/v1/display/frame`.
   `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
   `overheatTrips` (stops in the last hour), `overheatCause` (hot, a lost
   sensor or a regulator fault), `overheatLatched`, `power_fault` (AxeOS's
-  field and wording) with `powerFaultCodes`, `isUsingFallbackStratum`,
+  field and wording) with `powerFaultCodes`, `isUsingFallbackStratum` (also as NerdOS's
+  `stratum.usingFallback`),
   `sharesRejectedReasons`, AxeOS's `coinbaseOutputs`,
   `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`,
   `temptarget` (the fan target, under ESP-Miner's name) so a tuner keeps
