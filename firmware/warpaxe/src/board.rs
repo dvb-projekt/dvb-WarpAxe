@@ -23,7 +23,7 @@ use serde::Serialize;
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2103::Emc2103;
 use warpaxe_board::emc2302::{Emc2302, Fan};
-use warpaxe_board::fan::{FanPid, SAMPLE_MS};
+use warpaxe_board::fan::{FanPid, Warmup, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
 use warpaxe_board::ina260::Ina260;
 use warpaxe_board::overheat::{Cause, Guard, Reading};
@@ -97,6 +97,9 @@ pub struct BoardState {
     pub overheat_cause: Option<&'static str>,
     /// Chips switched off by hand.
     pub shutdown: bool,
+    /// Fans held at full while the chips warm up after the core rail
+    /// came on (see `warpaxe_board::fan::Warmup`).
+    pub fan_warmup: bool,
     /// The regulator's fault or warning text (AxeOS `power_fault`, its
     /// wording); `None` when the status is clear.
     pub power_fault: Option<String>,
@@ -1151,6 +1154,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp_seen = false;
     let mut no_sensor_warned = false;
     let t0 = Instant::now();
+    // Fans at full until the chips have warmed up (fan::Warmup); the PID
+    // takes over from there.
+    let mut warmup: Option<Warmup> = Some(Warmup::start(0));
+    update(|s| s.fan_warmup = true);
     // The regulator has reported a temperature since boot: a missing one
     // then counts as unknown, not as cool.
     let mut vr_temp_seen = false;
@@ -1438,6 +1445,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 // over-current limit.
                 pid.reset(100.0, profile.fan_target_c);
                 pid_vr.reset(100.0, vr_fan_target_c(profile));
+                warmup = Some(Warmup::start(t0.elapsed().as_secs() as u32));
+                update(|s| s.fan_warmup = true);
                 log::warn!("board: core voltage back on, {applied_mv} mV");
             }
         }
@@ -1466,11 +1475,29 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             } else {
                 vr_fan_target_c(profile)
             };
+            // The warm-up hold, and its handover to the PID from full duty.
+            let now_s = t0.elapsed().as_secs() as u32;
+            let hold = warmup
+                .as_mut()
+                .map(|w| w.holding(now_s, temp, target_c))
+                .unwrap_or(false);
+            if let Some(w) = warmup.as_ref().filter(|w| w.done()) {
+                log::info!(
+                    "board: warm-up over after {} s at {temp:?} °C: fans to the PID",
+                    now_s.saturating_sub(w.started_s())
+                );
+                pid.reset(100.0, temp.unwrap_or(target_c));
+                pid_vr.reset(100.0, vr_temp.map_or(vr_target_c, |c| c as f32));
+                warmup = None;
+                update(|s| s.fan_warmup = false);
+            }
             let want = if overheat() {
                 (100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {
                     cfg.fanspeed.min(100)
+                } else if hold {
+                    100
                 } else {
                     match temp {
                         Some(c) => pid.compute(c, target_c) as u8,
@@ -1479,6 +1506,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 };
                 let vrf = if !cfg.autofanspeed2 {
                     cfg.manual_fan_speed2.min(100)
+                } else if hold {
+                    100
                 } else {
                     match vr_temp {
                         Some(c) => pid_vr.compute(c as f32, vr_target_c) as u8,
