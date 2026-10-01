@@ -87,6 +87,89 @@ static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
 /// restarting the chain. 0 until the chain has started.
 static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
 
+/// A register scan asked for over the API (diagnostics, read-only): the
+/// registers `from..=to` of one chip, read between the work like the
+/// hash counters. `values[i]` is register `from + i`; `None` when the
+/// chip did not answer within [`SCAN_WINDOW`].
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct RegScan {
+    pub chip: u8,
+    pub from: u8,
+    pub to: u8,
+    pub done: bool,
+    pub uptime_s: u64,
+    pub values: Vec<Option<u32>>,
+}
+static REG_SCAN: Mutex<Option<RegScan>> = Mutex::new(None);
+/// How long the replies to a scan are collected.
+const SCAN_WINDOW: Duration = Duration::from_secs(2);
+/// A scan older than this that never finished (chain restarted) is
+/// forgotten.
+const SCAN_STALE_S: u64 = 10;
+
+/// Ask the mining loop for a register scan; `false` while one is
+/// still running.
+pub fn request_reg_scan(chip: u8, from: u8, to: u8) -> bool {
+    let mut g = REG_SCAN.lock().unwrap();
+    let now = diag::uptime_s();
+    if g
+        .as_ref()
+        .is_some_and(|s| !s.done && now.saturating_sub(s.uptime_s) < SCAN_STALE_S)
+    {
+        return false;
+    }
+    *g = Some(RegScan {
+        chip,
+        from,
+        to,
+        done: false,
+        uptime_s: now,
+        values: vec![None; usize::from(to.saturating_sub(from)) + 1],
+    });
+    true
+}
+
+/// The last register scan, finished or not.
+pub fn reg_scan() -> Option<RegScan> {
+    REG_SCAN.lock().unwrap().clone()
+}
+
+/// Which cores the nonces of one chip came from since the chain started
+/// (diagnostics): index = core id from the nonce's high bits, and the
+/// small core id from the job id byte.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct CoreHist {
+    pub nonces: u32,
+    pub cores: Vec<u32>,
+    pub small_cores: Vec<u32>,
+}
+static CORES: Mutex<Vec<CoreHist>> = Mutex::new(Vec::new());
+
+/// The core histogram of every chip, in chain order.
+pub fn core_hist() -> Vec<CoreHist> {
+    CORES.lock().unwrap().clone()
+}
+
+fn core_seen(chip: u8, core: u8, small: u8) {
+    let mut g = CORES.lock().unwrap();
+    let i = usize::from(chip);
+    while g.len() <= i {
+        g.push(CoreHist {
+            nonces: 0,
+            cores: vec![0; 128],
+            small_cores: vec![0; 16],
+        });
+    }
+    let h = &mut g[i];
+    h.nonces = h.nonces.saturating_add(1);
+    if let Some(c) = h.cores.get_mut(usize::from(core)) {
+        *c = c.saturating_add(1);
+    }
+    if let Some(c) = h.small_cores.get_mut(usize::from(small)) {
+        *c = c.saturating_add(1);
+    }
+}
+
 /// A new clock from `PATCH /api/system`, applied live by the mining loop.
 /// Forget the best difficulty since boot (web UI "reset best difficulty").
 pub fn reset_best_session() {
@@ -194,6 +277,8 @@ fn run(mut uart: ChipUart) {
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
+        // When the reads of a register scan went out.
+        let mut scan_sent: Option<Instant> = None;
 
         loop {
             let now = now_us();
@@ -215,6 +300,7 @@ fn run(mut uart: ChipUart) {
             for e in events {
                 match e {
                     Event::Nonce(f) => {
+                        core_seen(f.chip, f.core, f.small_core);
                         let Some((job, job_seq, job_t)) = jobs.get(&f.work.serial) else {
                             update(|s| s.unknown_job += 1);
                             continue;
@@ -274,7 +360,26 @@ fn run(mut uart: ChipUart) {
                     }
                     Event::Ready => {
                         log::info!("miner: chain ready, {} chip(s)", chain.chip_count());
+                        CORES.lock().unwrap().clear();
                         board::chain_ready();
+                    }
+                    Event::Register {
+                        address,
+                        register,
+                        value,
+                    } => {
+                        if scan_sent.is_some() {
+                            if let Some(i) = chain.chip_index(address) {
+                                if let Some(s) = REG_SCAN.lock().unwrap().as_mut() {
+                                    if !s.done
+                                        && usize::from(s.chip) == i
+                                        && (s.from..=s.to).contains(&register)
+                                    {
+                                        s.values[usize::from(register - s.from)] = Some(value);
+                                    }
+                                }
+                            }
+                        }
                     }
                     Event::Enumerated { count } => log::info!("miner: {count} chip(s) answered"),
                     Event::ChipCountMismatch { expected, found } => {
@@ -332,6 +437,36 @@ fn run(mut uart: ChipUart) {
             }
 
             if chain.accepting_work() {
+                // A register scan from the API: the reads go out once, the
+                // replies are collected for SCAN_WINDOW, then it is done.
+                match scan_sent {
+                    None => {
+                        let pending = REG_SCAN
+                            .lock()
+                            .unwrap()
+                            .as_ref()
+                            .filter(|s| !s.done)
+                            .map(|s| (s.chip, s.from, s.to));
+                        if let Some((chip, from, to)) = pending {
+                            for r in from..=to {
+                                if let Err(e) =
+                                    chain.read_chip_register(&mut uart, usize::from(chip), r)
+                                {
+                                    log::warn!("miner: register read: {e}");
+                                    break;
+                                }
+                            }
+                            scan_sent = Some(Instant::now());
+                        }
+                    }
+                    Some(t) if t.elapsed() >= SCAN_WINDOW => {
+                        if let Some(s) = REG_SCAN.lock().unwrap().as_mut() {
+                            s.done = true;
+                        }
+                        scan_sent = None;
+                    }
+                    Some(_) => {}
+                }
                 // The chips' hash counters, once a second (the reference
                 // polls at 1 Hz); the replies fill `chain.monitor()`.
                 if last_counters.map_or(true, |t| t.elapsed() >= Duration::from_secs(1)) {

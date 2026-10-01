@@ -538,6 +538,29 @@ impl Chain {
         &self.monitor
     }
 
+    /// Read one register of one chip (chain index); the reply arrives as
+    /// [`Event::Register`] with the chip's address ([`Chain::chip_index`]
+    /// maps it back). Diagnostics: the API's register scan. Nothing is
+    /// sent for an index the chain does not have.
+    pub fn read_chip_register<U: Uart>(
+        &mut self,
+        uart: &mut U,
+        chip: usize,
+        register: u8,
+    ) -> Result<(), Error<U::Error>> {
+        if chip >= usize::from(self.chip_count) {
+            return Ok(());
+        }
+        let addr = self.profile.command_address(self.chips[chip].address);
+        self.send_cmd(uart, Group::Single, Op::Read, &read_payload(addr, register))
+    }
+
+    /// Chain index of the chip that answers a register read with
+    /// `address`, if the chain has it.
+    pub fn chip_index(&self, address: u8) -> Option<usize> {
+        self.profile.chip_index(self.chip_count, address)
+    }
+
     /// Read a register on every chip; replies arrive as [`Event::Register`].
     pub fn read_register<U: Uart>(
         &mut self,

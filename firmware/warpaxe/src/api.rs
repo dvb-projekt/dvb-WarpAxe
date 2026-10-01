@@ -370,6 +370,18 @@ fn read_body(
     Ok(body)
 }
 
+/// `key=` from a request's query string: hex with `0x`, else decimal.
+fn query_num(uri: &str, key: &str) -> Option<u32> {
+    let q = uri.split_once('?')?.1;
+    let v = q
+        .split('&')
+        .find_map(|kv| kv.strip_prefix(key).and_then(|r| r.strip_prefix('=')))?;
+    match v.strip_prefix("0x").or_else(|| v.strip_prefix("0X")) {
+        Some(h) => u32::from_str_radix(h, 16).ok(),
+        None => v.parse().ok(),
+    }
+}
+
 fn reply_json(
     req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
     status: u16,
@@ -457,6 +469,72 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     server.fn_handler("/api/v1/state", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         reply_json(req, 200, &v1_state())
+    })?;
+
+    // Diagnostics, not in the UI: the raw registers of one chip, read
+    // between the work. ?chip=0&from=0x80&to=0x9f (hex or decimal, at
+    // most 64 registers); a register the chip did not answer is null.
+    server.fn_handler("/api/v1/chip/regs", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let uri = req.uri().to_string();
+        let chip = query_num(&uri, "chip").unwrap_or(0);
+        let from = query_num(&uri, "from").unwrap_or(0x80);
+        let to = query_num(&uri, "to").unwrap_or(0x9f);
+        if chip > 255 || from > 255 || to > 255 || to < from || to - from >= 64 {
+            return reply_json(
+                req,
+                400,
+                &json!({"error": "chip, from, to: 0..=255, from <= to, at most 64 registers"}),
+            );
+        }
+        if !miner::request_reg_scan(chip as u8, from as u8, to as u8) {
+            return reply_json(req, 409, &json!({"error": "a scan is still running"}));
+        }
+        let mut scan = None;
+        for _ in 0..40 {
+            std::thread::sleep(Duration::from_millis(100));
+            scan = miner::reg_scan();
+            if scan.as_ref().is_some_and(|s| s.done) {
+                break;
+            }
+        }
+        let Some(s) = scan else {
+            return reply_json(req, 500, &json!({"error": "scan lost"}));
+        };
+        let regs: serde_json::Map<String, serde_json::Value> = s
+            .values
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                (
+                    format!("0x{:02x}", usize::from(s.from) + i),
+                    v.map_or(serde_json::Value::Null, |v| json!(format!("0x{v:08x}"))),
+                )
+            })
+            .collect();
+        let answered = s.values.iter().filter(|v| v.is_some()).count();
+        reply_json(
+            req,
+            200,
+            &json!({"chip": s.chip, "from": format!("0x{:02x}", s.from), "to": format!("0x{:02x}", s.to),
+                "done": s.done, "answered": answered, "uptime": diag::uptime_s(), "regs": regs}),
+        )
+    })?;
+
+    // Diagnostics, not in the UI: which cores the nonces came from since
+    // the chain started, per chip (?chip=N for one).
+    server.fn_handler("/api/v1/chip/cores", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let uri = req.uri().to_string();
+        let all = miner::core_hist();
+        let body = match query_num(&uri, "chip") {
+            Some(c) => match all.get(c as usize) {
+                Some(h) => json!({"chip": c, "uptime": diag::uptime_s(), "nonces": h.nonces, "cores": h.cores, "smallCores": h.small_cores}),
+                None => return reply_json(req, 404, &json!({"error": "no such chip"})),
+            },
+            None => json!({"uptime": diag::uptime_s(), "chips": all}),
+        };
+        reply_json(req, 200, &body)
     })?;
 
     server.fn_handler("/api/system", Method::Patch, |mut req| {

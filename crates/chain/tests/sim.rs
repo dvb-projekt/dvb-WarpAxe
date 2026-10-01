@@ -483,6 +483,38 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
 /// error counter follows the injected error rate, and a chip that does
 /// not answer keeps its old reading while the others carry on.
 #[test]
+fn a_single_chip_register_read_is_answered_by_that_chip_alone() {
+    let mut b = Bench::new(4, Bench::config());
+    b.run_until_ready(20_000);
+    b.mine_ms(300);
+    let before = b.count(|e| matches!(e, Event::Register { .. }));
+    b.drv
+        .read_chip_register(&mut b.uart, 2, reg::TOTAL_COUNT)
+        .unwrap();
+    b.mine_ms(200);
+    let replies: Vec<(u8, u8)> = b
+        .events
+        .iter()
+        .skip(before)
+        .filter_map(|e| match e {
+            Event::Register {
+                address, register, ..
+            } => Some((*address, *register)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replies.len(), 1, "{replies:?}");
+    assert_eq!(replies[0].1, reg::TOTAL_COUNT);
+    assert_eq!(b.drv.chip_index(replies[0].0), Some(2));
+    // An index the chain does not have sends nothing.
+    b.drv
+        .read_chip_register(&mut b.uart, 7, reg::TOTAL_COUNT)
+        .unwrap();
+    b.mine_ms(200);
+    assert_eq!(b.count(|e| matches!(e, Event::Register { .. })), before + 1);
+}
+
+#[test]
 fn hash_counters_read_back_like_the_reference_monitor() {
     let mut b = Bench::new(4, Bench::config());
     b.run_until_ready(20_000);
