@@ -231,10 +231,11 @@ back at any time with `GET /api/v1/display/frame`.
   noise does not fill the chart), then temperature, fan/power and pool
   instruments; live log. Optional (*Settings → Dashboard*, off by default):
   the hash counters per chip and domain, a weak domain marked in colour,
-  and the error rate over the last minute. On the BM1373 only two of the
-  four domain counters are filled (AxeOS scales them by two), and its error
-  rate runs higher than the BM1370's (5–8 % on a NerdAxe Gaia), so it is
-  shown without a colour.
+  and the error rate over the last minute. The BM1373 has eight hash
+  domains, not four: WarpAxe reads all eight counters (0x88–0x8B and
+  0xAC–0xAF), where AxeOS reads four and doubles them. Its error rate runs
+  higher than the BM1370's (about 2.5 % on a NerdAxe Gaia at its hand
+  point, rising steeply at low core voltage) and is shown without a colour.
 - **Coinbase payout** of every job, as AxeOS shows it: the share of a found
   block that goes to your address (green from 95 %, red below), the
   coinbase value and its outputs, over Stratum V1 and V2.
@@ -266,8 +267,9 @@ back at any time with `GET /api/v1/display/frame`.
   its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
   `faultCause` (why the regulator stopped), `gitHash` (the commit the
   image was built from), and AxeOS's `hashrateMonitor` (per chip the
-  hashrate from the chip's own counters, its four domains and the error
-  counter, read once a second) with `errorPercentage` (AxeOS's per-second
+  hashrate from the chip's own counters, its domains — four, eight on the
+  BM1373 — and the error counter, read once a second) with
+  `errorPercentage` (AxeOS's per-second
   value) and `errorPercentage1m` (over the last full minute, for tuners).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a

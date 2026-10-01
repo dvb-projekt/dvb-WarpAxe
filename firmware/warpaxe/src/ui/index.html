@@ -519,15 +519,17 @@ function hcCard(i) {
   const raw = i.hashrateMonitor && i.hashrateMonitor.asics;
   if (!i.showHashCounters || !raw || !raw.length) return "";
   const sm = hcSmooth(i, raw);
-  // The BM1373 fills only two of its four domain counters (AxeOS scales
-  // those by two); a domain that stays at 0 there is layout, not a fault.
+  // The BM1373 has eight domains (firmware from v0.1.13 reads all eight;
+  // older images read four, of which two often came back empty). A domain
+  // that stays at 0 on that chip is hidden rather than flagged.
   const b1373 = /1373/.test(i.ASICModel || "");
   const m = b1373 ? sm.map(a => ({...a, domains: a.domains.map(v => (v > 0 ? v : null))})) : sm;
   const waiting = m.every(a => !a.total);
   // The error rate over the last full minute (errorPercentage1m, from
   // v0.1.12); older firmware has only the per-second value. The colours
-  // hold for the BM1370; the BM1373 has no known baseline yet (a Gaia runs
-  // at 5–8 %), so its rate stays neutral.
+  // hold for the BM1370; the BM1373 runs higher (a Gaia ~2.5 % at its hand
+  // point, more at low voltage) and has no settled baseline, so its rate
+  // stays neutral.
   const e1 = i.errorPercentage1m, ep = e1 != null ? (e1 > 0 ? e1 : null) : i.errorPercentage;
   const epc = ep == null || b1373 ? "" : ep >= 5 ? "err" : ep >= 1 ? "warn" : "ok";
   const gh = v => v >= 1000 ? `${nf(v / 1000, 2)} TH/s` : `${nf(v, 0)} GH/s`;
@@ -538,7 +540,7 @@ function hcCard(i) {
       const col = !mean ? "var(--dim)" : v < mean * .8 ? "var(--err)" : v < mean * .9 ? "var(--warn)" : "linear-gradient(90deg,#7B5CFF,#00E0FF)";
       return `<div title="${t("hc_domain")} ${j + 1}: ${gh(v)}"><i><b style="width:${Math.min(100, v / top * 100).toFixed(1)}%;background:${col}"></b></i><span class="num">${gh(v)}</span></div>`;
     }).join("");
-    return `<div class="hcrow"><span class="lbl">ASIC ${k}</span><b class="num" style="font-size:18px">${gh(a.total || 0)}</b><div class="hcdoms" style="--nd:${d.length || 4}">${bars}</div><span class="num" style="text-align:right;white-space:nowrap">${nf(a.errorCount)} <span class="dim" style="font-size:12px">${t("hc_errors")}</span></span></div>`;
+    return `<div class="hcrow"><span class="lbl">ASIC ${k}</span><b class="num" style="font-size:18px">${gh(a.total || 0)}</b><div class="hcdoms" style="--nd:${Math.min(d.length, 4) || 4}">${bars}</div><span class="num" style="text-align:right;white-space:nowrap">${nf(a.errorCount)} <span class="dim" style="font-size:12px">${t("hc_errors")}</span></span></div>`;
   }).join("");
   return `<section class="card ins"><h2>${t("hc_title")}${ep != null && !waiting ? `<small class="${epc}">${t("hc_err_rate")}${e1 != null ? " (1 min)" : ""} ${nf(ep, 2)} %</small>` : ""}</h2>
   <div class="dim" style="font-size:13px;margin-top:-6px">${waiting ? t("hc_wait") : `${t("hc_note")} ${t("hc_avg")}`}</div><div>${rows}</div></section>`;
