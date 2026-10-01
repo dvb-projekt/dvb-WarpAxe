@@ -1143,6 +1143,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut vr_temp: Option<i32> = None;
     let mut polarity = cfg.invertfanpolarity;
     let mut temp_lost_s: u32 = 0;
+    // A chip temperature has been read since boot: losing it then stops
+    // the chain (Cause::Blind). A board whose sensor never answered runs
+    // without the chip limit, fans at full, as NerdOS does with no
+    // ASIC-side TMP1075 (it shows 0 °C). Seen 2026-10-01 on a NerdOctaxe
+    // v2.2 under both Nerd profiles: "overheated" after exactly 60 s.
+    let mut temp_seen = false;
+    let mut no_sensor_warned = false;
     let t0 = Instant::now();
     // The regulator has reported a temperature since boot: a missing one
     // then counts as unknown, not as cool.
@@ -1216,6 +1223,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     Ok(c) => {
                         temp = Some(c);
                         temp_lost_s = 0;
+                        temp_seen = true;
                         update(|s| {
                             if s.last_error.starts_with("temp:") {
                                 s.last_error.clear();
@@ -1237,7 +1245,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             };
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_max_c);
-            let blind = temp_lost_s >= TEMP_LOST_S;
+            let blind = temp_seen && temp_lost_s >= TEMP_LOST_S;
+            if !temp_seen && temp_lost_s >= TEMP_LOST_S && !no_sensor_warned {
+                no_sensor_warned = true;
+                log::warn!(
+                    "board: no chip temperature since boot ({temp_lost_s} s): running without the chip limit, fans at full"
+                );
+            }
             vr_temp_seen |= vr_temp.is_some();
             let now_s = t0.elapsed().as_secs() as u32;
             // The regulator's own verdict (AxeOS `power_fault`), judged only
@@ -1331,6 +1345,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         vr_c: vr_temp.map(|c| c as f32),
                         vr_limit_c: profile.vr_max_c,
                         vr_expected: vr_temp_seen,
+                        chip_expected: temp_seen,
                     },
                 );
                 if cooled {
@@ -1681,9 +1696,11 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             p
         }
         Detection::Choose(c, why) => {
+            let p = warpaxe_board::profile::undetected_for(c);
             log::warn!(
-                "board: not detected for sure ({why}); candidates {:?}; chips stay off until a board is chosen",
-                c.iter().map(|p| p.name).collect::<Vec<_>>()
+                "board: not detected for sure ({why}); candidates {:?}; chips stay off until a board is chosen; display {:?}",
+                c.iter().map(|p| p.name).collect::<Vec<_>>(),
+                p.display
             );
             *DETECT.lock().unwrap() = Some(DetectInfo {
                 status: "choose",
@@ -1692,7 +1709,7 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 imported,
                 model: None,
             });
-            &warpaxe_board::profile::UNDETECTED
+            p
         }
         Detection::Unsupported(model, why) => {
             log::warn!("board: recognised {model} ({why}), which WarpAxe does not support yet; chips stay off");

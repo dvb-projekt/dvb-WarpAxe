@@ -46,6 +46,10 @@ pub struct Reading {
     /// The board has a regulator temperature; a missing reading then
     /// counts as unknown, not as cool.
     pub vr_expected: bool,
+    /// The board has read a chip temperature; a missing reading then
+    /// counts as unknown, not as cool. A board without one stops only on
+    /// the regulator or a power fault, and resumes on those alone.
+    pub chip_expected: bool,
 }
 
 /// The overheat state of one board: the running stop and recent ones.
@@ -112,7 +116,10 @@ impl Guard {
         if self.latched || now.saturating_sub(since) < MIN_OFF_S {
             return false;
         }
-        let chip_cool = r.chip_c.is_some_and(|c| c <= r.chip_limit_c - HYSTERESIS_C);
+        let chip_cool = match r.chip_c {
+            Some(c) => c <= r.chip_limit_c - HYSTERESIS_C,
+            None => !r.chip_expected,
+        };
         let vr_cool = match r.vr_c {
             Some(c) => c <= r.vr_limit_c - HYSTERESIS_C,
             None => !r.vr_expected,
@@ -143,6 +150,7 @@ mod tests {
             vr_c: vr,
             vr_limit_c: 105.0,
             vr_expected: true,
+            chip_expected: true,
         }
     }
 
@@ -199,6 +207,21 @@ mod tests {
         assert!(
             g.may_resume(t, &no_vr),
             "board without regulator temperature"
+        );
+    }
+
+    #[test]
+    fn a_board_that_never_read_a_chip_temperature_resumes_on_the_regulator_alone() {
+        let mut g = Guard::new();
+        g.trip(0, Cause::Hot);
+        let t = MIN_OFF_S;
+        let mut no_chip = reading(None, Some(95.5));
+        no_chip.chip_expected = false;
+        assert!(!g.may_resume(t, &no_chip), "regulator still too warm");
+        no_chip.vr_c = Some(95.0);
+        assert!(
+            g.may_resume(t, &no_chip),
+            "no chip sensor: the regulator decides"
         );
     }
 

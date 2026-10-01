@@ -920,6 +920,62 @@ pub const UNDETECTED: Profile = Profile {
     ..T_DISPLAY_S3_DEVKIT
 };
 
+/// [`UNDETECTED`] on a Nerd carrier (LilyGO T-Display-S3, LCD upside
+/// down): the setup hotspot's password has somewhere to go while the
+/// owner picks the board.
+pub const UNDETECTED_LCD_FLIPPED: Profile = Profile {
+    display: Display::St7789I80,
+    display_flip: true,
+    ..UNDETECTED
+};
+
+/// [`UNDETECTED`] on a T-Display-S3 with the LCD upright.
+pub const UNDETECTED_LCD: Profile = Profile {
+    display: Display::St7789I80,
+    display_flip: false,
+    ..UNDETECTED
+};
+
+/// [`UNDETECTED`] on a Bitaxe carrier: the SSD1306 on the Bitaxe pins.
+pub const UNDETECTED_OLED_BITAXE: Profile = Profile {
+    i2c: BITAXE_GAMMA.i2c,
+    display: BITAXE_GAMMA.display,
+    display_flip: BITAXE_GAMMA.display_flip,
+    ..UNDETECTED
+};
+
+/// The profile to run on while the owner chooses between `candidates`:
+/// [`UNDETECTED`] with their display when they all share one (display,
+/// its bus and orientation), so the setup hotspot's password is shown;
+/// plain [`UNDETECTED`] (no display) otherwise. Seen 2026-10-01 on a
+/// NerdOctaxe v2.2: the LCD stayed dark in the choose state and the
+/// hotspot password was nowhere to read.
+pub fn undetected_for(candidates: &[&Profile]) -> &'static Profile {
+    let Some(first) = candidates.first() else {
+        return &UNDETECTED;
+    };
+    // The bus matters only to a display that sits on it.
+    let key = |p: &Profile| {
+        let bus = match p.display {
+            Display::Ssd1306 { .. } => p.i2c,
+            _ => None,
+        };
+        (p.display, p.display_flip, bus)
+    };
+    let same = |p: &Profile| key(p) == key(first);
+    if !candidates.iter().all(|p| same(p)) {
+        return &UNDETECTED;
+    }
+    [
+        &UNDETECTED_LCD_FLIPPED,
+        &UNDETECTED_LCD,
+        &UNDETECTED_OLED_BITAXE,
+    ]
+    .into_iter()
+    .find(|u| same(u))
+    .unwrap_or(&UNDETECTED)
+}
+
 /// Every board a `boardModel` can name.
 pub const ALL: &[Profile] = &[
     BITAXE_GAMMA,
@@ -1196,5 +1252,29 @@ mod tests {
         );
         assert_eq!(BITAXE_GAMMA.choices(true), BITAXE_GAMMA.choices(false));
         assert!(BITAXE_GAMMA.choices(true).frequency_options.is_empty());
+    }
+
+    #[test]
+    fn the_choose_state_keeps_the_candidates_display() {
+        // NerdQAxe++ or NerdOctaxe: both on the T-Display-S3, LCD flipped.
+        let p = undetected_for(&[&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA]);
+        assert_eq!(p.name, "undetected");
+        assert_eq!(p.display, Display::St7789I80);
+        assert!(p.display_flip);
+        assert_eq!(p.i2c, None, "the LCD needs no I²C");
+        assert_eq!(p.asic_count, 0);
+        let p = undetected_for(&[&Q1370, &Q1373]);
+        assert_eq!(p.display, Display::St7789I80);
+        // A Bitaxe carrier: the OLED on its I²C pins.
+        let p = undetected_for(&[&BITAXE_GAMMA_TURBO]);
+        assert_eq!(p.display, BITAXE_GAMMA.display);
+        assert_eq!(p.i2c, BITAXE_GAMMA.i2c);
+        // No display, or candidates that disagree: none.
+        assert_eq!(undetected_for(&[&BITFORGE_NANO]).display, Display::None);
+        assert_eq!(
+            undetected_for(&[&BITAXE_GAMMA, &NERDAXE_GAMMA]).display,
+            Display::None
+        );
+        assert_eq!(undetected_for(&[]).display, Display::None);
     }
 }
