@@ -362,6 +362,9 @@ pub struct Chain {
     difficulty: u32,
     first_job_us: Option<u64>,
     last_job_us: Option<u64>,
+    /// The counter round in progress: next (chip, register index) to
+    /// read, one per [`Chain::poll`]. See [`Chain::request_counters`].
+    counter_cursor: Option<(u8, u8)>,
 }
 
 impl Chain {
@@ -389,6 +392,7 @@ impl Chain {
             difficulty: config.difficulty,
             first_job_us: None,
             last_job_us: None,
+            counter_cursor: None,
         }
     }
 
@@ -520,17 +524,58 @@ impl Chain {
     /// the replies feed [`Chain::monitor`] and also arrive as
     /// [`Event::Register`]. Once a second, like the reference; a chip
     /// that does not answer only keeps its old reading.
-    pub fn request_counters<U: Uart>(&mut self, uart: &mut U) -> Result<(), Error<U::Error>> {
-        if !self.accepting_work() {
+    ///
+    /// The reads go out one per [`Chain::poll`], not as one burst: every
+    /// reply is 11 bytes and the chips answer back to back, so a burst
+    /// of chips × 6 reads (an 8-chip Octaxe: 528 bytes) overruns the
+    /// host's receive buffer and the tail of the burst is lost in
+    /// pieces. Seen 2026-10-01 on a NerdAxe Gaia (one BM1373): 17 of 32
+    /// burst reads answered, dropped bytes and CRC failures rising with
+    /// each burst, every single read answered; AxeOS reads the same way
+    /// and sees only two of the BM1373's domain counters.
+    pub fn request_counters<U: Uart>(&mut self, _uart: &mut U) -> Result<(), Error<U::Error>> {
+        if !self.accepting_work() || self.chip_count == 0 {
             return Ok(());
         }
-        for i in 0..usize::from(self.chip_count) {
-            let addr = self.profile.command_address(self.chips[i].address);
-            for r in HashrateMonitor::<MAX_CHIPS>::REGISTERS {
-                self.send_cmd(uart, Group::Single, Op::Read, &read_payload(addr, r))?;
-            }
+        if self.counter_cursor.is_none() {
+            self.counter_cursor = Some((0, 0));
         }
         Ok(())
+    }
+
+    /// One read of the counter round, if one is in progress.
+    fn step_counters<U: Uart>(&mut self, uart: &mut U) -> Result<(), Error<U::Error>> {
+        let Some((chip, i)) = self.counter_cursor else {
+            return Ok(());
+        };
+        if !self.accepting_work() || chip >= self.chip_count {
+            self.counter_cursor = None;
+            return Ok(());
+        }
+        let regs = HashrateMonitor::<MAX_CHIPS>::REGISTERS;
+        let addr = self
+            .profile
+            .command_address(self.chips[usize::from(chip)].address);
+        self.send_cmd(
+            uart,
+            Group::Single,
+            Op::Read,
+            &read_payload(addr, regs[usize::from(i)]),
+        )?;
+        let next_i = i + 1;
+        self.counter_cursor = if usize::from(next_i) < regs.len() {
+            Some((chip, next_i))
+        } else if chip + 1 < self.chip_count {
+            Some((chip + 1, 0))
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    /// A counter round is still being sent.
+    pub fn counters_pending(&self) -> bool {
+        self.counter_cursor.is_some()
     }
 
     /// The chips' hash counters, as last read.
@@ -636,6 +681,7 @@ impl Chain {
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
         self.drain_rx(uart, now_us, on_event)?;
+        self.step_counters(uart)?;
         loop {
             match self.mode {
                 Mode::Idle | Mode::Failed => break,

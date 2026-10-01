@@ -14,7 +14,14 @@ pub struct ChipUart {
 
 impl ChipUart {
     pub fn new(uart: UART1, tx: Gpio17, rx: Gpio18) -> Result<Self, EspError> {
-        let cfg = Config::new().baudrate(Hertz(115_200));
+        // Receive ring buffer well above the ESP-IDF default (2 × 128 B):
+        // register replies come back to back, 11 bytes each, and the
+        // mining thread drains every 2 ms. With the default, bursts
+        // lost their tail (Gaia, 2026-10-01).
+        let cfg = Config::new()
+            .baudrate(Hertz(115_200))
+            .rx_fifo_size(2048)
+            .tx_fifo_size(512);
         let drv = UartDriver::new(
             uart,
             tx,

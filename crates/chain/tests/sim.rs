@@ -483,6 +483,33 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
 /// error counter follows the injected error rate, and a chip that does
 /// not answer keeps its old reading while the others carry on.
 #[test]
+fn counter_reads_go_out_one_per_poll_not_as_a_burst() {
+    let mut b = Bench::new(4, Bench::config());
+    b.run_until_ready(20_000);
+    b.mine_ms(300);
+    let reads_before: u32 = (0..4).map(|i| b.uart.sim.chip_mut(i).stats().reads).sum();
+    b.drv.request_counters(&mut b.uart).unwrap();
+    assert!(b.drv.counters_pending());
+    // Nothing went out with the request itself; one read per poll.
+    let reads_now: u32 = (0..4).map(|i| b.uart.sim.chip_mut(i).stats().reads).sum();
+    assert_eq!(reads_now, reads_before);
+    b.mine_ms(1);
+    let after_one: u32 = (0..4).map(|i| b.uart.sim.chip_mut(i).stats().reads).sum();
+    assert_eq!(after_one, reads_before + 1, "one read per poll");
+    b.mine_ms(30);
+    assert!(!b.drv.counters_pending());
+    let after_all: u32 = (0..4).map(|i| b.uart.sim.chip_mut(i).stats().reads).sum();
+    assert_eq!(after_all, reads_before + 4 * 6, "4 chips × 6 registers");
+    // The round is complete and the monitor has every chip's registers.
+    b.mine_ms(1200);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    for i in 0..4 {
+        assert!(b.drv.monitor().chips()[i].total.ghs > 0.0, "chip {i}");
+    }
+}
+
+#[test]
 fn a_single_chip_register_read_is_answered_by_that_chip_alone() {
     let mut b = Bench::new(4, Bench::config());
     b.run_until_ready(20_000);

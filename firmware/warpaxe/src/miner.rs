@@ -277,7 +277,9 @@ fn run(mut uart: ChipUart) {
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
-        // When the reads of a register scan went out.
+        // A register scan: the next register to read (one per loop pass,
+        // like the counter reads), then when the last read went out.
+        let mut scan_next: Option<u8> = None;
         let mut scan_sent: Option<Instant> = None;
 
         loop {
@@ -368,7 +370,7 @@ fn run(mut uart: ChipUart) {
                         register,
                         value,
                     } => {
-                        if scan_sent.is_some() {
+                        if scan_sent.is_some() || scan_next.is_some() {
                             if let Some(i) = chain.chip_index(address) {
                                 if let Some(s) = REG_SCAN.lock().unwrap().as_mut() {
                                     if !s.done
@@ -437,35 +439,39 @@ fn run(mut uart: ChipUart) {
             }
 
             if chain.accepting_work() {
-                // A register scan from the API: the reads go out once, the
-                // replies are collected for SCAN_WINDOW, then it is done.
-                match scan_sent {
-                    None => {
-                        let pending = REG_SCAN
-                            .lock()
-                            .unwrap()
-                            .as_ref()
-                            .filter(|s| !s.done)
-                            .map(|s| (s.chip, s.from, s.to));
-                        if let Some((chip, from, to)) = pending {
-                            for r in from..=to {
-                                if let Err(e) =
-                                    chain.read_chip_register(&mut uart, usize::from(chip), r)
-                                {
-                                    log::warn!("miner: register read: {e}");
-                                    break;
-                                }
-                            }
+                // A register scan from the API: one read per pass (a burst
+                // loses replies, see Chain::request_counters), the replies
+                // collected for SCAN_WINDOW after the last, then it is done.
+                let pending = REG_SCAN
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .filter(|s| !s.done)
+                    .map(|s| (s.chip, s.from, s.to));
+                match (pending, scan_next, scan_sent) {
+                    (Some((_, from, _)), None, None) => scan_next = Some(from),
+                    (Some((chip, _, to)), Some(r), None) => {
+                        if let Err(e) = chain.read_chip_register(&mut uart, usize::from(chip), r) {
+                            log::warn!("miner: register read: {e}");
+                        }
+                        if r < to {
+                            scan_next = Some(r + 1);
+                        } else {
+                            scan_next = None;
                             scan_sent = Some(Instant::now());
                         }
                     }
-                    Some(t) if t.elapsed() >= SCAN_WINDOW => {
+                    (Some(_), _, Some(t)) if t.elapsed() >= SCAN_WINDOW => {
                         if let Some(s) = REG_SCAN.lock().unwrap().as_mut() {
                             s.done = true;
                         }
                         scan_sent = None;
                     }
-                    Some(_) => {}
+                    (None, _, _) => {
+                        scan_next = None;
+                        scan_sent = None;
+                    }
+                    _ => {}
                 }
                 // The chips' hash counters, once a second (the reference
                 // polls at 1 Hz); the replies fill `chain.monitor()`.
