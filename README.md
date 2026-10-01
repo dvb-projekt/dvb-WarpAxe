@@ -208,7 +208,9 @@ back at any time with `GET /api/v1/display/frame`.
   polarity. Boards with one fan for chip and regulator (NerdAxe) run it for
   whichever of the two needs more (regulator target 80 °C).
 - Overheat shutdown of the core voltage and a guard for a lost chip sensor
-  (60 s blind = off). The chips start again on their own once chip and
+  (60 s blind = off, once the chip temperature has been read; a board whose
+  chip sensor never answers runs like NerdOS, on the regulator limit with
+  the fans at full, and says so in the log). The chips start again on their own once chip and
   regulator are 10 °C below their limits (at least 60 s off; after a lost
   sensor only with real readings back); the third stop within an hour stays
   off until it is cleared by hand.
@@ -315,7 +317,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run; a v2.2 board overheated within a minute at a user's, under investigation) |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run; a v2.2 board stopped within a minute at a user's on v0.1.11, most likely the sensor guard above, changed in v0.1.12) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); offered on the first start, never taken on its own |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench |
@@ -364,7 +366,8 @@ up and updates itself:
    NerdQAxe++ and the NerdOctaxe look alike on the bus, and a board that
    has never run WarpAxe is only offered — the web UI asks once which board
    it is, and the chips stay off until you answer. A core rail the stock
-   firmware left on is switched off meanwhile.
+   firmware left on is switched off meanwhile; the display already runs,
+   so the setup hotspot's name and password show while you choose.
 4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
    network adapter). If there was no Wi-Fi to take over, or it cannot be
