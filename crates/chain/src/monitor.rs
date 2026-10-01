@@ -18,7 +18,7 @@ use warpaxe_core::regs::reg;
 /// Hashes per counter step.
 pub const HASH_COUNT_UNIT: f64 = 4_294_967_296.0;
 /// Domains a chip has at most.
-pub const MAX_DOMAINS: usize = 4;
+pub const MAX_DOMAINS: usize = 8;
 /// Readings closer than this are ignored (reference: 1 s).
 const MIN_INTERVAL_US: u64 = 1_000_000;
 /// The slow window: a second rate over the last minute, for controllers
@@ -142,7 +142,8 @@ impl<const N: usize> HashrateMonitor<N> {
         self.chips = [ChipMonitor::default(); N];
     }
 
-    /// The six registers the driver polls per chip, in polling order.
+    /// The six registers the driver polls per chip with four domains,
+    /// in polling order.
     pub const REGISTERS: [u8; 6] = [
         reg::ERROR_COUNT,
         reg::DOMAIN_0_COUNT,
@@ -151,6 +152,28 @@ impl<const N: usize> HashrateMonitor<N> {
         reg::DOMAIN_3_COUNT,
         reg::TOTAL_COUNT,
     ];
+    /// The ten registers for a chip with eight domains (BM1373).
+    pub const REGISTERS_8: [u8; 10] = [
+        reg::ERROR_COUNT,
+        reg::DOMAIN_0_COUNT,
+        reg::DOMAIN_1_COUNT,
+        reg::DOMAIN_2_COUNT,
+        reg::DOMAIN_3_COUNT,
+        reg::DOMAIN_4_COUNT,
+        reg::DOMAIN_5_COUNT,
+        reg::DOMAIN_6_COUNT,
+        reg::DOMAIN_7_COUNT,
+        reg::TOTAL_COUNT,
+    ];
+
+    /// The registers the driver polls per chip of this chain, in order.
+    pub fn registers(&self) -> &'static [u8] {
+        if self.domains > 4 {
+            &Self::REGISTERS_8
+        } else {
+            &Self::REGISTERS
+        }
+    }
 
     /// A register reply from chip `chip`; `true` when it was one of the
     /// counters.
@@ -162,8 +185,9 @@ impl<const N: usize> HashrateMonitor<N> {
         match register {
             reg::TOTAL_COUNT => m.total.update(value, now_us),
             reg::ERROR_COUNT => m.error.update(value, now_us),
-            reg::DOMAIN_0_COUNT..=reg::DOMAIN_3_COUNT => {
-                let d = usize::from(register - reg::DOMAIN_0_COUNT);
+            reg::DOMAIN_0_COUNT..=reg::DOMAIN_3_COUNT
+            | reg::DOMAIN_4_COUNT..=reg::DOMAIN_7_COUNT => {
+                let d = usize::from(reg::domain_of(register).unwrap_or(u8::MAX));
                 if d < self.domains {
                     m.domains[d].update(value, now_us);
                 }
@@ -360,6 +384,33 @@ mod tests {
         assert!((m.error_percent() - 1.0).abs() < 0.01);
         assert_eq!(m.chips()[0].error.value, 2, "errorCount is the raw value");
         assert_eq!(m.domain_ghs(0, 4), 0.0);
+    }
+
+    #[test]
+    fn eight_domains_read_all_eight_registers_and_add_up_without_a_scale() {
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(8, 1);
+        m.set_chip_count(1);
+        assert_eq!(m.registers().len(), 10);
+        assert_eq!(m.registers()[5], reg::DOMAIN_4_COUNT);
+        assert_eq!(m.registers()[9], reg::TOTAL_COUNT);
+        let four: HashrateMonitor<1> = HashrateMonitor::new(4, 1);
+        assert_eq!(four.registers().len(), 6);
+        for r in m.registers() {
+            m.on_register(0, *r, 0, 5);
+        }
+        // Each domain a step, the total eight (what the Gaia showed).
+        for d in 0..8u8 {
+            assert!(m.on_register(0, reg::domain_count(d), 10, 2_000_005));
+        }
+        m.on_register(0, reg::TOTAL_COUNT, 80, 2_000_005);
+        let unit = |steps: f32| steps * 4.294_967 / 2.0;
+        let sum: f32 = (0..8).map(|d| m.domain_ghs(0, d)).sum();
+        assert!(
+            (sum - unit(80.0)).abs() < 0.01,
+            "domains add up to the total, unscaled"
+        );
+        assert!((m.domain_ghs(0, 7) - unit(10.0)).abs() < 0.01);
+        assert_eq!(m.domain_ghs(0, 8), 0.0);
         m.reset();
         assert_eq!(m.total_ghs(), 0.0);
         assert_eq!(m.chips()[0].total.time_us, 0);

@@ -552,7 +552,7 @@ impl Chain {
             self.counter_cursor = None;
             return Ok(());
         }
-        let regs = HashrateMonitor::<MAX_CHIPS>::REGISTERS;
+        let regs = self.monitor.registers();
         let addr = self
             .profile
             .command_address(self.chips[usize::from(chip)].address);

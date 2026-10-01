@@ -50,6 +50,37 @@ pub mod reg {
     pub const DOMAIN_3_COUNT: u8 = 0x8B;
     /// Total nonce counter, read-only.
     pub const TOTAL_COUNT: u8 = 0x8C;
+    /// Domains 4–7 of the BM1373, which has eight: found by a register
+    /// scan on a NerdAxe Gaia, 2026-10-01 — each of 0x88–0x8B and
+    /// 0xAC–0xAF counts about an eighth of `TOTAL_COUNT`. No reference
+    /// firmware reads them; ESP-Miner doubles the four it reads instead.
+    pub const DOMAIN_4_COUNT: u8 = 0xAC;
+    /// Domain 5.
+    pub const DOMAIN_5_COUNT: u8 = 0xAD;
+    /// Domain 6.
+    pub const DOMAIN_6_COUNT: u8 = 0xAE;
+    /// Domain 7.
+    pub const DOMAIN_7_COUNT: u8 = 0xAF;
+
+    /// The counter register of domain `d` (0–7).
+    pub const fn domain_count(d: u8) -> u8 {
+        if d < 4 {
+            DOMAIN_0_COUNT + d
+        } else {
+            DOMAIN_4_COUNT + (d - 4)
+        }
+    }
+
+    /// The domain a counter register belongs to, if it is one.
+    pub const fn domain_of(register: u8) -> Option<u8> {
+        if register >= DOMAIN_0_COUNT && register <= DOMAIN_3_COUNT {
+            Some(register - DOMAIN_0_COUNT)
+        } else if register >= DOMAIN_4_COUNT && register <= DOMAIN_7_COUNT {
+            Some(4 + register - DOMAIN_4_COUNT)
+        } else {
+            None
+        }
+    }
     /// Version rolling: `[0x90, 0x00, mask_hi, mask_lo]`.
     pub const VERSION_ROLLING: u8 = 0xA4;
     /// Written early in init (`00 07 00 00`, then `00 07 01 F0` per chip);

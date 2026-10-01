@@ -80,6 +80,9 @@ pub struct SimChip {
     stats: ChipStats,
     /// Hashes done but not yet counted into the counter registers.
     hash_acc: f64,
+    /// The domain the next counted step goes to (round robin, so the
+    /// domain counters stay even at one step per poll).
+    next_domain: u8,
     /// Error hashes not yet counted.
     error_acc: f64,
 }
@@ -114,6 +117,7 @@ impl SimChip {
             last_nonce: None,
             stats: ChipStats::default(),
             hash_acc: 0.0,
+            next_domain: 0,
             error_acc: 0.0,
         }
     }
@@ -391,11 +395,11 @@ impl SimChip {
         let steps = steps as u32;
         let total = usize::from(reg::TOTAL_COUNT);
         self.regs[total] = self.regs[total].wrapping_add(steps);
-        let domains = u32::from(self.profile.domains.clamp(1, 4));
-        for d in 0..domains {
-            let share = steps / domains + u32::from(d < steps % domains);
-            let r = usize::from(reg::DOMAIN_0_COUNT) + d as usize;
-            self.regs[r] = self.regs[r].wrapping_add(share);
+        let domains = self.profile.domains.clamp(1, 8);
+        for _ in 0..steps {
+            let r = usize::from(reg::domain_count(self.next_domain));
+            self.regs[r] = self.regs[r].wrapping_add(1);
+            self.next_domain = (self.next_domain + 1) % domains;
         }
         if let Some(Fault::HashErrors { per_mille }) = self
             .faults

@@ -94,11 +94,15 @@ pub struct ChipProfile {
     pub cores: u16,
     /// Small cores per chip: what the nominal hashrate multiplies by.
     pub small_cores: u16,
-    /// Voltage / clock domains per chip.
+    /// Hash domains per chip, each with a counter register
+    /// ([`crate::regs::reg::domain_count`]): 4 on the BM1370, 8 on the
+    /// BM1373 (measured, see `DOMAIN_4_COUNT`).
     pub domains: u8,
     /// What a domain counter reading is multiplied by to give the
-    /// domain's hashrate: 1, except 2 on the BM1373 (ESP-Miner
-    /// `main/device_config.h`, `domain_hashrate_scale` 2.0).
+    /// domain's hashrate. 1. ESP-Miner uses 2 on the BM1373
+    /// (`main/device_config.h`, `domain_hashrate_scale` 2.0) because it
+    /// reads four of the eight domains and sees two of those (its
+    /// reads go out as a burst, see `Chain::request_counters`).
     pub domain_hashrate_scale: u8,
     /// Share difficulty the ticket mask is set to at init.
     pub default_difficulty: u32,

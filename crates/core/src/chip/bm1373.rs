@@ -110,8 +110,10 @@ pub const BM1373: ChipProfile = ChipProfile {
     hcn_fixed: Some(0x0000_1EB5),
     cores: 128,
     small_cores: 6860,
-    domains: 4,
-    domain_hashrate_scale: 2,
+    // Eight domain counters, 0x88–0x8B and 0xAC–0xAF, each about an
+    // eighth of the total (NerdAxe Gaia, 2026-10-01); read all, no ×2.
+    domains: 8,
+    domain_hashrate_scale: 1,
     default_difficulty: 4096,
     stock: (425_000_000, 1010),
     frequency_options_mhz: &[250, 275, 300, 325, 350, 375, 400, 425, 475, 500, 550],

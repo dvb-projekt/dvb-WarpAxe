@@ -483,6 +483,37 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
 /// error counter follows the injected error rate, and a chip that does
 /// not answer keeps its old reading while the others carry on.
 #[test]
+fn a_bm1373_chain_reads_eight_domains_that_add_up_to_the_total() {
+    let config = Config {
+        expected_chips: 2,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373)
+    };
+    let mut b = Bench::with(&BM1373, 2, config);
+    b.run_until_ready(40_000);
+    b.mine_ms(300);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    let m = b.drv.monitor();
+    assert_eq!(m.domains(), 8);
+    for (i, c) in m.chips().iter().enumerate() {
+        let ghs = f64::from(c.total.ghs);
+        assert!(ghs > 100.0, "chip {i}: {ghs}");
+        let domains: f64 = (0..8).map(|d| f64::from(m.domain_ghs(i, d))).sum();
+        assert!(
+            (domains - ghs).abs() / ghs < 0.05,
+            "chip {i}: eight domains {domains} vs total {ghs}, no scale"
+        );
+        for d in 0..8 {
+            let share = f64::from(m.domain_ghs(i, d)) / ghs;
+            assert!((share - 0.125).abs() < 0.03, "chip {i} domain {d}: {share}");
+        }
+    }
+}
+
+#[test]
 fn counter_reads_go_out_one_per_poll_not_as_a_burst() {
     let mut b = Bench::new(4, Bench::config());
     b.run_until_ready(20_000);
