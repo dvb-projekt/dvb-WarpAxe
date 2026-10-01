@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-320%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-323%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.13-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.14-7B5CFF"></a>
 </p>
 
 ---
@@ -45,13 +45,14 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.13).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.14).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
 > more boards have a profile; of these the Bitaxe Gamma Duo and Gamma
-> Turbo have run it at a user's — see [Supported boards](#supported-boards)
-> before you flash.
+> Turbo have run it at a user's, as has a NerdOCTAXE-γ v2.2 with the
+> 4-phase regulator — see [Supported boards](#supported-boards) before you
+> flash.
 
 ## Compared with the stock firmware
 
@@ -206,10 +207,13 @@ back at any time with `GET /api/v1/display/frame`.
   where the regulator reports them.
 - Sensors and fans: EMC2101, EMC2103, EMC2302 (two outputs), TMP1075,
   INA260 (BitForge Nano), FXL6408 GPIO expander.
-- Fan PID with ESP-Miner's gains, a second output that follows the regulator
-  temperature — or, with *Link the fans*, runs at the chip fan's speed for
-  cases where every fan cools the whole board (Y-cables) — minimum speed,
-  polarity. Boards with one fan for chip and regulator (NerdAxe) run it for
+- Fan PID with ESP-Miner's gains; a second output linked to the chip fan
+  by default, as on NerdOS (*Link the fans* off: it follows the regulator
+  temperature instead, for a fan that cools only the regulator); minimum
+  speed, polarity. After the core voltage comes on — at start and after an
+  overheat stop — the fans stay at full until the chips are near their
+  target, then the PID takes over from there instead of running them down
+  on a cold board. Boards with one fan for chip and regulator (NerdAxe) run it for
   whichever of the two needs more (regulator target 80 °C).
 - Overheat shutdown of the core voltage and a guard for a lost chip sensor
   (60 s blind = off, once the chip temperature has been read; a board whose
@@ -328,7 +332,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run; a v2.2 board stopped within a minute at a user's on v0.1.11, most likely the sensor guard above, changed in v0.1.12) |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does ; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); offered on the first start, never taken on its own |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench |
