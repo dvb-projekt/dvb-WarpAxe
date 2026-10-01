@@ -543,6 +543,17 @@ function hcCard(i) {
   return `<section class="card ins"><h2>${t("hc_title")}${ep != null && !waiting ? `<small class="${epc}">${t("hc_err_rate")}${e1 != null ? " (1 min)" : ""} ${nf(ep, 2)} %</small>` : ""}</h2>
   <div class="dim" style="font-size:13px;margin-top:-6px">${waiting ? t("hc_wait") : `${t("hc_note")} ${t("hc_avg")}`}</div><div>${rows}</div></section>`;
 }
+/* The browser tab names the miner, so several open WarpAxe tabs tell
+   themselves apart: the board's name, plus the hostname where it is not
+   just a spelling of that name ("Bitaxe Gamma (bitaxe602)"). */
+function tabTitle(i) {
+  const board = (i && (i.boardName || i.boardVersion) || "").trim(), host = (i && i.hostname || "").trim();
+  const norm = x => x.toLowerCase().replace(/[^a-z0-9]/g, "");
+  const same = !host || !board || norm(board).includes(norm(host)) || norm(host).includes(norm(board));
+  const name = board ? (same ? board : `${board} (${host})`) : host;
+  const want = name ? `${name} · WarpAxe` : "WarpAxe";
+  if (document.title !== want) document.title = want;
+}
 function worker(u) { u = String(u || ""); const [a, ...r] = u.split("."); return a.length > 14 ? a.slice(0, 6) + "…" + a.slice(-4) + (r.length ? "." + r.join(".") : "") : u; }
 function poolRows(i) {
   const fb = i.isUsingFallbackStratum;
@@ -948,6 +959,7 @@ document.addEventListener("input", e => {
 
 async function load(full) {
   try { info = await get("/api/system/info"); } catch (e) { info = null; header(); return; }
+  tabTitle(info);
   if (full || !state || route !== "dashboard") { try { state = await get("/api/v1/state"); } catch (e) {} }
   if (full && asic === null) { try { asic = await get("/api/system/asic"); } catch (e) { asic = false; } }
   if (route === "dashboard") { try { hist = await get(`/api/v1/history?span=${span}`); } catch (e) {} }
