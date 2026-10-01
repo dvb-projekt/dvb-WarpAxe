@@ -422,8 +422,14 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     let mut cur = serde_json::to_value(get())?;
     if let (Some(dst), Some(src)) = (cur.as_object_mut(), v.as_object()) {
         for (k, val) in src {
-            if dst.contains_key(k) {
-                dst.insert(k.clone(), val.clone());
+            if let Some(old) = dst.get(k) {
+                // AxeOS sends its switches as 0/1; take a number for a
+                // boolean field instead of failing the whole PATCH.
+                let val = match (old, val.as_f64()) {
+                    (serde_json::Value::Bool(_), Some(n)) => serde_json::Value::Bool(n != 0.0),
+                    _ => val.clone(),
+                };
+                dst.insert(k.clone(), val);
             }
         }
     }

@@ -49,9 +49,9 @@ miner.
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
-> more boards have a profile; of these only the Bitaxe Gamma Duo has run it
-> so far, at a user's — see [Supported boards](#supported-boards) before
-> you flash.
+> more boards have a profile; of these the Bitaxe Gamma Duo and Gamma
+> Turbo have run it at a user's — see [Supported boards](#supported-boards)
+> before you flash.
 
 ## Compared with the stock firmware
 
@@ -315,10 +315,10 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run) |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does (the 4-phase TPS53647 variant has not run; a v2.2 board overheated within a minute at a user's, under investigation) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); offered on the first start, never taken on its own |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench |
-| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile only, not run yet |
+| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
