@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-314%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-320%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.12-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.13-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.12).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.13).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -73,6 +73,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
+| Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled) | total only | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
@@ -102,6 +103,9 @@ draw:
 - **Chips off or the chain still coming up**: `chainStopped` and
   `chainPhase`, so a chain that is powering up is not taken for a dead chip.
 - **Fallback pool** and **reject reasons**, as on current AxeOS.
+- **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
+  own counters: a voltage that is too low shows in minutes, not after
+  hundreds of pool shares.
 
 The table on the WarpPool side lists, firmware by firmware, what WarpTune
 gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
@@ -248,14 +252,19 @@ back at any time with `GET /api/v1/display/frame`.
   never changes or restarts another miner. Add miners by address or by a
   search of the local /24.
 - Tabs in the stock order: Dashboard, Swarm, Network, Pool, Settings,
-  System; the starfield background of dvb-WarpPool.
+  System; the starfield background of dvb-WarpPool. The browser tab names
+  the miner ("NerdAxe Gaia · WarpAxe"), so several open tabs tell their
+  miners apart.
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
   /api/system`, `/api/system/asic`, `/api/v2/settings`, restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
-  list (`/api/v1/swarm`), and the last crash's core dump
-  (`GET /api/v1/coredump`, an ELF for `espcoredump.py`; `DELETE` erases it).
+  list (`/api/v1/swarm`), the last crash's core dump
+  (`GET /api/v1/coredump`, an ELF for `espcoredump.py`; `DELETE` erases it),
+  and for diagnosis a read-only chip register scan
+  (`/api/v1/chip/regs?chip=0&from=0x80&to=0xbf`) and the nonces per core
+  (`/api/v1/chip/cores`).
 - States a tuner would otherwise have to guess from the power draw are in
   `/api/system/info`: `chainStopped` and `chainPhase`, `overheat_mode`,
   `overheatTrips` (stops in the last hour), `overheatCause` (hot, a lost
