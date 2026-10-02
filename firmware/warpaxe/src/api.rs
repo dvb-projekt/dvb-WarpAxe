@@ -2,7 +2,7 @@
 //! already speaks (`/api/system/info`, `PATCH /api/system`, restart, OTA)
 //! and WarpAxe's own `/api/v1/*`, plus a small web UI at `/`.
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use esp_idf_svc::http::server::{Configuration, EspHttpServer, Request};
@@ -410,13 +410,30 @@ fn reply_json(
     Ok(())
 }
 
+/// Handler slots the HTTP server is given. Every `fn_handler` below
+/// takes one, the captive-portal loop seven; past the limit the
+/// registration fails, `start` returns the error and the device runs
+/// without a web server (and without OTA: only USB brings it back).
+/// Seen 2026-10-02 on a NerdQAxe++ with 41 handlers at a limit of 40.
+/// Keep a margin; [`handler_count`] says how many are in use.
+const MAX_URI_HANDLERS: usize = 64;
+/// Handlers registered by [`start`], for the log and the check.
+static HANDLERS: AtomicUsize = AtomicUsize::new(0);
+
+/// How many handler slots [`start`] used, of [`MAX_URI_HANDLERS`].
+pub fn handler_count() -> (usize, usize) {
+    (HANDLERS.load(Ordering::Relaxed), MAX_URI_HANDLERS)
+}
+
 pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
-    let mut server = EspHttpServer::new(&Configuration {
+    let mut http = EspHttpServer::new(&Configuration {
         stack_size: 12 * 1024,
-        max_uri_handlers: 40,
+        max_uri_handlers: MAX_URI_HANDLERS,
         uri_match_wildcard: true,
         ..Default::default()
     })?;
+    let mut counted = Counted(&mut http);
+    let server = &mut counted;
 
     server.fn_handler("/", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
@@ -926,7 +943,34 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     server.fn_handler("/api/v1/bootloader", Method::Post, |req| bootloader(req))?;
     server.fn_handler("/bootloader", Method::Get, |req| bootloader(req))?;
 
-    Ok(server)
+    let (n, max) = handler_count();
+    log::info!("api: {n} of {max} handler slots used");
+    if n > max {
+        anyhow::bail!("api: {n} handlers, the server has {max} slots");
+    }
+    Ok(http)
+}
+
+/// `EspHttpServer` with a count of the handlers registered through it.
+struct Counted<'a>(&'a mut EspHttpServer<'static>);
+
+impl Counted<'_> {
+    fn fn_handler<'r, F, E>(
+        &mut self,
+        uri: &str,
+        method: Method,
+        f: F,
+    ) -> Result<&mut Self, esp_idf_svc::sys::EspError>
+    where
+        F: for<'q> Fn(Request<&mut esp_idf_svc::http::server::EspHttpConnection<'q>>) -> Result<(), E>
+            + Send
+            + 'static,
+        E: std::fmt::Debug,
+    {
+        HANDLERS.fetch_add(1, Ordering::Relaxed);
+        self.0.fn_handler(uri, method, f)?;
+        Ok(self)
+    }
 }
 
 fn bootloader(
