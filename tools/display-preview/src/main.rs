@@ -255,8 +255,9 @@ mod stratum {
     }
     pub fn state() -> StratumState {
         StratumState {
-            pool: "pool.warppool.org:3334".into(),
-            tls: !crate::board::gamma(),
+            // Gamma on V1 with TLS, the Nerd boards on Sv2, as the test miners run.
+            pool: if crate::board::gamma() { "pool.warppool.org:3334" } else { "pool.warppool.org:3336" }.into(),
+            tls: crate::board::gamma(),
             using_fallback: false,
             authorized: true,
             shares_accepted: 1234,

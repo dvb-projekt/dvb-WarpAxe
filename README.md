@@ -116,8 +116,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 ### Web UI
 
 <p align="center">
-  <img src="docs/screenshots/web-dashboard.png" alt="Dashboard: type plate with chip grid, hashrate, efficiency, shares, best difficulty, history, temperatures, fans, power, pool" width="760"><br>
-  <em>Dashboard — chip grid and series colour, the hashrate with its share of the expected rate, efficiency, power, shares and best difficulty, the 1 h / 3 h history; below, temperature, fans and power, and the pool with the payout of a found block.</em>
+  <img src="docs/screenshots/web-dashboard.png" alt="Dashboard: type plate with chip grid, hashrate, efficiency, shares, best difficulty, history, temperatures, fans, power, pool, hash counters per chip and domain" width="760"><br>
+  <em>Dashboard — chip grid and series colour, the hashrate with its share of the expected rate, efficiency, power, shares and best difficulty, the 1 h / 3 h history; below, temperature, fans and power, and the pool with the payout of a found block; at the bottom the hash counters per chip and domain (off by default, switched on in Settings).</em>
 </p>
 
 <p align="center">
@@ -126,8 +126,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display" width="760"><br>
-  <em>Settings — clock and voltage as the manufacturer's steps (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
+  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display, dashboard" width="760"><br>
+  <em>Settings — clock and voltage as the manufacturer's steps, fans (on the Nerd boards both linked to the chips by default), display, and the dashboard's hash-counter card (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
 </p>
 
 <p align="center">
