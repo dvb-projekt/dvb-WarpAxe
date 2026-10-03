@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-323%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-324%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.14-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.15-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.14).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.15).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -136,8 +136,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, live log" width="760"><br>
-  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off without losing the device, reset overheat) and the live log.</em>
+  <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, way back to the stock firmware, live log" width="760"><br>
+  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off without losing the device, reset overheat), the way back to the stock firmware and the live log.</em>
 </p>
 
 <p align="center">
@@ -318,6 +318,15 @@ back at any time with `GET /api/v1/display/frame`.
   installs it. A release without a signature still installs for now and is
   marked as unsigned; that tolerance ends once every release carries one.
   Nothing installs by itself: an update restarts the miner.
+- **Chips off before every restart**: an update, a restart and download
+  mode first switch the core voltage off and hold the chips in reset, and
+  every boot does so before anything else. A TPS546 keeps its output on
+  through an ESP reset, so the chips would otherwise sit powered and
+  unwatched — a BitForge Nano reached 82 °C (regulator 95 °C) after three
+  minutes in download mode.
+- **Back to the stock firmware**: *System → Back to the stock firmware*
+  explains the way (over USB, with the backup the web flasher saved) and
+  opens the flasher's restore section.
 - Downloads are tried up to three times; the log names the address that
   started an install, an upload or an update check, and the last install
   (version and signature result) is kept across the restart.
@@ -352,8 +361,12 @@ don't flash them unless you can recover the stock firmware over USB.
 **First install** needs a USB cable once; after that the miner sets itself
 up and updates itself:
 
-1. **Keep a way back** — `tools/flash-backup.sh` reads the whole flash
-   (16 MB) over USB; or keep the stock firmware at hand (the
+1. **Keep a way back** — the web flasher saves the miner's whole flash
+   (16 MB: stock firmware and settings) into a file you choose before it
+   writes anything (on by default, about 2½ minutes, every block checked
+   against the chip), and its *Restore a backup* section puts such a file
+   back. Without the browser, `tools/flash-backup.sh` does the same with
+   esptool. Or keep the stock firmware at hand (the
    [Bitaxe](https://bitaxeorg.github.io/bitaxe-web-flasher/) and
    [NerdQAxe](https://shufps.github.io/nerdqaxe-web-flasher/) web flashers
    put it back; for the other boards, the maker's own flasher or image).
@@ -391,7 +404,8 @@ up and updates itself:
    `WarpAxe-XXXX` with the password on its display and choose your network.
 
 **Updates** after that come from the web UI: *System → Online update →
-Install*, or upload `warpaxe.bin` from the
+Install* (a bar under the header follows it on every page and says when
+the miner is back on the new version), or upload `warpaxe.bin` from the
 [releases page](https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases).
 Every release carries `warpaxe.bin` (one image for all boards — the board is
 configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig`; for the first
