@@ -122,6 +122,10 @@ static POWERED: AtomicBool = AtomicBool::new(true);
 /// Set by an overheat reset: the board loop forgets its sensor-loss count.
 static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
+/// Set by [`prepare_reset`]: the fans at full until the reset.
+static FANS_FULL: AtomicBool = AtomicBool::new(false);
+/// The board thread runs, so it is the one switching the rail.
+static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
 /// The chip power-enable line of the Bitaxe Color boards, with the level
@@ -179,6 +183,101 @@ pub fn shutdown() -> bool {
 /// not (yet) back up.
 pub fn chain_stopped() -> bool {
     overheat() || shutdown() || !POWERED.load(Ordering::Relaxed)
+}
+
+/// Boot, before anything slow: the chain in reset and the core rail off.
+/// An ESP reset leaves the board as it was: the TPS546 keeps its
+/// OPERATION through a software reset and in ROM download mode, the reset
+/// line floats, and the chips sit powered at their last clock with
+/// nothing watching them until [`start`] runs, seconds after USB and
+/// Wi-Fi (BitForge Nano 2026-10-03: 82 °C chip, 95 °C regulator, 35 W at
+/// uptime 5 s after three minutes of download mode). ESP-Miner holds the
+/// reset low first thing in app_main "to minimize ASIC power
+/// consumption"; NerdOS's initBoard drives enable, LDO and reset low.
+pub fn quiesce() {
+    let profile = profile();
+    if let Some(p) = profile.asic_reset {
+        let pin = Pin::Esp(p);
+        pin.output(false);
+        *RESET.lock().unwrap() = Some(pin);
+    }
+    if let Some(en) = profile.asic_enable {
+        Pin::Esp(en.pin).output(!en.active_high);
+    }
+    rail_off("boot");
+}
+
+/// The core rail off by the shortest path, without the board thread: the
+/// TPS546 by OPERATION (as the first-start probe does for a rail the stock
+/// firmware left on), the Nerd regulators by their enable line. Pins
+/// behind the FXL6408 expander are left to [`start`], which resets the
+/// expander first; the Gaia's LDO stays up (cutting it breaks the chip's
+/// enumeration, see `start_tps546_nerd`).
+fn rail_off(why: &str) {
+    let profile = profile();
+    match profile.vr {
+        Vr::Tps5364x {
+            enable,
+            ldo_enable,
+            via_expander,
+            ..
+        } => {
+            if !via_expander {
+                Pin::Esp(enable).output(false);
+                if let Some(l) = ldo_enable {
+                    Pin::Esp(l).output(false);
+                }
+            }
+        }
+        Vr::Tps546Nerd {
+            enable: Some(en), ..
+        } => {
+            Pin::Esp(en).output(false);
+        }
+        _ => {}
+    }
+    let Some(cfg) = profile.tps546() else {
+        return;
+    };
+    let Some(bus) = i2c() else {
+        return;
+    };
+    let mut vr = Tps546::new(bus, cfg);
+    let was_on = vr.is_on();
+    match (was_on, vr.off()) {
+        (Ok(true), Ok(())) => log::warn!("board: {why}: the core rail was on, switched off"),
+        (_, Ok(())) => log::info!("board: {why}: core rail off"),
+        (_, Err(e)) => log::error!("board: {why}: switching the core rail off failed: {e:?}"),
+    }
+}
+
+/// Before an intentional reset (restart, update, download mode): the
+/// chain stopped and held in reset, the core rail off, the fans at full
+/// for whatever follows (ROM download mode runs nothing, and the fan
+/// controllers keep their last duty). NerdOS does the same in
+/// PowerManagementTask::restart ("shutdown asics and LDOs before reset");
+/// ESP-Miner restarts with the rail on. Returns once the board thread
+/// reports the rail off, or after about two seconds.
+pub fn prepare_reset(why: &str) {
+    log::warn!("board: {why}: chips off before the reset");
+    FANS_FULL.store(true, Ordering::Relaxed);
+    SHUTDOWN.store(true, Ordering::Relaxed);
+    if BOARD_THREAD.load(Ordering::Relaxed) {
+        // Switched off on the thread's next pass; the fans follow a pass
+        // later.
+        for _ in 0..20 {
+            std::thread::sleep(Duration::from_millis(100));
+            if !POWERED.load(Ordering::Relaxed) {
+                break;
+            }
+        }
+        std::thread::sleep(Duration::from_millis(2 * u64::from(SAMPLE_MS)));
+    }
+    if let Some(pin) = RESET.lock().unwrap().as_ref() {
+        pin.set(false);
+    }
+    asic_power(false);
+    rail_off(why);
 }
 
 /// Switch the chips off (core rail down) or back on; the board loop does
@@ -1126,6 +1225,7 @@ fn spawn_run(profile: &'static Profile, vr: Option<Regulator>, thermal: Option<T
     if vr.is_none() && thermal.is_none() {
         return;
     }
+    BOARD_THREAD.store(true, Ordering::Relaxed);
     std::thread::Builder::new()
         .name("board".into())
         .stack_size(6144)
@@ -1491,7 +1591,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 warmup = None;
                 update(|s| s.fan_warmup = false);
             }
-            let want = if overheat() {
+            let want = if overheat() || FANS_FULL.load(Ordering::Relaxed) {
                 (100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {

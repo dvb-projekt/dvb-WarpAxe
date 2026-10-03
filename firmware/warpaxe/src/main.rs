@@ -163,6 +163,9 @@ fn main() {
 
     set_step("BOARD BUS");
     board::init_bus(peripherals.i2c0);
+    // Chips in reset and the core rail off before USB, Wi-Fi and the rest
+    // take their seconds: a reset leaves the board as it was.
+    board::quiesce();
     set_step("DISPLAY");
     let mut d = display::Display::new();
     let crashed = diag::log_core_dump();

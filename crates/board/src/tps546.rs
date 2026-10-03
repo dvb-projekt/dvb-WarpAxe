@@ -449,6 +449,18 @@ impl<I: I2c> Tps546<I> {
         self.write_byte(pm::OPERATION, OPERATION_ON)
     }
 
+    /// Whether the output is commanded on (OPERATION bit 7), whatever
+    /// set it: the part keeps OPERATION through an ESP reset.
+    pub fn is_on(&mut self) -> Result<bool, Error<I::Error>> {
+        Ok(self.read_byte(pm::OPERATION)? & OPERATION_ON != 0)
+    }
+
+    /// The output off by command, nothing else touched: usable before
+    /// [`init`](Self::init), on a part in whatever state a reset left it.
+    pub fn off(&mut self) -> Result<(), Error<I::Error>> {
+        self.write_byte(pm::OPERATION, OPERATION_OFF)
+    }
+
     /// Input voltage, V.
     pub fn vin(&mut self) -> Result<f32, Error<I::Error>> {
         Ok(pm::linear11_to_f32(self.read_word(pm::READ_VIN)?))
@@ -498,6 +510,22 @@ mod tests {
         let mut a = vec![6u8];
         a.extend_from_slice(&DEVICE_ID_D24A);
         Tx::WriteRead(ADDR, vec![pm::IC_DEVICE_ID], a)
+    }
+
+    #[test]
+    fn is_on_reads_operation_and_off_writes_it_alone() {
+        let bus = Bus::new(vec![
+            Tx::WriteRead(ADDR, vec![pm::OPERATION], vec![0x80]),
+            Tx::Write(ADDR, vec![pm::OPERATION, 0x00]),
+            Tx::WriteRead(ADDR, vec![pm::OPERATION], vec![0x00]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::BITAXE_5V);
+        assert_eq!(vr.is_on(), Ok(true));
+        assert_eq!(vr.off(), Ok(()));
+        assert_eq!(vr.is_on(), Ok(false));
+        let log = vr.release().log;
+        assert_eq!(log.len(), 3, "off touches nothing but OPERATION");
+        assert_eq!(log[1], Tx::Write(ADDR, vec![pm::OPERATION, 0x00]));
     }
 
     #[test]

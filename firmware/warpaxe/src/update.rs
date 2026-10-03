@@ -409,6 +409,7 @@ fn install() {
                 log::info!("update: written and verified, restarting");
                 config::set_last_install(&record);
                 std::thread::sleep(Duration::from_millis(500));
+                crate::board::prepare_reset("update");
                 diag::restart();
             }
             Err(e) => {

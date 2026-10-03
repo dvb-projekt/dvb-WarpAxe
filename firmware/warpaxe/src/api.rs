@@ -697,6 +697,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         r.flush()?;
         std::thread::spawn(|| {
             std::thread::sleep(Duration::from_millis(300));
+            board::prepare_reset("restart");
             diag::restart();
         });
         Ok::<(), EspIOError>(())
@@ -894,6 +895,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                 Ok(()) => {
                     log::info!("ota: written and verified, restarting");
                     std::thread::sleep(Duration::from_millis(500));
+                    board::prepare_reset("update");
                     diag::restart();
                 }
                 Err(e) => {
@@ -982,6 +984,9 @@ fn bootloader(
     r.flush()?;
     std::thread::spawn(|| {
         std::thread::sleep(Duration::from_millis(300));
+        // Nothing runs in ROM download mode: the chips must not sit
+        // powered at their last clock meanwhile.
+        board::prepare_reset("download mode");
         diag::reboot_to_bootloader();
     });
     Ok(())
