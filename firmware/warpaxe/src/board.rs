@@ -121,11 +121,11 @@ static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 static POWERED: AtomicBool = AtomicBool::new(true);
 /// Set by an overheat reset: the board loop forgets its sensor-loss count.
 static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
-/// Core voltage the API asked for, mV; 0 = nothing pending.
 /// Set by [`prepare_reset`]: the fans at full until the reset.
 static FANS_FULL: AtomicBool = AtomicBool::new(false);
 /// The board thread runs, so it is the one switching the rail.
 static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
+/// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
 /// The chip power-enable line of the Bitaxe Color boards, with the level
