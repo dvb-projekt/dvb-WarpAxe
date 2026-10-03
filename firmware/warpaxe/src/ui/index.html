@@ -547,7 +547,9 @@ function hcCard(i) {
   // hold for the BM1370; the BM1373 runs higher (a Gaia ~2.5 % at its hand
   // point, more at low voltage) and has no settled baseline, so its rate
   // stays neutral.
-  const e1 = i.errorPercentage1m, ep = e1 != null ? (e1 > 0 ? e1 : null) : i.errorPercentage;
+  // 0 in the first minute after a start means "not measured yet"; later it
+  // is a real 0 (a Gamma can run minutes without a single error).
+  const e1 = i.errorPercentage1m, ep = e1 != null ? (e1 > 0 || i.uptimeSeconds > 90 ? e1 : null) : i.errorPercentage;
   const epc = ep == null || b1373 ? "" : ep >= 5 ? "err" : ep >= 1 ? "warn" : "ok";
   const gh = v => v >= 1000 ? `${nf(v / 1000, 2)} TH/s` : `${nf(v, 0)} GH/s`;
   const rows = m.map((a, k) => {
