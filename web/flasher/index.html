@@ -600,19 +600,36 @@ if (!("serial" in navigator)) {
   apply(sel.value);
 }
 // The backup: before anything is written, the whole flash is read back in
-// 256 KB blocks, each block's MD5 checked against the one the stub sends
-// with it (up to three reads), and streamed into the file the
+// 44 KB blocks, each block's MD5 checked against the one the stub sends
+// with it (up to eight reads), and streamed into the file the
 // user picked. The file dialog comes first, on the click; if it used up
 // the click, the browser refuses the port dialog, and a second button
 // asks for one more click.
 // Diagnosis switches in the address: ?trace logs every serial frame to the
-// console, ?baud=115200 skips the baud change (and the port reopen it needs).
+// console, ?baud=115200 skips the baud change (and the port reopen it needs),
+// ?pkt= ?fly= ?block= change the read below, ?backuponly reads and restarts
+// without installing.
 const QS = new URLSearchParams(location.search);
-const DIAG = { trace: QS.has("trace"), baud: Number(QS.get("baud")) || 921600, pkt: Number(QS.get("pkt")) || 4096, fly: Number(QS.get("fly")) || 1 };
+// Why the packets are small: Chrome opens the port with termios PARMRK, so
+// the kernel hands every 0xFF byte up as two. macOS's serial driver
+// (IOSerialBSDClient::getData) sizes what it moves into the 1 KB tty input
+// queue by free bytes, not by those doubled ones; once the browser is a few
+// milliseconds late reading, a packet with 0xFF in it overruns the queue and
+// the rest of it is dropped without any error. Measured on a BitForge Nano
+// (ESP32-S3 USB-Serial/JTAG, 921600): with Chrome's termios settings and a
+// 20 ms late reader, 4096- and 1024-byte packets lose bytes, 480-byte packets
+// never do (2 * 482 < 1024, whatever the data), and without PARMRK nothing is
+// lost at all. One packet in flight keeps the queue at one packet.
+const DIAG = { trace: QS.has("trace"), baud: Number(QS.get("baud")) || 921600, pkt: Number(QS.get("pkt")) || 480, only: QS.has("backuponly") };
+// In flight (bytes): the stub waits for an acknowledgement once this much is
+// unacknowledged, so one packet means one packet at a time.
+DIAG.fly = Number(QS.get("fly")) || DIAG.pkt;
 // Web Serial drops what arrives while its read buffer is full; the default
-// is 255 bytes, far less than one 4 KB flash-read packet.
+// is 255 bytes, less than one flash-read packet.
 const SERIAL = { bufferSize: 1 << 20 };
-const BLOCK = Number(QS.get("block")) || 16 * 1024;
+// One READ_FLASH command per block, its MD5 checked; never 0xC000 or more
+// (see the acknowledgements below).
+const BLOCK = Math.min(Number(QS.get("block")) || 0xb000, 0xb000);
 // The backup stays behind ?backup until reading the flash works in Chrome on
 // macOS (bytes from the chip get lost on the way; writing is not affected).
 if (QS.has("backup")) { $("bkrow").hidden = false; $("bk").checked = true; }
@@ -625,10 +642,11 @@ async function pickBackup() {
   });
   return { handle };
 }
-// esptool-js's own readFlash asks for 1024 packets in flight and never
-// reads the closing MD5 frame; this is esptool.py's read_flash: 4 KB
-// packets, 64 in flight, each acknowledged with the byte count so far,
-// then the stub's MD5 of the block as the last frame.
+// esptool-js's own readFlash asks for 4 KB packets with 1024 bytes in
+// flight and never reads the closing MD5 frame; this is esptool.py's
+// read_flash with the small packets from above: each packet acknowledged
+// with the byte count so far, then the stub's MD5 of the block as the
+// last frame.
 // One SLIP frame straight from the transport's receive buffer, decoded into
 // a growing array: esptool-js's transport.read rebuilds the frame byte by
 // byte (quadratic), too slow to keep up with a flash read.
@@ -669,14 +687,22 @@ async function readFrame(tp, timeout) {
 // stub answers again before the block is read once more.
 async function resync(loader) {
   for (let k = 0; k < 4; k++) {
-    const ack = new Uint8Array(4);
-    new DataView(ack.buffer).setUint32(0, 0x7fffffff, true);
-    try { await loader.transport.write(ack); } catch (e) {}
+    try { await ack(loader, 0x7fffffff); } catch (e) {}
     await new Promise((r) => setTimeout(r, 300));
     loader.transport.flushInput();
     try { await loader.readReg(loader.CHIP_DETECT_MAGIC_REG_ADDR, 500); return; } catch (e) {}
   }
   throw new Error("read flash: the stub no longer answers");
+}
+// The stub takes a 4-byte frame as a command when it is not inside a flash
+// read (after a lost byte, say): the count 0xD000 is the frame 00 D0 00 00,
+// a valid ERASE_FLASH. Blocks stay below 0xC000 bytes, so every count the
+// acknowledgements carry is below 0xC000 and no byte of it is an opcode that
+// writes; the one that ends a read is 0x7fffffff, which no opcode matches.
+async function ack(loader, n) {
+  const a = new Uint8Array(4);
+  new DataView(a.buffer).setUint32(0, n, true);
+  await loader.transport.write(a);
 }
 async function readBlock(loader, addr, size, onProgress) {
   const arg = new Uint8Array(16), v = new DataView(arg.buffer);
@@ -689,9 +715,7 @@ async function readBlock(loader, addr, size, onProgress) {
     if (got + p.length > size) throw new Error("read flash: more data than asked for");
     data.set(p, got);
     got += p.length;
-    const ack = new Uint8Array(4);
-    new DataView(ack.buffer).setUint32(0, got, true);
-    await loader.transport.write(ack);
+    await ack(loader, got < size ? got : 0x7fffffff);
     onProgress(got);
   }
   const digest = await readFrame(loader.transport, 1500);
@@ -703,6 +727,7 @@ async function backup(loader, target) {
   if (!(size > 0)) throw new Error("flash size not detected");
   const out = target.handle ? await target.handle.createWritable() : null;
   const parts = [];
+  const stat = { t0: Date.now(), blocks: 0, retries: 0, md5: 0 };
   $("prog").hidden = false;
   try {
     for (let a = 0; a < size; a += BLOCK) {
@@ -717,17 +742,23 @@ async function backup(loader, target) {
           st("st_bkread", { p: pct });
           });
         } catch (e) {
+          stat.retries++;
+          console.log("backup: block 0x" + a.toString(16) + " try " + (tries + 1) + ": " + (e && e.message));
           if (tries === 7) throw e;
           await resync(loader);
           continue;
         }
         if (md5hex(got.data) === got.md5) data = got.data;
+        else { stat.md5++; console.log("backup: block 0x" + a.toString(16) + " try " + (tries + 1) + ": MD5 differs"); }
       }
       if (!data) throw new Error("block at 0x" + a.toString(16) + " reads differently three times");
+      stat.blocks++;
       if (out) await out.write(data);
       else parts.push(data);
     }
     if (out) await out.close();
+    const s = (Date.now() - stat.t0) / 1000;
+    console.log("backup: " + stat.blocks + " blocks of " + BLOCK + " B, pkt " + DIAG.pkt + ", fly " + DIAG.fly + ": " + s.toFixed(1) + " s, " + (size / 1024 / s).toFixed(0) + " KB/s, " + stat.retries + " retries, " + stat.md5 + " MD5 mismatches");
   } catch (e) {
     if (out) { try { await out.abort(); } catch (x) {} }
     throw e;
@@ -765,6 +796,14 @@ async function install(port, target) {
     if (target) {
       stage = "backup";
       saved = await backup(loader, target);
+      if (DIAG.only) {
+        // ?backuponly: diagnosis, read the flash and restart, write nothing
+        stage = "restart";
+        st("st_restart");
+        await restartChip(loader);
+        st("st_bkdone", { f: saved.name, mb: saved.mb }, "ok");
+        return;
+      }
     }
     stage = "load";
     st(saved ? "st_bkdone" : "st_chip", saved ? { f: saved.name, mb: saved.mb } : { chip });
