@@ -83,7 +83,7 @@ code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;backgrou
   <section class="card install">
     <h2 data-t="inst_h"></h2>
     <p data-t="inst_keep"></p>
-    <label class="bk"><input type="checkbox" id="bk" checked><span><span data-t="bk_label"></span><br><span class="mute" data-t="bk_hint"></span></span></label>
+    <label class="bk" id="bkrow" hidden><input type="checkbox" id="bk"><span><span data-t="bk_label"></span><br><span class="mute" data-t="bk_hint"></span></span></label>
     <button class="btn" id="go" data-t="inst_btn"></button>
     <button class="btn alt" id="go2" data-t="inst_continue" hidden></button>
     <div class="prog" id="prog" hidden><div id="bar"></div></div>
@@ -124,7 +124,7 @@ const T = {
     warn_h: "Before you start",
     warn_early: "WarpAxe is at an early stage. It runs on our Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia and BitForge Nano, and at users' on a Bitaxe Gamma Duo, Gamma Turbo and NerdOCTAXE-γ v2.2; other boards are untested.",
     warn_boards: "Supported: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profiles not run yet: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — the full list is in the README.",
-    warn_backup: "Keep a way back: the flasher saves a full backup of the miner before it installs (on by default below). You can also use <code>tools/flash-backup.sh</code> from the repository, or keep the stock firmware file from its maker at hand.",
+    warn_backup: "Keep a way back: back up the whole flash first with <code>tools/flash-backup.sh</code> from the repository, or keep the stock firmware file from its maker at hand to flash it back.",
     prep_h: "Prepare",
     prep_browser: "Use Chrome or Edge on a computer (Web Serial). Safari, Firefox and phones cannot flash.",
     prep_gamma: "Bitaxe Gamma: keep its power supply connected and use a USB-A to USB-C cable (the Gamma does not power up its USB port from a C-to-C cable).",
@@ -145,7 +145,7 @@ const T = {
     st_connect: "Connecting …",
     st_chip: "Connected: {chip}. Loading the firmware …",
     st_wrongchip: "This is not an ESP32-S3 ({chip}). Nothing was written.",
-    st_nodl: "No answer from the miner. Put it into download mode (hold BOOT, press RST, release BOOT) and try again.",
+    st_nodl: "No answer from the miner. Put it into download mode and try again: if it already runs WarpAxe, use System → Download mode in its web UI (or open http://<miner>/bootloader); otherwise hold BOOT, press RST, release BOOT.",
     st_write: "Writing … {p} %",
     st_restart: "Written and checked. Restarting the miner …",
     st_done: "Done: WarpAxe {v} is installed. The miner starts now; its web UI is reachable after about a minute.",
@@ -179,7 +179,7 @@ const T = {
     warn_h: "Bevor du anfängst",
     warn_early: "WarpAxe ist noch früh. Sie läuft bei uns auf einem Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia und BitForge Nano, bei Nutzern auf einem Bitaxe Gamma Duo, Gamma Turbo und NerdOCTAXE-γ v2.2; andere Boards sind ungetestet.",
     warn_boards: "Unterstützt: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profile, die noch nicht gelaufen sind: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX – die vollständige Liste steht im README.",
-    warn_backup: "Halte dir einen Weg zurück offen: Der Flasher sichert vor der Installation den kompletten Miner (unten ab Werk eingeschaltet). Alternativ <code>tools/flash-backup.sh</code> aus dem Repository, oder halte die Original-Firmware des Herstellers bereit.",
+    warn_backup: "Halte dir einen Weg zurück offen: Sichere vorher den ganzen Flash mit <code>tools/flash-backup.sh</code> aus dem Repository, oder halte die Original-Firmware des Herstellers bereit, um sie zurückzuspielen.",
     prep_h: "Vorbereiten",
     prep_browser: "Chrome oder Edge auf einem Computer verwenden (Web Serial). Safari, Firefox und Smartphones können nicht flashen.",
     prep_gamma: "Bitaxe Gamma: Netzteil angeschlossen lassen und ein USB-A-auf-USB-C-Kabel nehmen (mit einem C-auf-C-Kabel schaltet der Gamma seinen USB-Anschluss nicht ein).",
@@ -200,7 +200,7 @@ const T = {
     st_connect: "Verbinde …",
     st_chip: "Verbunden: {chip}. Lade die Firmware …",
     st_wrongchip: "Das ist kein ESP32-S3 ({chip}). Es wurde nichts geschrieben.",
-    st_nodl: "Keine Antwort vom Miner. Versetze ihn in den Download-Modus (BOOT halten, RST drücken, BOOT loslassen) und versuche es erneut.",
+    st_nodl: "Keine Antwort vom Miner. Versetze ihn in den Download-Modus und versuche es erneut: Läuft schon WarpAxe, über System → Download-Modus in seiner Weboberfläche (oder http://<miner>/bootloader öffnen); sonst BOOT halten, RST drücken, BOOT loslassen.",
     st_write: "Schreibe … {p} %",
     st_restart: "Geschrieben und geprüft. Starte den Miner neu …",
     st_done: "Fertig: WarpAxe {v} ist installiert. Der Miner startet jetzt; seine Weboberfläche ist nach etwa einer Minute erreichbar.",
@@ -234,7 +234,7 @@ const T = {
     warn_h: "Antes de empezar",
     warn_early: "WarpAxe está en una fase temprana. Funciona en nuestros Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia y BitForge Nano, y en equipos de usuarios con Bitaxe Gamma Duo, Gamma Turbo y NerdOCTAXE-γ v2.2; el resto de placas no se ha probado.",
     warn_boards: "Compatibles: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Perfiles que aún no se han probado: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — la lista completa está en el README.",
-    warn_backup: "Asegúrate de poder volver atrás: antes de instalar, el instalador guarda una copia completa del minero (activado por defecto más abajo). También puedes usar <code>tools/flash-backup.sh</code> del repositorio o tener a mano el archivo del firmware original del fabricante.",
+    warn_backup: "Asegúrate de poder volver atrás: primero haz una copia de toda la flash con <code>tools/flash-backup.sh</code> del repositorio, o ten a mano el archivo del firmware original del fabricante para volver a flashearlo.",
     prep_h: "Preparación",
     prep_browser: "Usa Chrome o Edge en un ordenador (Web Serial). Con Safari, Firefox o desde el móvil no se puede flashear.",
     prep_gamma: "Bitaxe Gamma: deja la fuente de alimentación conectada y usa un cable USB-A a USB-C (con un cable C a C, el Gamma no alimenta su puerto USB).",
@@ -255,7 +255,7 @@ const T = {
     st_connect: "Conectando…",
     st_chip: "Conectado: {chip}. Cargando el firmware…",
     st_wrongchip: "Esto no es un ESP32-S3 ({chip}). No se ha escrito nada.",
-    st_nodl: "El minero no responde. Ponlo en modo de descarga (mantén BOOT, pulsa RST, suelta BOOT) y vuelve a intentarlo.",
+    st_nodl: "El minero no responde. Ponlo en modo de descarga y vuelve a intentarlo: si ya ejecuta WarpAxe, usa Sistema → Modo de descarga en su interfaz web (o abre http://<miner>/bootloader); si no, mantén BOOT, pulsa RST y suelta BOOT.",
     st_write: "Flasheando… {p} %",
     st_restart: "Escrito y verificado. Reiniciando el minero…",
     st_done: "Listo: WarpAxe {v} está instalado. El minero arranca ahora; su interfaz web estará accesible en un minuto aproximadamente.",
@@ -289,7 +289,7 @@ const T = {
     warn_h: "Avant de commencer",
     warn_early: "WarpAxe n’en est qu’à ses débuts. Il tourne chez nous sur un Bitaxe Gamma, un NerdQAxe++, un NerdOCTAXE-γ, un NerdAxe Gaia et un BitForge Nano, et chez des utilisateurs sur un Bitaxe Gamma Duo, un Gamma Turbo et un NerdOCTAXE-γ v2.2 ; les autres cartes n’ont pas été testées.",
     warn_boards: "Modèles pris en charge : Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profils pas encore testés : NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — la liste complète est dans le README.",
-    warn_backup: "Prévoyez un retour en arrière : avant d’installer, l’outil sauvegarde intégralement le mineur (activé par défaut ci-dessous). Vous pouvez aussi utiliser <code>tools/flash-backup.sh</code> du dépôt, ou garder sous la main le fichier du firmware d’origine du fabricant.",
+    warn_backup: "Prévoyez un retour en arrière : sauvegardez d’abord toute la flash avec <code>tools/flash-backup.sh</code> du dépôt, ou gardez sous la main le fichier du firmware d’origine du fabricant pour pouvoir le reflasher.",
     prep_h: "Préparation",
     prep_browser: "Utilisez Chrome ou Edge sur un ordinateur (Web Serial). Safari, Firefox et les téléphones ne permettent pas de flasher.",
     prep_gamma: "Bitaxe Gamma : laissez son alimentation branchée et utilisez un câble USB-A vers USB-C (avec un câble C vers C, le Gamma n’alimente pas son port USB).",
@@ -310,7 +310,7 @@ const T = {
     st_connect: "Connexion…",
     st_chip: "Connecté : {chip}. Chargement du firmware…",
     st_wrongchip: "Ce n’est pas un ESP32-S3 ({chip}). Rien n’a été écrit.",
-    st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement (maintenez BOOT, appuyez sur RST, relâchez BOOT) et réessayez.",
+    st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement et réessayez : s’il tourne déjà sous WarpAxe, utilisez Système → Mode téléchargement dans son interface web (ou ouvrez http://<miner>/bootloader) ; sinon maintenez BOOT, appuyez sur RST, relâchez BOOT.",
     st_write: "Flashage… {p} %",
     st_restart: "Écrit et vérifié. Redémarrage du mineur…",
     st_done: "Terminé : WarpAxe {v} est installé. Le mineur démarre ; son interface web sera accessible dans une minute environ.",
@@ -344,7 +344,7 @@ const T = {
     warn_h: "Prima di iniziare",
     warn_early: "WarpAxe è ancora in fase iniziale. Gira da noi su Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia e BitForge Nano, e presso alcuni utenti su Bitaxe Gamma Duo, Gamma Turbo e NerdOCTAXE-γ v2.2; le altre schede non sono state testate.",
     warn_boards: "Supportate: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profili non ancora provati: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — l'elenco completo è nel README.",
-    warn_backup: "Tieniti una via di ritorno: prima dell'installazione il flasher salva un backup completo del miner (attivo di default qui sotto). In alternativa usa <code>tools/flash-backup.sh</code> del repository, oppure tieni a portata di mano il file del firmware originale del produttore.",
+    warn_backup: "Tieniti una via di ritorno: prima fai un backup dell'intera flash con <code>tools/flash-backup.sh</code> del repository, oppure tieni a portata di mano il file del firmware originale del produttore per poterlo riflashare.",
     prep_h: "Preparazione",
     prep_browser: "Usa Chrome o Edge su un computer (Web Serial). Con Safari, Firefox o da smartphone non si può flashare.",
     prep_gamma: "Bitaxe Gamma: lascia collegato l'alimentatore e usa un cavo da USB-A a USB-C (con un cavo C-C il Gamma non alimenta la sua porta USB).",
@@ -365,7 +365,7 @@ const T = {
     st_connect: "Connessione…",
     st_chip: "Connesso: {chip}. Caricamento del firmware…",
     st_wrongchip: "Questo non è un ESP32-S3 ({chip}). Non è stato scritto nulla.",
-    st_nodl: "Nessuna risposta dal miner. Mettilo in modalità download (tieni premuto BOOT, premi RST, rilascia BOOT) e riprova.",
+    st_nodl: "Nessuna risposta dal miner. Mettilo in modalità download e riprova: se esegue già WarpAxe, usa Sistema → Modalità download nella sua interfaccia web (o apri http://<miner>/bootloader); altrimenti tieni premuto BOOT, premi RST, rilascia BOOT.",
     st_write: "Scrittura… {p}%",
     st_restart: "Scritto e verificato. Riavvio del miner…",
     st_done: "Fatto: WarpAxe {v} è installato. Il miner si sta avviando; la sua interfaccia web sarà raggiungibile tra circa un minuto.",
@@ -399,7 +399,7 @@ const T = {
     warn_h: "Antes de começar",
     warn_early: "O WarpAxe ainda está em fase inicial. Ele roda nos nossos Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia e BitForge Nano, e com usuários em um Bitaxe Gamma Duo, Gamma Turbo e NerdOCTAXE-γ v2.2; as outras placas não foram testadas.",
     warn_boards: "Suportadas: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Perfis ainda não testados: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — a lista completa está no README.",
-    warn_backup: "Garanta um caminho de volta: antes de instalar, o instalador faz um backup completo do minerador (ativado por padrão logo abaixo). Você também pode usar o <code>tools/flash-backup.sh</code> do repositório, ou ter em mãos o arquivo do firmware original do fabricante.",
+    warn_backup: "Garanta um caminho de volta: antes, faça um backup completo da flash com <code>tools/flash-backup.sh</code> do repositório, ou deixe à mão o arquivo do firmware original do fabricante para gravá-lo de novo.",
     prep_h: "Preparação",
     prep_browser: "Use o Chrome ou o Edge em um computador (Web Serial). Safari, Firefox e celulares não conseguem gravar o firmware.",
     prep_gamma: "Bitaxe Gamma: mantenha a fonte conectada e use um cabo USB-A para USB-C (com um cabo C-C, o Gamma não ativa a porta USB).",
@@ -420,7 +420,7 @@ const T = {
     st_connect: "Conectando…",
     st_chip: "Conectado: {chip}. Carregando o firmware…",
     st_wrongchip: "Isto não é um ESP32-S3 ({chip}). Nada foi gravado.",
-    st_nodl: "O minerador não respondeu. Coloque-o em modo de download (segure BOOT, aperte RST, solte BOOT) e tente de novo.",
+    st_nodl: "O minerador não respondeu. Coloque-o em modo de download e tente de novo: se ele já roda o WarpAxe, use Sistema → Modo de download na interface web dele (ou abra http://<miner>/bootloader); senão, segure BOOT, aperte RST e solte BOOT.",
     st_write: "Gravando… {p}%",
     st_restart: "Gravado e verificado. Reiniciando o minerador…",
     st_done: "Pronto: o WarpAxe {v} está instalado. O minerador está iniciando; a interface web fica acessível em cerca de um minuto.",
@@ -454,7 +454,7 @@ const T = {
     warn_h: "始める前に",
     warn_early: "WarpAxe はまだ初期段階です。私たちの Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano で稼働しており、ユーザーのもとでは Bitaxe Gamma Duo、Gamma Turbo、NerdOCTAXE-γ v2.2 でも動いています。その他のボードは未検証です。",
     warn_boards: "対応：Bitaxe Gamma (60x)、Gamma Duo、Gamma Turbo、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano。プロファイルはあるもののまだ動作未確認：NerdQAxe++ Rev 7、Bitaxe Naja Duo、Gamma Hex、NerdAxe Gamma、NerdQX — 全一覧は README にあります。",
-    warn_backup: "元に戻せるようにしておいてください。インストールの前に、書き込みツールがマイナー全体のバックアップを保存します（下の項目で既定でオン）。リポジトリの <code>tools/flash-backup.sh</code> を使うか、メーカー純正ファームウェアのファイルを手元に用意しておくこともできます。",
+    warn_backup: "元に戻せるようにしておいてください。事前にリポジトリの <code>tools/flash-backup.sh</code> でフラッシュ全体をバックアップするか、メーカー純正ファームウェアのファイルを手元に用意して書き戻せるようにしておきましょう。",
     prep_h: "準備",
     prep_browser: "パソコンで Chrome または Edge を使ってください（Web Serial）。Safari、Firefox、スマートフォンでは書き込みできません。",
     prep_gamma: "Bitaxe Gamma：電源はつないだまま、USB-A to USB-C ケーブルを使ってください（C to C ケーブルでは Gamma の USB ポートが有効になりません）。",
@@ -475,7 +475,7 @@ const T = {
     st_connect: "接続中…",
     st_chip: "接続しました：{chip}。ファームウェアを読み込んでいます…",
     st_wrongchip: "ESP32-S3 ではありません（{chip}）。何も書き込んでいません。",
-    st_nodl: "マイナーから応答がありません。ダウンロードモードにして（BOOT を押したまま RST を押し、BOOT を離す）、もう一度お試しください。",
+    st_nodl: "マイナーから応答がありません。ダウンロードモードにして、もう一度お試しください。すでに WarpAxe が動いている場合は、Web UI の「システム」→「ダウンロードモード」を使います（または http://<miner>/bootloader を開きます）。それ以外の場合は、BOOT を押したまま RST を押し、BOOT を離してください。",
     st_write: "書き込み中… {p}%",
     st_restart: "書き込みと検証が完了しました。マイナーを再起動しています…",
     st_done: "完了：WarpAxe {v} をインストールしました。マイナーが起動します。約 1 分後に Web UI にアクセスできます。",
@@ -509,7 +509,7 @@ const T = {
     warn_h: "开始之前",
     warn_early: "WarpAxe 目前还处于早期阶段。它已在我们的 Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia 和 BitForge Nano 上运行，也在用户的 Bitaxe Gamma Duo、Gamma Turbo 和 NerdOCTAXE-γ v2.2 上运行；其他板子尚未测试。",
     warn_boards: "已支持：Bitaxe Gamma (60x)、Gamma Duo、Gamma Turbo、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano。已有配置但尚未实际运行：NerdQAxe++ Rev 7、Bitaxe Naja Duo、Gamma Hex、NerdAxe Gamma、NerdQX——完整列表见 README。",
-    warn_backup: "留好退路：安装前，刷写工具会先完整备份矿机（下方默认开启）。也可以用仓库里的 <code>tools/flash-backup.sh</code>，或者提前准备好厂家的原版固件文件。",
+    warn_backup: "留好退路：先用仓库里的 <code>tools/flash-backup.sh</code> 备份整个 flash，或者提前准备好厂家的原版固件文件，以便刷回去。",
     prep_h: "准备",
     prep_browser: "请在电脑上使用 Chrome 或 Edge（Web Serial）。Safari、Firefox 和手机都无法刷机。",
     prep_gamma: "Bitaxe Gamma：保持电源接通，并使用 USB-A 转 USB-C 线（用 C 对 C 线时，Gamma 不会启用 USB 口）。",
@@ -530,7 +530,7 @@ const T = {
     st_connect: "正在连接…",
     st_chip: "已连接：{chip}。正在加载固件…",
     st_wrongchip: "这不是 ESP32-S3（{chip}）。未写入任何内容。",
-    st_nodl: "矿机没有响应。请让它进入下载模式（按住 BOOT，按一下 RST，松开 BOOT），然后重试。",
+    st_nodl: "矿机没有响应。请让它进入下载模式后重试：如果它已经在运行 WarpAxe，请在其 Web 界面中使用“系统”→“下载模式”（或打开 http://<miner>/bootloader）；否则请按住 BOOT，按一下 RST，再松开 BOOT。",
     st_write: "正在刷写… {p}%",
     st_restart: "已写入并校验。正在重启矿机…",
     st_done: "完成：WarpAxe {v} 已安装。矿机正在启动，大约一分钟后即可访问其网页界面。",
@@ -600,12 +600,22 @@ if (!("serial" in navigator)) {
   apply(sel.value);
 }
 // The backup: before anything is written, the whole flash is read back in
-// 256 KB blocks, each block's MD5 checked against the one the chip
-// computes itself (up to three reads), and streamed into the file the
+// 256 KB blocks, each block's MD5 checked against the one the stub sends
+// with it (up to three reads), and streamed into the file the
 // user picked. The file dialog comes first, on the click; if it used up
 // the click, the browser refuses the port dialog, and a second button
 // asks for one more click.
-const BLOCK = 256 * 1024;
+// Diagnosis switches in the address: ?trace logs every serial frame to the
+// console, ?baud=115200 skips the baud change (and the port reopen it needs).
+const QS = new URLSearchParams(location.search);
+const DIAG = { trace: QS.has("trace"), baud: Number(QS.get("baud")) || 921600, pkt: Number(QS.get("pkt")) || 4096, fly: Number(QS.get("fly")) || 1 };
+// Web Serial drops what arrives while its read buffer is full; the default
+// is 255 bytes, far less than one 4 KB flash-read packet.
+const SERIAL = { bufferSize: 1 << 20 };
+const BLOCK = Number(QS.get("block")) || 16 * 1024;
+// The backup stays behind ?backup until reading the flash works in Chrome on
+// macOS (bytes from the chip get lost on the way; writing is not affected).
+if (QS.has("backup")) { $("bkrow").hidden = false; $("bk").checked = true; }
 const today = () => new Date().toISOString().slice(0, 10);
 async function pickBackup() {
   if (!window.showSaveFilePicker) return { download: true };
@@ -614,6 +624,79 @@ async function pickBackup() {
     types: [{ description: "Flash image", accept: { "application/octet-stream": [".bin"] } }],
   });
   return { handle };
+}
+// esptool-js's own readFlash asks for 1024 packets in flight and never
+// reads the closing MD5 frame; this is esptool.py's read_flash: 4 KB
+// packets, 64 in flight, each acknowledged with the byte count so far,
+// then the stub's MD5 of the block as the last frame.
+// One SLIP frame straight from the transport's receive buffer, decoded into
+// a growing array: esptool-js's transport.read rebuilds the frame byte by
+// byte (quadratic), too slow to keep up with a flash read.
+async function readFrame(tp, timeout) {
+  let out = new Uint8Array(4200), n = 0, started = false, esc = false, last = Date.now();
+  const put = (b) => { if (n === out.length) { const g = new Uint8Array(out.length * 2); g.set(out); out = g; } out[n++] = b; };
+  for (;;) {
+    const src = tp.buffer;
+    if (!src || src.length === 0) {
+      if (Date.now() - last > timeout) throw new Error("read flash: no data for " + timeout / 1000 + " s");
+      await new Promise((r) => setTimeout(r, 1));
+      continue;
+    }
+    last = Date.now();
+    for (let i = 0; i < src.length; i++) {
+      const b = src[i];
+      if (!started) {
+        if (b !== 0xc0) throw new Error("read flash: frame does not start with 0xC0");
+        started = true;
+      } else if (esc) {
+        esc = false;
+        if (b === 0xdc) put(0xc0);
+        else if (b === 0xdd) put(0xdb);
+        else throw new Error("read flash: invalid escape 0xDB 0x" + b.toString(16));
+      } else if (b === 0xdb) {
+        esc = true;
+      } else if (b === 0xc0) {
+        if (n === 0) continue;
+        tp.buffer = src.subarray(i + 1);
+        return out.subarray(0, n);
+      } else put(b);
+    }
+    tp.buffer = new Uint8Array(0);
+  }
+}
+// After a lost byte the stub still waits for an acknowledgement that never
+// comes: answer it with the full count, drop what arrives, and check the
+// stub answers again before the block is read once more.
+async function resync(loader) {
+  for (let k = 0; k < 4; k++) {
+    const ack = new Uint8Array(4);
+    new DataView(ack.buffer).setUint32(0, 0x7fffffff, true);
+    try { await loader.transport.write(ack); } catch (e) {}
+    await new Promise((r) => setTimeout(r, 300));
+    loader.transport.flushInput();
+    try { await loader.readReg(loader.CHIP_DETECT_MAGIC_REG_ADDR, 500); return; } catch (e) {}
+  }
+  throw new Error("read flash: the stub no longer answers");
+}
+async function readBlock(loader, addr, size, onProgress) {
+  const arg = new Uint8Array(16), v = new DataView(arg.buffer);
+  v.setUint32(0, addr, true); v.setUint32(4, size, true); v.setUint32(8, DIAG.pkt, true); v.setUint32(12, DIAG.fly, true);
+  await loader.checkCommand("read flash", loader.ESP_READ_FLASH, arg);
+  const data = new Uint8Array(size);
+  let got = 0;
+  while (got < size) {
+    const p = await readFrame(loader.transport, 1500);
+    if (got + p.length > size) throw new Error("read flash: more data than asked for");
+    data.set(p, got);
+    got += p.length;
+    const ack = new Uint8Array(4);
+    new DataView(ack.buffer).setUint32(0, got, true);
+    await loader.transport.write(ack);
+    onProgress(got);
+  }
+  const digest = await readFrame(loader.transport, 1500);
+  if (!(digest instanceof Uint8Array) || digest.length !== 16) throw new Error("read flash: no MD5 after the data");
+  return { data, md5: Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("") };
 }
 async function backup(loader, target) {
   const size = loader.flashSizeBytes(await loader.detectFlashSize());
@@ -625,13 +708,20 @@ async function backup(loader, target) {
     for (let a = 0; a < size; a += BLOCK) {
       const n = Math.min(BLOCK, size - a);
       let data = null;
-      for (let tries = 0; tries < 3 && !data; tries++) {
-        const got = await loader.readFlash(a, n, (_, done) => {
+      for (let tries = 0; tries < 8 && !data; tries++) {
+        let got;
+        try {
+          got = await readBlock(loader, a, n, (done) => {
           const pct = Math.floor(((a + done) / size) * 100);
           $("bar").style.width = pct + "%";
           st("st_bkread", { p: pct });
-        });
-        if (md5hex(got) === (await loader.flashMd5sum(a, n))) data = got;
+          });
+        } catch (e) {
+          if (tries === 7) throw e;
+          await resync(loader);
+          continue;
+        }
+        if (md5hex(got.data) === got.md5) data = got.data;
       }
       if (!data) throw new Error("block at 0x" + a.toString(16) + " reads differently three times");
       if (out) await out.write(data);
@@ -655,11 +745,11 @@ async function backup(loader, target) {
 async function install(port, target) {
   $("go").disabled = true;
   $("go2").hidden = true;
-  const transport = new Transport(port, false);
+  const transport = new Transport(port, DIAG.trace);
   let stage = "connect";
   try {
     st("st_connect");
-    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200 });
+    const loader = new ESPLoader({ transport, baudrate: DIAG.baud, romBaudrate: 115200, serialOptions: SERIAL });
     let chip;
     try {
       chip = await loader.main("default_reset");
@@ -809,7 +899,7 @@ $("rsgo").addEventListener("click", async () => {
   let stage = "connect";
   try {
     st("st_connect", {}, "", "rsst");
-    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200 });
+    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200, serialOptions: SERIAL });
     let chip;
     try {
       chip = await loader.main("default_reset");
