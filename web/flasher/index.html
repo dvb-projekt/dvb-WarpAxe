@@ -36,6 +36,9 @@ code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;backgrou
 .prog>div{height:100%;width:0;background:linear-gradient(90deg,var(--warp),var(--plasma));transition:width .2s}
 .status{min-height:1.5em}
 .status.ok{color:var(--ok)}.status.err{color:var(--err)}
+.bk{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
+.bk input{margin-top:4px;width:17px;height:17px;accent-color:var(--warp);flex:none}
+.btn.alt{background:transparent;border:1px solid var(--warp)}
 </style>
 </head>
 <body>
@@ -80,12 +83,24 @@ code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;backgrou
   <section class="card install">
     <h2 data-t="inst_h"></h2>
     <p data-t="inst_keep"></p>
+    <label class="bk"><input type="checkbox" id="bk" checked><span><span data-t="bk_label"></span><br><span class="mute" data-t="bk_hint"></span></span></label>
     <button class="btn" id="go" data-t="inst_btn"></button>
+    <button class="btn alt" id="go2" data-t="inst_continue" hidden></button>
     <div class="prog" id="prog" hidden><div id="bar"></div></div>
     <p class="status" id="st" aria-live="polite"></p>
     <p class="nosupport" id="nos" hidden></p>
     <span class="ver" id="ver"></span>
     <p class="mute" data-t="help_stuck"></p>
+  </section>
+
+  <section class="card install" id="restore">
+    <h2 data-t="rs_h"></h2>
+    <p data-t="rs_intro"></p>
+    <label class="mute" for="rsfile" data-t="rs_pick"></label>
+    <input type="file" id="rsfile" accept=".bin,application/octet-stream">
+    <button class="btn alt" id="rsgo" data-t="rs_btn" disabled></button>
+    <div class="prog" id="rsprog" hidden><div id="rsbar"></div></div>
+    <p class="status" id="rsst" aria-live="polite"></p>
   </section>
 
   <section class="card">
@@ -105,11 +120,11 @@ import { md5hex } from "./md5.js";
 const T = {
   en: {
     title: "Install WarpAxe",
-    intro: "WarpAxe is open-source firmware for BM1370 miners with Stratum V2, signed online updates and an AxeOS-compatible API. This page installs it over USB from your browser; after that, updates come from the miner's own web UI.",
+    intro: "WarpAxe is open-source firmware for BM1370 and BM1373 miners with Stratum V2, signed online updates and an AxeOS-compatible API. This page installs it over USB from your browser; after that, updates come from the miner's own web UI.",
     warn_h: "Before you start",
-    warn_early: "WarpAxe is at an early stage. It runs 24/7 on a Bitaxe Gamma and a NerdQAxe++ Rev 6.1; other boards are untested.",
-    warn_boards: "Supported: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Recognised but not mining yet: NerdQAxe++ Rev 7, NerdOctaxe, Q13xx boards — the chips stay off.",
-    warn_backup: "Keep a way back: back up the whole flash first with <code>tools/flash-backup.sh</code> from the repository, or keep the stock firmware file from its maker at hand to flash it back.",
+    warn_early: "WarpAxe is at an early stage. It runs on our Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia and BitForge Nano, and at users' on a Bitaxe Gamma Duo, Gamma Turbo and NerdOCTAXE-γ v2.2; other boards are untested.",
+    warn_boards: "Supported: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profiles not run yet: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — the full list is in the README.",
+    warn_backup: "Keep a way back: the flasher saves a full backup of the miner before it installs (on by default below). You can also use <code>tools/flash-backup.sh</code> from the repository, or keep the stock firmware file from its maker at hand.",
     prep_h: "Prepare",
     prep_browser: "Use Chrome or Edge on a computer (Web Serial). Safari, Firefox and phones cannot flash.",
     prep_gamma: "Bitaxe Gamma: keep its power supply connected and use a USB-A to USB-C cable (the Gamma does not power up its USB port from a C-to-C cable).",
@@ -136,14 +151,35 @@ const T = {
     st_done: "Done: WarpAxe {v} is installed. The miner starts now; its web UI is reachable after about a minute.",
     st_cancel: "No device chosen.",
     st_error: "Install stopped: {e}. If the miner stays dark, take it off power completely (power supply and USB cable).",
+    bk_label: "Save a full backup of the miner first (recommended)",
+    bk_hint: "Before anything is written, the flasher reads the miner's whole flash — firmware and settings — into a file you choose: 16 MB, about 2–3 minutes. Every block is checked against the chip. With it, “Restore a backup” below puts the miner back exactly as it was.",
+    inst_continue: "Choose the miner",
+    st_bkpick: "Choose where to save the backup …",
+    st_bkcancel: "No place chosen for the backup. Nothing was done.",
+    st_needclick: "The backup file is set. Click “Choose the miner” to continue.",
+    st_bkread: "Backing up … {p} %",
+    st_bkdone: "Backup saved: {f} ({mb} MB, checked against the chip). Loading the firmware …",
+    st_bkerr: "Backup failed: {e}. Nothing was written to the miner.",
+    st_loaderr: "Could not load the firmware: {e}. Nothing was written to the miner.",
+    st_done_bk: "Done: WarpAxe {v} is installed; your backup is in {f}. The miner starts now; its web UI is reachable after about a minute.",
+    rs_h: "Restore a backup",
+    rs_intro: "Back to the firmware you had before: choose a full backup made by this page (or by <code>tools/flash-backup.sh</code>). The whole flash is written back over USB — firmware, settings and all — and checked against the chip; then the miner restarts into its old firmware. Put it into download mode as for the install.",
+    rs_pick: "Backup file (.bin)",
+    rs_btn: "Connect and restore",
+    st_rsready: "{f} ({mb} MB) looks like a full flash backup. Click “Connect and restore”.",
+    st_rsbad: "This file is not a full flash backup ({why}). Nothing was written.",
+    st_rssize: "The backup is {a} MB, but this miner's flash is {b} MB — it is from another board. Nothing was written.",
+    st_rswrite: "Restoring… {p} %",
+    st_rsdone: "Done: the backup is back on the miner and checked. It now starts its old firmware.",
+    st_rserr: "Restore stopped: {e}. Start it again — the download mode always answers; if the miner stays dark, take it off power completely first (power supply and USB cable).",
   },
   de: {
     title: "WarpAxe installieren",
-    intro: "WarpAxe ist eine Open-Source-Firmware für BM1370-Miner mit Stratum V2, signierten Online-Updates und AxeOS-kompatibler API. Diese Seite installiert sie über USB aus dem Browser; danach kommen Updates über die Weboberfläche des Miners.",
+    intro: "WarpAxe ist eine Open-Source-Firmware für BM1370- und BM1373-Miner mit Stratum V2, signierten Online-Updates und AxeOS-kompatibler API. Diese Seite installiert sie über USB aus dem Browser; danach kommen Updates über die Weboberfläche des Miners.",
     warn_h: "Bevor du anfängst",
-    warn_early: "WarpAxe ist noch früh. Sie läuft rund um die Uhr auf einem Bitaxe Gamma und einem NerdQAxe++ Rev 6.1; andere Boards sind ungetestet.",
-    warn_boards: "Unterstützt: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Erkannt, aber noch ohne Mining: NerdQAxe++ Rev 7, NerdOctaxe, Q13xx-Boards – die Chips bleiben aus.",
-    warn_backup: "Halte dir einen Weg zurück offen: Sichere vorher den ganzen Flash mit <code>tools/flash-backup.sh</code> aus dem Repository, oder halte die Original-Firmware des Herstellers bereit, um sie zurückzuspielen.",
+    warn_early: "WarpAxe ist noch früh. Sie läuft bei uns auf einem Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia und BitForge Nano, bei Nutzern auf einem Bitaxe Gamma Duo, Gamma Turbo und NerdOCTAXE-γ v2.2; andere Boards sind ungetestet.",
+    warn_boards: "Unterstützt: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profile, die noch nicht gelaufen sind: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX – die vollständige Liste steht im README.",
+    warn_backup: "Halte dir einen Weg zurück offen: Der Flasher sichert vor der Installation den kompletten Miner (unten ab Werk eingeschaltet). Alternativ <code>tools/flash-backup.sh</code> aus dem Repository, oder halte die Original-Firmware des Herstellers bereit.",
     prep_h: "Vorbereiten",
     prep_browser: "Chrome oder Edge auf einem Computer verwenden (Web Serial). Safari, Firefox und Smartphones können nicht flashen.",
     prep_gamma: "Bitaxe Gamma: Netzteil angeschlossen lassen und ein USB-A-auf-USB-C-Kabel nehmen (mit einem C-auf-C-Kabel schaltet der Gamma seinen USB-Anschluss nicht ein).",
@@ -170,14 +206,35 @@ const T = {
     st_done: "Fertig: WarpAxe {v} ist installiert. Der Miner startet jetzt; seine Weboberfläche ist nach etwa einer Minute erreichbar.",
     st_cancel: "Kein Gerät gewählt.",
     st_error: "Installation abgebrochen: {e}. Bleibt der Miner dunkel, nimm ihn ganz vom Strom (Netzteil und USB-Kabel).",
+    bk_label: "Vorher eine vollständige Sicherung des Miners speichern (empfohlen)",
+    bk_hint: "Bevor irgendetwas geschrieben wird, liest der Flasher den ganzen Flash des Miners – Firmware und Einstellungen – in eine Datei, deren Ort du wählst: 16 MB, etwa 2–3 Minuten. Jeder Block wird gegen den Chip geprüft. Mit „Sicherung zurückspielen“ weiter unten bringst du den Miner damit genau in diesen Zustand zurück.",
+    inst_continue: "Miner auswählen",
+    st_bkpick: "Wähle, wo die Sicherung gespeichert werden soll …",
+    st_bkcancel: "Kein Speicherort für die Sicherung gewählt. Es wurde nichts gemacht.",
+    st_needclick: "Die Sicherungsdatei ist festgelegt. Klicke auf „Miner auswählen“, um weiterzumachen.",
+    st_bkread: "Sichere … {p} %",
+    st_bkdone: "Sicherung gespeichert: {f} ({mb} MB, gegen den Chip geprüft). Lade die Firmware …",
+    st_bkerr: "Sicherung fehlgeschlagen: {e}. Auf den Miner wurde nichts geschrieben.",
+    st_loaderr: "Firmware konnte nicht geladen werden: {e}. Auf den Miner wurde nichts geschrieben.",
+    st_done_bk: "Fertig: WarpAxe {v} ist installiert, deine Sicherung liegt in {f}. Der Miner startet jetzt; seine Weboberfläche ist nach etwa einer Minute erreichbar.",
+    rs_h: "Sicherung zurückspielen",
+    rs_intro: "Zurück zur Firmware von vorher: Wähle eine vollständige Sicherung, die mit dieser Seite (oder mit <code>tools/flash-backup.sh</code>) erstellt wurde. Der ganze Flash wird über USB zurückgeschrieben – Firmware, Einstellungen, alles – und gegen den Chip geprüft; danach startet der Miner mit seiner alten Firmware. Den Download-Modus stellst du ein wie bei der Installation.",
+    rs_pick: "Sicherungsdatei (.bin)",
+    rs_btn: "Verbinden und zurückspielen",
+    st_rsready: "{f} ({mb} MB) sieht nach einer vollständigen Flash-Sicherung aus. Klicke auf „Verbinden und zurückspielen“.",
+    st_rsbad: "Diese Datei ist keine vollständige Flash-Sicherung ({why}). Es wurde nichts geschrieben.",
+    st_rssize: "Die Sicherung hat {a} MB, der Flash dieses Miners aber {b} MB – sie stammt von einem anderen Board. Es wurde nichts geschrieben.",
+    st_rswrite: "Spiele zurück… {p} %",
+    st_rsdone: "Fertig: Die Sicherung ist zurück auf dem Miner und geprüft. Er startet jetzt mit seiner alten Firmware.",
+    st_rserr: "Zurückspielen abgebrochen: {e}. Starte es noch einmal – der Download-Modus antwortet immer; bleibt der Miner dunkel, nimm ihn vorher ganz vom Strom (Netzteil und USB-Kabel).",
   },
   es: {
     title: "Instalar WarpAxe",
-    intro: "WarpAxe es un firmware de código abierto para mineros con BM1370, con Stratum V2, actualizaciones en línea firmadas y una API compatible con AxeOS. Esta página lo instala por USB desde tu navegador; después, las actualizaciones se hacen desde la propia interfaz web del minero.",
+    intro: "WarpAxe es un firmware de código abierto para mineros con BM1370 y BM1373, con Stratum V2, actualizaciones en línea firmadas y una API compatible con AxeOS. Esta página lo instala por USB desde tu navegador; después, las actualizaciones se hacen desde la propia interfaz web del minero.",
     warn_h: "Antes de empezar",
-    warn_early: "WarpAxe está en una fase temprana. Funciona 24/7 en un Bitaxe Gamma y en un NerdQAxe++ Rev 6.1; el resto de placas no se ha probado.",
-    warn_boards: "Compatibles: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Se reconocen pero aún no minan: NerdQAxe++ Rev 7, NerdOctaxe y placas Q13xx — los chips se quedan apagados.",
-    warn_backup: "Asegúrate de poder volver atrás: primero haz una copia de toda la flash con <code>tools/flash-backup.sh</code> del repositorio, o ten a mano el archivo del firmware original del fabricante para volver a flashearlo.",
+    warn_early: "WarpAxe está en una fase temprana. Funciona en nuestros Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia y BitForge Nano, y en equipos de usuarios con Bitaxe Gamma Duo, Gamma Turbo y NerdOCTAXE-γ v2.2; el resto de placas no se ha probado.",
+    warn_boards: "Compatibles: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Perfiles que aún no se han probado: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — la lista completa está en el README.",
+    warn_backup: "Asegúrate de poder volver atrás: antes de instalar, el instalador guarda una copia completa del minero (activado por defecto más abajo). También puedes usar <code>tools/flash-backup.sh</code> del repositorio o tener a mano el archivo del firmware original del fabricante.",
     prep_h: "Preparación",
     prep_browser: "Usa Chrome o Edge en un ordenador (Web Serial). Con Safari, Firefox o desde el móvil no se puede flashear.",
     prep_gamma: "Bitaxe Gamma: deja la fuente de alimentación conectada y usa un cable USB-A a USB-C (con un cable C a C, el Gamma no alimenta su puerto USB).",
@@ -204,14 +261,35 @@ const T = {
     st_done: "Listo: WarpAxe {v} está instalado. El minero arranca ahora; su interfaz web estará accesible en un minuto aproximadamente.",
     st_cancel: "No se eligió ningún dispositivo.",
     st_error: "Instalación detenida: {e}. Si el minero sigue apagado, desconéctalo por completo de la corriente (fuente de alimentación y cable USB).",
+    bk_label: "Guardar antes una copia de seguridad completa del minero (recomendado)",
+    bk_hint: "Antes de escribir nada, el instalador lee toda la flash del minero —firmware y ajustes— en un archivo que tú eliges: 16 MB, unos 2–3 minutos. Cada bloque se comprueba con el chip. Con ese archivo, «Restaurar una copia» (más abajo) deja el minero exactamente como estaba.",
+    inst_continue: "Elegir el minero",
+    st_bkpick: "Elige dónde guardar la copia…",
+    st_bkcancel: "No se eligió dónde guardar la copia. No se ha hecho nada.",
+    st_needclick: "El archivo de la copia está listo. Pulsa «Elegir el minero» para continuar.",
+    st_bkread: "Guardando copia… {p} %",
+    st_bkdone: "Copia guardada: {f} ({mb} MB, comprobada con el chip). Cargando el firmware…",
+    st_bkerr: "La copia ha fallado: {e}. No se ha escrito nada en el minero.",
+    st_loaderr: "No se pudo cargar el firmware: {e}. No se ha escrito nada en el minero.",
+    st_done_bk: "Listo: WarpAxe {v} está instalado; tu copia está en {f}. El minero arranca ahora; su interfaz web estará accesible en un minuto aproximadamente.",
+    rs_h: "Restaurar una copia",
+    rs_intro: "Vuelve al firmware que tenías antes: elige una copia de seguridad completa hecha con esta página (o con <code>tools/flash-backup.sh</code>). Toda la flash se vuelve a escribir por USB —firmware, ajustes y todo lo demás— y se comprueba con el chip; después el minero arranca con su firmware anterior. Ponlo en modo de descarga como para la instalación.",
+    rs_pick: "Archivo de copia (.bin)",
+    rs_btn: "Conectar y restaurar",
+    st_rsready: "{f} ({mb} MB) parece una copia completa de la flash. Pulsa «Conectar y restaurar».",
+    st_rsbad: "Este archivo no es una copia completa de la flash ({why}). No se ha escrito nada.",
+    st_rssize: "La copia tiene {a} MB, pero la flash de este minero tiene {b} MB: es de otra placa. No se ha escrito nada.",
+    st_rswrite: "Restaurando… {p} %",
+    st_rsdone: "Listo: la copia está de nuevo en el minero y comprobada. Ahora arranca con su firmware anterior.",
+    st_rserr: "Restauración detenida: {e}. Vuelve a empezar: el modo de descarga siempre responde; si el minero sigue apagado, desconéctalo antes por completo de la corriente (fuente de alimentación y cable USB).",
   },
   fr: {
     title: "Installer WarpAxe",
-    intro: "WarpAxe est un firmware open source pour les mineurs à BM1370, avec Stratum V2, des mises à jour en ligne signées et une API compatible AxeOS. Cette page l’installe en USB depuis votre navigateur ; ensuite, les mises à jour se font directement depuis l’interface web du mineur.",
+    intro: "WarpAxe est un firmware open source pour les mineurs à BM1370 et BM1373, avec Stratum V2, des mises à jour en ligne signées et une API compatible AxeOS. Cette page l’installe en USB depuis votre navigateur ; ensuite, les mises à jour se font directement depuis l’interface web du mineur.",
     warn_h: "Avant de commencer",
-    warn_early: "WarpAxe n’en est qu’à ses débuts. Il tourne 24 h/24 sur un Bitaxe Gamma et un NerdQAxe++ Rev 6.1 ; les autres cartes n’ont pas été testées.",
-    warn_boards: "Modèles pris en charge : Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Reconnus mais pas encore en minage : NerdQAxe++ Rev 7, NerdOctaxe, cartes Q13xx — les puces restent éteintes.",
-    warn_backup: "Prévoyez un retour en arrière : sauvegardez d’abord toute la flash avec <code>tools/flash-backup.sh</code> du dépôt, ou gardez sous la main le fichier du firmware d’origine du fabricant pour pouvoir le reflasher.",
+    warn_early: "WarpAxe n’en est qu’à ses débuts. Il tourne chez nous sur un Bitaxe Gamma, un NerdQAxe++, un NerdOCTAXE-γ, un NerdAxe Gaia et un BitForge Nano, et chez des utilisateurs sur un Bitaxe Gamma Duo, un Gamma Turbo et un NerdOCTAXE-γ v2.2 ; les autres cartes n’ont pas été testées.",
+    warn_boards: "Modèles pris en charge : Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profils pas encore testés : NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — la liste complète est dans le README.",
+    warn_backup: "Prévoyez un retour en arrière : avant d’installer, l’outil sauvegarde intégralement le mineur (activé par défaut ci-dessous). Vous pouvez aussi utiliser <code>tools/flash-backup.sh</code> du dépôt, ou garder sous la main le fichier du firmware d’origine du fabricant.",
     prep_h: "Préparation",
     prep_browser: "Utilisez Chrome ou Edge sur un ordinateur (Web Serial). Safari, Firefox et les téléphones ne permettent pas de flasher.",
     prep_gamma: "Bitaxe Gamma : laissez son alimentation branchée et utilisez un câble USB-A vers USB-C (avec un câble C vers C, le Gamma n’alimente pas son port USB).",
@@ -238,14 +316,35 @@ const T = {
     st_done: "Terminé : WarpAxe {v} est installé. Le mineur démarre ; son interface web sera accessible dans une minute environ.",
     st_cancel: "Aucun appareil choisi.",
     st_error: "Installation interrompue : {e}. Si le mineur reste éteint, coupez-le complètement de l’alimentation (bloc d’alimentation et câble USB).",
+    bk_label: "Sauvegarder d’abord l’intégralité du mineur (recommandé)",
+    bk_hint: "Avant toute écriture, l’outil lit toute la flash du mineur — firmware et réglages — dans un fichier de votre choix : 16 Mo, environ 2 à 3 minutes. Chaque bloc est vérifié sur la puce. Avec ce fichier, « Restaurer une sauvegarde » ci-dessous remet le mineur exactement dans cet état.",
+    inst_continue: "Choisir le mineur",
+    st_bkpick: "Choisissez où enregistrer la sauvegarde…",
+    st_bkcancel: "Aucun emplacement choisi pour la sauvegarde. Rien n’a été fait.",
+    st_needclick: "Le fichier de sauvegarde est choisi. Cliquez sur « Choisir le mineur » pour continuer.",
+    st_bkread: "Sauvegarde en cours… {p} %",
+    st_bkdone: "Sauvegarde enregistrée : {f} ({mb} Mo, vérifiée sur la puce). Chargement du firmware…",
+    st_bkerr: "Échec de la sauvegarde : {e}. Rien n’a été écrit sur le mineur.",
+    st_loaderr: "Impossible de charger le firmware : {e}. Rien n’a été écrit sur le mineur.",
+    st_done_bk: "Terminé : WarpAxe {v} est installé ; votre sauvegarde se trouve dans {f}. Le mineur démarre ; son interface web sera accessible dans une minute environ.",
+    rs_h: "Restaurer une sauvegarde",
+    rs_intro: "Revenir au firmware d’avant : choisissez une sauvegarde complète faite avec cette page (ou avec <code>tools/flash-backup.sh</code>). Toute la flash est réécrite en USB — firmware, réglages, tout — et vérifiée sur la puce ; le mineur redémarre ensuite sur son ancien firmware. Passez-le en mode téléchargement comme pour l’installation.",
+    rs_pick: "Fichier de sauvegarde (.bin)",
+    rs_btn: "Connecter et restaurer",
+    st_rsready: "{f} ({mb} Mo) ressemble à une sauvegarde complète de la flash. Cliquez sur « Connecter et restaurer ».",
+    st_rsbad: "Ce fichier n’est pas une sauvegarde complète de la flash ({why}). Rien n’a été écrit.",
+    st_rssize: "La sauvegarde fait {a} Mo, mais la flash de ce mineur fait {b} Mo — elle vient d’une autre carte. Rien n’a été écrit.",
+    st_rswrite: "Restauration en cours… {p} %",
+    st_rsdone: "Terminé : la sauvegarde est de nouveau sur le mineur et vérifiée. Il redémarre maintenant sur son ancien firmware.",
+    st_rserr: "Restauration interrompue : {e}. Relancez-la — le mode téléchargement répond toujours ; si le mineur reste éteint, coupez-le d’abord complètement de l’alimentation (bloc d’alimentation et câble USB).",
   },
   it: {
     title: "Installa WarpAxe",
-    intro: "WarpAxe è un firmware open source per miner con BM1370, con Stratum V2, aggiornamenti online firmati e un'API compatibile con AxeOS. Questa pagina lo installa via USB dal tuo browser; dopo, gli aggiornamenti si fanno direttamente dall'interfaccia web del miner.",
+    intro: "WarpAxe è un firmware open source per miner con BM1370 e BM1373, con Stratum V2, aggiornamenti online firmati e un'API compatibile con AxeOS. Questa pagina lo installa via USB dal tuo browser; dopo, gli aggiornamenti si fanno direttamente dall'interfaccia web del miner.",
     warn_h: "Prima di iniziare",
-    warn_early: "WarpAxe è ancora in fase iniziale. Gira 24/7 su un Bitaxe Gamma e su un NerdQAxe++ Rev 6.1; le altre schede non sono state testate.",
-    warn_boards: "Supportate: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Riconosciute ma non ancora in mining: NerdQAxe++ Rev 7, NerdOctaxe, schede Q13xx — i chip restano spenti.",
-    warn_backup: "Tieniti una via di ritorno: prima fai un backup dell'intera flash con <code>tools/flash-backup.sh</code> del repository, oppure tieni a portata di mano il file del firmware originale del produttore per poterlo riflashare.",
+    warn_early: "WarpAxe è ancora in fase iniziale. Gira da noi su Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia e BitForge Nano, e presso alcuni utenti su Bitaxe Gamma Duo, Gamma Turbo e NerdOCTAXE-γ v2.2; le altre schede non sono state testate.",
+    warn_boards: "Supportate: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Profili non ancora provati: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — l'elenco completo è nel README.",
+    warn_backup: "Tieniti una via di ritorno: prima dell'installazione il flasher salva un backup completo del miner (attivo di default qui sotto). In alternativa usa <code>tools/flash-backup.sh</code> del repository, oppure tieni a portata di mano il file del firmware originale del produttore.",
     prep_h: "Preparazione",
     prep_browser: "Usa Chrome o Edge su un computer (Web Serial). Con Safari, Firefox o da smartphone non si può flashare.",
     prep_gamma: "Bitaxe Gamma: lascia collegato l'alimentatore e usa un cavo da USB-A a USB-C (con un cavo C-C il Gamma non alimenta la sua porta USB).",
@@ -272,14 +371,35 @@ const T = {
     st_done: "Fatto: WarpAxe {v} è installato. Il miner si sta avviando; la sua interfaccia web sarà raggiungibile tra circa un minuto.",
     st_cancel: "Nessun dispositivo scelto.",
     st_error: "Installazione interrotta: {e}. Se il miner resta spento, scollegalo completamente dall’alimentazione (alimentatore e cavo USB).",
+    bk_label: "Salva prima un backup completo del miner (consigliato)",
+    bk_hint: "Prima di scrivere qualsiasi cosa, il flasher legge l'intera flash del miner — firmware e impostazioni — in un file che scegli tu: 16 MB, circa 2–3 minuti. Ogni blocco viene verificato con il chip. Con questo file, “Ripristina un backup” qui sotto riporta il miner esattamente com'era.",
+    inst_continue: "Scegli il miner",
+    st_bkpick: "Scegli dove salvare il backup…",
+    st_bkcancel: "Nessuna destinazione scelta per il backup. Non è stato fatto nulla.",
+    st_needclick: "Il file di backup è impostato. Clicca su “Scegli il miner” per continuare.",
+    st_bkread: "Backup in corso… {p}%",
+    st_bkdone: "Backup salvato: {f} ({mb} MB, verificato con il chip). Caricamento del firmware…",
+    st_bkerr: "Backup non riuscito: {e}. Sul miner non è stato scritto nulla.",
+    st_loaderr: "Impossibile caricare il firmware: {e}. Sul miner non è stato scritto nulla.",
+    st_done_bk: "Fatto: WarpAxe {v} è installato; il tuo backup è in {f}. Il miner si avvia ora; la sua interfaccia web sarà raggiungibile tra circa un minuto.",
+    rs_h: "Ripristina un backup",
+    rs_intro: "Torna al firmware di prima: scegli un backup completo fatto con questa pagina (o con <code>tools/flash-backup.sh</code>). L'intera flash viene riscritta via USB — firmware, impostazioni, tutto — e verificata con il chip; poi il miner si riavvia con il suo vecchio firmware. Mettilo in modalità download come per l'installazione.",
+    rs_pick: "File di backup (.bin)",
+    rs_btn: "Connetti e ripristina",
+    st_rsready: "{f} ({mb} MB) sembra un backup completo della flash. Clicca su “Connetti e ripristina”.",
+    st_rsbad: "Questo file non è un backup completo della flash ({why}). Non è stato scritto nulla.",
+    st_rssize: "Il backup è di {a} MB, ma la flash di questo miner è di {b} MB: proviene da un'altra scheda. Non è stato scritto nulla.",
+    st_rswrite: "Ripristino in corso… {p}%",
+    st_rsdone: "Fatto: il backup è di nuovo sul miner ed è verificato. Ora si avvia con il suo vecchio firmware.",
+    st_rserr: "Ripristino interrotto: {e}. Riprova: la modalità download risponde sempre; se il miner resta spento, prima scollegalo completamente dall'alimentazione (alimentatore e cavo USB).",
   },
   pt: {
     title: "Instalar o WarpAxe",
-    intro: "O WarpAxe é um firmware open source para mineradores BM1370 com Stratum V2, atualizações online assinadas e uma API compatível com o AxeOS. Esta página instala o firmware via USB direto do navegador; depois disso, as atualizações vêm da própria interface web do minerador.",
+    intro: "O WarpAxe é um firmware open source para mineradores BM1370 e BM1373 com Stratum V2, atualizações online assinadas e uma API compatível com o AxeOS. Esta página instala o firmware via USB direto do navegador; depois disso, as atualizações vêm da própria interface web do minerador.",
     warn_h: "Antes de começar",
-    warn_early: "O WarpAxe ainda está em fase inicial. Ele roda 24/7 em um Bitaxe Gamma e em um NerdQAxe++ Rev 6.1; as outras placas não foram testadas.",
-    warn_boards: "Suportadas: Bitaxe Gamma (60x), NerdQAxe++ Rev 6.1. Reconhecidas, mas ainda sem minerar: NerdQAxe++ Rev 7, NerdOctaxe, placas Q13xx — os chips ficam desligados.",
-    warn_backup: "Garanta um caminho de volta: antes, faça um backup completo da flash com <code>tools/flash-backup.sh</code> do repositório, ou deixe à mão o arquivo do firmware original do fabricante para gravá-lo de novo.",
+    warn_early: "O WarpAxe ainda está em fase inicial. Ele roda nos nossos Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia e BitForge Nano, e com usuários em um Bitaxe Gamma Duo, Gamma Turbo e NerdOCTAXE-γ v2.2; as outras placas não foram testadas.",
+    warn_boards: "Suportadas: Bitaxe Gamma (60x), Gamma Duo, Gamma Turbo, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano. Perfis ainda não testados: NerdQAxe++ Rev 7, Bitaxe Naja Duo, Gamma Hex, NerdAxe Gamma, NerdQX — a lista completa está no README.",
+    warn_backup: "Garanta um caminho de volta: antes de instalar, o instalador faz um backup completo do minerador (ativado por padrão logo abaixo). Você também pode usar o <code>tools/flash-backup.sh</code> do repositório, ou ter em mãos o arquivo do firmware original do fabricante.",
     prep_h: "Preparação",
     prep_browser: "Use o Chrome ou o Edge em um computador (Web Serial). Safari, Firefox e celulares não conseguem gravar o firmware.",
     prep_gamma: "Bitaxe Gamma: mantenha a fonte conectada e use um cabo USB-A para USB-C (com um cabo C-C, o Gamma não ativa a porta USB).",
@@ -306,14 +426,35 @@ const T = {
     st_done: "Pronto: o WarpAxe {v} está instalado. O minerador está iniciando; a interface web fica acessível em cerca de um minuto.",
     st_cancel: "Nenhum dispositivo escolhido.",
     st_error: "Instalação interrompida: {e}. Se o minerador continuar apagado, desligue-o totalmente da energia (fonte e cabo USB).",
+    bk_label: "Fazer antes um backup completo do minerador (recomendado)",
+    bk_hint: "Antes de gravar qualquer coisa, o instalador lê toda a flash do minerador — firmware e configurações — para um arquivo que você escolhe: 16 MB, cerca de 2 a 3 minutos. Cada bloco é conferido com o chip. Com ele, “Restaurar um backup” logo abaixo deixa o minerador exatamente como estava.",
+    inst_continue: "Escolher o minerador",
+    st_bkpick: "Escolha onde salvar o backup…",
+    st_bkcancel: "Nenhum local escolhido para o backup. Nada foi feito.",
+    st_needclick: "O arquivo de backup está definido. Clique em “Escolher o minerador” para continuar.",
+    st_bkread: "Fazendo backup… {p}%",
+    st_bkdone: "Backup salvo: {f} ({mb} MB, conferido com o chip). Carregando o firmware…",
+    st_bkerr: "O backup falhou: {e}. Nada foi gravado no minerador.",
+    st_loaderr: "Não foi possível carregar o firmware: {e}. Nada foi gravado no minerador.",
+    st_done_bk: "Pronto: o WarpAxe {v} está instalado; seu backup está em {f}. O minerador está iniciando; a interface web fica acessível em cerca de um minuto.",
+    rs_h: "Restaurar um backup",
+    rs_intro: "Voltar ao firmware de antes: escolha um backup completo feito por esta página (ou pelo <code>tools/flash-backup.sh</code>). Toda a flash é regravada via USB — firmware, configurações, tudo — e conferida com o chip; depois o minerador reinicia com o firmware antigo. Coloque-o no modo download como na instalação.",
+    rs_pick: "Arquivo de backup (.bin)",
+    rs_btn: "Conectar e restaurar",
+    st_rsready: "{f} ({mb} MB) parece um backup completo da flash. Clique em “Conectar e restaurar”.",
+    st_rsbad: "Este arquivo não é um backup completo da flash ({why}). Nada foi gravado.",
+    st_rssize: "O backup tem {a} MB, mas a flash deste minerador tem {b} MB — ele é de outra placa. Nada foi gravado.",
+    st_rswrite: "Restaurando… {p}%",
+    st_rsdone: "Pronto: o backup voltou para o minerador e foi conferido. Ele agora inicia com o firmware antigo.",
+    st_rserr: "Restauração interrompida: {e}. Comece de novo — o modo download sempre responde; se o minerador continuar apagado, antes desligue-o totalmente da energia (fonte e cabo USB).",
   },
   ja: {
     title: "WarpAxe をインストール",
-    intro: "WarpAxe は BM1370 搭載マイナー向けのオープンソースファームウェアです。Stratum V2、署名付きオンライン更新、AxeOS 互換の API に対応しています。このページではブラウザから USB 経由でインストールします。以降の更新はマイナー自身の Web UI から行えます。",
+    intro: "WarpAxe は BM1370・BM1373 搭載マイナー向けのオープンソースファームウェアです。Stratum V2、署名付きオンライン更新、AxeOS 互換の API に対応しています。このページではブラウザから USB 経由でインストールします。以降の更新はマイナー自身の Web UI から行えます。",
     warn_h: "始める前に",
-    warn_early: "WarpAxe はまだ初期段階です。Bitaxe Gamma と NerdQAxe++ Rev 6.1 では 24 時間 365 日稼働していますが、その他のボードは未検証です。",
-    warn_boards: "対応：Bitaxe Gamma (60x)、NerdQAxe++ Rev 6.1。認識はするもののまだマイニングできないもの：NerdQAxe++ Rev 7、NerdOctaxe、Q13xx 系ボード — チップはオフのままです。",
-    warn_backup: "元に戻せるようにしておいてください。事前にリポジトリの <code>tools/flash-backup.sh</code> でフラッシュ全体をバックアップするか、メーカー純正ファームウェアのファイルを手元に用意して書き戻せるようにしておきましょう。",
+    warn_early: "WarpAxe はまだ初期段階です。私たちの Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano で稼働しており、ユーザーのもとでは Bitaxe Gamma Duo、Gamma Turbo、NerdOCTAXE-γ v2.2 でも動いています。その他のボードは未検証です。",
+    warn_boards: "対応：Bitaxe Gamma (60x)、Gamma Duo、Gamma Turbo、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano。プロファイルはあるもののまだ動作未確認：NerdQAxe++ Rev 7、Bitaxe Naja Duo、Gamma Hex、NerdAxe Gamma、NerdQX — 全一覧は README にあります。",
+    warn_backup: "元に戻せるようにしておいてください。インストールの前に、書き込みツールがマイナー全体のバックアップを保存します（下の項目で既定でオン）。リポジトリの <code>tools/flash-backup.sh</code> を使うか、メーカー純正ファームウェアのファイルを手元に用意しておくこともできます。",
     prep_h: "準備",
     prep_browser: "パソコンで Chrome または Edge を使ってください（Web Serial）。Safari、Firefox、スマートフォンでは書き込みできません。",
     prep_gamma: "Bitaxe Gamma：電源はつないだまま、USB-A to USB-C ケーブルを使ってください（C to C ケーブルでは Gamma の USB ポートが有効になりません）。",
@@ -340,14 +481,35 @@ const T = {
     st_done: "完了：WarpAxe {v} をインストールしました。マイナーが起動します。約 1 分後に Web UI にアクセスできます。",
     st_cancel: "デバイスが選択されていません。",
     st_error: "インストールを中断しました：{e}。マイナーの画面が消えたままの場合は、電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
+    bk_label: "先にマイナー全体のバックアップを保存する（推奨）",
+    bk_hint: "何かを書き込む前に、書き込みツールがマイナーのフラッシュ全体（ファームウェアと設定）を、選択したファイルに読み出します。16 MB、約 2〜3 分です。各ブロックはチップと照合されます。このファイルがあれば、下の「バックアップを復元」でマイナーをこの状態に正確に戻せます。",
+    inst_continue: "マイナーを選択",
+    st_bkpick: "バックアップの保存先を選んでください…",
+    st_bkcancel: "バックアップの保存先が選ばれませんでした。何も行っていません。",
+    st_needclick: "バックアップファイルを設定しました。続けるには「マイナーを選択」をクリックしてください。",
+    st_bkread: "バックアップ中… {p}%",
+    st_bkdone: "バックアップを保存しました：{f}（{mb} MB、チップと照合済み）。ファームウェアを読み込んでいます…",
+    st_bkerr: "バックアップに失敗しました：{e}。マイナーには何も書き込んでいません。",
+    st_loaderr: "ファームウェアを読み込めませんでした：{e}。マイナーには何も書き込んでいません。",
+    st_done_bk: "完了：WarpAxe {v} をインストールしました。バックアップは {f} にあります。マイナーが起動します。約 1 分後に Web UI にアクセスできます。",
+    rs_h: "バックアップを復元",
+    rs_intro: "以前のファームウェアに戻します。このページ（または <code>tools/flash-backup.sh</code>）で作成した完全なバックアップを選択してください。フラッシュ全体（ファームウェア、設定などすべて）を USB 経由で書き戻し、チップと照合したうえで、マイナーが元のファームウェアで再起動します。インストール時と同じようにダウンロードモードにしてください。",
+    rs_pick: "バックアップファイル（.bin）",
+    rs_btn: "接続して復元",
+    st_rsready: "{f}（{mb} MB）はフラッシュ全体のバックアップのようです。「接続して復元」をクリックしてください。",
+    st_rsbad: "このファイルはフラッシュ全体のバックアップではありません（{why}）。何も書き込んでいません。",
+    st_rssize: "バックアップは {a} MB ですが、このマイナーのフラッシュは {b} MB です。別のボードのものです。何も書き込んでいません。",
+    st_rswrite: "復元中… {p}%",
+    st_rsdone: "完了：バックアップをマイナーに書き戻し、照合しました。元のファームウェアで起動します。",
+    st_rserr: "復元を中断しました：{e}。もう一度やり直してください。ダウンロードモードは必ず応答します。マイナーの画面が消えたままの場合は、先に電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
   },
   zh: {
     title: "安装 WarpAxe",
-    intro: "WarpAxe 是面向 BM1370 矿机的开源固件，支持 Stratum V2、带签名的在线更新和兼容 AxeOS 的 API。本页面通过浏览器经 USB 安装固件；之后的更新直接在矿机自带的 Web 界面里完成。",
+    intro: "WarpAxe 是面向 BM1370 和 BM1373 矿机的开源固件，支持 Stratum V2、带签名的在线更新和兼容 AxeOS 的 API。本页面通过浏览器经 USB 安装固件；之后的更新直接在矿机自带的 Web 界面里完成。",
     warn_h: "开始之前",
-    warn_early: "WarpAxe 目前还处于早期阶段。它已在一台 Bitaxe Gamma 和一台 NerdQAxe++ Rev 6.1 上 24/7 运行；其他板子尚未测试。",
-    warn_boards: "已支持：Bitaxe Gamma (60x)、NerdQAxe++ Rev 6.1。能识别但暂不能挖矿：NerdQAxe++ Rev 7、NerdOctaxe、Q13xx 系列板——芯片保持关闭。",
-    warn_backup: "留好退路：先用仓库里的 <code>tools/flash-backup.sh</code> 备份整个 flash，或者提前准备好厂家的原版固件文件，以便刷回去。",
+    warn_early: "WarpAxe 目前还处于早期阶段。它已在我们的 Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia 和 BitForge Nano 上运行，也在用户的 Bitaxe Gamma Duo、Gamma Turbo 和 NerdOCTAXE-γ v2.2 上运行；其他板子尚未测试。",
+    warn_boards: "已支持：Bitaxe Gamma (60x)、Gamma Duo、Gamma Turbo、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano。已有配置但尚未实际运行：NerdQAxe++ Rev 7、Bitaxe Naja Duo、Gamma Hex、NerdAxe Gamma、NerdQX——完整列表见 README。",
+    warn_backup: "留好退路：安装前，刷写工具会先完整备份矿机（下方默认开启）。也可以用仓库里的 <code>tools/flash-backup.sh</code>，或者提前准备好厂家的原版固件文件。",
     prep_h: "准备",
     prep_browser: "请在电脑上使用 Chrome 或 Edge（Web Serial）。Safari、Firefox 和手机都无法刷机。",
     prep_gamma: "Bitaxe Gamma：保持电源接通，并使用 USB-A 转 USB-C 线（用 C 对 C 线时，Gamma 不会启用 USB 口）。",
@@ -374,13 +536,34 @@ const T = {
     st_done: "完成：WarpAxe {v} 已安装。矿机正在启动，大约一分钟后即可访问其网页界面。",
     st_cancel: "未选择设备。",
     st_error: "安装已中止：{e}。如果矿机一直黑屏，请将它完全断电（电源和 USB 线都拔掉）。",
+    bk_label: "先完整备份矿机（推荐）",
+    bk_hint: "在写入任何内容之前，刷写工具会把矿机的整个闪存（固件和设置）读取到你选择的文件中：16 MB，大约 2–3 分钟。每个数据块都会与芯片核对。有了这个文件，就可以用下方的“恢复备份”把矿机还原到完全相同的状态。",
+    inst_continue: "选择矿机",
+    st_bkpick: "请选择备份的保存位置…",
+    st_bkcancel: "没有选择备份的保存位置，未执行任何操作。",
+    st_needclick: "备份文件已设定。点击“选择矿机”继续。",
+    st_bkread: "正在备份… {p}%",
+    st_bkdone: "备份已保存：{f}（{mb} MB，已与芯片核对）。正在加载固件…",
+    st_bkerr: "备份失败：{e}。没有向矿机写入任何内容。",
+    st_loaderr: "无法加载固件：{e}。没有向矿机写入任何内容。",
+    st_done_bk: "完成：WarpAxe {v} 已安装；备份保存在 {f}。矿机正在启动，大约一分钟后即可访问其 Web 界面。",
+    rs_h: "恢复备份",
+    rs_intro: "回到之前的固件：选择用本页面（或 <code>tools/flash-backup.sh</code>）制作的完整备份。整个闪存（固件、设置等全部内容）会通过 USB 写回，并与芯片核对；随后矿机会以原来的固件重新启动。请像安装时一样让矿机进入下载模式。",
+    rs_pick: "备份文件（.bin）",
+    rs_btn: "连接并恢复",
+    st_rsready: "{f}（{mb} MB）看起来是完整的闪存备份。点击“连接并恢复”。",
+    st_rsbad: "此文件不是完整的闪存备份（{why}），没有写入任何内容。",
+    st_rssize: "备份为 {a} MB，但这台矿机的闪存为 {b} MB——它来自另一块板子。没有写入任何内容。",
+    st_rswrite: "正在恢复… {p}%",
+    st_rsdone: "完成：备份已写回矿机并核对无误。矿机现在会以原来的固件启动。",
+    st_rserr: "恢复已中止：{e}。请重新开始——下载模式总会响应；如果矿机一直黑屏，请先将它完全断电（电源和 USB 线都拔掉）。",
   },
 };
 let version = "";
 function apply(lang) {
   const t = T[lang] || T.en;
   document.documentElement.lang = lang;
-  document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t[el.dataset.t]; });
+  document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t[el.dataset.t] ?? T.en[el.dataset.t]; });
   document.getElementById("ver").textContent = version ? t.ver.replace("{v}", version) : "";
 }
 const sel = document.getElementById("lang");
@@ -403,12 +586,12 @@ fetch("manifest.json").then(r => r.json()).then(m => { version = m.version; appl
 // the ESP32-S3.
 const RTC = 0x60008000;
 const $ = (id) => document.getElementById(id);
-function st(key, vars = {}, cls = "") {
+function st(key, vars = {}, cls = "", id = "st") {
   const t = T[sel.value] || T.en;
   let s = t[key] || T.en[key];
   for (const [k, v] of Object.entries(vars)) s = s.replace("{" + k + "}", v);
-  $("st").textContent = s;
-  $("st").className = "status " + cls;
+  $(id).textContent = s;
+  $(id).className = "status " + cls;
 }
 if (!("serial" in navigator)) {
   $("go").disabled = true;
@@ -416,16 +599,62 @@ if (!("serial" in navigator)) {
   $("nos").dataset.t = "unsupported";
   apply(sel.value);
 }
-$("go").addEventListener("click", async () => {
-  let port;
-  st("st_pick");
+// The backup: before anything is written, the whole flash is read back in
+// 256 KB blocks, each block's MD5 checked against the one the chip
+// computes itself (up to three reads), and streamed into the file the
+// user picked. The file dialog comes first, on the click; if it used up
+// the click, the browser refuses the port dialog, and a second button
+// asks for one more click.
+const BLOCK = 256 * 1024;
+const today = () => new Date().toISOString().slice(0, 10);
+async function pickBackup() {
+  if (!window.showSaveFilePicker) return { download: true };
+  const handle = await window.showSaveFilePicker({
+    suggestedName: `miner-backup-${today()}.bin`,
+    types: [{ description: "Flash image", accept: { "application/octet-stream": [".bin"] } }],
+  });
+  return { handle };
+}
+async function backup(loader, target) {
+  const size = loader.flashSizeBytes(await loader.detectFlashSize());
+  if (!(size > 0)) throw new Error("flash size not detected");
+  const out = target.handle ? await target.handle.createWritable() : null;
+  const parts = [];
+  $("prog").hidden = false;
   try {
-    port = await navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+    for (let a = 0; a < size; a += BLOCK) {
+      const n = Math.min(BLOCK, size - a);
+      let data = null;
+      for (let tries = 0; tries < 3 && !data; tries++) {
+        const got = await loader.readFlash(a, n, (_, done) => {
+          const pct = Math.floor(((a + done) / size) * 100);
+          $("bar").style.width = pct + "%";
+          st("st_bkread", { p: pct });
+        });
+        if (md5hex(got) === (await loader.flashMd5sum(a, n))) data = got;
+      }
+      if (!data) throw new Error("block at 0x" + a.toString(16) + " reads differently three times");
+      if (out) await out.write(data);
+      else parts.push(data);
+    }
+    if (out) await out.close();
   } catch (e) {
-    st("st_cancel", {}, "err");
-    return;
+    if (out) { try { await out.abort(); } catch (x) {} }
+    throw e;
   }
+  let name = target.handle ? target.handle.name : `miner-backup-${today()}.bin`;
+  if (!target.handle) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob(parts, { type: "application/octet-stream" }));
+    a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  }
+  return { name, mb: Math.round(size / 1048576) };
+}
+async function install(port, target) {
   $("go").disabled = true;
+  $("go2").hidden = true;
   const transport = new Transport(port, false);
   let stage = "connect";
   try {
@@ -442,8 +671,13 @@ $("go").addEventListener("click", async () => {
       st("st_wrongchip", { chip }, "err");
       return;
     }
-    st("st_chip", { chip });
-    stage = "write";
+    let saved = null;
+    if (target) {
+      stage = "backup";
+      saved = await backup(loader, target);
+    }
+    stage = "load";
+    st(saved ? "st_bkdone" : "st_chip", saved ? { f: saved.name, mb: saved.mb } : { chip });
     const m = await (await fetch("manifest.json", { cache: "no-store" })).json();
     const parts = m.builds.find((b) => b.chipFamily === "ESP32-S3").parts;
     const files = [];
@@ -452,9 +686,11 @@ $("go").addEventListener("click", async () => {
       if (!r.ok) throw new Error(p.path + ": HTTP " + r.status);
       files.push({ data: new Uint8Array(await r.arrayBuffer()), address: p.offset });
     }
+    stage = "write";
     const total = files.reduce((n, f) => n + f.data.length, 0);
     const done = files.map(() => 0);
     $("prog").hidden = false;
+    $("bar").style.width = "0%";
     await loader.writeFlash({
       fileArray: files,
       flashSize: "keep",
@@ -472,21 +708,154 @@ $("go").addEventListener("click", async () => {
     });
     stage = "restart";
     st("st_restart");
-    await loader.writeReg(RTC + 0x12c, 0, 0x1);
-    await loader.writeReg(RTC + 0xb0, 0x50d83aa1);
-    await loader.writeReg(RTC + 0x9c, 2000);
-    await loader.writeReg(RTC + 0x98, ((1 << 31) | (5 << 28) | (1 << 8) | 2) >>> 0);
-    try { await loader.writeReg(RTC + 0xb0, 0); } catch (e) { /* the chip may already be resetting */ }
-    st("st_done", { v: version || m.version }, "ok");
+    await restartChip(loader);
+    st(saved ? "st_done_bk" : "st_done", { v: version || m.version, f: saved && saved.name }, "ok");
   } catch (e) {
+    const msg = (e && e.message) || String(e);
     if (stage === "restart") st("st_done", { v: version }, "ok");
     else if (stage === "nodl") st("st_nodl", {}, "err");
-    else st("st_error", { e: (e && e.message) || String(e) }, "err");
+    else if (stage === "backup" || stage === "load") st(stage === "backup" ? "st_bkerr" : "st_loaderr", { e: msg }, "err");
+    else st("st_error", { e: msg }, "err");
   } finally {
     try { await transport.disconnect(); } catch (e) {}
     $("go").disabled = false;
   }
+}
+async function restartChip(loader) {
+  await loader.writeReg(RTC + 0x12c, 0, 0x1);
+  await loader.writeReg(RTC + 0xb0, 0x50d83aa1);
+  await loader.writeReg(RTC + 0x9c, 2000);
+  await loader.writeReg(RTC + 0x98, ((1 << 31) | (5 << 28) | (1 << 8) | 2) >>> 0);
+  try { await loader.writeReg(RTC + 0xb0, 0); } catch (e) { /* the chip may already be resetting */ }
+}
+const askPort = () => navigator.serial.requestPort({ filters: [{ usbVendorId: 0x303a }] });
+let waiting = null;
+$("go").addEventListener("click", async () => {
+  let target = null;
+  if ($("bk").checked) {
+    st("st_bkpick");
+    try {
+      target = await pickBackup();
+    } catch (e) {
+      st("st_bkcancel", {}, "err");
+      return;
+    }
+  }
+  st("st_pick");
+  let port;
+  try {
+    port = await askPort();
+  } catch (e) {
+    if (target && e && e.name === "SecurityError") {
+      waiting = target;
+      $("go2").hidden = false;
+      st("st_needclick");
+      return;
+    }
+    st("st_cancel", {}, "err");
+    return;
+  }
+  await install(port, target);
 });
+$("go2").addEventListener("click", async () => {
+  st("st_pick");
+  let port;
+  try {
+    port = await askPort();
+  } catch (e) {
+    st("st_cancel", {}, "err");
+    return;
+  }
+  const target = waiting;
+  waiting = null;
+  await install(port, target);
+});
+
+// The way back: a full-flash backup (from this page or tools/flash-backup.sh)
+// goes back to offset 0 over USB, through the ROM loader, which no failed
+// write can damage. The file must look like a whole flash (a power-of-two
+// size of 2–32 MB, an ESP image at 0, the partition table at 0x8000) and
+// match the miner's flash size; esptool-js checks the written data's MD5.
+let rsImage = null;
+$("rsfile").addEventListener("change", async () => {
+  rsImage = null;
+  $("rsgo").disabled = true;
+  const f = $("rsfile").files[0];
+  if (!f) return;
+  const data = new Uint8Array(await f.arrayBuffer());
+  const mb = data.length / 1048576;
+  let why = "";
+  if (![2, 4, 8, 16, 32].includes(mb)) why = "size " + data.length + " bytes";
+  else if (data[0] !== 0xe9) why = "no bootloader at 0x0";
+  else if (data[0x8000] !== 0xaa || data[0x8001] !== 0x50) why = "no partition table at 0x8000";
+  if (why) { st("st_rsbad", { why }, "err", "rsst"); return; }
+  rsImage = { data, name: f.name, mb };
+  $("rsgo").disabled = false;
+  st("st_rsready", { f: f.name, mb }, "", "rsst");
+});
+$("rsgo").addEventListener("click", async () => {
+  if (!rsImage) return;
+  st("st_pick", {}, "", "rsst");
+  let port;
+  try {
+    port = await askPort();
+  } catch (e) {
+    st("st_cancel", {}, "err", "rsst");
+    return;
+  }
+  $("rsgo").disabled = true;
+  $("go").disabled = true;
+  const transport = new Transport(port, false);
+  let stage = "connect";
+  try {
+    st("st_connect", {}, "", "rsst");
+    const loader = new ESPLoader({ transport, baudrate: 921600, romBaudrate: 115200 });
+    let chip;
+    try {
+      chip = await loader.main("default_reset");
+    } catch (e) {
+      stage = "nodl";
+      throw e;
+    }
+    if (!/ESP32-S3/i.test(chip)) {
+      st("st_wrongchip", { chip }, "err", "rsst");
+      return;
+    }
+    const size = loader.flashSizeBytes(await loader.detectFlashSize());
+    if (size !== rsImage.data.length) {
+      st("st_rssize", { a: rsImage.mb, b: Math.round(size / 1048576) }, "err", "rsst");
+      return;
+    }
+    stage = "write";
+    $("rsprog").hidden = false;
+    await loader.writeFlash({
+      fileArray: [{ data: rsImage.data, address: 0 }],
+      flashSize: "keep",
+      flashMode: "keep",
+      flashFreq: "keep",
+      eraseAll: false,
+      compress: true,
+      reportProgress: (i, written, total) => {
+        const pct = Math.floor((written / total) * 100);
+        $("rsbar").style.width = pct + "%";
+        st("st_rswrite", { p: pct }, "", "rsst");
+      },
+      calculateMD5Hash: md5hex,
+    });
+    stage = "restart";
+    await restartChip(loader);
+    st("st_rsdone", {}, "ok", "rsst");
+  } catch (e) {
+    if (stage === "restart") st("st_rsdone", {}, "ok", "rsst");
+    else if (stage === "nodl") st("st_nodl", {}, "err", "rsst");
+    else st("st_rserr", { e: (e && e.message) || String(e) }, "err", "rsst");
+  } finally {
+    try { await transport.disconnect(); } catch (e) {}
+    $("rsgo").disabled = !rsImage;
+    $("go").disabled = false;
+  }
+});
+if (location.hash === "#restore") $("restore").scrollIntoView();
 </script>
 </body>
 </html>
