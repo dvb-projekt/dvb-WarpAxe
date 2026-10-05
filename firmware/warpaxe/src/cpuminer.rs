@@ -53,6 +53,12 @@ pub const SUGGESTED_DIFFICULTY: f64 = 0.005;
 const HW_BATCH: u32 = 4096;
 /// Nonces per software batch.
 const SW_BATCH: u32 = 512;
+/// How long a worker runs batch after batch before it yields a tick to
+/// the idle task (its watchdog allows 5 s) and anything else at its
+/// priority. A tick after every 18 ms batch cost the peripheral loop
+/// 5 %; the SHA lock is held this long at most, which mbedTLS (a TLS
+/// pool, the online update) can wait out.
+const YIELD_EVERY_US: i64 = 200_000;
 
 /// The job the workers hash: the Stratum job, its constants, and the
 /// next unclaimed nonce.
@@ -294,6 +300,7 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
     log::info!(
         "cpu miner: worker {index} on core {core} priority {prio}: {khs:.1} kH/s alone ({batch} hashes in {dt} us)"
     );
+    let mut last_yield = now_us();
     loop {
         let job = JOB.lock().unwrap().clone();
         let Some(job) = job else {
@@ -310,9 +317,10 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
         counter.fetch_add(batch, Ordering::Relaxed);
         BUSY_US[index].fetch_add(dt as u32, Ordering::Relaxed);
         US_PER_HASH100[index].store((dt * 100 / i64::from(batch)) as u32, Ordering::Relaxed);
-        // One tick for the idle task (its watchdog) and anything else
-        // at this priority.
-        unsafe { sys::vTaskDelay(1) };
+        if now_us() - last_yield >= YIELD_EVERY_US {
+            unsafe { sys::vTaskDelay(1) };
+            last_yield = now_us();
+        }
     }
 }
 
