@@ -474,7 +474,7 @@ fn session(
                 _ => log::info!("stratum: response {} -> {} {:?}", r.id, r.result, r.error),
             },
             Incoming::SetDifficulty(d) => {
-                log::info!("stratum: difficulty {d}");
+                log::info!("stratum: difficulty {}", fmt_difficulty(d));
                 update(|s| s.difficulty = d);
                 if let Some(s) = sess.as_mut() {
                     s.difficulty = d;
@@ -808,7 +808,7 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
             });
         }
         Event::Difficulty(d) => {
-            log::info!("stratum: difficulty {d}");
+            log::info!("stratum: difficulty {}", fmt_difficulty(d));
             update(|s| s.difficulty = d);
         }
         Event::Job(t) => {
@@ -862,4 +862,18 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
         Event::Warn(w) => log::warn!("stratum: sv2: {w}"),
     }
     Ok(())
+}
+
+/// A share difficulty for the log: pools send it as a float, and values
+/// like 29793.999999999996 (float arithmetic on the pool's side, or a Sv2
+/// target turned back into a difficulty) read as a different number. At
+/// most three decimals, trailing zeros cut, a whole number without any.
+fn fmt_difficulty(d: f64) -> String {
+    let s = format!("{d:.3}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" {
+        "0".into()
+    } else {
+        s.into()
+    }
 }
