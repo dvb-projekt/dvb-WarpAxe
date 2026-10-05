@@ -770,9 +770,19 @@ fn cockpit(c: &mut Canvas) {
     if cpu {
         #[cfg(feature = "cpu-miner")]
         {
+            // Nonces hashed in the current job (a pool job lasts ~30 s, so
+            // a share of the 4.3 G space would always read 0 %), and the
+            // uptime (Oliver, 2026-10-05).
             let i = crate::cpuminer::info();
-            big(c, l("SHA ENGINE", "SHA-EINHEIT"), &num(i.hw_khs, 0), "kH/s", 66, gfx::FG);
-            big(c, l("CPU CORE", "CPU-KERN"), &num(i.sw_khs, 0), "kH/s", 100, gfx::FG);
+            big(
+                c,
+                l("JOB NONCES", "JOB-NONCES"),
+                &si(f64::from(i.nonce_progress)),
+                "",
+                66,
+                gfx::FG,
+            );
+            big(c, l("UPTIME", "LAUFZEIT"), &uptime(diag::uptime_s()), "", 100, gfx::FG);
         }
     } else {
         let pw = b.power_w.unwrap_or(0.0);
