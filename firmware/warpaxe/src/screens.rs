@@ -770,19 +770,17 @@ fn cockpit(c: &mut Canvas) {
     if cpu {
         #[cfg(feature = "cpu-miner")]
         {
-            // Nonces hashed in the current job (a pool job lasts ~30 s, so
-            // a share of the 4.3 G space would always read 0 %), and the
-            // uptime (Oliver, 2026-10-05).
-            let i = crate::cpuminer::info();
-            big(
-                c,
-                l("JOB NONCES", "JOB-NONCES"),
-                &si(f64::from(i.nonce_progress)),
-                "",
-                66,
-                gfx::FG,
-            );
-            big(c, l("UPTIME", "LAUFZEIT"), &uptime(diag::uptime_s()), "", 100, gfx::FG);
+            // Accepted shares per hour since boot (the yield; at difficulty
+            // 0.005 and 230 kH/s about 39 are due) after the first five
+            // minutes, and the uptime (Oliver, 2026-10-05).
+            let up = diag::uptime_s();
+            let per_h = if up >= 300 {
+                num(st.shares_accepted as f64 * 3600.0 / up as f64, 1)
+            } else {
+                "–".into()
+            };
+            big(c, "SHARES/H", &per_h, "", 66, gfx::FG);
+            big(c, l("UPTIME", "LAUFZEIT"), &uptime(up), "", 100, gfx::FG);
         }
     } else {
         let pw = b.power_w.unwrap_or(0.0);
