@@ -591,7 +591,9 @@ pub const BITFORGE_NANO: Profile = Profile {
 /// display data lines here, so no I²C.
 pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     name: "t-display-s3",
-    model: "T-Display-S3",
+    // What the display, the splash and the web UI call the devkit: the
+    // toy's own name (Oliver, 2026-10-05), not the module's.
+    model: "WarpMiner",
     asic: Asic::Bm1370,
     asic_count: 0,
     uart_tx: 17,
