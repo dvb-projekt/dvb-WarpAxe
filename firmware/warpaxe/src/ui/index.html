@@ -351,7 +351,7 @@ function phase(i) {
     return {k: pf ? (i.overheatLatched ? "st_power_fault_latched" : "st_power_fault") : (i.overheatLatched ? "st_overheat_latched" : "st_overheat"), c: "err"};
   }
   if (i.shutdown) return {k: "st_off", c: "mute"};
-  if (i.chainPhase === "READY") return {k: "st_mining", c: "ok"};
+  if (i.chainPhase === "READY" || i.chainPhase === "CPU") return {k: "st_mining", c: "ok"};
   if (i.chainPhase === "POWER") return {k: "st_power", c: "warn"};
   return {k: "st_init", c: "warn"};
 }
