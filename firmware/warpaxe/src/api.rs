@@ -43,6 +43,18 @@ pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 #[cfg(feature = "cpu-miner")]
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"), "+cpu");
 
+/// The chip name the API reports. The devkit toy (cpu-miner build, a
+/// profile without chips) names what actually hashes, so an AxeOS-style
+/// scanner lists it as what it is and not as a BM1370 (Warppool,
+/// Oliver, 2026-10-05).
+fn asic_model() -> &'static str {
+    #[cfg(feature = "cpu-miner")]
+    if board::profile().asic_count == 0 {
+        return "ESP32-S3 SHA";
+    }
+    board::chip().name
+}
+
 fn mac_str(m: [u8; 6]) -> String {
     format!(
         "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -106,7 +118,7 @@ pub fn system_info() -> serde_json::Value {
         "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
         "staleAfterCleanHist": st.stale_after_clean_hist, "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
         "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
-        "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
+        "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": asic_model(),
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
         // Chips flagged silent right now, and the chain restarts after a
         // silent minute: in all, and in a row at the current core
@@ -241,7 +253,7 @@ fn asic_options() -> Option<serde_json::Value> {
         }));
     }
     Some(json!({
-        "ASICModel": board::chip().name, "deviceModel": p.name, "asicCount": p.asic_count,
+        "ASICModel": asic_model(), "deviceModel": p.name, "asicCount": p.asic_count,
         "defaultFrequency": p.default_frequency_mhz, "defaultVoltage": p.default_core_mv,
         "absMaxFrequency": c.abs_max_frequency_mhz,
         "absMinVoltage": c.abs_min_core_mv, "absMaxVoltage": c.abs_max_core_mv,
