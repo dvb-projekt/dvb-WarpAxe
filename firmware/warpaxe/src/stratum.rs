@@ -24,6 +24,26 @@ use crate::{board, clock, config, diag, miner};
 use warpaxe_sv2::{Client, ClientConfig, Event, Frame, Handshake, Template, Transport};
 
 const AGENT: &str = concat!("warpaxe/", env!("CARGO_PKG_VERSION"));
+/// The devkit toy's user agent: "nerdminer" in it puts the worker into
+/// WarpPool's NerdMiner class (share difficulty floor 0.001, start 0.01),
+/// the only way the pool lets a few hundred kH/s have a difficulty below
+/// its profile floor (Warppool, 2026-10-05). None of the markers checked
+/// first (bitaxe, nerdaxe, bm13xx ...) may appear in it.
+#[cfg(feature = "cpu-miner")]
+const AGENT_CPU: &str = concat!(
+    "warpaxe-cpu/",
+    env!("CARGO_PKG_VERSION"),
+    " (nerdminer-class)"
+);
+
+/// The user agent for `mining.subscribe`.
+fn agent() -> &'static str {
+    #[cfg(feature = "cpu-miner")]
+    if board::profile().asic_count == 0 {
+        return AGENT_CPU;
+    }
+    AGENT
+}
 const BIP320_MASK: u32 = 0x1fff_e000;
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -367,7 +387,7 @@ fn session(
         let mut hello = String::new();
         for r in [
             configure_request(1, BIP320_MASK),
-            subscribe_request(2, AGENT),
+            subscribe_request(2, agent()),
             authorize_request(3, user, pass),
         ] {
             hello.push_str(&r.to_line());
