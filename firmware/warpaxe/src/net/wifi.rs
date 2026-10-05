@@ -111,6 +111,7 @@ fn run(
         log::error!("wifi: start failed: {e}");
         return;
     }
+    no_modem_sleep();
 
     let t0 = Instant::now();
     let mut hotspot = Hotspot::new();
@@ -135,6 +136,7 @@ fn run(
                     .and_then(|_| wifi.start())
                 {
                     Ok(()) => {
+                        no_modem_sleep();
                         log::warn!(
                             "wifi: setup hotspot {ap_ssid} open (password on the device display), web UI at 192.168.4.1"
                         );
@@ -155,6 +157,7 @@ fn run(
                 {
                     log::error!("wifi: back to station only failed: {e}");
                 }
+                no_modem_sleep();
                 super::set_hotspot(None);
                 log::info!("wifi: setup hotspot closed, station holds");
                 was_connected = false;
@@ -223,6 +226,17 @@ fn hotspot_credentials() -> (String, String) {
 
 /// The captive-portal DNS on the hotspot address; stays for the uptime,
 /// silent while the hotspot is down.
+/// Keep the radio awake. IDF's default modem sleep wakes only at the
+/// access point's beacons (~100 ms), so jobs from the pool, API answers
+/// and pings wait for the next one; a miner on mains power gains nothing
+/// from the few tenths of a watt it saves.
+fn no_modem_sleep() {
+    let r = unsafe { esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE) };
+    if r != 0 {
+        log::warn!("wifi: power save off failed: {r}");
+    }
+}
+
 fn start_dns() -> bool {
     let spawned = std::thread::Builder::new().stack_size(4096).spawn(|| {
         let addr = std::net::SocketAddr::from((AP_IP, 53));
