@@ -157,6 +157,14 @@ fn update(f: impl FnOnce(&mut BoardState)) {
     f(g.get_or_insert_with(BoardState::default));
 }
 
+/// The devkit (cpu-miner build) has no I²C bus, so [`start`] returns
+/// before the sensor loop: the CPU miner sets the ESP's own die
+/// temperature as the chip temperature for the display and the API.
+#[cfg(feature = "cpu-miner")]
+pub(crate) fn set_devkit_temp(temp_c: Option<f32>) {
+    update(|s| s.temp_c = temp_c);
+}
+
 pub fn profile() -> &'static Profile {
     PROFILE
         .lock()
@@ -1502,14 +1510,6 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     Cause::PowerFault => "power",
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
-            };
-            // The devkit (cpu-miner build): no sensor, the ESP's own die
-            // temperature stands in on the display and in the API.
-            #[cfg(feature = "cpu-miner")]
-            let temp = if profile.asic_count == 0 {
-                crate::cpuminer::die_temp_c()
-            } else {
-                temp
             };
             update(|s| {
                 s.temp_c = temp;

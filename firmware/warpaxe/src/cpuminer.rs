@@ -546,6 +546,7 @@ fn run() {
         let dt = last_tick.elapsed().as_secs_f64();
         if dt >= 1.0 {
             last_tick = Instant::now();
+            board::set_devkit_temp(die_temp_c());
             let hw = HASHES_HW.load(Ordering::Relaxed);
             let sw = HASHES_SW.load(Ordering::Relaxed);
             let d_hw = f64::from(hw.wrapping_sub(last_hw));
