@@ -780,7 +780,14 @@ fn cockpit(c: &mut Canvas) {
                 "–".into()
             };
             big(c, "SHARES/H", &per_h, "", 66, gfx::FG);
-            big(c, l("UPTIME", "LAUFZEIT"), &uptime(up), "", 100, gfx::FG);
+            // VAL16 has digits and "/%" only: hours:minutes, days in front.
+            let (d, h, m) = (up / 86_400, up / 3600 % 24, up / 60 % 60);
+            let (val, unit) = if d > 0 {
+                (format!("{d}/{h:02}:{m:02}"), l("d/h:min", "T/h:min"))
+            } else {
+                (format!("{h}:{m:02}"), "h")
+            };
+            big(c, l("UPTIME", "LAUFZEIT"), &val, unit, 100, gfx::FG);
         }
     } else {
         let pw = b.power_w.unwrap_or(0.0);
