@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-324%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-329%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.15-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.16-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.15).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.16).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -196,6 +196,8 @@ back at any time with `GET /api/v1/display/frame`.
   optional **TLS** (esp-tls, built-in CA bundle, hostname checked).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
+- The Wi-Fi radio stays awake (no modem sleep), so a new job from the
+  pool does not wait for the access point's next beacon (~100 ms).
 - Block height, network difficulty and the pool's coinbase tag read from the
   job; a nonce at or above the network difficulty is reported as a found
   block.
@@ -211,7 +213,9 @@ back at any time with `GET /api/v1/display/frame`.
   `regulatorMinMv`, and a request the regulator turned down is shown as
   `coreVoltageRefused` instead of counting as applied. The NerdAxe Gaia
   runs on the 0.5 divider (clean 0.5–1.5 V) so its 800–970 mV lie inside
-  it; the stock firmware's 0.25 put them below.
+  it — the divider the board's own straps set at power-up; the stock
+  firmware's 0.25 put them below. `vrProbe` shows what the regulator held
+  at boot, before the firmware wrote it.
 - Sensors and fans: EMC2101, EMC2103, EMC2302 (two outputs), TMP1075,
   INA260 (BitForge Nano), FXL6408 GPIO expander.
 - Fan PID with ESP-Miner's gains; a second output linked to the chip fan
@@ -288,6 +292,7 @@ back at any time with `GET /api/v1/display/frame`.
   its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
   `faultCause` (why the regulator stopped), `regulatorMinMv` and
   `coreVoltageRefused` (the regulator's floor and a request it refused),
+  `vrProbe` (the regulator's window as found at boot),
   `silentChips`, `chainSilentRestarts` and `chainSilentRestartsSameMv`
   (chips without nonces, and chain restarts after a silent minute — in
   all, and in a row at the current core voltage: two or more mean the
@@ -361,7 +366,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
-| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 400 MHz; clock and voltage capped at 420 MHz / 970 mV |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 400 MHz; clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 
 Boards marked "profile only" have pins, regulator window and limits taken
