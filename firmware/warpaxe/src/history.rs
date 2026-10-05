@@ -72,7 +72,15 @@ pub fn json(span_s: u64) -> serde_json::Value {
         if v.is_empty() {
             serde_json::Value::Null
         } else {
-            json!((v.iter().sum::<f32>() / v.len() as f32 * 100.0).round() / 100.0)
+            // Two decimals of GH/s; the devkit toy (a few 1e-4 GH/s) would
+            // read as 0.00 and draw a flat line, so a cpu-miner build keeps
+            // seven.
+            let scale = if cfg!(feature = "cpu-miner") {
+                1e7
+            } else {
+                100.0
+            };
+            json!((v.iter().sum::<f32>() / v.len() as f32 * scale).round() / scale)
         }
     };
     let mut t = Vec::new();
