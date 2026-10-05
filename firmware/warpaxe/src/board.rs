@@ -1503,6 +1503,14 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
             };
+            // The devkit (cpu-miner build): no sensor, the ESP's own die
+            // temperature stands in on the display and in the API.
+            #[cfg(feature = "cpu-miner")]
+            let temp = if profile.asic_count == 0 {
+                crate::cpuminer::die_temp_c()
+            } else {
+                temp
+            };
             update(|s| {
                 s.temp_c = temp;
                 s.vr_temp_c = vr_temp;

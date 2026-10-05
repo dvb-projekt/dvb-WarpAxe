@@ -763,22 +763,35 @@ fn cockpit(c: &mut Canvas) {
         let f = ((t - 30.0) / (hot - 30.0)).clamp(0.0, 1.0);
         c.rect(rx, 50, (88.0 * f) as i32, 3, temp_color(t), 255);
     }
-    let pw = b.power_w.unwrap_or(0.0);
-    let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
-    big(c, lbl_p, &num(f64::from(pw), 1), "W", 66, gfx::FG);
-    let eff = if m.hashrate_ghs > 1.0 {
-        f64::from(pw) / (m.hashrate_ghs / 1000.0)
+    // The devkit (cpu-miner build) has neither a regulator to read power
+    // from nor a rate that makes J/TH mean anything: its two workers
+    // stand there instead (Oliver, 2026-10-05).
+    let cpu = cfg!(feature = "cpu-miner") && board::profile().asic_count == 0;
+    if cpu {
+        #[cfg(feature = "cpu-miner")]
+        {
+            let i = crate::cpuminer::info();
+            big(c, l("SHA ENGINE", "SHA-EINHEIT"), &num(i.hw_khs, 0), "kH/s", 66, gfx::FG);
+            big(c, l("CPU CORE", "CPU-KERN"), &num(i.sw_khs, 0), "kH/s", 100, gfx::FG);
+        }
     } else {
-        0.0
-    };
-    big(
-        c,
-        lbl_e,
-        &if eff > 0.0 { num(eff, 1) } else { "–".into() },
-        "J/TH",
-        100,
-        gfx::FG,
-    );
+        let pw = b.power_w.unwrap_or(0.0);
+        let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
+        big(c, lbl_p, &num(f64::from(pw), 1), "W", 66, gfx::FG);
+        let eff = if m.hashrate_ghs > 1.0 {
+            f64::from(pw) / (m.hashrate_ghs / 1000.0)
+        } else {
+            0.0
+        };
+        big(
+            c,
+            lbl_e,
+            &if eff > 0.0 { num(eff, 1) } else { "–".into() },
+            "J/TH",
+            100,
+            gfx::FG,
+        );
+    }
 
     // Status bar.
     c.rect(3, 144, W - 3, 26, gfx::BLACK, 90);

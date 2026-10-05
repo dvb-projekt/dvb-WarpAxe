@@ -172,6 +172,9 @@ pub struct Info {
     /// Microseconds per hash inside a batch (preemption included).
     #[serde(rename = "usPerHash")]
     pub us_per_hash: [f64; 2],
+    /// The ESP32-S3's own die temperature (the devkit has no other sensor).
+    #[serde(rename = "dieTempC")]
+    pub die_temp_c: Option<f32>,
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
 
@@ -184,12 +187,46 @@ pub fn info() -> Info {
         .unwrap()
         .as_ref()
         .map_or(0, |j| j.next_nonce.load(Ordering::Relaxed));
+    i.die_temp_c = die_temp_c();
     for k in 0..2 {
         i.cores[k] = WORKER_CORE[k].load(Ordering::Relaxed);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
         i.us_per_hash[k] = f64::from(US_PER_HASH100[k].load(Ordering::Relaxed)) / 100.0;
     }
     i
+}
+
+/// The ESP-IDF temperature sensor driver's handle, installed on first use.
+static DIE_SENSOR: Mutex<Option<usize>> = Mutex::new(None);
+
+/// The ESP32-S3's die temperature in °C: what the devkit shows as its
+/// chip temperature, having no sensor on a chip it does not have. The
+/// driver's 20..100 °C range (±2 °C per the data sheet).
+pub fn die_temp_c() -> Option<f32> {
+    let mut g = DIE_SENSOR.lock().unwrap();
+    if g.is_none() {
+        let cfg = sys::temperature_sensor_config_t {
+            range_min: 20,
+            range_max: 100,
+            clk_src:
+                sys::soc_periph_temperature_sensor_clk_src_t_TEMPERATURE_SENSOR_CLK_SRC_DEFAULT,
+        };
+        let mut h: sys::temperature_sensor_handle_t = core::ptr::null_mut();
+        let rc = unsafe { sys::temperature_sensor_install(&cfg, &mut h) };
+        if rc != sys::ESP_OK {
+            log::warn!("cpu miner: temperature sensor install failed ({rc})");
+            return None;
+        }
+        let rc = unsafe { sys::temperature_sensor_enable(h) };
+        if rc != sys::ESP_OK {
+            log::warn!("cpu miner: temperature sensor enable failed ({rc})");
+            return None;
+        }
+        *g = Some(h as usize);
+    }
+    let h = (*g)? as sys::temperature_sensor_handle_t;
+    let mut c = 0f32;
+    (unsafe { sys::temperature_sensor_get_celsius(h, &mut c) } == sys::ESP_OK).then_some(c)
 }
 
 /// Start the coordinator and the two workers.
