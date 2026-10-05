@@ -242,6 +242,17 @@ pub fn die_temp_c() -> Option<f32> {
     (unsafe { sys::temperature_sensor_get_celsius(h, &mut c) } == sys::ESP_OK).then_some(c)
 }
 
+/// What the Sv2 channel reports as nominal hash rate, in H/s: the
+/// 10-minute figure once there is one, else what this board does.
+pub fn nominal_hash_rate() -> f64 {
+    let k = INFO.lock().unwrap().as_ref().map_or(0.0, |i| i.khs_10m);
+    if k > 0.0 {
+        k * 1e3
+    } else {
+        230e3
+    }
+}
+
 /// Start the coordinator and the two workers.
 pub fn start() {
     log::warn!("cpu miner: {SENTINEL}: hashing on the ESP32-S3 itself, a toy, never a release");

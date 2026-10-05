@@ -395,7 +395,7 @@ function kpis(i) {
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   const c = cpuHs(i);
-  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${c ? k(t("bestdiff"), nf(i.cpuMiner.bestDiff, 3), "", t("since_boot"), "var(--btc)") : k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
+  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${c ? "" : k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${c ? k(t("bestdiff"), nf(i.cpuMiner.bestDiff, 3), "", t("since_boot"), "var(--btc)") : k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
 function clockLabels() {
   const now = lang === "de" ? "jetzt" : "now";
@@ -493,8 +493,8 @@ function dashboard() {
       <div class="dhmeta"><div><span class="lbl">${t("uptime")}</span><b>${upt(i.uptimeSeconds)}</b></div><div><span class="lbl">${t("firmware")}</span><b>${esc(i.version)}</b></div><div><span class="lbl">${t("wifi")}</span><b style="display:flex;align-items:center;gap:6px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</b></div></div></div>
     <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${c ? c.v : nf(th, 2)}</span><span class="swunit">${c ? c.u : "TH/s"}</span></div>
       <div class="dhsub">${c ? c.sub : `${t("expected")} ${nf(exp, 2)} TH/s${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}`}</div></div>
-      <div class="dhfacts"><div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
-        <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>
+      <div class="dhfacts">${c ? "" : `<div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
+        <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>`}
         <div><span class="lbl">${t("shares")}</span><b>${nf(i.sharesAccepted)}</b><small>${nf(i.sharesRejected)} ${t("rejected")} · ${nf(rejPct, 2)} %</small></div>
         <div><span class="lbl">${t("bestdiff")}</span><b style="color:var(--btc)">${c ? nf(i.cpuMiner.bestDiff, 3) : sfx(i.bestSessionDiff)}</b><small>${c ? t("since_boot") : `${t("alltime")} ${sfx(i.bestDiff)}`}</small></div></div></div>
     <div class="dhchart"><div class="top"><span class="lbl">${t("history")}</span><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
@@ -744,7 +744,7 @@ function statusText(i, err) {
 }
 function systemPage() {
   const i = info, err = i.boardError, fine = !i.overheat_mode && !i.shutdown && !err && !i.power_fault;
-  return `<div class="g2"><section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("fw_update")}</h2>
+  return `<div class="g2"><section class="card" style="display:flex;flex-direction:column;gap:14px${i.cpuMiner ? ";display:none" : ""}"><h2>${t("fw_update")}</h2>
     <div><div class="row"><span class="mute">${t("installed")}</span><span class="num">${esc(i.version)}</span></div><div class="row"><span class="mute">${t("partition")}</span><span class="num">${esc(i.runningPartition)}</span></div></div>
     <div id="online">${onlineHtml()}</div>
     <label class="drop" id="drop"><input type="file" id="fw" accept=".bin" hidden><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" fill="none" stroke="#9CA8BD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="fwname" style="font-size:14px">${t("drop")}</span><span class="dim" style="font-size:12px">${t("drop_s")}</span></label>

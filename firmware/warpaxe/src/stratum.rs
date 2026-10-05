@@ -733,12 +733,20 @@ fn session_v2(
     } else {
         config::get().frequency.saturating_mul(1_000_000)
     };
-    let nominal = f64::from(board::chip().small_cores) * f64::from(hz) * f64::from(m.chips.max(1));
+    #[allow(unused_mut)]
+    let mut nominal =
+        f64::from(board::chip().small_cores) * f64::from(hz) * f64::from(m.chips.max(1));
+    // The devkit: cores × clock would claim 215 GH/s and the pool would set
+    // a target the ESP never meets; its measured rate instead.
+    #[cfg(feature = "cpu-miner")]
+    if board::profile().asic_count == 0 {
+        nominal = crate::cpuminer::nominal_hash_rate();
+    }
     let client = Arc::new(Mutex::new(Client::new(ClientConfig {
         user: user.into(),
         vendor: "dvb-projekt".into(),
         hardware_version: board::profile().name.into(),
-        firmware: AGENT.into(),
+        firmware: agent().into(),
         device_id: String::new(),
         endpoint_host: host.into(),
         endpoint_port: port,
