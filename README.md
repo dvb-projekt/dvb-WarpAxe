@@ -205,6 +205,13 @@ back at any time with `GET /api/v1/display/frame`.
   Rev 7, BitForge Nano), TPS53647/TPS53667 (NerdQAxe++, NerdOctaxe,
   NerdQX); the core current and the regulator's warning line in the API
   where the regulator reports them.
+- Never a core voltage below the regulator's clean range: the TPS546
+  driver refuses anything under 0.25 V ÷ VOUT_SCALE_LOOP (TI's reference
+  range), the API refuses it with 400 and publishes the floor as
+  `regulatorMinMv`, and a request the regulator turned down is shown as
+  `coreVoltageRefused` instead of counting as applied. The NerdAxe Gaia
+  runs on the 0.5 divider (clean 0.5–1.5 V) so its 800–970 mV lie inside
+  it; the stock firmware's 0.25 put them below.
 - Sensors and fans: EMC2101, EMC2103, EMC2302 (two outputs), TMP1075,
   INA260 (BitForge Nano), FXL6408 GPIO expander.
 - Fan PID with ESP-Miner's gains; a second output linked to the chip fan
@@ -279,7 +286,12 @@ back at any time with `GET /api/v1/display/frame`.
   `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`,
   `temptarget` (the fan target, under ESP-Miner's name) so a tuner keeps
   its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
-  `faultCause` (why the regulator stopped), `gitHash` (the commit the
+  `faultCause` (why the regulator stopped), `regulatorMinMv` and
+  `coreVoltageRefused` (the regulator's floor and a request it refused),
+  `silentChips`, `chainSilentRestarts` and `chainSilentRestartsSameMv`
+  (chips without nonces, and chain restarts after a silent minute — in
+  all, and in a row at the current core voltage: two or more mean the
+  chips do not run at it), `gitHash` (the commit the
   image was built from), and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
   BM1373 — and the error counter, read once a second) with

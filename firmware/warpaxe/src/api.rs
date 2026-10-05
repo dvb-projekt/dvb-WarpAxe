@@ -80,6 +80,14 @@ pub fn system_info() -> serde_json::Value {
         "freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(),
         "coreVoltage": cfg.core_voltage,
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),
+        // The lowest core voltage the regulator holds cleanly, mV; a
+        // PATCH below it is refused (400). WarpTune's floor for every
+        // voltage search.
+        "regulatorMinMv": profile.regulator_min_core_mv(),
+        // A requested core voltage the regulator refused (mV), null
+        // while the last request went through; `coreVoltage` still
+        // shows the configured value, `coreVoltageActual` the real one.
+        "coreVoltageRefused": b.core_mv_refused,
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
         "hostname": cfg.hostname,
@@ -91,6 +99,11 @@ pub fn system_info() -> serde_json::Value {
         "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": board::chip().name,
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
+        // Chips flagged silent right now, and the chain restarts after a
+        // silent minute: in all, and in a row at the current core
+        // voltage (two or more = the chips do not run at this voltage).
+        "silentChips": m.silent_chips, "chainSilentRestarts": m.chain_restarts,
+        "chainSilentRestartsSameMv": m.silent_restarts_same_mv,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user, "stratumTLS": cfg.stratum_tls, "fallbackStratumTLS": cfg.fallback_tls, "stratumTLSActive": st.tls,
         "stratumProtocol": cfg.stratum_protocol, "stratumV2AuthorityPubkey": cfg.stratum_v2_authority_pubkey, "stratumV2ChannelType": cfg.stratum_v2_channel_type, "stratumV2RequireAuth": cfg.stratum_v2_require_auth,
         "fallbackStratumProtocol": cfg.fallback_protocol, "fallbackStratumV2AuthorityPubkey": cfg.fallback_v2_authority_pubkey, "fallbackStratumV2ChannelType": cfg.fallback_v2_channel_type, "fallbackStratumV2RequireAuth": cfg.fallback_v2_require_auth,
@@ -236,6 +249,14 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
         }
     }
     if let Some(mv) = v.get("coreVoltage").and_then(|m| m.as_u64()) {
+        // Never a core voltage below the regulator's clean range,
+        // whatever the board's own choices say (`regulatorMinMv`).
+        let floor = u64::from(board::profile().regulator_min_core_mv());
+        if floor > 0 && mv < floor {
+            return Some(format!(
+                "coreVoltage {mv} mV below the regulator's {floor} mV floor"
+            ));
+        }
         let lo = u64::from(p.abs_min_core_mv);
         let hi = u64::from(p.abs_max_core_mv);
         if (lo > 0 && mv < lo) || (hi > 0 && mv > hi) {

@@ -52,6 +52,8 @@ pub(crate) mod mock {
         WriteRead(u8, Vec<u8>, Vec<u8>),
         /// A register read the device does not acknowledge (absent part).
         Nack(u8, Vec<u8>),
+        /// A write the device does not acknowledge (a value it refuses).
+        NackWrite(u8, Vec<u8>),
     }
 
     #[derive(Default)]
@@ -78,8 +80,15 @@ pub(crate) mod mock {
         type Error = ();
         fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), ()> {
             self.log.push(Tx::Write(addr, bytes.to_vec()));
-            if let Some(next) = self.script.pop_front() {
-                assert_eq!(next, Tx::Write(addr, bytes.to_vec()), "unexpected write");
+            match self.script.pop_front() {
+                Some(Tx::NackWrite(a, b)) => {
+                    assert_eq!((a, b.as_slice()), (addr, bytes), "unexpected write");
+                    return Err(());
+                }
+                Some(next) => {
+                    assert_eq!(next, Tx::Write(addr, bytes.to_vec()), "unexpected write");
+                }
+                None => {}
             }
             Ok(())
         }

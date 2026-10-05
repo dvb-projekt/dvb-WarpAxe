@@ -89,16 +89,34 @@ impl Config {
     /// (BitMaker fork, `nerdaxegaia.cpp` ae509770): the 5 V driver
     /// defaults with the 12 V input window (on 10.5, off 9.5, UV warn
     /// 10.5, OV fault 14), IOUT 28/33 A, 400 kHz after init, output
-    /// window 0.8–3 V, PIN_DETECT_OVERRIDE 0x0000, and no STACK / SYNC /
+    /// floor 0.8 V, PIN_DETECT_OVERRIDE 0x0000, and no STACK / SYNC /
     /// PHASE writes (`write_entire_config`, read again 2026-09-29).
+    ///
+    /// One deliberate departure (v0.1.16): VOUT_SCALE_LOOP 0.5 instead
+    /// of BitMaker's 0.25. The part's reference DAC regulates cleanly
+    /// from 0.25 to 0.75 V, so its recommended output range is
+    /// 0.25 V / VSL to 0.75 V / VSL (TPS546D24A, SLUSDN0A table 7-1):
+    /// 1–3 V at 0.25, 0.5–1.5 V at 0.5. The Gaia runs its BM1373 at
+    /// 800–970 mV, below the clean range at 0.25, where TI promises
+    /// neither regulation accuracy nor the UV warning/fault (section
+    /// 7.3.6 note) — the shape of the unexplained core-voltage drop at
+    /// 440 MHz / 970 mV. At 0.5 the whole running range is inside the
+    /// clean one; VOUT_MAX becomes 1.4 V, the top of the DAC's valid
+    /// VOUT_COMMAND range at that divider (table 7-34). The VSEL strap
+    /// table (7-13) gives VSL 0.5 for every boot voltage from 0.5 to
+    /// 1.2 V, so a board designed around a ~1 V core most likely strapped
+    /// 0.5 and had its MSEL1 compensation chosen for it; the loop gain
+    /// scales with VSL (equations 6/7), which is why the compensation
+    /// block stays untouched and the pre-init registers are logged at
+    /// boot ([`Tps546::window`]) for the check on the board.
     pub const NERDAXE_GAIA: Config = Config {
         vin_on: 10.5,
         vin_off: 9.5,
         vin_uv_warn: 10.5,
         vin_ov_fault: 14.0,
-        scale_loop: 0.25,
+        scale_loop: 0.5,
         vout_min: 0.8,
-        vout_max: 3.0,
+        vout_max: 1.4,
         vout_command: 1.2,
         iout_oc_warn: 28.0,
         iout_oc_fault: 33.0,
@@ -240,6 +258,48 @@ impl Config {
     };
 }
 
+/// The reference DAC's clean range, V (TPS546D24A SLUSDN0A, "Reference
+/// voltage range" and table 7-1): VOUT_COMMAND × VOUT_SCALE_LOOP must
+/// stay inside it, or TI promises neither regulation accuracy nor the
+/// VOUT UV warning and fault.
+pub const REF_MIN_V: f32 = 0.25;
+/// Upper end of the reference range, V.
+pub const REF_MAX_V: f32 = 0.75;
+
+impl Config {
+    /// Lowest output the part regulates cleanly at this divider, V:
+    /// 0.25 V / VOUT_SCALE_LOOP.
+    pub fn clean_floor(&self) -> f32 {
+        REF_MIN_V / self.scale_loop
+    }
+
+    /// Highest output the part regulates cleanly at this divider, V:
+    /// 0.75 V / VOUT_SCALE_LOOP.
+    pub fn clean_ceiling(&self) -> f32 {
+        REF_MAX_V / self.scale_loop
+    }
+
+    /// Lowest output the driver commands, V: the configured floor, never
+    /// below the clean range of the divider.
+    pub fn min_vout(&self) -> f32 {
+        if self.vout_min > self.clean_floor() {
+            self.vout_min
+        } else {
+            self.clean_floor()
+        }
+    }
+
+    /// Highest output the driver commands, V: the configured ceiling,
+    /// never above the clean range of the divider.
+    pub fn max_vout(&self) -> f32 {
+        if self.vout_max < self.clean_ceiling() {
+            self.vout_max
+        } else {
+            self.clean_ceiling()
+        }
+    }
+}
+
 // Fixed limits, ESP-Miner TPS546.h.
 const VIN_OV_FAULT_RESPONSE: u8 = 0xB7;
 const IOUT_OC_FAULT_RESPONSE: u8 = 0xC0; // shut down, no retries
@@ -248,16 +308,38 @@ const OT_FAULT_C: i32 = 145;
 const OT_FAULT_RESPONSE: u8 = 0xFF; // wait for cooling, retry
 const TON_RISE_MS: i32 = 3;
 const TON_MAX_FAULT_RESPONSE: u8 = 0x3B;
-// VOUT fault, warn and margin limits. The TPS546 takes them as ratios
-// of VOUT_COMMAND (1.25 = 125 %), written in the VOUT_MODE format like a
-// voltage; a limit written as absolute volts is out of range and the
-// part NACKs it (found on a Gamma: 0x40 refused, readback 640 = 1.25).
+// VOUT fault, warn and margin limits, ESP-Miner's values written the way
+// ESP-Miner writes them: in the VOUT_MODE format like a voltage. The
+// part's comparators are percentages of VOUT_COMMAND (OV fault
+// 105–140 %, UV fault 60–95 %, 2.5 % steps; TPS546D24A SLUSDN0A
+// 7.6.33 / 7.6.37), a written value is mapped to one at write time and
+// a value that maps outside the window is NACKed (found on a Gamma:
+// 0x40 refused, readback 640 = 1.25). Below 0.95 V output the 0.9 UV
+// warn value maps above 95 % and is refused, so a limit write never
+// fails [`Tps546::set_vout`]; it is remembered in
+// [`Tps546::limit_fault`] instead. Whether to write true ratios is a
+// change for every board and a question for the bench, not for v0.1.16.
 const OV_FAULT: f32 = 1.25;
 const OV_WARN: f32 = 1.16;
 const MARGIN_HIGH: f32 = 1.10;
 const MARGIN_LOW: f32 = 0.90;
 const UV_WARN: f32 = 0.90;
 const UV_FAULT: f32 = 0.75;
+
+/// The output window a part holds, as [`Tps546::window`] reads it. Volts.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Window {
+    /// VOUT_SCALE_LOOP, the feedback divider.
+    pub scale_loop: Option<f32>,
+    /// VOUT_COMMAND.
+    pub vout_command: Option<f32>,
+    /// VOUT_MIN.
+    pub vout_min: Option<f32>,
+    /// VOUT_MAX.
+    pub vout_max: Option<f32>,
+    /// COMPENSATION_CONFIG, the five loop bytes.
+    pub compensation: Option<[u8; 5]>,
+}
 
 /// The driver, owning the bus.
 pub struct Tps546<I> {
@@ -267,6 +349,9 @@ pub struct Tps546<I> {
     vout_exp: i32,
     /// The last PMBus command sent, for a failure report.
     last_cmd: u8,
+    /// The first VOUT limit register the part refused in the last
+    /// [`set_vout`](Self::set_vout) or [`init`](Self::init), if any.
+    limit_fault: Option<u8>,
 }
 
 impl<I: I2c> Tps546<I> {
@@ -277,7 +362,16 @@ impl<I: I2c> Tps546<I> {
             cfg,
             vout_exp: -9,
             last_cmd: 0,
+            limit_fault: None,
         }
+    }
+
+    /// The first VOUT fault / warn / margin register the part refused
+    /// during the last [`set_vout`](Self::set_vout) or
+    /// [`init`](Self::init); `None` when it took them all. The output
+    /// voltage itself was commanded either way.
+    pub fn limit_fault(&self) -> Option<u8> {
+        self.limit_fault
     }
 
     /// The operating window this driver writes at init.
@@ -362,6 +456,53 @@ impl<I: I2c> Tps546<I> {
         self.read_byte(pm::VOUT_MODE)
     }
 
+    /// COMPENSATION_CONFIG (USER_DATA_01), the five-byte loop block.
+    pub fn compensation(&mut self) -> Result<[u8; 5], Error<I::Error>> {
+        self.last_cmd = pm::COMPENSATION_CONFIG;
+        let mut b = [0u8; 6];
+        self.bus
+            .write_read(ADDR, &[pm::COMPENSATION_CONFIG], &mut b)?;
+        if b[0] != 5 {
+            return Err(Error::BadLength);
+        }
+        let mut out = [0u8; 5];
+        out.copy_from_slice(&b[1..]);
+        Ok(out)
+    }
+
+    /// The output window the part holds right now: VOUT_SCALE_LOOP,
+    /// VOUT_COMMAND / MIN / MAX and the compensation block. Read before
+    /// [`init`](Self::init) on a cold start, it shows what the VSEL /
+    /// MSEL1 straps or the NVM programmed, which is what the board's
+    /// compensation was chosen for. Uses the VOUT_MODE exponent the part
+    /// reports, so it works before `init` too; a register that fails to
+    /// read is `None`.
+    pub fn window(&mut self) -> Window {
+        let exp = match self.read_byte(pm::VOUT_MODE) {
+            Ok(m) => pm::vout_mode_exponent(m),
+            Err(_) => self.vout_exp,
+        };
+        let scale_loop = self
+            .read_word(pm::VOUT_SCALE_LOOP)
+            .ok()
+            .map(pm::linear11_to_f32);
+        let mut volts = |cmd: u8| {
+            self.read_word(cmd)
+                .ok()
+                .map(|w| pm::ulinear16_to_f32(w, exp))
+        };
+        let vout_command = volts(pm::VOUT_COMMAND);
+        let vout_min = volts(pm::VOUT_MIN);
+        let vout_max = volts(pm::VOUT_MAX);
+        Window {
+            scale_loop,
+            vout_command,
+            vout_min,
+            vout_max,
+            compensation: self.compensation().ok(),
+        }
+    }
+
     /// Check the device id, stop conversion, write the whole config.
     /// Conversion stays off; [`set_vout`](Self::set_vout) turns it on.
     /// Returns STATUS_WORD after the write.
@@ -404,7 +545,7 @@ impl<I: I2c> Tps546<I> {
         self.write_ulinear16(pm::VOUT_COMMAND, c.vout_command)?;
         self.write_ulinear16(pm::VOUT_MAX, c.vout_max)?;
         self.write_ulinear16(pm::VOUT_MIN, c.vout_min)?;
-        self.write_vout_limits()?;
+        self.write_vout_limits();
         self.write_word(pm::IOUT_OC_WARN_LIMIT, f32_to_linear11(c.iout_oc_warn))?;
         self.write_word(pm::IOUT_OC_FAULT_LIMIT, f32_to_linear11(c.iout_oc_fault))?;
         self.write_byte(pm::IOUT_OC_FAULT_RESPONSE, IOUT_OC_FAULT_RESPONSE)?;
@@ -423,29 +564,40 @@ impl<I: I2c> Tps546<I> {
         self.read_word(pm::STATUS_WORD)
     }
 
-    /// The fault/warn/margin window, as ratios of VOUT_COMMAND; the
-    /// part scales them itself, so they are rewritten unchanged after a
-    /// new VOUT_COMMAND (as ESP-Miner does).
-    fn write_vout_limits(&mut self) -> Result<(), Error<I::Error>> {
-        self.write_ulinear16(pm::VOUT_OV_FAULT_LIMIT, OV_FAULT)?;
-        self.write_ulinear16(pm::VOUT_OV_WARN_LIMIT, OV_WARN)?;
-        self.write_ulinear16(pm::VOUT_MARGIN_HIGH, MARGIN_HIGH)?;
-        self.write_ulinear16(pm::VOUT_MARGIN_LOW, MARGIN_LOW)?;
-        self.write_ulinear16(pm::VOUT_UV_WARN_LIMIT, UV_WARN)?;
-        self.write_ulinear16(pm::VOUT_UV_FAULT_LIMIT, UV_FAULT)
+    /// The fault/warn/margin window, rewritten unchanged after every new
+    /// VOUT_COMMAND (as ESP-Miner does). Every register is tried; the
+    /// first one the part refuses goes to [`limit_fault`](Self::limit_fault).
+    fn write_vout_limits(&mut self) {
+        self.limit_fault = None;
+        for (cmd, value) in [
+            (pm::VOUT_OV_FAULT_LIMIT, OV_FAULT),
+            (pm::VOUT_OV_WARN_LIMIT, OV_WARN),
+            (pm::VOUT_MARGIN_HIGH, MARGIN_HIGH),
+            (pm::VOUT_MARGIN_LOW, MARGIN_LOW),
+            (pm::VOUT_UV_WARN_LIMIT, UV_WARN),
+            (pm::VOUT_UV_FAULT_LIMIT, UV_FAULT),
+        ] {
+            if self.write_ulinear16(cmd, value).is_err() && self.limit_fault.is_none() {
+                self.limit_fault = Some(cmd);
+            }
+        }
     }
 
     /// Set the output and turn conversion on; 0 turns it off. Outside
-    /// the configured window nothing is written.
+    /// the configured window, or outside the part's clean range at the
+    /// configured divider ([`Config::min_vout`], [`Config::max_vout`]),
+    /// nothing is written. An error means the voltage was not commanded
+    /// (or conversion not turned on); a limit register the part refused
+    /// is not one, see [`limit_fault`](Self::limit_fault).
     pub fn set_vout(&mut self, volts: f32) -> Result<(), Error<I::Error>> {
         if volts == 0.0 {
             return self.write_byte(pm::OPERATION, OPERATION_OFF);
         }
-        if volts < self.cfg.vout_min || volts > self.cfg.vout_max {
+        if volts < self.cfg.min_vout() || volts > self.cfg.max_vout() {
             return Err(Error::OutOfRange);
         }
         self.write_ulinear16(pm::VOUT_COMMAND, volts)?;
-        self.write_vout_limits()?;
+        self.write_vout_limits();
         self.write_byte(pm::OPERATION, OPERATION_ON)
     }
 
@@ -644,9 +796,12 @@ mod tests {
         // IOUT fault 33 A = 528 · 2⁻⁴ = 0xE210; 400 kHz = 0x0190.
         assert_eq!(find(pm::IOUT_OC_FAULT_LIMIT), Some(vec![0x10, 0xE2]));
         assert_eq!(find(pm::FREQUENCY_SWITCH), Some(vec![0x90, 0x01]));
-        // VOUT_MIN 0.8 V × 512 = 409 = 0x0199; VOUT_MAX 3 V = 0x0600.
+        // VOUT_MIN 0.8 V × 512 = 409 = 0x0199; VOUT_MAX 1.4 V × 512 = 716 = 0x02CC.
         assert_eq!(find(pm::VOUT_MIN), Some(vec![0x99, 0x01]));
-        assert_eq!(find(pm::VOUT_MAX), Some(vec![0x00, 0x06]));
+        assert_eq!(find(pm::VOUT_MAX), Some(vec![0xCC, 0x02]));
+        // VOUT_SCALE_LOOP 0.5: the divider whose clean range holds 0.8–0.97 V.
+        let [lo, hi] = f32_to_linear11(0.5).to_le_bytes();
+        assert_eq!(find(pm::VOUT_SCALE_LOOP), Some(vec![lo, hi]));
         assert_eq!(
             find(pm::PIN_DETECT_OVERRIDE),
             Some(vec![0x00, 0x00]),
@@ -659,10 +814,93 @@ mod tests {
             "BitMaker leaves the phase registers"
         );
         assert!(find(pm::COMPENSATION_CONFIG).is_none());
-        // 0.94 V core is inside the window; 0.5 V is not.
+        // 0.94 V core is inside the window; 0.5 V and 1.45 V are not.
         let mut vr = Tps546::new(Bus::sink(), Config::NERDAXE_GAIA);
         assert!(vr.set_vout(0.94).is_ok());
         assert_eq!(vr.set_vout(0.5), Err(Error::OutOfRange));
+        assert_eq!(vr.set_vout(1.45), Err(Error::OutOfRange));
+    }
+
+    #[test]
+    fn every_preset_window_lies_inside_the_clean_range_of_its_divider() {
+        for (name, c) in [
+            ("bitaxe 5 V", Config::BITAXE_5V),
+            ("gaia", Config::NERDAXE_GAIA),
+            ("nano", Config::BITFORGE_NANO),
+            ("gamma turbo", Config::GAMMA_TURBO),
+            ("naja duo", Config::NAJA_DUO),
+            ("gamma hex", Config::GAMMA_HEX),
+            ("rev 7", Config::NERDQAXE_PLUSPLUS_REV7),
+        ] {
+            assert!(c.min_vout() >= c.clean_floor(), "{name}");
+            assert!(c.max_vout() <= c.clean_ceiling(), "{name}");
+            assert!(c.min_vout() >= c.vout_min, "{name}");
+            assert!(c.max_vout() <= c.vout_max, "{name}");
+            assert!(
+                c.vout_command >= c.min_vout(),
+                "{name}: init point below the floor"
+            );
+            assert!(
+                c.vout_command <= c.max_vout(),
+                "{name}: init point above the ceiling"
+            );
+        }
+        assert_eq!(Config::NERDAXE_GAIA.clean_floor(), 0.5);
+        assert_eq!(Config::NERDAXE_GAIA.clean_ceiling(), 1.5);
+        assert_eq!(Config::NERDAXE_GAIA.min_vout(), 0.8);
+        assert_eq!(Config::NERDAXE_GAIA.max_vout(), 1.4);
+        assert_eq!(Config::BITAXE_5V.min_vout(), 1.0);
+        // ESP-Miner's Naja Duo floor (1.8 V) sits below the clean 2 V of
+        // the 0.125 divider: the driver's floor is the clean one.
+        assert_eq!(Config::NAJA_DUO.clean_floor(), 2.0);
+        assert_eq!(Config::NAJA_DUO.min_vout(), 2.0);
+        assert_eq!(Config::GAMMA_TURBO.max_vout(), 3.0);
+    }
+
+    #[test]
+    fn set_vout_never_goes_below_the_clean_range_of_the_divider() {
+        // The Gaia as BitMaker runs it: a 0.8 V floor on the 0.25
+        // divider, whose clean range only starts at 1 V.
+        let bitmaker = Config {
+            scale_loop: 0.25,
+            vout_max: 3.0,
+            ..Config::NERDAXE_GAIA
+        };
+        assert_eq!(bitmaker.min_vout(), 1.0);
+        assert_eq!(bitmaker.max_vout(), 3.0);
+        let mut vr = Tps546::new(Bus::sink(), bitmaker);
+        assert_eq!(vr.set_vout(0.94), Err(Error::OutOfRange));
+        assert!(vr.set_vout(1.0).is_ok());
+    }
+
+    #[test]
+    fn window_reads_the_divider_window_and_compensation() {
+        let bus = Bus::new(vec![
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MODE], vec![0x17]),
+            // The register default 0xC840 = 64 · 2⁻⁷ = 0.5.
+            Tx::WriteRead(ADDR, vec![pm::VOUT_SCALE_LOOP], vec![0x40, 0xC8]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_COMMAND], vec![0x66, 0x02]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MIN], vec![0x99, 0x01]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MAX], vec![0x00, 0x06]),
+            Tx::WriteRead(
+                ADDR,
+                vec![pm::COMPENSATION_CONFIG],
+                vec![5, 0x22, 0x18, 0xC2, 0x1D, 0x06],
+            ),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NERDAXE_GAIA);
+        let w = vr.window();
+        assert_eq!(w.scale_loop, Some(0.5));
+        assert!((w.vout_command.unwrap() - 1.2).abs() < 0.002);
+        assert!((w.vout_min.unwrap() - 0.8).abs() < 0.002);
+        assert_eq!(w.vout_max, Some(3.0));
+        assert_eq!(w.compensation, Some([0x22, 0x18, 0xC2, 0x1D, 0x06]));
+        // Nothing written: a probe changes no register.
+        assert!(vr
+            .release()
+            .log
+            .iter()
+            .all(|t| matches!(t, Tx::WriteRead(..))));
     }
 
     #[test]
@@ -672,6 +910,33 @@ mod tests {
         let log = vr.release().log;
         // 1.15 × 512 = 588.8 → 588 = 0x024C
         assert_eq!(log[0], Tx::Write(ADDR, vec![pm::VOUT_COMMAND, 0x4C, 0x02]));
+        assert_eq!(log.len(), 8);
+        assert_eq!(log[7], Tx::Write(ADDR, vec![pm::OPERATION, 0x80]));
+    }
+
+    #[test]
+    fn a_refused_limit_register_does_not_refuse_the_voltage() {
+        // 0.92 V on a Gaia: the 0.9 UV warn value maps above 95 % of
+        // VOUT_COMMAND and the part NACKs it. The voltage is set, the
+        // other limits are still written, conversion goes on.
+        let w = |cmd: u8, v: f32| {
+            let [lo, hi] = f32_to_ulinear16(v, -9).to_le_bytes();
+            vec![cmd, lo, hi]
+        };
+        let bus = Bus::new(vec![
+            Tx::Write(ADDR, w(pm::VOUT_COMMAND, 0.92)),
+            Tx::Write(ADDR, w(pm::VOUT_OV_FAULT_LIMIT, OV_FAULT)),
+            Tx::Write(ADDR, w(pm::VOUT_OV_WARN_LIMIT, OV_WARN)),
+            Tx::Write(ADDR, w(pm::VOUT_MARGIN_HIGH, MARGIN_HIGH)),
+            Tx::Write(ADDR, w(pm::VOUT_MARGIN_LOW, MARGIN_LOW)),
+            Tx::NackWrite(ADDR, w(pm::VOUT_UV_WARN_LIMIT, UV_WARN)),
+            Tx::Write(ADDR, w(pm::VOUT_UV_FAULT_LIMIT, UV_FAULT)),
+            Tx::Write(ADDR, vec![pm::OPERATION, 0x80]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NERDAXE_GAIA);
+        assert_eq!(vr.set_vout(0.92), Ok(()));
+        assert_eq!(vr.limit_fault(), Some(pm::VOUT_UV_WARN_LIMIT));
+        let log = vr.release().log;
         assert_eq!(log.len(), 8);
         assert_eq!(log[7], Tx::Write(ADDR, vec![pm::OPERATION, 0x80]));
     }

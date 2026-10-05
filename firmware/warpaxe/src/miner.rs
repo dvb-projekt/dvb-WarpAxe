@@ -50,6 +50,12 @@ pub struct MinerState {
     /// Times the whole chain was started over because every chip had gone
     /// silent for a minute.
     pub chain_restarts: u32,
+    /// Of those, the ones in a row at the core voltage of the last one:
+    /// two or more say the chips do not run at this voltage (a tuner's
+    /// cue to leave it). Back to 0 after ten minutes of nonces.
+    pub silent_restarts_same_mv: u32,
+    /// The core voltage of the last silent restart, mV.
+    pub silent_restart_mv: u16,
     /// 10-minute window.
     pub hashrate_ghs: f64,
     /// Last 30 s bucket.
@@ -277,6 +283,7 @@ fn run(mut uart: ChipUart) {
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
+        let chain_started = Instant::now();
         // A register scan: the next register to read (one per loop pass,
         // like the counter reads), then when the last read went out.
         let mut scan_next: Option<u8> = None;
@@ -602,9 +609,15 @@ fn run(mut uart: ChipUart) {
                     .map_or(elapsed, |(t, _)| (now_s - *t).max(elapsed));
                 let ghs_10m = sum / span / 1e9;
                 let ghs_now = hashes / elapsed / 1e9;
+                // Ten minutes of nonces since the start: whatever silence
+                // came before, this voltage runs.
+                let settled = sum > 0.0 && chain_started.elapsed() >= Duration::from_secs(600);
                 update(|s| {
                     s.hashrate_ghs = ghs_10m;
                     s.hashrate_now_ghs = ghs_now;
+                    if settled {
+                        s.silent_restarts_same_mv = 0;
+                    }
                 });
                 hashes = 0.0;
                 hashes_since = epoch.elapsed();
@@ -628,11 +641,27 @@ fn run(mut uart: ChipUart) {
             if n > 0 && silent == usize::from(n) && chain.accepting_work() {
                 let since = *all_silent_since.get_or_insert_with(Instant::now);
                 if since.elapsed() > Duration::from_secs(60) {
-                    log::warn!("miner: all {n} chips silent for 60 s, restarting the chain");
+                    // The restart brings the chain up at the same voltage
+                    // again; counted per voltage so the API (and a tuner)
+                    // can tell a dead voltage from a one-off hang.
+                    let mv = config::get().core_voltage;
                     update(|s| {
                         s.chain_restarts += 1;
+                        if s.silent_restart_mv == mv {
+                            s.silent_restarts_same_mv += 1;
+                        } else {
+                            s.silent_restart_mv = mv;
+                            s.silent_restarts_same_mv = 1;
+                        }
                         s.hashrate_now_ghs = 0.0;
+                        s.last_error = format!(
+                            "all {n} chips silent for 60 s at {mv} mV (restart {} at this voltage)",
+                            s.silent_restarts_same_mv
+                        );
                     });
+                    log::warn!(
+                        "miner: all {n} chips silent for 60 s at {mv} mV, restarting the chain"
+                    );
                     break;
                 }
             } else {

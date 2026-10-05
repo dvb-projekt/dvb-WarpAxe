@@ -344,6 +344,31 @@ impl Profile {
     pub fn core_mv_for_vout(&self, vout: f32) -> u16 {
         (vout / f32::from(self.voltage_domains.max(1)) * 1000.0) as u16
     }
+
+    /// The lowest core voltage the regulator holds cleanly, mV per
+    /// voltage domain: a TPS546's configured floor, never below the clean
+    /// range of its divider ([`tps546::Config::min_vout`]); the TPS5364x
+    /// driver's VID floor; 0 without a regulator. Rounded up, so the
+    /// value itself is one the driver takes. Published as
+    /// `regulatorMinMv`; a core voltage below it is refused whatever the
+    /// board's own choices say — never a core voltage below the
+    /// regulator's clean range (Oliver, 2026-10-05).
+    pub fn regulator_min_core_mv(&self) -> u16 {
+        let vout = match self.vr {
+            Vr::Tps546(c)
+            | Vr::Tps546Nerd { regulator: c, .. }
+            | Vr::Tps546Ina260 { regulator: c, .. } => c.min_vout(),
+            Vr::Tps5364x { .. } => f32::from(tps53647::VOUT_MIN_MV) / 1000.0,
+            _ => return 0,
+        };
+        let mv = vout / f32::from(self.voltage_domains.max(1)) * 1000.0;
+        let mut whole = mv as u16;
+        // 0.8 as f32 is a hair above 0.8: a tolerance keeps 800 at 800.
+        if f32::from(whole) + 0.01 < mv {
+            whole += 1;
+        }
+        whole
+    }
 }
 
 /// Bitaxe Gamma 600–603: one BM1370, TPS546 at 5 V in, EMC2101 on the
@@ -662,7 +687,10 @@ pub const NERDAXE_GAMMA: Profile = Profile {
 /// Clock and core voltage capped at 420 MHz / 970 mV: at 440 MHz /
 /// 970 mV the regulator dropped the core voltage without a fault flag
 /// (WarpTune, 2026-09), so the stock 440 MHz and 980–1040 mV options
-/// are not offered. Profile only: never run under WarpAxe; the BM1373
+/// are not offered. That ran on BitMaker's 0.25 divider, below the
+/// part's clean range; since v0.1.16 the divider is 0.5 (see
+/// [`tps546::Config::NERDAXE_GAIA`]) and the cap is up for a re-check
+/// on the board, not lifted here. Profile only: never run under WarpAxe; the BM1373
 /// chain path has only run in simulation.
 pub const NERDAXE_GAIA: Profile = Profile {
     name: "nerdaxe-gaia",
@@ -1143,6 +1171,37 @@ mod tests {
         };
         assert_eq!(two.vout_for_core_mv(1150), 2.3);
         assert_eq!(two.core_mv_for_vout(2.3), 1150);
+    }
+
+    #[test]
+    fn regulator_floor_is_the_clean_range_per_voltage_domain() {
+        for p in ALL {
+            let want = match p.vr {
+                // The VID floor of the TPS5364x driver.
+                Vr::Tps5364x { .. } => 800,
+                // 1 V on the 0.25 divider, 2 V across two domains on
+                // 0.125; the Gaia's own 0.8 V floor on the 0.5 divider.
+                Vr::Tps546(_) | Vr::Tps546Nerd { .. } | Vr::Tps546Ina260 { .. } => {
+                    if p.name == NERDAXE_GAIA.name {
+                        800
+                    } else {
+                        1000
+                    }
+                }
+                _ => 0,
+            };
+            assert_eq!(p.regulator_min_core_mv(), want, "{}", p.name);
+            // The floor is one the driver takes, and the factory point
+            // sits on or above it.
+            if want > 0 {
+                let vr_floor = match p.vr {
+                    Vr::Tps5364x { .. } => f32::from(tps53647::VOUT_MIN_MV) / 1000.0,
+                    _ => p.tps546().unwrap().min_vout(),
+                };
+                assert!(p.vout_for_core_mv(want) >= vr_floor - 1e-6, "{}", p.name);
+                assert!(p.default_core_mv >= want, "{}", p.name);
+            }
+        }
     }
 
     #[test]

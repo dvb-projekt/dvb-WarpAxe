@@ -106,6 +106,10 @@ pub struct BoardState {
     /// The conditions behind it as codes: off, vout_ov, iout_oc, vin_uv,
     /// temp, temp_warn.
     pub power_fault_codes: Vec<&'static str>,
+    /// A requested core voltage the regulator refused, mV (outside its
+    /// window, or the bus failed); `None` once a request went through.
+    /// The board task keeps trying it.
+    pub core_mv_refused: Option<u16>,
     pub last_error: String,
     /// What the regulator answered to each probe at boot.
     pub vr_probe: String,
@@ -595,7 +599,17 @@ impl Regulator {
     }
     fn set_core(&mut self, volts: f32) -> Result<(), String> {
         match self {
-            Regulator::Tps546(vr, _) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
+            Regulator::Tps546(vr, _) => {
+                let r = vr.set_vout(volts).map_err(|e| format!("{e:?}"));
+                // The output is set either way; the window register the
+                // part refused keeps its last value (the limits are
+                // percentages of VOUT_COMMAND, a fixed value can fall
+                // outside the window at a low output).
+                if let Some(cmd) = vr.limit_fault() {
+                    log::warn!("board: TPS546 limit register {cmd:#04x} refused at {volts} V, output set");
+                }
+                r
+            }
             Regulator::Tps5364x { vr, .. } => {
                 vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
             }
@@ -786,12 +800,14 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
             Err(_) => log::info!("board: no SMBus alert pending"),
         }
         std::thread::sleep(Duration::from_millis(15));
-        // Probe the part step by step so a failure says where.
+        // Probe the part step by step so a failure says where; the
+        // window it holds before init shows what the straps / NVM set.
         let probe = format!(
-            "vout_mode={:?} status={:?} id={:?}",
+            "vout_mode={:?} status={:?} id={:?} {:?}",
             vr.vout_mode(),
             vr.status_word(),
-            vr.device_id()
+            vr.device_id(),
+            vr.window()
         );
         log::info!("board: TPS546 probe {probe}");
         update(|s| s.vr_probe = probe);
@@ -1169,7 +1185,11 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
     }
 
     let mut vr = Tps546::new(bus.clone(), regulator);
-    let probe = format!("device_id={:?}", vr.device_id());
+    // The window before init: after a power cycle it is what the VSEL /
+    // MSEL1 straps or the NVM programmed (the divider the board's
+    // compensation was chosen for); after a reset, what the last init
+    // wrote.
+    let probe = format!("device_id={:?} {:?}", vr.device_id(), vr.window());
     log::info!("board: TPS546 (Nerd carrier) probe {probe}");
     update(|s| s.vr_probe = probe);
     match vr.init() {
@@ -1240,6 +1260,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut pid_vr = FanPid::new(f32::from(cfg.min_fan_speed));
     pid_vr.reset(100.0, vr_fan_target_c(profile));
     let mut applied_mv = cfg.core_voltage.max(profile.init_core_mv);
+    // A core voltage the regulator refused is tried again once a second,
+    // and logged once per value.
+    let mut core_retry_at = Instant::now();
+    let mut core_refused_logged: Option<u16> = None;
     let mut fans: (u8, u8) = (100, 100);
     let mut last_sample = Instant::now() - Duration::from_secs(1);
     let mut temp: Option<f32> = None;
@@ -1551,16 +1575,45 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             }
         }
 
-        // A new core voltage from the API or the chain coming up.
+        // A new core voltage from the API or the chain coming up. A value
+        // the regulator refuses does not count as applied: the rail
+        // stays where it is, the API shows the refusal, and the request
+        // is tried again once a second (a bus hiccup passes, a value
+        // outside the window keeps being refused until a new one comes).
         let want = WANTED_MV.load(Ordering::Relaxed);
-        if want != 0 && want != applied_mv && POWERED.load(Ordering::Relaxed) {
-            if let Some(vr) = vr.as_mut() {
-                match vr.set_core(profile.vout_for_core_mv(want)) {
-                    Ok(()) => log::info!("board: core {want} mV"),
-                    Err(e) => log::warn!("board: core {want} mV refused: {e}"),
+        if want != 0
+            && want != applied_mv
+            && POWERED.load(Ordering::Relaxed)
+            && Instant::now() >= core_retry_at
+        {
+            let result = match vr.as_mut() {
+                Some(vr) => vr.set_core(profile.vout_for_core_mv(want)),
+                None => Ok(()),
+            };
+            match result {
+                Ok(()) => {
+                    log::info!("board: core {want} mV");
+                    applied_mv = want;
+                    core_refused_logged = None;
+                    update(|s| {
+                        s.core_mv_refused = None;
+                        if s.last_error.starts_with("core:") {
+                            s.last_error.clear();
+                        }
+                    });
+                }
+                Err(e) => {
+                    if core_refused_logged != Some(want) {
+                        log::warn!("board: core {want} mV refused: {e}, staying at {applied_mv} mV");
+                        core_refused_logged = Some(want);
+                    }
+                    core_retry_at = Instant::now() + Duration::from_secs(1);
+                    update(|s| {
+                        s.core_mv_refused = Some(want);
+                        s.last_error = format!("core: {want} mV refused: {e}");
+                    });
                 }
             }
-            applied_mv = want;
         }
 
         // Fans, every sample period.
