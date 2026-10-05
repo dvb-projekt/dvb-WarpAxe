@@ -66,6 +66,8 @@ struct CpuJob {
     tail_words: [u32; 3],
     next_nonce: AtomicU32,
     exhausted: AtomicBool,
+    /// A start-up probe job: candidates are not reported.
+    probe: bool,
 }
 
 impl CpuJob {
@@ -82,7 +84,28 @@ impl CpuJob {
             tail_words: sha256::hw_tail_words(&tail),
             next_nonce: AtomicU32::new(0),
             exhausted: AtomicBool::new(false),
+            probe: false,
         }
+    }
+
+    /// A job for the start-up probe: fixed fields, nothing submitted.
+    fn probe() -> Self {
+        let mut j = CpuJob::new(
+            Job {
+                job_id: "probe".into(),
+                extranonce2: Vec::new(),
+                coinbase: Vec::new(),
+                merkle_root: [0x5a; 32],
+                prev_hash: [0xa5; 32],
+                version: 0x2000_0000,
+                nbits: 0x1700_0000,
+                ntime: 0x6ac3_0000,
+                clean_jobs: false,
+            },
+            0,
+        );
+        j.probe = true;
+        j
     }
 
     /// The next `n` nonces, or `None` when the space is used up.
@@ -106,6 +129,14 @@ static HASHES_SW: AtomicU32 = AtomicU32::new(0);
 static CANDIDATES: AtomicU32 = AtomicU32::new(0);
 /// Peripheral hashes the software re-hash did not confirm.
 static HW_MISMATCH: AtomicU32 = AtomicU32::new(0);
+/// Diagnostics per worker (index 0 = peripheral, 1 = software): the core
+/// it runs on, the start-up probe's rate at high priority (kH/s × 10),
+/// microseconds spent inside the batches (wrapping; the coordinator takes
+/// the difference), and the last batch's microseconds per hash × 100.
+static WORKER_CORE: [AtomicU32; 2] = [AtomicU32::new(9), AtomicU32::new(9)];
+static PROBE_KHS10: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
+static BUSY_US: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
+static US_PER_HASH100: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
 
 /// What the web UI shows for the CPU miner.
 #[derive(Clone, Debug, Default, Serialize)]
@@ -130,6 +161,17 @@ pub struct Info {
     /// Nonces of the current job handed out so far.
     #[serde(rename = "nonceProgress")]
     pub nonce_progress: u32,
+    /// Core of the peripheral worker and of the software worker.
+    pub cores: [u32; 2],
+    /// Start-up probe at high priority, kH/s: the uncontended ceiling.
+    #[serde(rename = "probeKhs")]
+    pub probe_khs: [f64; 2],
+    /// Share of the last second each worker spent inside its batches.
+    #[serde(rename = "busyPct")]
+    pub busy_pct: [f64; 2],
+    /// Microseconds per hash inside a batch (preemption included).
+    #[serde(rename = "usPerHash")]
+    pub us_per_hash: [f64; 2],
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
 
@@ -142,6 +184,11 @@ pub fn info() -> Info {
         .unwrap()
         .as_ref()
         .map_or(0, |j| j.next_nonce.load(Ordering::Relaxed));
+    for k in 0..2 {
+        i.cores[k] = WORKER_CORE[k].load(Ordering::Relaxed);
+        i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
+        i.us_per_hash[k] = f64::from(US_PER_HASH100[k].load(Ordering::Relaxed)) / 100.0;
+    }
     i
 }
 
@@ -154,10 +201,10 @@ pub fn start() {
         .spawn(run)
         .expect("cpu miner thread");
     spawn_pinned(c"cpu-hw", 0, 6 * 1024, || {
-        worker(hw_batch, HW_BATCH, &HASHES_HW)
+        worker(0, hw_batch, HW_BATCH, &HASHES_HW)
     });
     spawn_pinned(c"cpu-sw", 1, 6 * 1024, || {
-        worker(sw_batch, SW_BATCH, &HASHES_SW)
+        worker(1, sw_batch, SW_BATCH, &HASHES_SW)
     });
 }
 
@@ -184,7 +231,28 @@ fn spawn_pinned(
     r.expect("cpu worker thread");
 }
 
-fn worker(scan: fn(&CpuJob, u32, u32), batch: u32, counter: &AtomicU32) {
+fn now_us() -> i64 {
+    unsafe { sys::esp_timer_get_time() }
+}
+
+fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &AtomicU32) {
+    let null = core::ptr::null_mut();
+    let core = unsafe { sys::xTaskGetCoreID(null) };
+    let prio = unsafe { sys::uxTaskPriorityGet(null) };
+    WORKER_CORE[index].store(core as u32, Ordering::Relaxed);
+    // The ceiling: one batch at a priority above everything but the Wi-Fi
+    // driver, on a probe job, before the real work starts.
+    let probe = CpuJob::probe();
+    unsafe { sys::vTaskPrioritySet(null, 20) };
+    let t0 = now_us();
+    scan(&probe, 0, batch);
+    let dt = (now_us() - t0).max(1);
+    unsafe { sys::vTaskPrioritySet(null, prio) };
+    let khs = f64::from(batch) / dt as f64 * 1e3;
+    PROBE_KHS10[index].store((khs * 10.0) as u32, Ordering::Relaxed);
+    log::info!(
+        "cpu miner: worker {index} on core {core} priority {prio}: {khs:.1} kH/s alone ({batch} hashes in {dt} us)"
+    );
     loop {
         let job = JOB.lock().unwrap().clone();
         let Some(job) = job else {
@@ -195,8 +263,12 @@ fn worker(scan: fn(&CpuJob, u32, u32), batch: u32, counter: &AtomicU32) {
             std::thread::sleep(Duration::from_millis(20));
             continue;
         };
+        let t0 = now_us();
         scan(&job, start, batch);
+        let dt = (now_us() - t0).max(1);
         counter.fetch_add(batch, Ordering::Relaxed);
+        BUSY_US[index].fetch_add(dt as u32, Ordering::Relaxed);
+        US_PER_HASH100[index].store((dt * 100 / i64::from(batch)) as u32, Ordering::Relaxed);
         // One tick for the idle task (its watchdog) and anything else
         // at this priority.
         unsafe { sys::vTaskDelay(1) };
@@ -302,6 +374,9 @@ fn hw_batch(job: &CpuJob, start: u32, n: u32) {
 
 /// A candidate from either worker: verify, score, count, submit.
 fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
+    if job.probe {
+        return;
+    }
     if from_hw && sha256::sha256d_tail(&job.midstate, &job.tail, nonce) != hash {
         HW_MISMATCH.fetch_add(1, Ordering::Relaxed);
         log::warn!("cpu miner: peripheral hash for nonce {nonce:08x} failed the software re-hash");
@@ -359,6 +434,7 @@ fn run() {
     let epoch = Instant::now();
     let mut last_hw = 0u32;
     let mut last_sw = 0u32;
+    let mut last_busy = [0u32; 2];
     let mut last_tick = Instant::now();
     let mut hashes = 0f64;
     let mut hashes_since = Instant::now();
@@ -425,6 +501,11 @@ fn run() {
                 let i = g.get_or_insert_with(Info::default);
                 i.hw_khs = d_hw / dt / 1e3;
                 i.sw_khs = d_sw / dt / 1e3;
+                for k in 0..2 {
+                    let b = BUSY_US[k].load(Ordering::Relaxed);
+                    i.busy_pct[k] = f64::from(b.wrapping_sub(last_busy[k])) / dt / 1e4;
+                    last_busy[k] = b;
+                }
             }
             let elapsed = hashes_since.elapsed().as_secs_f64();
             if elapsed >= 30.0 {
