@@ -395,7 +395,7 @@ function kpis(i) {
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   const c = cpuHs(i);
-  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
+  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${c ? k(t("bestdiff"), nf(i.cpuMiner.bestDiff, 3), "", t("since_boot"), "var(--btc)") : k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
 function clockLabels() {
   const now = lang === "de" ? "jetzt" : "now";
@@ -496,7 +496,7 @@ function dashboard() {
       <div class="dhfacts"><div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
         <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>
         <div><span class="lbl">${t("shares")}</span><b>${nf(i.sharesAccepted)}</b><small>${nf(i.sharesRejected)} ${t("rejected")} · ${nf(rejPct, 2)} %</small></div>
-        <div><span class="lbl">${t("bestdiff")}</span><b style="color:var(--btc)">${sfx(i.bestSessionDiff)}</b><small>${t("alltime")} ${sfx(i.bestDiff)}</small></div></div></div>
+        <div><span class="lbl">${t("bestdiff")}</span><b style="color:var(--btc)">${c ? nf(i.cpuMiner.bestDiff, 3) : sfx(i.bestSessionDiff)}</b><small>${c ? t("since_boot") : `${t("alltime")} ${sfx(i.bestDiff)}`}</small></div></div></div>
     <div class="dhchart"><div class="top"><span class="lbl">${t("history")}</span><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
       <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</div>
   </section>
@@ -598,6 +598,8 @@ const TZ = [["CET-1CEST,M3.5.0,M10.5.0/3", "Europe/Berlin (CET)"], ["GMT0BST,M3.
 const CUR = ["USD", "EUR", "GBP", "CAD", "CHF", "AUD", "JPY"].map(x => [x, x]);
 const tog = (k, on, s, full, num) => `<label class="t"${full ? ' style="grid-column:1/-1"' : ""}><span>${t(k === "autofanspeed" ? "autofan" : k === "invertfanpolarity" ? "invertfan" : k)}${s ? `<small>${s}</small>` : ""}</span><input type="checkbox" name="${k}" ${num ? 'data-num="1"' : ""} ${on ? "checked" : ""}></label>`;
 const sec = (title, hint, body, extra = "") => `<section class="card"><div class="sec-h"><h2>${title}</h2>${hint ? `<div class="dim">${hint}</div>` : ""}</div><div class="form">${body}</div>${extra}</section>`;
+// The devkit toy (cpuMiner in the info): sections that only a board with chips, a regulator or a fan can use.
+const stripSections = (html, titles) => { const d = document.createElement("div"); d.innerHTML = html; d.querySelectorAll("section.card").forEach(x => { const h = x.querySelector("h2"); if (h && titles.includes(h.textContent)) x.remove(); }); return d.innerHTML; };
 const SECRET = ["stratumPassword", "wifiPass", "fallbackStratumPassword"];
 function collect(form, cfg) {
   const body = {};
@@ -680,7 +682,7 @@ function settingsPage() {
   if (asic?.absMaxFrequency) { tuneHint = t("tuning_hint_lim", {f: asic.absMaxFrequency, lo: asic.absMinVoltage, hi: asic.absMaxVoltage}); const o = asic.frequencyOptions || []; if (o.length) fHint = t("options_hint", {a: o[0], b: o[o.length - 1], f: asic.absMaxFrequency}); }
   const oc = ocMode(), cp = CHIP_PRESETS[i.ASICModel] || {f: [], v: []};
   const pre = asic?.frequencyOptions?.length ? {f: asic.frequencyOptions, v: asic.voltageOptions || cp.v, df: asic.defaultFrequency, dv: asic.defaultVoltage} : cp;
-  return `<form id="sf">` +
+  const html = `<form id="sf">` +
   (oc ? `<div class="note" style="background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.35);align-items:center;flex-wrap:wrap"><b class="err">OC</b><span class="mute" style="flex:1">${t("oc_warn")}</span><button type="button" class="btn" data-act="ocoff" style="height:36px">${t("oc_off")}</button></div>` : "") +
   sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint})
       : sel("frequency", c.frequency, pre.f, pre.df, {hint: t("oc_hint")}) + sel("coreVoltage", c.coreVoltage, pre.v, pre.dv, {hint: vHint})),
@@ -692,6 +694,7 @@ function settingsPage() {
     oc ? `<div style="display:flex;flex-direction:column;gap:10px;margin-top:16px"><span class="lbl">${t("demo")} <span class="dim" style="text-transform:none;letter-spacing:0">· ${t("demo_s")}</span></span><div class="actions" style="justify-content:flex-start;flex-wrap:wrap">${["block", "overheat", "off", "ota"].map(e => `<button type="button" class="btn" data-demo="${e}">${t("ev_" + e)}</button>`).join("")}</div></div>` : "") +
   sec(t("nav_dashboard"), "", tog("showHashCounters", c.showHashCounters, t("hc_s"), true)) +
   actions(true) + `</form>`;
+  return i.cpuMiner ? stripSections(html, [t("tuning"), t("fan_temp"), t("nav_dashboard")]) : html;
 }
 
 function xpSec(c, i, two) {
@@ -749,7 +752,7 @@ function systemPage() {
     <div class="row" style="align-items:center;gap:12px"><span class="dim" style="font-size:12px">${t("dlmode_s")}</span><button type="button" class="btn" data-act="dlmode" style="white-space:nowrap;flex:none">${t("dlmode")}</button></div></section>
   <section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("maintenance")}</h2>
     <div><div class="row"><span class="mute">${t("status")}</span><span class="${fine ? "ok" : "err"}">${fine ? t("st_fine") : esc(statusText(i, err))}</span></div><div class="row"><span class="mute">${t("last_reset")}</span><span class="num">${esc(i.resetReason)}</span></div><div class="row"><span class="mute">${t("free_heap")}</span><span class="num">${nf(i.freeHeap / 1024)} KB</span></div></div>
-    <div class="g2" style="gap:10px"><button type="button" class="btn" data-act="restart">${t("restart")}</button>${i.shutdown ? `<button type="button" class="btn" data-act="on">${t("chips_on")}</button>` : `<button type="button" class="btn dng" data-act="off">${t("chips_off")}</button>`}<button type="button" class="btn" data-act="overheat" ${i.overheat_mode ? "" : "disabled"}>${t("reset_overheat")}</button><button type="button" class="btn" data-act="best">${t("reset_best")}</button></div>
+    <div class="g2" style="gap:10px"><button type="button" class="btn" data-act="restart">${t("restart")}</button>${i.shutdown ? `<button type="button" class="btn" data-act="on">${t("chips_on")}</button>` : `<button type="button" class="btn dng" data-act="off">${t("chips_off")}</button>`}${i.cpuMiner ? "" : `<button type="button" class="btn" data-act="overheat" ${i.overheat_mode ? "" : "disabled"}>${t("reset_overheat")}</button>`}<button type="button" class="btn" data-act="best">${t("reset_best")}</button></div>
     <div class="dim" style="font-size:12px">${t("maint_note")}</div></section></div>
   <section class="card" style="display:flex;flex-direction:column;gap:12px"><h2>${t("stock_h")}</h2><div class="mute" style="font-size:14px">${t("stock_s")}</div>
     <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><a class="btn pri" href="https://warppool.org/warpaxe/#restore" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">${t("stock_flasher")}</a><button type="button" class="btn" data-act="dlmode">${t("dlmode")}</button></div></section>
@@ -965,15 +968,15 @@ function swStation(addr, j, self, record) {
   const c = swColor(addr), link = `http://${esc(addr)}/`;
   const icons = `<div class="swic"><a href="${link}" target="_blank" rel="noopener" title="${t("sw_open")}">↗</a>${self ? "" : `<button type="button" data-swrm="${esc(addr)}" title="${t("sw_remove")}">×</button>`}</div>`;
   if (!j) return `<div class="swst" style="--c:${c};opacity:.6"><div class="swsh"><div><div class="swname"><span class="swdot" style="background:var(--err)"></span>${esc(addr)}</div><div class="swsub">${t("sw_offline")}</div></div>${icons}</div></div>`;
-  const th = j.hashRate / 1000, w = j.power, eff = th > 0 && w ? w / th : null, hot = j.overheat_mode || j.overheat;
-  const fw = String(j.version || "").replace(/^v/, ""), chips = (j.asicCount > 1 ? j.asicCount + "× " : "") + (j.ASICModel || "");
+  const th = j.hashRate / 1000, w = j.power, eff = th > 0 && w ? w / th : null, hot = j.overheat_mode || j.overheat, cpu = !!j.cpuMiner;
+  const fw = String(j.version || "").replace(/^v/, ""), chips = cpu ? "ESP32-S3 · SHA + CPU" : (j.asicCount > 1 ? j.asicCount + "× " : "") + (j.ASICModel || "");
   const best = j.bestDiff, isRec = typeof best === "number" && best === record && record > 0;
   return `<div class="swst" style="--c:${c}"><div class="swsh"><div style="min-width:0"><div class="swname"><span class="swdot" style="background:${hot ? "var(--err)" : th > 0 ? "var(--ok)" : "var(--warn)"}"></span>${esc(j.hostname || addr)}</div>
     <div class="swsub">${self ? t("sw_this") : esc(addr)} · ${esc(fw)} · ${esc(chips)}</div></div>${icons}</div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${nf(th, 2)}<small>TH/s</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${cpu ? nf(j.hashRate * 1e6, 1) : nf(th, 2)}<small>${cpu ? "kH/s" : "TH/s"}</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
     ${swSpark(sw.hist[addr] || [], c)}
-    <div class="swg">${swGauge(t("sw_chip"), j.temp, j.overheat_temp || 75)}${swGauge(t("sw_vr"), j.vrTemp, j.vrOverheatTemp || 105)}</div>
-    <div class="swfoot"><span>${nf(w, 1)} W${eff == null ? "" : " · " + nf(eff, 1) + " J/TH"}</span><span>${nf(j.sharesAccepted)} / <span class="${j.sharesRejected ? "warn" : ""}">${nf(j.sharesRejected)}</span></span><span title="${t("sw_best")}" style="${isRec ? "color:var(--btc)" : ""}">${swBest(best)}</span></div></div>`;
+    <div class="swg">${swGauge(cpu ? "ESP32-S3" : t("sw_chip"), j.temp, j.overheat_temp || 75)}${cpu ? "" : swGauge(t("sw_vr"), j.vrTemp, j.vrOverheatTemp || 105)}</div>
+    <div class="swfoot"><span>${cpu ? "" : `${nf(w, 1)} W${eff == null ? "" : " · " + nf(eff, 1) + " J/TH"}`}</span><span>${nf(j.sharesAccepted)} / <span class="${j.sharesRejected ? "warn" : ""}">${nf(j.sharesRejected)}</span></span><span title="${t("sw_best")}" style="${isRec ? "color:var(--btc)" : ""}">${swBest(best)}</span></div></div>`;
 }
 function swarmPage() {
   const all = [[location.host, info, true], ...sw.members.map(a => [a, sw.data[a], false])];

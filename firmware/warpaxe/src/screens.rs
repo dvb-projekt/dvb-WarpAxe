@@ -952,6 +952,83 @@ fn device(c: &mut Canvas) {
     let p = board::profile();
     page_head(c, l("Device", "Gerät"), 2);
     let (x0, r, r2, e) = (12, 156, 170, 308);
+    // The devkit (cpu-miner build): no regulator, rail, fan or chip
+    // voltage to show; the ESP and its two hash workers instead.
+    #[cfg(feature = "cpu-miner")]
+    if p.asic_count == 0 {
+        let i = crate::cpuminer::info();
+        let t = b
+            .temp_c
+            .map_or("–".into(), |t| format!("{} °C", num(f64::from(t), 1)));
+        kv(c, "ESP32-S3", &t, 44, b.temp_c.map_or(gfx::FG, temp_color), x0, r);
+        kv(c, l("Clock", "Takt"), "240 MHz", 62, gfx::FG, x0, r);
+        kv(
+            c,
+            l("Uptime", "Laufzeit"),
+            &uptime(diag::uptime_s()),
+            80,
+            gfx::FG,
+            x0,
+            r,
+        );
+        let (_, hot) = limits();
+        kv(c, "Max", &format!("{hot:.0} °C"), 98, gfx::FG, x0, r);
+        kv(
+            c,
+            "SHA",
+            &format!("{} kH/s", num(i.hw_khs, 1)),
+            44,
+            gfx::FG,
+            r2,
+            e,
+        );
+        kv(
+            c,
+            "CPU",
+            &format!("{} kH/s", num(i.sw_khs, 1)),
+            62,
+            gfx::FG,
+            r2,
+            e,
+        );
+        kv(
+            c,
+            l("Candidates", "Kandidaten"),
+            &num(f64::from(i.candidates), 0),
+            80,
+            gfx::FG,
+            r2,
+            e,
+        );
+        kv(
+            c,
+            l("Best diff", "Beste Diff"),
+            &num(i.best_diff, 3),
+            98,
+            gfx::FG,
+            r2,
+            e,
+        );
+        c.rect(12, 130, 298, 1, gfx::WHITE, 16);
+        c.text(
+            &LABEL10,
+            12,
+            150,
+            gfx::MUTE,
+            "ESP32-S3R8 · SHA engine + CPU core",
+            Align::Left,
+        );
+        c.text(
+            &MONO9,
+            12,
+            164,
+            gfx::DIM,
+            &format!("WarpAxe {}+cpu", env!("CARGO_PKG_VERSION")),
+            Align::Left,
+        );
+        let _ = (&m, &cfg);
+        return;
+    }
     let t = b
         .temp_c
         .map_or("–".into(), |t| format!("{} °C", num(f64::from(t), 1)));
@@ -1128,6 +1205,18 @@ fn pool(c: &mut Canvas) {
         12,
         308,
     );
+    #[cfg(feature = "cpu-miner")]
+    let best = if board::profile().asic_count == 0 {
+        // The devkit's shares sit below 1: decimals, session only.
+        format!("{} / –", num(crate::cpuminer::info().best_diff, 3))
+    } else {
+        format!(
+            "{} / {}",
+            si(m.best_session_diff as f64),
+            si(config::best_diff() as f64)
+        )
+    };
+    #[cfg(not(feature = "cpu-miner"))]
     let best = format!(
         "{} / {}",
         si(m.best_session_diff as f64),

@@ -135,6 +135,9 @@ static HASHES_SW: AtomicU32 = AtomicU32::new(0);
 static CANDIDATES: AtomicU32 = AtomicU32::new(0);
 /// Peripheral hashes the software re-hash did not confirm.
 static HW_MISMATCH: AtomicU32 = AtomicU32::new(0);
+/// Best candidate difficulty since boot, with its decimals (the shared
+/// `best_session_diff` is an integer and reads 0 for this board's shares).
+static BEST_DIFF: Mutex<f64> = Mutex::new(0.0);
 /// Diagnostics per worker (index 0 = peripheral, 1 = software): the core
 /// it runs on, the start-up probe's rate at high priority (kH/s × 10),
 /// microseconds spent inside the batches (wrapping; the coordinator takes
@@ -181,6 +184,9 @@ pub struct Info {
     /// The ESP32-S3's own die temperature (the devkit has no other sensor).
     #[serde(rename = "dieTempC")]
     pub die_temp_c: Option<f32>,
+    /// Best share difficulty since boot, decimals kept.
+    #[serde(rename = "bestDiff")]
+    pub best_diff: f64,
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
 
@@ -194,6 +200,7 @@ pub fn info() -> Info {
         .as_ref()
         .map_or(0, |j| j.next_nonce.load(Ordering::Relaxed));
     i.die_temp_c = die_temp_c();
+    i.best_diff = *BEST_DIFF.lock().unwrap();
     for k in 0..2 {
         i.cores[k] = WORKER_CORE[k].load(Ordering::Relaxed);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
@@ -449,6 +456,12 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
     }
     CANDIDATES.fetch_add(1, Ordering::Relaxed);
     let diff = hash_difficulty(&hash);
+    {
+        let mut b = BEST_DIFF.lock().unwrap();
+        if diff > *b {
+            *b = diff;
+        }
+    }
     let st = stratum::state();
     let want = if st.difficulty > 0.0 {
         st.difficulty
