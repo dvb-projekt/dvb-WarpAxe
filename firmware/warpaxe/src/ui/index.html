@@ -325,7 +325,7 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nf = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
 // The devkit toy (a cpu-miner build, `cpuMiner` in the info): a few hundred kH/s, not TH/s.
-const cpuHs = i => i.cpuMiner ? {v: nf(i.cpuMiner.khs10m, 1), u: "kH/s", sub: `SHA ${nf(i.cpuMiner.hwKhs, 0)} · CPU ${nf(i.cpuMiner.swKhs, 0)} kH/s`} : null;
+const cpuHs = i => i.cpuMiner ? {v: nf(i.cpuMiner.khs10m, 2), u: "kH/s", sub: `SHA ${nf(i.cpuMiner.hwKhs, 2)} · CPU ${nf(i.cpuMiner.swKhs, 2)} kH/s`} : null;
 function sfx(v) { if (v == null || isNaN(v)) return "–"; const u = ["", "k", "M", "G", "T", "P", "E"]; let i = 0; while (v >= 1000 && i < 6) { v /= 1000; i++; } return nf(v, i ? 2 : 0) + (u[i] ? " " + u[i] : ""); }
 function upt(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " " + t("days") + " " : "") + h + " h " + String(m).padStart(2, "0") + " min"; }
 function toast(msg, cls) { const e = $("#toast"); e.textContent = msg; e.className = "show " + (cls || ""); clearTimeout(toast.h); toast.h = setTimeout(() => e.className = "", 3500); }
