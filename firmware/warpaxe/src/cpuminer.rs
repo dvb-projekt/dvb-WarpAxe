@@ -200,10 +200,14 @@ pub fn start() {
         .stack_size(12 * 1024)
         .spawn(run)
         .expect("cpu miner thread");
-    spawn_pinned(c"cpu-hw", 0, 6 * 1024, || {
+    // The peripheral loop is register-bound and loses 40 % of its batch
+    // time to preemption on core 0 (Wi-Fi, lwIP, the pool link: 8.3 µs
+    // a hash against 4.9 alone), so it gets core 1; the software worker
+    // takes what core 0 leaves.
+    spawn_pinned(c"cpu-hw", 1, 6 * 1024, || {
         worker(0, hw_batch, HW_BATCH, &HASHES_HW)
     });
-    spawn_pinned(c"cpu-sw", 1, 6 * 1024, || {
+    spawn_pinned(c"cpu-sw", 0, 6 * 1024, || {
         worker(1, sw_batch, SW_BATCH, &HASHES_SW)
     });
 }
