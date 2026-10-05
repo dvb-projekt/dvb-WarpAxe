@@ -115,6 +115,13 @@ pub fn request_check() {
 
 /// Start an install of the latest release; false if none is known.
 pub fn request_install() -> bool {
+    // The devkit toy (cpu-miner build): a release would replace the only
+    // image that hashes on it, so an install is refused outright.
+    #[cfg(feature = "cpu-miner")]
+    if crate::board::profile().asic_count == 0 {
+        log::warn!("update: refused on the cpu-miner devkit build (a release would not hash here)");
+        return false;
+    }
     if state().latest.is_none() {
         return false;
     }

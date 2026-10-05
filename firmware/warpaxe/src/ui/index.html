@@ -372,6 +372,7 @@ function header() {
 // The type plate's second line: chip, regulator, input voltage. Each part
 // wraps as a whole, so "12 V" never splits at the line end.
 function plateSub(i, n) {
+  if (i.cpuMiner) return `<span style="white-space:nowrap">ESP32-S3 · SHA + CPU</span>`;
   const vr = (i.vrPart || "").replace(/^Tps/i, "TPS").replace(/,? (\d+) voltage domain\(s\)/, (_, d) => d > 1 ? ` · ${d} ${t("vr_domains")}` : "").replace(/ (\d+) phases/, (_, k) => ` · ${k} ${t("vr_phases")}`);
   return [`${i.ASICModel} × ${n}`, ...vr.split(" · "), i.nominalVoltage ? i.nominalVoltage + " V" : ""].filter(Boolean).map(x => `<span style="white-space:nowrap">${esc(x)}</span>`).join(" · ");
 }
@@ -415,7 +416,7 @@ function chart() {
   // The hashrate line is a one-minute moving average: a 10 s point counts
   // only a dozen chip results on a Gamma, so single points scatter by a
   // third; a minute keeps real dips and drops the counting noise.
-  const raw = hist.hashrate.map(v => v == null ? null : v / 1000), tc = hist.temp;
+  const cpu = !!info?.cpuMiner, raw = hist.hashrate.map(v => v == null ? null : cpu ? v * 1e6 : v / 1000), tc = hist.temp;
   const dt = hist.t.length > 1 ? (hist.t[hist.t.length - 1] - hist.t[0]) / (hist.t.length - 1) : 10;
   const win = Math.max(1, Math.round(120 / (dt || 10)));
   const hr = raw.map((v, k) => { if (v == null) return null; let sum = 0, n = 0; for (let j = Math.max(0, k - win + 1); j <= k; j++) if (raw[j] != null) { sum += raw[j]; n++; } return sum / n; });
@@ -446,7 +447,7 @@ function chart() {
   const dH = ha.step < 0.1 ? 2 : 1, dT = ta && ta.step < 1 ? 1 : 0;
   const axis = (a, d, u, col, align) => `<div class="num" style="display:flex;flex-direction:column;justify-content:space-between;height:${H}px;font-size:11px;color:${col};text-align:${align};min-width:44px">${Array.from({length: a.n + 1}, (_, k) => `<span style="line-height:0">${nf(a.hi - a.step * k, d)}</span>`).join("")}</div>`;
   return `<div style="display:flex;gap:8px;align-items:stretch;padding:6px 0">
-  ${axis(ha, dH, "TH/s", "#A994FF", "right")}
+  ${axis(ha, dH, cpu ? "kH/s" : "TH/s", "#A994FF", "right")}
   <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${t("history")}" style="flex:1;min-width:0;overflow:visible">${grid}
     <polygon points="${first},${H} ${hl} ${last},${H}" fill="#7B5CFF" fill-opacity=".12"/>
     <polyline points="${hl}" fill="none" stroke="#7B5CFF" stroke-width="2" vector-effect="non-scaling-stroke"/>
@@ -501,7 +502,7 @@ function dashboard() {
   </section>
   <div class="g3">
     <section class="card ins"><h2>${t("temperature")}</h2>${tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
-    <section class="card ins"><h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>
+    <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}><h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>
       <div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
       <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>
       <div class="row" style="margin:0"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>

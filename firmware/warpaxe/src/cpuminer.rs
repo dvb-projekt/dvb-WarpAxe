@@ -676,6 +676,9 @@ pub fn import_nerdminer() -> Vec<&'static str> {
                 // SUGGESTED_DIFFICULTY instead (an integer would only
                 // raise what the pool's NerdMiner band starts at).
                 cfg.suggested_difficulty = 0;
+                // No online-update offers: a release image would not hash
+                // on this board (and the install is refused anyway).
+                cfg.update_check = false;
                 took.push("wallet (nerdminer)");
                 log::info!("cpu miner: wallet taken from NerdMiner's config.json ({copies} copies in flash)");
             }
