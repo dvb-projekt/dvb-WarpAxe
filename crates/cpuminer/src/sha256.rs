@@ -18,6 +18,8 @@ pub const IV: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
 ];
 
+/// Round constants (256 bytes; from the flash cache on the devkit, a
+/// `link_section` into DRAM would need `unsafe_code`).
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
@@ -30,6 +32,7 @@ const K: [u32; 64] = [
 ];
 
 /// One SHA-256 compression: `state` absorbs the 64-byte `block`.
+#[inline(always)]
 pub fn compress(state: &mut [u32; 8], block: &[u8; 64]) {
     let mut w = [0u32; 64];
     let (words, _) = block.as_chunks::<4>();
@@ -117,30 +120,13 @@ pub fn second_block(first: &[u8; 32]) -> [u8; 64] {
 }
 
 /// Double SHA-256 of the header `midstate` + `tail` + `nonce`, in the
-/// hash's natural byte order (the one `hash_difficulty` reads). The
-/// software worker's loop: on the `sha2` crate's compressor (on the
-/// devkit the plain [`compress`] took 88 µs a double hash, 11 kH/s).
+/// hash's natural byte order (the one `hash_difficulty` reads), both
+/// compressions inlined. The devkit's software worker runs a copy of
+/// this placed in internal RAM (firmware `cpuminer.rs`, what `IRAM_ATTR`
+/// does for NerdMiner's `nerd_sha256d`): from the flash cache it made
+/// 88 µs a double hash (11 kH/s), the `sha2` crate's unrolled
+/// compressor 110 µs.
 pub fn sha256d_tail(midstate: &[u32; 8], tail: &[u8; 12], nonce: u32) -> [u8; 32] {
-    use sha2::digest::generic_array::GenericArray;
-    let mut state = *midstate;
-    let b1 = first_block(tail, nonce);
-    sha2::compress256(
-        &mut state,
-        core::slice::from_ref(GenericArray::from_slice(&b1)),
-    );
-    let first = digest_bytes(&state);
-    let mut state = IV;
-    let b2 = second_block(&first);
-    sha2::compress256(
-        &mut state,
-        core::slice::from_ref(GenericArray::from_slice(&b2)),
-    );
-    digest_bytes(&state)
-}
-
-/// The same on the plain compressor here (tests, and a reference for
-/// the peripheral model).
-pub fn sha256d_tail_plain(midstate: &[u32; 8], tail: &[u8; 12], nonce: u32) -> [u8; 32] {
     let mut state = *midstate;
     compress(&mut state, &first_block(tail, nonce));
     let first = digest_bytes(&state);
@@ -305,7 +291,6 @@ mod tests {
                 let mut hh = h;
                 hh[76..80].copy_from_slice(&nonce.to_le_bytes());
                 assert_eq!(sha256d_tail(&mid, &t, nonce), sha256d(&hh));
-                assert_eq!(sha256d_tail_plain(&mid, &t, nonce), sha256d(&hh));
             }
         }
     }

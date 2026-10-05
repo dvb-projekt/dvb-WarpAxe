@@ -279,10 +279,24 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
     }
 }
 
+/// `sha256::sha256d_tail` in internal RAM (ESP-IDF's `.iram1`, what
+/// `IRAM_ATTR` does for NerdMiner's `nerd_sha256d`): the 64-round loop
+/// ran from the 16 KB flash cache at 88 µs a double hash.
+#[link_section = ".iram1.cpuminer"]
+#[inline(never)]
+fn sha256d_iram(midstate: &[u32; 8], tail: &[u8; 12], nonce: u32) -> [u8; 32] {
+    let mut state = *midstate;
+    sha256::compress(&mut state, &sha256::first_block(tail, nonce));
+    let first = sha256::digest_bytes(&state);
+    let mut state = sha256::IV;
+    sha256::compress(&mut state, &sha256::second_block(&first));
+    sha256::digest_bytes(&state)
+}
+
 fn sw_batch(job: &CpuJob, start: u32, n: u32) {
     for i in 0..n {
         let nonce = start.wrapping_add(i);
-        let hash = sha256::sha256d_tail(&job.midstate, &job.tail, nonce);
+        let hash = sha256d_iram(&job.midstate, &job.tail, nonce);
         if sha256::candidate(&hash) {
             found(job, nonce, hash, false);
         }
