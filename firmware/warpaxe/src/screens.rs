@@ -1118,7 +1118,11 @@ fn pool(c: &mut Canvas) {
     kv(
         c,
         l("Pool difficulty", "Pool-Difficulty"),
-        &si(st.difficulty),
+        &if st.difficulty < 1.0 {
+            num(st.difficulty, 3)
+        } else {
+            si(st.difficulty)
+        },
         100,
         gfx::FG,
         12,
