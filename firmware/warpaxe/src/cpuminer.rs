@@ -279,26 +279,28 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
     }
 }
 
-/// `sha256::sha256d_tail` in internal RAM (ESP-IDF's `.iram1`, what
-/// `IRAM_ATTR` does for NerdMiner's `nerd_sha256d`): the 64-round loop
-/// ran from the 16 KB flash cache at 88 µs a double hash.
-#[link_section = ".iram1.cpuminer"]
-#[inline(never)]
-fn sha256d_iram(midstate: &[u32; 8], tail: &[u8; 12], nonce: u32) -> [u8; 32] {
-    let mut state = *midstate;
-    sha256::compress(&mut state, &sha256::first_block(tail, nonce));
-    let first = sha256::digest_bytes(&state);
-    let mut state = sha256::IV;
-    sha256::compress(&mut state, &sha256::second_block(&first));
-    sha256::digest_bytes(&state)
-}
-
 fn sw_batch(job: &CpuJob, start: u32, n: u32) {
-    for i in 0..n {
-        let nonce = start.wrapping_add(i);
-        let hash = sha256d_iram(&job.midstate, &job.tail, nonce);
-        if sha256::candidate(&hash) {
-            found(job, nonce, hash, false);
+    // The C loop in components/warpaxe_glue/warpaxe_cpuhash.c (bound
+    // through warpaxe_glue.h): returns at the first candidate, so the
+    // batch continues behind it.
+    let mut done = 0u32;
+    while done < n {
+        let mut hash = [0u8; 32];
+        let left = n - done;
+        let at = unsafe {
+            sys::tusb::wa_sha256d_scan(
+                job.midstate.as_ptr(),
+                job.tail.as_ptr(),
+                start.wrapping_add(done),
+                left,
+                hash.as_mut_ptr(),
+            )
+        };
+        if at < left {
+            found(job, start.wrapping_add(done).wrapping_add(at), hash, false);
+            done += at + 1;
+        } else {
+            done = n;
         }
     }
 }
