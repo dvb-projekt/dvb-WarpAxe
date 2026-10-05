@@ -88,6 +88,9 @@ pub fn system_info() -> serde_json::Value {
         // while the last request went through; `coreVoltage` still
         // shows the configured value, `coreVoltageActual` the real one.
         "coreVoltageRefused": b.core_mv_refused,
+        // What the regulator answered at boot, before init wrote it:
+        // after a power cycle its window is what the straps set.
+        "vrProbe": b.vr_probe,
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
         "hostname": cfg.hostname,
