@@ -19,6 +19,10 @@ harness = false
 opt-level = "s"
 debug = true
 
+# The software hash loop of the devkit toy: speed over size, it is tiny.
+[profile.release.package.warpaxe-cpuminer]
+opt-level = 3
+
 [profile.dev]
 debug = true
 opt-level = "z"

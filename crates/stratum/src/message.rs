@@ -186,6 +186,18 @@ pub fn suggest_difficulty_request(id: u64, difficulty: u32) -> Request {
     }
 }
 
+/// `mining.suggest_difficulty` below 1, for a miner of a few hundred kH/s
+/// (the T-Display-S3 devkit hashing on its CPU): the number as is, with
+/// at most three decimals, as NerdMiner sends it.
+pub fn suggest_difficulty_fraction_request(id: u64, difficulty: f64) -> Request {
+    let rounded = (difficulty * 1000.0).round() / 1000.0;
+    Request {
+        id,
+        method: "mining.suggest_difficulty",
+        params: json!([rounded]),
+    }
+}
+
 /// `mining.submit` with version rolling (5th parameter = version bits).
 #[allow(clippy::too_many_arguments)]
 pub fn submit_request(
@@ -217,4 +229,20 @@ pub fn parse_subscribe_result(result: &Value) -> Option<(String, usize)> {
     let extranonce1 = a.get(1)?.as_str()?.to_string();
     let size = a.get(2)?.as_u64()? as usize;
     Some((extranonce1, size))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn suggest_fraction_keeps_three_decimals() {
+        let line = suggest_difficulty_fraction_request(4, 0.005).to_line();
+        assert_eq!(
+            line,
+            "{\"id\":4,\"method\":\"mining.suggest_difficulty\",\"params\":[0.005]}\n"
+        );
+        let line = suggest_difficulty_fraction_request(4, 0.0049).to_line();
+        assert!(line.contains("[0.005]"), "{line}");
+    }
 }

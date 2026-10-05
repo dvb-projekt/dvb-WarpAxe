@@ -395,7 +395,23 @@ fn session(
         // Ask for a share difficulty (AxeOS sends it right after
         // authorizing); the pool may ignore it.
         let suggest = config::get().suggested_difficulty;
-        if suggest > 0 {
+        #[cfg(feature = "cpu-miner")]
+        let cpu = board::profile().asic_count == 0;
+        #[cfg(not(feature = "cpu-miner"))]
+        let cpu = false;
+        if cpu {
+            // The devkit: a fraction, and as the first request of the
+            // session, which WarpPool takes as the start value even over a
+            // stored snapshot (an integer would only raise it).
+            #[cfg(feature = "cpu-miner")]
+            {
+                let d = crate::cpuminer::SUGGESTED_DIFFICULTY;
+                hello.push_str(
+                    &warpaxe_stratum::message::suggest_difficulty_fraction_request(4, d).to_line(),
+                );
+                log::info!("stratum: suggest difficulty {d}");
+            }
+        } else if suggest > 0 {
             hello.push_str(&suggest_difficulty_request(4, suggest).to_line());
             log::info!("stratum: suggest difficulty {suggest}");
         }

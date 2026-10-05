@@ -43,6 +43,12 @@ use crate::{board, config, diag, miner, stratum};
 /// it and refuses to publish.
 pub const SENTINEL: &str = "WARPAXE-CPU-MINER-BUILD";
 
+/// Share difficulty the devkit asks the pool for: what a NerdMiner gets
+/// (WarpPool's NerdMiner band is 0.001 to 4, start 0.01). An integer
+/// `stratumSuggestedDifficulty` would only ever raise it, so a chipless
+/// profile sends this fraction instead (stratum.rs).
+pub const SUGGESTED_DIFFICULTY: f64 = 0.005;
+
 /// Nonces per peripheral batch (one acquire/release of the SHA block).
 const HW_BATCH: u32 = 4096;
 /// Nonces per software batch.
@@ -519,9 +525,10 @@ pub fn import_nerdminer() -> Vec<&'static str> {
                 cfg.stratum_port = nerdminer::POOL_PORT;
                 cfg.stratum_protocol = "SV1".into();
                 cfg.stratum_tls = 0;
-                // The pool's floor: a diff-1 share takes hours at a few
-                // hundred kH/s.
-                cfg.suggested_difficulty = 1;
+                // No integer suggest: the session asks for
+                // SUGGESTED_DIFFICULTY instead (an integer would only
+                // raise what the pool's NerdMiner band starts at).
+                cfg.suggested_difficulty = 0;
                 took.push("wallet (nerdminer)");
                 log::info!("cpu miner: wallet taken from NerdMiner's config.json ({copies} copies in flash)");
             }
