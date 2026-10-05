@@ -194,7 +194,7 @@ fn hashrate(ghs: f64) -> (String, &'static str) {
     if ghs >= 1000.0 {
         (num(ghs / 1000.0, 2), "TH/s")
     } else if cfg!(feature = "cpu-miner") && ghs < 0.001 {
-        (num(ghs * 1e6, 0), "kH/s")
+        (num(ghs * 1e6, 1), "kH/s")
     } else if cfg!(feature = "cpu-miner") && ghs < 1.0 {
         (num(ghs * 1e3, 2), "MH/s")
     } else {

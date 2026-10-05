@@ -612,12 +612,19 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     nominal_voltage_v: 5,
     max_power_w: 40,
     power_offset_w: 0.0,
+    // The temperature here is the ESP32-S3's own die (the cpu-miner build
+    // reads the chip's sensor; there is no other). The ESP32-S3R8 in the
+    // T-Display-S3 is rated for -40 to 65 °C ambient (ESP32-S3 datasheet,
+    // Series Comparison: the in-package octal PSRAM, where the FN8 has
+    // 85 and the plain S3 105), and the die runs about 20 K above ambient
+    // under load (44 °C measured in a 24 °C room). So: red from 85 °C,
+    // yellow from 70 (target + 5), nothing switches off.
     throttle_temp_c: 75.0,
-    max_temp_c: 90.0,
+    max_temp_c: 85.0,
     vr_throttle_c: 105.0,
     vr_max_c: 145.0,
     temp_offset_c: 0.0,
-    fan_target_c: 60.0,
+    fan_target_c: 65.0,
     job_interval_ms: 0,
     frequency_options: &[],
     voltage_options: &[],
