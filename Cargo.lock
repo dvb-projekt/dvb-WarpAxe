@@ -861,6 +861,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "warpaxe-cpuminer"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "warpaxe-stratum",
+]
+
+[[package]]
 name = "warpaxe-sim"
 version = "0.1.0"
 dependencies = [

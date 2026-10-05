@@ -270,6 +270,13 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// The default NVS partition, for reading another firmware's namespace
+/// (the devkit's NerdMiner import).
+#[cfg(feature = "cpu-miner")]
+pub fn partition() -> Option<EspDefaultNvsPartition> {
+    PART.lock().unwrap().clone()
+}
+
 /// All-time best nonce difficulty, kept across reboots (AxeOS `bestDiff`).
 /// A mutex, not an atomic: Xtensa has no 64-bit atomics.
 static BEST_DIFF: Mutex<u64> = Mutex::new(0);

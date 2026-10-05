@@ -11,6 +11,8 @@ mod api;
 mod board;
 mod clock;
 mod config;
+#[cfg(feature = "cpu-miner")]
+mod cpuminer;
 mod diag;
 mod display;
 mod display_i18n;
@@ -290,7 +292,15 @@ fn main() {
     market::start();
     update::start();
     set_step("CHAIN");
-    if board::profile().name == "undetected" {
+    #[cfg(feature = "cpu-miner")]
+    let no_chips = board::profile().asic_count == 0 && board::profile().name != "undetected";
+    #[cfg(not(feature = "cpu-miner"))]
+    let no_chips = false;
+    if no_chips {
+        // The devkit: no chain, the ESP32-S3 hashes by itself.
+        #[cfg(feature = "cpu-miner")]
+        cpuminer::start();
+    } else if board::profile().name == "undetected" {
         // First start without a known board: no chain until one is chosen
         // in the web UI (board::first_start).
         log::warn!("chain: not started, the board is not known yet");

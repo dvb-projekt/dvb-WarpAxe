@@ -1880,6 +1880,32 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             });
             p
         }
+        // A cpu-miner build on a board where nothing answered and no stock
+        // firmware left its keys: the bare T-Display-S3 devkit. Take its
+        // profile and whatever a NerdMiner left behind, no choice needed.
+        #[cfg(feature = "cpu-miner")]
+        Detection::Choose(c, _) if c.is_empty() && stock_keys == (None, None, None) => {
+            let p = &warpaxe_board::T_DISPLAY_S3_DEVKIT;
+            log::warn!("board: nothing on either bus, no stock settings: the T-Display-S3 devkit, hashing on the CPU");
+            let mut took = imported;
+            took.extend(crate::cpuminer::import_nerdminer());
+            if !took.is_empty() {
+                log::info!("board: devkit first start, took {}", took.join(", "));
+            }
+            let mut cfg = config::get();
+            cfg.board_model = p.name.into();
+            if let Err(e) = config::save(&cfg) {
+                log::warn!("board: saving the devkit profile failed: {e}");
+            }
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status: "detected",
+                why: "nothing answered: the T-Display-S3 devkit (cpu-miner build)",
+                candidates: vec![p.name],
+                imported: took,
+                model: None,
+            });
+            p
+        }
         Detection::Choose(c, why) => {
             let p = warpaxe_board::profile::undetected_for(c);
             log::warn!(

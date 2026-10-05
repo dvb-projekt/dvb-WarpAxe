@@ -195,6 +195,13 @@ fn update(f: impl FnOnce(&mut MinerState)) {
     f(g.get_or_insert_with(MinerState::default));
 }
 
+/// The CPU miner (devkit toy) reports into the same state the API and
+/// the display read.
+#[cfg(feature = "cpu-miner")]
+pub(crate) fn update_state(f: impl FnOnce(&mut MinerState)) {
+    update(f);
+}
+
 pub fn start(uart: ChipUart) {
     std::thread::Builder::new()
         .stack_size(16 * 1024)

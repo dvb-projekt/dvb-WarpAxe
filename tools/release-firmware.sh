@@ -40,6 +40,11 @@ git -C "$ROOT" fetch -q origin
 mkdir -p "$OUT"
 espflash save-image --chip esp32s3 --flash-size 16mb \
     "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" "$OUT/warpaxe.bin" >/dev/null
+# The devkit toy (firmware feature cpu-miner, src/cpuminer.rs) never ships:
+# an image built with it carries this marker.
+if grep -q 'WARPAXE-CPU-MINER-BUILD' "$OUT/warpaxe.bin"; then
+    echo "the image was built with the cpu-miner feature: not a release" >&2; exit 1
+fi
 # The first install from a stock firmware, over USB: the parts for the web
 # flasher (bootloader, partition table, empty OTA data so the new table
 # boots ota_0, the app) and one merged image for esptool users. The web

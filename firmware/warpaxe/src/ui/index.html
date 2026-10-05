@@ -324,6 +324,8 @@ const t = (k, v) => { let s = T[lang][k] ?? T.en[k] ?? k; if (v) for (const [a, 
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nf = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
+// The devkit toy (a cpu-miner build, `cpuMiner` in the info): a few hundred kH/s, not TH/s.
+const cpuHs = i => i.cpuMiner ? {v: nf(i.cpuMiner.khs10m, 1), u: "kH/s", sub: `SHA ${nf(i.cpuMiner.hwKhs, 0)} · CPU ${nf(i.cpuMiner.swKhs, 0)} kH/s`} : null;
 function sfx(v) { if (v == null || isNaN(v)) return "–"; const u = ["", "k", "M", "G", "T", "P", "E"]; let i = 0; while (v >= 1000 && i < 6) { v /= 1000; i++; } return nf(v, i ? 2 : 0) + (u[i] ? " " + u[i] : ""); }
 function upt(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " " + t("days") + " " : "") + h + " h " + String(m).padStart(2, "0") + " min"; }
 function toast(msg, cls) { const e = $("#toast"); e.textContent = msg; e.className = "show " + (cls || ""); clearTimeout(toast.h); toast.h = setTimeout(() => e.className = "", 3500); }
@@ -391,7 +393,8 @@ function kpis(i) {
   const th = i.hashRate > 0 || i.chainStopped ? i.hashRate / 1000 : null, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
-  return `<div class="g4">${k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
+  const c = cpuHs(i);
+  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
 function clockLabels() {
   const now = lang === "de" ? "jetzt" : "now";
@@ -474,7 +477,7 @@ function dashboard() {
   const cz = n > 1 ? 16 : 34, chips = `<div class="dhchips" style="grid-template-columns:repeat(${cols},${cz}px);--dc:${dot}">${Array.from({length: n}, () => `<i style="width:${cz}px;height:${cz}px;border-radius:${n > 1 ? 4 : 8}px"></i>`).join("")}</div>`;
   const sub = plateSub(i, n);
   const th = i.hashRate > 0 || i.chainStopped ? i.hashRate / 1000 : null, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
-  const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), rejPct = tot ? i.sharesRejected / tot * 100 : 0, ofExp = th && exp ? th / exp * 100 : null;
+  const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), rejPct = tot ? i.sharesRejected / tot * 100 : 0, ofExp = th && exp ? th / exp * 100 : null, c = cpuHs(i);
   // Two fans: on the Nerd boards M2 follows the chips and M1 the
   // regulator; on the BitForge Nano both follow the chips.
   const nano = (i.boardVersion || "").startsWith("bitforge"), two = i.fanrpm2 != null && !nano, vrTarget = two || (i.boardVersion || "").startsWith("nerdaxe") ? i.vrTargetTemp || 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
@@ -487,8 +490,8 @@ function dashboard() {
   <section class="dh" style="--fc:${f.col}">
     <div class="dhid">${chips}<div class="dhname"><h1>${esc(i.boardName || i.boardVersion)}<span class="fam" style="color:${f.col};border-color:${f.col}">${t(f.key)}</span></h1><div class="mute" style="font-size:13px">${sub}</div></div>
       <div class="dhmeta"><div><span class="lbl">${t("uptime")}</span><b>${upt(i.uptimeSeconds)}</b></div><div><span class="lbl">${t("firmware")}</span><b>${esc(i.version)}</b></div><div><span class="lbl">${t("wifi")}</span><b style="display:flex;align-items:center;gap:6px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</b></div></div></div>
-    <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${nf(th, 2)}</span><span class="swunit">TH/s</span></div>
-      <div class="dhsub">${t("expected")} ${nf(exp, 2)} TH/s${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}</div></div>
+    <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${c ? c.v : nf(th, 2)}</span><span class="swunit">${c ? c.u : "TH/s"}</span></div>
+      <div class="dhsub">${c ? c.sub : `${t("expected")} ${nf(exp, 2)} TH/s${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}`}</div></div>
       <div class="dhfacts"><div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
         <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>
         <div><span class="lbl">${t("shares")}</span><b>${nf(i.sharesAccepted)}</b><small>${nf(i.sharesRejected)} ${t("rejected")} · ${nf(rejPct, 2)} %</small></div>

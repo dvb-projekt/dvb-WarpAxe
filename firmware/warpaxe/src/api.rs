@@ -36,7 +36,12 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
 /// The web UI: one static page on top of the JSON API.
 const UI: &str = include_str!("ui/index.html");
 
+#[cfg(not(feature = "cpu-miner"))]
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
+/// A cpu-miner build says so in its version, so a devkit image is never
+/// mistaken for a release.
+#[cfg(feature = "cpu-miner")]
+pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"), "+cpu");
 
 fn mac_str(m: [u8; 6]) -> String {
     format!(
@@ -53,7 +58,8 @@ pub fn system_info() -> serde_json::Value {
     let st = stratum::state();
     let b = board::state();
     let profile = board::profile();
-    json!({
+    #[allow(unused_mut)]
+    let mut v = json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
         "boardDetect": board::detect_info(),
         "boardModels": warpaxe_board::profile::ALL.iter().filter(|p| p.name != "t-display-s3").map(|p| json!({"name": p.name, "model": p.model, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
@@ -132,7 +138,12 @@ pub fn system_info() -> serde_json::Value {
         "version": VERSION, "gitHash": env!("WARPAXE_GIT"), "runningPartition": running_partition(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": u8::from(cfg.autofanspeed),
         "resetReason": diag::reset_reason(),
-    })
+    });
+    #[cfg(feature = "cpu-miner")]
+    if profile.asic_count == 0 {
+        v["cpuMiner"] = json!(crate::cpuminer::info());
+    }
+    v
 }
 
 /// NerdOS's `fans` array on the two-channel Nerd boards, the place a

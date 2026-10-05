@@ -1722,6 +1722,7 @@ dependencies = [
  "warpaxe-board",
  "warpaxe-chain",
  "warpaxe-core",
+ "warpaxe-cpuminer",
  "warpaxe-stratum",
  "warpaxe-sv2",
 ]
@@ -1740,6 +1741,14 @@ dependencies = [
 [[package]]
 name = "warpaxe-core"
 version = "0.1.0"
+
+[[package]]
+name = "warpaxe-cpuminer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "warpaxe-stratum"
