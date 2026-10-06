@@ -5,7 +5,7 @@
 <p align="center">
   <strong>Open-source Rust firmware for BM1370 and BM1373 Bitcoin miners</strong><br>
   Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano<br>
-  <a href="#supported-boards">profiles for 7 more boards</a> · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  <a href="#supported-boards">profiles for 7 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
@@ -368,10 +368,37 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 400 MHz; clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
+| LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken
 from their stock firmware, but nobody has run WarpAxe on one yet. Please
 don't flash them unless you can recover the stock firmware over USB.
+
+### Experimental: the T-Display-S3 without an ASIC
+
+The LilyGO T-Display-S3, the board NerdMiner runs on, has no mining chip.
+WarpAxe hashes on the ESP32-S3 itself there: the chip's SHA unit on one
+core with a precomputed midstate, as NerdMiner v2 does (`src/mining.cpp`),
+and a software loop on the other, together about 230 kH/s on USB power.
+That is a lottery ticket, not a miner: at today's network difficulty the
+expected time to a block is far longer than the age of the universe.
+It is marked experimental and stays at the version it was installed
+with: no online update, no upload; the web flasher is the only way in,
+and its backup the way back.
+
+- Installed with the same image and the same web flasher as every other
+  board. On the first start a board on which nothing answers on the I²C
+  bus and that still holds a NerdMiner's settings becomes the
+  T-Display-S3: Wi-Fi from the ESP's Wi-Fi storage and the wallet from
+  NerdMiner's `config.json` are taken over, the worker is
+  `<wallet>.WarpMiner`, the pool is WarpPool (Stratum V1, a share
+  difficulty of 0.005, about 40 shares an hour). Without NerdMiner's
+  settings it is offered in the board choice, never taken on its own.
+- The web UI and the display show kH/s, the ESP32-S3's own temperature,
+  shares per hour and the uptime; settings are read-only. At 85 °C the
+  hashing pauses, at 75 °C it resumes.
+- The way back to NerdMiner is the web flasher's full backup, restored
+  over USB (download mode: hold BOOT, press RST, release BOOT).
 
 ## Install
 
