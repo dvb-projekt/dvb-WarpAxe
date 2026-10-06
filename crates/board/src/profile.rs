@@ -418,7 +418,9 @@ pub const BITAXE_GAMMA: Profile = Profile {
 /// carrier (ESP-Miner `FAMILY_GAMMA_DUO`, `ASIC_BM1370XP`): original
 /// pins, TPS546 with the 5 V window, EMC2101 on one chip's diode,
 /// SSD1306. Stock 400 MHz / 1150 mV, clocks 350–410, 40 W, +5 W offset.
-/// Profile only: never run under WarpAxe.
+/// Runs at a user's since v0.1.10. The clock steps are the stock ones;
+/// free values (`?oc`) have no upper clock limit, as on the Gamma and
+/// in AxeOS.
 pub const BITAXE_GAMMA_DUO: Profile = Profile {
     name: "bitaxe-gamma-duo",
     model: "Bitaxe Gamma Duo",
@@ -426,7 +428,7 @@ pub const BITAXE_GAMMA_DUO: Profile = Profile {
     default_frequency_mhz: 400,
     frequency_options: &[350, 375, 380, 400, 410],
     voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
-    abs_max_frequency_mhz: 410,
+    abs_max_frequency_mhz: 0,
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1250,
     ..BITAXE_GAMMA
@@ -435,7 +437,9 @@ pub const BITAXE_GAMMA_DUO: Profile = Profile {
 /// Bitaxe Gamma Turbo (801): two BM1370 on 12 V, two stacked TPS546
 /// (ESP-Miner `TPS546_CONFIG_GAMMA_TURBO`), EMC2103 with the chip on
 /// diode 2, SSD1306, original pins. Stock 525 MHz / 1150 mV, 60 W,
-/// +10 W offset. Profile only: never run under WarpAxe.
+/// +10 W offset. Runs at a user's since v0.1.11, one pair at 850 MHz /
+/// 1250 mV under AXP90 coolers: free values (`?oc`) have no upper clock
+/// limit, as on the Gamma and in AxeOS (John11, 2026-10-06).
 pub const BITAXE_GAMMA_TURBO: Profile = Profile {
     name: "bitaxe-gamma-turbo",
     model: "Bitaxe Gamma Turbo",
@@ -447,7 +451,7 @@ pub const BITAXE_GAMMA_TURBO: Profile = Profile {
     power_offset_w: 10.0,
     frequency_options: &[400, 490, 525, 550, 600, 625, 690],
     voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
-    abs_max_frequency_mhz: 690,
+    abs_max_frequency_mhz: 0,
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1250,
     ..BITAXE_GAMMA
@@ -1078,6 +1082,14 @@ mod tests {
             assert!(v >= vr.vout_min && v <= vr.vout_max, "{} {v}", p.name);
         }
         assert_eq!(BITAXE_GAMMA_DUO.default_frequency_mhz, 400);
+        // Free clock values as on the Gamma and in AxeOS (a Turbo runs
+        // 850 MHz under AXP90 coolers); the voltage stays capped.
+        for p in [&BITAXE_GAMMA_DUO, &BITAXE_GAMMA_TURBO] {
+            let c = p.choices(false);
+            assert_eq!(c.abs_max_frequency_mhz, 0, "{}", p.name);
+            assert_eq!(c.abs_max_core_mv, 1250, "{}", p.name);
+            assert!(!c.frequency_options.is_empty(), "{}", p.name);
+        }
         assert_eq!(BITAXE_GAMMA_DUO.tps546(), Some(tps546::Config::BITAXE_5V));
         assert_eq!(BITAXE_GAMMA_TURBO.tps546().unwrap().stack_config, 0x0001);
         assert_eq!(BITAXE_GAMMA_HEX.tps546().unwrap().stack_config, 0x0003);
