@@ -904,6 +904,14 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     server.fn_handler("/api/system/OTA", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        if board::devkit() {
+            // The T-Display-S3 takes a new image over USB with the web
+            // flasher only (Oliver, 2026-10-06); see update::request_install.
+            log::warn!("ota: refused from {}, the T-Display-S3 is installed with the web flasher only", peer(&mut req));
+            let mut r = req.into_response(403, None, &[])?;
+            r.write_all(b"ota: the T-Display-S3 is installed with the web flasher only (no updates over the air)\n")?;
+            return Ok(());
+        }
         log::warn!("ota: upload started from {}", peer(&mut req));
         // Take the whole image into RAM first (PSRAM has room), answer, and
         // flash on a thread of our own: esp_ota_begin erases the target

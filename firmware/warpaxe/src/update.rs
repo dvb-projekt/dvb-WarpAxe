@@ -115,6 +115,13 @@ pub fn request_check() {
 
 /// Start an install of the latest release; false if none is known.
 pub fn request_install() -> bool {
+    // The T-Display-S3 stays on the firmware it was installed with: the
+    // web flasher over USB is its only way to a new image (Oliver,
+    // 2026-10-06), so nothing is ever installed over the air here.
+    if crate::board::devkit() {
+        log::warn!("update: refused, the T-Display-S3 is installed with the web flasher only");
+        return false;
+    }
     if state().latest.is_none() {
         return false;
     }
@@ -156,6 +163,12 @@ pub fn start() {
         let mut last = None::<std::time::Instant>;
         loop {
             let want = REQUEST.swap(0, Ordering::Relaxed);
+            // The T-Display-S3 neither asks for releases nor installs them
+            // (see request_install): no fetch, no offer in the UI.
+            if crate::board::devkit() {
+                std::thread::sleep(Duration::from_secs(2));
+                continue;
+            }
             let due = config::get().update_check && last.map_or(true, |t| t.elapsed() >= EVERY);
             if want == 1 || (want == 0 && due) {
                 last = Some(std::time::Instant::now());
