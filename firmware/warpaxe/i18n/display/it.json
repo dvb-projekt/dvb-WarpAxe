@@ -44,5 +44,9 @@
  "Password · 10 digits": "Password · 10 cifre",
  "REGULATOR FAULT": "GUASTO REGOLATORE",
  "Regulator fault · core voltage off": "Guasto regolatore · tensione core spenta",
- "Fans 100 % · tries again after a minute": "Ventole 100 % · riprova tra un minuto"
+ "Fans 100 % · tries again after a minute": "Ventole 100 % · riprova tra un minuto",
+ "UPTIME": "UPTIME",
+ "Candidates": "Candidati",
+ "Best diff": "Miglior diff.",
+ "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · motore SHA + core CPU · sperimentale"
 }

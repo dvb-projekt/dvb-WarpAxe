@@ -36,20 +36,13 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
 /// The web UI: one static page on top of the JSON API.
 const UI: &str = include_str!("ui/index.html");
 
-#[cfg(not(feature = "cpu-miner"))]
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
-/// A cpu-miner build says so in its version, so a devkit image is never
-/// mistaken for a release.
-#[cfg(feature = "cpu-miner")]
-pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"), "+cpu");
 
-/// The chip name the API reports. The devkit toy (cpu-miner build, a
-/// profile without chips) names what actually hashes, so an AxeOS-style
-/// scanner lists it as what it is and not as a BM1370 (Warppool,
-/// Oliver, 2026-10-05).
+/// The chip name the API reports. The devkit (a profile without chips)
+/// names what actually hashes, so an AxeOS-style scanner lists it as
+/// what it is and not as a BM1370 (Warppool, Oliver, 2026-10-05).
 fn asic_model() -> &'static str {
-    #[cfg(feature = "cpu-miner")]
-    if board::profile().asic_count == 0 {
+    if board::devkit() {
         return "ESP32-S3 SHA";
     }
     board::chip().name
@@ -74,7 +67,7 @@ pub fn system_info() -> serde_json::Value {
     let mut v = json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
         "boardDetect": board::detect_info(),
-        "boardModels": warpaxe_board::profile::ALL.iter().filter(|p| p.name != "t-display-s3").map(|p| json!({"name": p.name, "model": p.model, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
+        "boardModels": warpaxe_board::profile::ALL.iter().map(|p| json!({"name": p.name, "model": if p.asic_count == 0 { "WarpMiner (T-Display-S3)" } else { p.model }, "experimental": p.asic_count == 0, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
         "power": b.power_w, "voltage": b.vin_mv, "current": b.iout_ma,
         "temp": b.temp_c, "vrTemp": b.vr_temp_c.unwrap_or(0),
@@ -151,8 +144,7 @@ pub fn system_info() -> serde_json::Value {
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": u8::from(cfg.autofanspeed),
         "resetReason": diag::reset_reason(),
     });
-    #[cfg(feature = "cpu-miner")]
-    if profile.asic_count == 0 {
+    if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
     }
     v

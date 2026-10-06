@@ -34,6 +34,8 @@
   "vreg": "Regulador de tensão",
   "target": "Alvo",
   "shutdown_at": "Desligamento",
+  "max_temp": "máx.",
+  "experimental": "experimental",
   "fans": "Ventoinhas",
   "fan": "Ventoinha",
   "fan_chips": "chips",

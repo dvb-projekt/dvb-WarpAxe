@@ -24,7 +24,7 @@ esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ct
 /// Send one Ethernet frame to the host, blocking up to 100 ms.
 esp_err_t wa_usb_send(void *buffer, uint16_t len);
 
-/// The devkit toy (feature cpu-miner, warpaxe_cpuhash.c): double SHA-256
+/// The T-Display-S3 without chips (warpaxe_cpuhash.c): double SHA-256
 /// of a block header from its midstate for the nonces `start..start+n`.
 /// Returns the index of the first nonce whose hash has its two most
 /// significant bytes zero, with the hash in `hash_out` (natural byte

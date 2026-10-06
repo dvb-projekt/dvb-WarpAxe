@@ -193,9 +193,9 @@ fn hashrate(ghs: f64) -> (String, &'static str) {
     }
     if ghs >= 1000.0 {
         (num(ghs / 1000.0, 2), "TH/s")
-    } else if cfg!(feature = "cpu-miner") && ghs < 0.001 {
+    } else if board::devkit() && ghs < 0.001 {
         (num(ghs * 1e6, 2), "kH/s")
-    } else if cfg!(feature = "cpu-miner") && ghs < 1.0 {
+    } else if board::devkit() && ghs < 1.0 {
         (num(ghs * 1e3, 2), "MH/s")
     } else {
         (num(ghs, 0), "GH/s")
@@ -763,12 +763,9 @@ fn cockpit(c: &mut Canvas) {
         let f = ((t - 30.0) / (hot - 30.0)).clamp(0.0, 1.0);
         c.rect(rx, 50, (88.0 * f) as i32, 3, temp_color(t), 255);
     }
-    // The devkit (cpu-miner build) has neither a regulator to read power
-    // from nor a rate that makes J/TH mean anything: its two workers
-    // stand there instead (Oliver, 2026-10-05).
-    let cpu = cfg!(feature = "cpu-miner") && board::profile().asic_count == 0;
-    if cpu {
-        #[cfg(feature = "cpu-miner")]
+    // The devkit has neither a regulator to read power from nor a rate
+    // that makes J/TH mean anything (Oliver, 2026-10-05).
+    if board::devkit() {
         {
             // Accepted shares per hour since boot (the yield; at difficulty
             // 0.005 and 230 kH/s about 39 are due) after the first five
@@ -952,15 +949,22 @@ fn device(c: &mut Canvas) {
     let p = board::profile();
     page_head(c, l("Device", "Gerät"), 2);
     let (x0, r, r2, e) = (12, 156, 170, 308);
-    // The devkit (cpu-miner build): no regulator, rail, fan or chip
-    // voltage to show; the ESP and its two hash workers instead.
-    #[cfg(feature = "cpu-miner")]
-    if p.asic_count == 0 {
+    // The devkit: no regulator, rail, fan or chip voltage to show; the
+    // ESP and its two hash workers instead.
+    if board::devkit() {
         let i = crate::cpuminer::info();
         let t = b
             .temp_c
             .map_or("–".into(), |t| format!("{} °C", num(f64::from(t), 1)));
-        kv(c, "ESP32-S3", &t, 44, b.temp_c.map_or(gfx::FG, temp_color), x0, r);
+        kv(
+            c,
+            "ESP32-S3",
+            &t,
+            44,
+            b.temp_c.map_or(gfx::FG, temp_color),
+            x0,
+            r,
+        );
         kv(c, l("Clock", "Takt"), "240 MHz", 62, gfx::FG, x0, r);
         kv(
             c,
@@ -1015,7 +1019,10 @@ fn device(c: &mut Canvas) {
             12,
             150,
             gfx::MUTE,
-            "ESP32-S3R8 · SHA engine + CPU core",
+            l(
+                "ESP32-S3R8 · SHA engine + CPU core · experimental",
+                "ESP32-S3R8 · SHA-Einheit + CPU-Kern · experimentell",
+            ),
             Align::Left,
         );
         c.text(
@@ -1205,8 +1212,7 @@ fn pool(c: &mut Canvas) {
         12,
         308,
     );
-    #[cfg(feature = "cpu-miner")]
-    let best = if board::profile().asic_count == 0 {
+    let best = if board::devkit() {
         // The devkit's shares sit below 1: decimals, session only.
         format!("{} / –", num(crate::cpuminer::info().best_diff, 3))
     } else {
@@ -1216,12 +1222,6 @@ fn pool(c: &mut Canvas) {
             si(config::best_diff() as f64)
         )
     };
-    #[cfg(not(feature = "cpu-miner"))]
-    let best = format!(
-        "{} / {}",
-        si(m.best_session_diff as f64),
-        si(config::best_diff() as f64)
-    );
     kv(
         c,
         l(

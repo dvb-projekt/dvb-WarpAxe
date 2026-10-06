@@ -157,12 +157,25 @@ fn update(f: impl FnOnce(&mut BoardState)) {
     f(g.get_or_insert_with(BoardState::default));
 }
 
-/// The devkit (cpu-miner build) has no I²C bus, so [`start`] returns
-/// before the sensor loop: the CPU miner sets the ESP's own die
-/// temperature as the chip temperature for the display and the API.
-#[cfg(feature = "cpu-miner")]
+/// The board is a T-Display-S3 without chips (profile `t-display-s3`):
+/// the ESP32-S3 hashes by itself (`cpuminer`). Everything that treats a
+/// board differently without a chain keys on this, never on a feature.
+pub fn devkit() -> bool {
+    profile().asic_count == 0 && profile().name != "undetected"
+}
+
+/// The devkit has no I²C bus, so [`start`] returns before the sensor
+/// loop: the CPU miner sets the ESP's own die temperature as the chip
+/// temperature for the display and the API.
 pub(crate) fn set_devkit_temp(temp_c: Option<f32>) {
     update(|s| s.temp_c = temp_c);
+}
+
+/// The devkit's own overheat guard (the CPU miner stops at the profile's
+/// `max_temp_c`, resumes 10 °C below): the same flag the sensor loop
+/// raises on a board with chips, so the API and the display say so.
+pub(crate) fn set_devkit_overheat(on: bool) {
+    OVERHEAT.store(on, Ordering::Relaxed);
 }
 
 pub fn profile() -> &'static Profile {
@@ -614,7 +627,9 @@ impl Regulator {
                 // percentages of VOUT_COMMAND, a fixed value can fall
                 // outside the window at a low output).
                 if let Some(cmd) = vr.limit_fault() {
-                    log::warn!("board: TPS546 limit register {cmd:#04x} refused at {volts} V, output set");
+                    log::warn!(
+                        "board: TPS546 limit register {cmd:#04x} refused at {volts} V, output set"
+                    );
                 }
                 r
             }
@@ -1612,7 +1627,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 }
                 Err(e) => {
                     if core_refused_logged != Some(want) {
-                        log::warn!("board: core {want} mV refused: {e}, staying at {applied_mv} mV");
+                        log::warn!(
+                            "board: core {want} mV refused: {e}, staying at {applied_mv} mV"
+                        );
                         core_refused_logged = Some(want);
                     }
                     core_retry_at = Instant::now() + Duration::from_secs(1);
@@ -1888,33 +1905,39 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             });
             p
         }
-        // A cpu-miner build on a board where nothing answered and no stock
-        // firmware left its keys: the bare T-Display-S3 devkit. Take its
-        // profile and whatever a NerdMiner left behind, no choice needed.
-        #[cfg(feature = "cpu-miner")]
-        Detection::Choose(c, _) if c.is_empty() && stock_keys == (None, None, None) => {
-            let p = &warpaxe_board::T_DISPLAY_S3_DEVKIT;
-            log::warn!("board: nothing on either bus, no stock settings: the T-Display-S3 devkit, hashing on the CPU");
-            let mut took = imported;
-            took.extend(crate::cpuminer::import_nerdminer());
-            if !took.is_empty() {
-                log::info!("board: devkit first start, took {}", took.join(", "));
-            }
-            let mut cfg = config::get();
-            cfg.board_model = p.name.into();
-            if let Err(e) = config::save(&cfg) {
-                log::warn!("board: saving the devkit profile failed: {e}");
-            }
-            *DETECT.lock().unwrap() = Some(DetectInfo {
-                status: "detected",
-                why: "nothing answered: the T-Display-S3 devkit (cpu-miner build)",
-                candidates: vec![p.name],
-                imported: took,
-                model: None,
-            });
-            p
-        }
         Detection::Choose(c, why) => {
+            // Nothing on either bus and no stock firmware keys: possibly a
+            // bare T-Display-S3 (the NerdMiner devkit). What a NerdMiner
+            // left in flash decides: its config.json found means the board
+            // becomes the devkit, hashing on the CPU, with its Wi-Fi and
+            // wallet taken over. Without it the owner chooses in the web
+            // UI, where t-display-s3 is on offer; a board with chips whose
+            // bus is dead must not quietly turn into a CPU miner. A board
+            // with a boardModel in NVS never gets here (init_bus).
+            let mut imported = imported;
+            if c.is_empty() && stock_keys == (None, None, None) {
+                imported.extend(crate::cpuminer::import_nerdminer());
+                if imported.contains(&"wallet (nerdminer)") {
+                    let p = &warpaxe_board::T_DISPLAY_S3_DEVKIT;
+                    log::warn!(
+                        "board: nothing on either bus, a NerdMiner's config.json in flash: the T-Display-S3 devkit, hashing on the CPU; took {}",
+                        imported.join(", ")
+                    );
+                    let mut cfg = config::get();
+                    cfg.board_model = p.name.into();
+                    if let Err(e) = config::save(&cfg) {
+                        log::warn!("board: saving the devkit profile failed: {e}");
+                    }
+                    *DETECT.lock().unwrap() = Some(DetectInfo {
+                        status: "detected",
+                        why: "nothing answered, a NerdMiner's settings in flash: the T-Display-S3 devkit",
+                        candidates: vec![p.name],
+                        imported,
+                        model: None,
+                    });
+                    return p;
+                }
+            }
             let p = warpaxe_board::profile::undetected_for(c);
             log::warn!(
                 "board: not detected for sure ({why}); candidates {:?}; chips stay off until a board is chosen; display {:?}",

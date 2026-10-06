@@ -34,6 +34,8 @@
   "vreg": "Régulateur de tension",
   "target": "Cible",
   "shutdown_at": "Arrêt",
+  "max_temp": "max",
+  "experimental": "expérimental",
   "fans": "Ventilateurs",
   "fan": "Ventilateur",
   "fan_chips": "puces",

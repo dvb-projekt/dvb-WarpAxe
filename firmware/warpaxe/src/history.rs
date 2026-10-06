@@ -72,10 +72,9 @@ pub fn json(span_s: u64) -> serde_json::Value {
         if v.is_empty() {
             serde_json::Value::Null
         } else {
-            // Two decimals of GH/s; the devkit toy (a few 1e-4 GH/s) would
-            // read as 0.00 and draw a flat line, so a cpu-miner build keeps
-            // seven.
-            let scale = if cfg!(feature = "cpu-miner") {
+            // Two decimals of GH/s; the devkit (a few 1e-4 GH/s) would read
+            // as 0.00 and draw a flat line, so it keeps seven.
+            let scale = if board::devkit() {
                 1e7
             } else {
                 100.0

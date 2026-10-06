@@ -34,6 +34,8 @@
   "vreg": "電圧レギュレーター",
   "target": "目標",
   "shutdown_at": "停止温度",
+  "max_temp": "最大",
+  "experimental": "実験的",
   "fans": "ファン",
   "fan": "ファン",
   "fan_chips": "チップ",

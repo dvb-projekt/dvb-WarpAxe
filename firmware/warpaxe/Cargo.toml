@@ -19,7 +19,7 @@ harness = false
 opt-level = "s"
 debug = true
 
-# The software hash loop of the devkit toy: speed over size, it is tiny.
+# The software hash loop of the chipless T-Display-S3: speed over size, it is tiny.
 [profile.release.package.warpaxe-cpuminer]
 opt-level = 3
 
@@ -41,13 +41,9 @@ warpaxe-chain = { path = "../../crates/chain" }
 warpaxe-board = { path = "../../crates/board" }
 warpaxe-stratum = { path = "../../crates/stratum" }
 warpaxe-sv2 = { path = "../../crates/sv2" }
-# The devkit toy (src/cpuminer.rs): hashing on the ESP32-S3 itself. Off by
-# default and never in a release image (tools/release-firmware.sh checks).
-warpaxe-cpuminer = { path = "../../crates/cpuminer", optional = true }
-
-[features]
-default = []
-cpu-miner = ["dep:warpaxe-cpuminer"]
+# The T-Display-S3 without chips (src/cpuminer.rs): the ESP32-S3 hashes
+# by itself, on its SHA engine and its second core.
+warpaxe-cpuminer = { path = "../../crates/cpuminer" }
 
 [build-dependencies]
 embuild = "0.33"

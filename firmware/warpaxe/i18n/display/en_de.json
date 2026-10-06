@@ -44,5 +44,9 @@
  "Password · 10 digits": "Passwort · 10 Ziffern",
  "REGULATOR FAULT": "REGLERFEHLER",
  "Regulator fault · core voltage off": "Reglerfehler · Kernspannung aus",
- "Fans 100 % · tries again after a minute": "Lüfter 100 % · neuer Versuch nach einer Minute"
+ "Fans 100 % · tries again after a minute": "Lüfter 100 % · neuer Versuch nach einer Minute",
+ "UPTIME": "LAUFZEIT",
+ "Candidates": "Kandidaten",
+ "Best diff": "Beste Diff",
+ "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · SHA-Einheit + CPU-Kern · experimentell"
 }

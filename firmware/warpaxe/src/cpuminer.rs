@@ -1,29 +1,31 @@
-//! Mining on the ESP32-S3 itself: the T-Display-S3 devkit without a
-//! BM13xx, behind the `cpu-miner` feature. A toy, never in a release
-//! image (tools/release-firmware.sh refuses an image carrying
-//! [`SENTINEL`]). Build: `cargo build --release --features cpu-miner`.
+//! Mining on the ESP32-S3 itself: the T-Display-S3 without a BM13xx (the
+//! NerdMiner devkit, profile `t-display-s3`). Runs instead of the chain
+//! loop when the board has no chips (`board::devkit`), never beside it.
 //!
-//! Three threads replace the chain loop of `miner.rs` when the board
-//! profile has no chips: a coordinator that turns Stratum notifies into
-//! a job with its SHA-256 midstate and hands out nonce ranges, a worker
-//! on core 0 that drives the S3's SHA peripheral (the loop of NerdMiner
+//! Three threads: a coordinator that turns Stratum notifies into a job
+//! with its SHA-256 midstate and hands out nonce ranges, a worker on
+//! core 1 that drives the S3's SHA peripheral (the loop of NerdMiner
 //! v2's `minerWorkerHw`, two blocks per nonce, the first from the
-//! midstate), and a worker on core 1 hashing in software
-//! (`warpaxe_cpuminer::sha256`). Both run at priority 1, above only the
-//! idle task, and sleep a tick after every batch so the idle task feeds
-//! its watchdog; the peripheral is taken per batch and released between
-//! them, so mbedTLS (the online update, a TLS pool) gets its turn.
+//! midstate), and a worker on core 0 hashing in C
+//! (`components/warpaxe_glue/warpaxe_cpuhash.c`). Both run at priority
+//! 1, above only the idle task, and yield a tick every 200 ms so the
+//! idle task feeds its watchdog; the peripheral is taken per batch and
+//! released between them, so mbedTLS (the online update, a TLS pool)
+//! gets its turn. About 235 kH/s on USB power.
 //!
 //! A hash whose top sixteen bits are zero is a candidate: re-hashed in
 //! software when it came from the peripheral, scored with
 //! `hash_difficulty`, counted in `MinerState`, and submitted when it
 //! reaches the pool's share difficulty. Hashrate: counted per worker,
 //! 30 s buckets into a 10-minute window as the chain loop does, reported
-//! in `MinerState` in GH/s (so a few 1e-4) and in kH/s through
-//! [`info`] for the web UI.
+//! in `MinerState` in GH/s (so a few 1e-4) and in kH/s through [`info`]
+//! for the web UI. The ESP's own die temperature stands in for the chip
+//! temperature; at the profile's `max_temp_c` the workers stop, 10 °C
+//! below they resume.
 //!
 //! First start: [`import_nerdminer`] takes the Wi-Fi and the wallet a
-//! NerdMiner left in flash (see `warpaxe_cpuminer::nerdminer`).
+//! NerdMiner left in flash (see `warpaxe_cpuminer::nerdminer`); finding
+//! its config.json is what makes a bare board the devkit (board.rs).
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -38,10 +40,6 @@ use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::Job;
 
 use crate::{board, config, diag, miner, stratum};
-
-/// Marks an image built with the feature; the release script greps for
-/// it and refuses to publish.
-pub const SENTINEL: &str = "WARPAXE-CPU-MINER-BUILD";
 
 /// Share difficulty the devkit asks the pool for: what a NerdMiner gets
 /// (WarpPool's NerdMiner band is 0.001 to 4, start 0.01). An integer
@@ -255,7 +253,7 @@ pub fn nominal_hash_rate() -> f64 {
 
 /// Start the coordinator and the two workers.
 pub fn start() {
-    log::warn!("cpu miner: {SENTINEL}: hashing on the ESP32-S3 itself, a toy, never a release");
+    log::info!("cpu miner: hashing on the ESP32-S3 itself (no chips on this board)");
     std::thread::Builder::new()
         .name("cpu-miner".into())
         .stack_size(12 * 1024)
@@ -524,6 +522,10 @@ fn run() {
     let mut last_hw = 0u32;
     let mut last_sw = 0u32;
     let mut last_busy = [0u32; 2];
+    // The die temperature guard: off at the profile's limit (or the
+    // configured shutdown temperature), on again 10 °C below.
+    let mut hot = false;
+    let mut last_temp = Instant::now();
     let mut last_tick = Instant::now();
     let mut hashes = 0f64;
     let mut hashes_since = Instant::now();
@@ -533,12 +535,36 @@ fn run() {
         s.frequency_hz = 240_000_000;
     });
     loop {
-        if board::shutdown() {
+        if last_temp.elapsed() >= Duration::from_secs(1) {
+            last_temp = Instant::now();
+            let temp = die_temp_c();
+            board::set_devkit_temp(temp);
+            if let Some(t) = temp {
+                let cfg = config::get();
+                let limit = if cfg.overheat_temp > 0 {
+                    f32::from(cfg.overheat_temp)
+                } else {
+                    board::profile().max_temp_c
+                };
+                if !hot && t >= limit {
+                    hot = true;
+                    board::set_devkit_overheat(true);
+                    log::warn!(
+                        "cpu miner: die {t:.1} °C at the limit {limit:.0} °C: hashing stopped"
+                    );
+                } else if hot && t <= limit - 10.0 {
+                    hot = false;
+                    board::set_devkit_overheat(false);
+                    log::info!("cpu miner: die {t:.1} °C, 10 °C below the limit: hashing again");
+                }
+            }
+        }
+        if board::shutdown() || hot {
             if JOB.lock().unwrap().take().is_some() {
                 log::info!("cpu miner: stopped");
             }
             miner::update_state(|s| {
-                s.phase = "OFF".into();
+                s.phase = if hot { "OVERHEAT" } else { "OFF" }.into();
                 s.hashrate_ghs = 0.0;
                 s.hashrate_now_ghs = 0.0;
             });
@@ -578,7 +604,6 @@ fn run() {
         let dt = last_tick.elapsed().as_secs_f64();
         if dt >= 1.0 {
             last_tick = Instant::now();
-            board::set_devkit_temp(die_temp_c());
             let hw = HASHES_HW.load(Ordering::Relaxed);
             let sw = HASHES_SW.load(Ordering::Relaxed);
             let d_hw = f64::from(hw.wrapping_sub(last_hw));
@@ -700,9 +725,6 @@ pub fn import_nerdminer() -> Vec<&'static str> {
                 // SUGGESTED_DIFFICULTY instead (an integer would only
                 // raise what the pool's NerdMiner band starts at).
                 cfg.suggested_difficulty = 0;
-                // No online-update offers: a release image would not hash
-                // on this board (and the install is refused anyway).
-                cfg.update_check = false;
                 took.push("wallet (nerdminer)");
                 log::info!("cpu miner: wallet taken from NerdMiner's config.json ({copies} copies in flash)");
             }

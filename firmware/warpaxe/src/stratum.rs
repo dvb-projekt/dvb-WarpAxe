@@ -29,7 +29,6 @@ const AGENT: &str = concat!("warpaxe/", env!("CARGO_PKG_VERSION"));
 /// the only way the pool lets a few hundred kH/s have a difficulty below
 /// its profile floor (Warppool, 2026-10-05). None of the markers checked
 /// first (bitaxe, nerdaxe, bm13xx ...) may appear in it.
-#[cfg(feature = "cpu-miner")]
 const AGENT_CPU: &str = concat!(
     "warpaxe-cpu/",
     env!("CARGO_PKG_VERSION"),
@@ -38,8 +37,7 @@ const AGENT_CPU: &str = concat!(
 
 /// The user agent for `mining.subscribe`.
 fn agent() -> &'static str {
-    #[cfg(feature = "cpu-miner")]
-    if board::profile().asic_count == 0 {
+    if board::devkit() {
         return AGENT_CPU;
     }
     AGENT
@@ -395,15 +393,10 @@ fn session(
         // Ask for a share difficulty (AxeOS sends it right after
         // authorizing); the pool may ignore it.
         let suggest = config::get().suggested_difficulty;
-        #[cfg(feature = "cpu-miner")]
-        let cpu = board::profile().asic_count == 0;
-        #[cfg(not(feature = "cpu-miner"))]
-        let cpu = false;
-        if cpu {
+        if board::devkit() {
             // The devkit: a fraction, and as the first request of the
             // session, which WarpPool takes as the start value even over a
             // stored snapshot (an integer would only raise it).
-            #[cfg(feature = "cpu-miner")]
             {
                 let d = crate::cpuminer::SUGGESTED_DIFFICULTY;
                 hello.push_str(
@@ -738,8 +731,7 @@ fn session_v2(
         f64::from(board::chip().small_cores) * f64::from(hz) * f64::from(m.chips.max(1));
     // The devkit: cores × clock would claim 215 GH/s and the pool would set
     // a target the ESP never meets; its measured rate instead.
-    #[cfg(feature = "cpu-miner")]
-    if board::profile().asic_count == 0 {
+    if board::devkit() {
         nominal = crate::cpuminer::nominal_hash_rate();
     }
     let client = Arc::new(Mutex::new(Client::new(ClientConfig {

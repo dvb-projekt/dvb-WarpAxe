@@ -4,12 +4,14 @@
 static ES: &[(&str, &str)] = &[
     ("BLOCK FOUND", "BLOQUE HALLADO"),
     ("BLOCK HEIGHT", "ALTURA BLOQUE"),
+    ("Best diff", "Mejor dif."),
     (
         "Best diff (session / all-time)",
         "Mejor dif. (sesión / histórica)",
     ),
     ("CHIPS OFF", "CHIPS APAGADOS"),
     ("CORE OFF", "NÚCLEO APAG."),
+    ("Candidates", "Candidatos"),
     (
         "Chip {t} °C · core voltage off",
         "Chip {t} °C · voltaje núcleo cortado",
@@ -23,6 +25,10 @@ static ES: &[(&str, &str)] = &[
         "Sigue accesible · enciéndelo en la interfaz web",
     ),
     ("EFFICIENCY", "EFICIENCIA"),
+    (
+        "ESP32-S3R8 · SHA engine + CPU core · experimental",
+        "ESP32-S3R8 · motor SHA + núcleo CPU · experimental",
+    ),
     ("FALLBACK", "RESPALDO"),
     ("FIRMWARE UPDATE", "ACTUALIZACIÓN"),
     ("Fan", "Ventilador"),
@@ -71,6 +77,7 @@ static ES: &[(&str, &str)] = &[
         "Fallo regulador · voltaje núcleo cortado",
     ),
     ("THEN OPEN", "LUEGO ABRE"),
+    ("UPTIME", "EN MARCHA"),
     ("Uptime", "En marcha"),
     ("WI-FI SETUP", "CONEXIÓN WI-FI"),
     ("blocks", "bloques"),
@@ -86,12 +93,14 @@ static ES: &[(&str, &str)] = &[
 static FR: &[(&str, &str)] = &[
     ("BLOCK FOUND", "BLOC TROUVÉ"),
     ("BLOCK HEIGHT", "HAUTEUR DE BLOC"),
+    ("Best diff", "Meilleure diff."),
     (
         "Best diff (session / all-time)",
         "Meilleure diff (session / record)",
     ),
     ("CHIPS OFF", "PUCES COUPÉES"),
     ("CORE OFF", "CŒUR COUPÉ"),
+    ("Candidates", "Candidats"),
     (
         "Chip {t} °C · core voltage off",
         "Puce {t} °C · tension cœur coupée",
@@ -105,6 +114,10 @@ static FR: &[(&str, &str)] = &[
         "Appareil joignable · rallumer via l'UI web",
     ),
     ("EFFICIENCY", "EFFICACITÉ"),
+    (
+        "ESP32-S3R8 · SHA engine + CPU core · experimental",
+        "ESP32-S3R8 · moteur SHA + cœur CPU · expérimental",
+    ),
     ("FALLBACK", "SECOURS"),
     ("FIRMWARE UPDATE", "MAJ FIRMWARE"),
     ("Fan", "Ventil."),
@@ -153,6 +166,7 @@ static FR: &[(&str, &str)] = &[
         "Défaut régulateur · tension cœur coupée",
     ),
     ("THEN OPEN", "PUIS OUVRIR"),
+    ("UPTIME", "UPTIME"),
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "RÉGLAGE WI-FI"),
     ("blocks", "blocs"),
@@ -168,12 +182,14 @@ static FR: &[(&str, &str)] = &[
 static IT: &[(&str, &str)] = &[
     ("BLOCK FOUND", "BLOCCO TROVATO"),
     ("BLOCK HEIGHT", "ALTEZZA BLOCCO"),
+    ("Best diff", "Miglior diff."),
     (
         "Best diff (session / all-time)",
         "Miglior diff (sessione / totale)",
     ),
     ("CHIPS OFF", "CHIP SPENTI"),
     ("CORE OFF", "CORE SPENTO"),
+    ("Candidates", "Candidati"),
     (
         "Chip {t} °C · core voltage off",
         "Chip {t} °C · tensione core spenta",
@@ -187,6 +203,10 @@ static IT: &[(&str, &str)] = &[
         "Dispositivo raggiungibile · accendi nella web UI",
     ),
     ("EFFICIENCY", "EFFICIENZA"),
+    (
+        "ESP32-S3R8 · SHA engine + CPU core · experimental",
+        "ESP32-S3R8 · motore SHA + core CPU · sperimentale",
+    ),
     ("FALLBACK", "RISERVA"),
     ("FIRMWARE UPDATE", "AGGIORNAMENTO FW"),
     ("Fan", "Ventola"),
@@ -235,6 +255,7 @@ static IT: &[(&str, &str)] = &[
         "Guasto regolatore · tensione core spenta",
     ),
     ("THEN OPEN", "POI APRI"),
+    ("UPTIME", "UPTIME"),
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "IMPOSTA WI-FI"),
     ("blocks", "blocchi"),
@@ -250,12 +271,14 @@ static IT: &[(&str, &str)] = &[
 static PT: &[(&str, &str)] = &[
     ("BLOCK FOUND", "BLOCO MINERADO"),
     ("BLOCK HEIGHT", "ALTURA DO BLOCO"),
+    ("Best diff", "Melhor dif."),
     (
         "Best diff (session / all-time)",
         "Melhor diff (sessão / total)",
     ),
     ("CHIPS OFF", "CHIPS PARADOS"),
     ("CORE OFF", "NÚCLEO DESL."),
+    ("Candidates", "Candidatos"),
     (
         "Chip {t} °C · core voltage off",
         "Chip {t} °C · tensão do núcleo cortada",
@@ -269,6 +292,10 @@ static PT: &[(&str, &str)] = &[
         "Continua acessível · ligue os chips pela interface web",
     ),
     ("EFFICIENCY", "EFICIÊNCIA"),
+    (
+        "ESP32-S3R8 · SHA engine + CPU core · experimental",
+        "ESP32-S3R8 · motor SHA + núcleo CPU · experimental",
+    ),
     ("FALLBACK", "RESERVA"),
     ("FIRMWARE UPDATE", "ATUALIZANDO FW"),
     ("Fan", "Ventoinha"),
@@ -317,6 +344,7 @@ static PT: &[(&str, &str)] = &[
         "Falha do regulador · tensão do núcleo cortada",
     ),
     ("THEN OPEN", "DEPOIS ABRA"),
+    ("UPTIME", "TEMPO ATIVO"),
     ("Uptime", "Tempo ativo"),
     ("WI-FI SETUP", "CONEXÃO WI-FI"),
     ("blocks", "blocos"),

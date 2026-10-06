@@ -34,6 +34,8 @@
   "vreg": "Regolatore di tensione",
   "target": "Obiettivo",
   "shutdown_at": "Spegnimento",
+  "max_temp": "max",
+  "experimental": "sperimentale",
   "fans": "Ventole",
   "fan": "Ventola",
   "fan_chips": "chip",

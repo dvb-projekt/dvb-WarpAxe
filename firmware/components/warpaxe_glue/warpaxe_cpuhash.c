@@ -1,10 +1,8 @@
-// The devkit toy's software hash (firmware feature cpu-miner, src/cpuminer.rs):
+// The software hash of the T-Display-S3 without chips (src/cpuminer.rs):
 // double SHA-256 of a block header from its midstate, nonce after nonce, in C
 // so GCC's -O2 and IRAM_ATTR do what they do for NerdMiner's nerd_sha256d. The
 // Rust loop managed 11 kH/s on the Xtensa (a rolled 64-round loop, ~60
 // instructions a round); this one unrolls eight rounds per iteration.
-// Only a cpu-miner build references wa_sha256d_scan; a release image never
-// links this object.
 #include <stdint.h>
 #include <string.h>
 #include "esp_attr.h"

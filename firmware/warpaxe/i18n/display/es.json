@@ -44,5 +44,9 @@
  "Password · 10 digits": "Contraseña · 10 dígitos",
  "REGULATOR FAULT": "FALLO REGULADOR",
  "Regulator fault · core voltage off": "Fallo regulador · voltaje núcleo cortado",
- "Fans 100 % · tries again after a minute": "Vent. 100 % · reintenta en un minuto"
+ "Fans 100 % · tries again after a minute": "Vent. 100 % · reintenta en un minuto",
+ "UPTIME": "EN MARCHA",
+ "Candidates": "Candidatos",
+ "Best diff": "Mejor dif.",
+ "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · motor SHA + núcleo CPU · experimental"
 }

@@ -272,7 +272,6 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
 
 /// The default NVS partition, for reading another firmware's namespace
 /// (the devkit's NerdMiner import).
-#[cfg(feature = "cpu-miner")]
 pub fn partition() -> Option<EspDefaultNvsPartition> {
     PART.lock().unwrap().clone()
 }

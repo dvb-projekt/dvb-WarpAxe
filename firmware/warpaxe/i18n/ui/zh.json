@@ -34,6 +34,8 @@
   "vreg": "稳压器",
   "target": "目标",
   "shutdown_at": "关断",
+  "max_temp": "最高",
+  "experimental": "实验性",
   "fans": "风扇",
   "fan": "风扇",
   "fan_chips": "芯片",
