@@ -1030,7 +1030,7 @@ fn device(c: &mut Canvas) {
             12,
             164,
             gfx::DIM,
-            &format!("WarpAxe {}+cpu", env!("CARGO_PKG_VERSION")),
+            &format!("WarpAxe {}", env!("CARGO_PKG_VERSION")),
             Align::Left,
         );
         let _ = (&m, &cfg);
