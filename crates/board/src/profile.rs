@@ -618,7 +618,9 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     // Series Comparison: the in-package octal PSRAM, where the FN8 has
     // 85 and the plain S3 105), and the die runs about 20 K above ambient
     // under load (44 °C measured in a 24 °C room). So: red from 85 °C,
-    // yellow from 70 (target + 5), nothing switches off.
+    // yellow from 70 (target + 5). The CPU miner's coordinator stops
+    // hashing at max_temp_c and resumes 10 °C below it (cpuminer.rs);
+    // there is no regulator to switch off.
     throttle_temp_c: 75.0,
     max_temp_c: 85.0,
     vr_throttle_c: 105.0,
