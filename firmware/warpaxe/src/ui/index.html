@@ -817,8 +817,14 @@ function updBar(text, pct, cls) {
   e.innerHTML = `<span>${esc(text)}</span>${pct != null ? `<div class="fanbar" style="margin:0"><div style="height:100%;border-radius:3px;width:${pct}%;background:linear-gradient(90deg,var(--warp),var(--plasma))"></div></div>` : ""}`;
 }
 async function watchUpdate() {
+  // A request sent just before the restart can hang instead of failing
+  // (no reset from a rebooting miner): give up after 4 s, so the restart
+  // is seen as one.
   let u = null;
-  try { u = await get("/api/v1/update"); } catch (e) {}
+  const ac = new AbortController(), to = setTimeout(() => ac.abort(), 4000);
+  try { const r = await fetch("/api/v1/update", {cache: "no-store", signal: ac.signal}); if (r.ok) u = await r.json(); } catch (e) {}
+  clearTimeout(to);
+  if (!watch) return;
   const late = Date.now() - watch.t0 > 300000;
   if (u && ["checking", "downloading", "verifying", "flashing"].includes(u.phase)) {
     if (!watch.seen) { watch.seen = true; setWatch(watch); }
@@ -832,7 +838,9 @@ async function watchUpdate() {
     if (late) { updBar(t("upd_noanswer"), null, "err"); setWatch(null); } else updBar(t("upd_restarting"));
     return;
   }
-  if (watch.down) {
+  // Back with another version: done, even if no poll fell into the
+  // restart (a fast one between two polls left the bar at "Writing 100 %").
+  if (watch.down || (u.installed !== watch.from && watch.seen)) {
     if (u.installed !== watch.from || watch.manual) {
       try { sessionStorage.setItem("wa_upd_done", u.installed || ""); } catch (e) {}
       setWatch(null); location.reload(); return;
