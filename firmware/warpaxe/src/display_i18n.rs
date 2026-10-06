@@ -77,7 +77,7 @@ static ES: &[(&str, &str)] = &[
         "Fallo regulador · voltaje núcleo cortado",
     ),
     ("THEN OPEN", "LUEGO ABRE"),
-    ("UPTIME", "EN MARCHA"),
+    ("UPTIME", "T. ACTIVO"),
     ("Uptime", "En marcha"),
     ("WI-FI SETUP", "CONEXIÓN WI-FI"),
     ("blocks", "bloques"),
