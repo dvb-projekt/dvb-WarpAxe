@@ -546,6 +546,13 @@ fn run() {
                 } else {
                     board::profile().max_temp_c
                 };
+                // A manual reset (/api/v1/overheat/reset, the same flag a
+                // board with chips clears) ends the stop as well; the
+                // next reading above the limit raises it again.
+                if hot && !board::overheat() {
+                    hot = false;
+                    log::info!("cpu miner: overheat cleared by hand, hashing again");
+                }
                 if !hot && t >= limit {
                     hot = true;
                     board::set_devkit_overheat(true);

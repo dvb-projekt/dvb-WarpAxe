@@ -1011,7 +1011,9 @@ impl Counted<'_> {
         f: F,
     ) -> Result<&mut Self, esp_idf_svc::sys::EspError>
     where
-        F: for<'q> Fn(Request<&mut esp_idf_svc::http::server::EspHttpConnection<'q>>) -> Result<(), E>
+        F: for<'q> Fn(
+                Request<&mut esp_idf_svc::http::server::EspHttpConnection<'q>>,
+            ) -> Result<(), E>
             + Send
             + 'static,
         E: std::fmt::Debug,
