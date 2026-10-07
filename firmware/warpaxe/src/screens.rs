@@ -1202,7 +1202,7 @@ fn pool(c: &mut Canvas) {
     kv(
         c,
         l("Pool difficulty", "Pool-Difficulty"),
-        &if st.difficulty < 1.0 {
+        &if st.difficulty > 0.0 && st.difficulty < 1.0 {
             num(st.difficulty, 3)
         } else {
             si(st.difficulty)
