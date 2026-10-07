@@ -378,6 +378,10 @@ don't flash them unless you can recover the stock firmware over USB.
 
 ### Experimental: the T-Display-S3 without an ASIC
 
+> ⚠️ **Hot to the touch.** Hashing all the time, the T-Display-S3 gets to
+> about 60 °C on its back. Put it in a case before you leave it running,
+> and don't hold it in your hand while it mines.
+
 The LilyGO T-Display-S3, the board NerdMiner runs on, has no mining chip.
 WarpAxe hashes on the ESP32-S3 itself there: the chip's SHA unit on one
 core with a precomputed midstate, as NerdMiner v2 does (`src/mining.cpp`),
