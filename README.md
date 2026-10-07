@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-342%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.19-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.20-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.19).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.20).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -381,7 +381,7 @@ don't flash them unless you can recover the stock firmware over USB.
 The LilyGO T-Display-S3, the board NerdMiner runs on, has no mining chip.
 WarpAxe hashes on the ESP32-S3 itself there: the chip's SHA unit on one
 core with a precomputed midstate, as NerdMiner v2 does (`src/mining.cpp`),
-and a software loop on the other, together about 230 kH/s on USB power.
+and a software loop on the other, together about 290 kH/s on USB power.
 That is a lottery ticket, not a miner: at today's network difficulty the
 expected time to a block is far longer than the age of the universe.
 It is marked experimental. It takes online updates like every other
