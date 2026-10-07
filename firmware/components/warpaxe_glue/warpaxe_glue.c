@@ -11,6 +11,8 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
+#include "soc/rtc.h"
+#include "esp_private/esp_clk.h"
 #include "tinyusb.h"
 #include "tinyusb_net.h"
 #include "tusb_cdc_acm.h"
@@ -132,6 +134,24 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len)
 bool wa_usb_mounted(void)
 {
     return tud_mounted();
+}
+
+int wa_cpu_freq_mhz(void)
+{
+    return esp_clk_cpu_freq() / 1000000;
+}
+
+int wa_cpu_freq_set(int mhz)
+{
+    rtc_cpu_freq_config_t cfg;
+    if (!rtc_clk_cpu_freq_mhz_to_config((uint32_t)mhz, &cfg)) {
+        return -1;
+    }
+    // 80, 160 and 240 MHz all come from the 480 MHz PLL on the ESP32-S3 and
+    // APB stays at 80 MHz, so only the CPU divider changes: UART, LCD and
+    // timers keep their clocks. The ROM's ticks-per-us follow inside.
+    rtc_clk_cpu_freq_set_config(&cfg);
+    return wa_cpu_freq_mhz();
 }
 
 void wa_reboot_to_bootloader(void)

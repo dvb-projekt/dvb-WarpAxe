@@ -186,8 +186,23 @@ pub struct Info {
     /// Best share difficulty since boot, decimals kept.
     #[serde(rename = "bestDiff")]
     pub best_diff: f64,
+    /// The ESP32-S3's CPU clock, MHz.
+    #[serde(rename = "cpuMhz")]
+    pub cpu_mhz: u32,
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
+/// The CPU clock the devkit runs at; set once in [`start`].
+const CPU_MHZ_WANTED: i32 = 240;
+static CPU_MHZ: AtomicU32 = AtomicU32::new(0);
+
+/// The CPU clock in MHz (read from the ROM's tick rate until [`start`]
+/// has set it).
+pub fn cpu_mhz() -> u32 {
+    match CPU_MHZ.load(Ordering::Relaxed) {
+        0 => unsafe { sys::tusb::wa_cpu_freq_mhz() }.max(0) as u32,
+        m => m,
+    }
+}
 
 pub fn info() -> Info {
     let mut i = INFO.lock().unwrap().clone().unwrap_or_default();
@@ -200,6 +215,7 @@ pub fn info() -> Info {
         .map_or(0, |j| j.next_nonce.load(Ordering::Relaxed));
     i.die_temp_c = die_temp_c();
     i.best_diff = *BEST_DIFF.lock().unwrap();
+    i.cpu_mhz = cpu_mhz();
     for k in 0..2 {
         i.cores[k] = Some(WORKER_CORE[k].load(Ordering::Relaxed)).filter(|c| *c != u32::MAX);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
@@ -261,6 +277,13 @@ pub fn nominal_hash_rate() -> f64 {
 /// Start the coordinator and the two workers.
 pub fn start() {
     log::info!("cpu miner: hashing on the ESP32-S3 itself (no chips on this board)");
+    // sdkconfig starts every board at 160 MHz; a board with chips gains
+    // nothing from more, the devkit's software worker scales with it.
+    let mhz = unsafe { sys::tusb::wa_cpu_freq_set(CPU_MHZ_WANTED) };
+    if mhz > 0 {
+        CPU_MHZ.store(mhz as u32, Ordering::Relaxed);
+    }
+    log::info!("cpu miner: CPU clock {} MHz", cpu_mhz());
     std::thread::Builder::new()
         .name("cpu-miner".into())
         .stack_size(12 * 1024)
@@ -539,7 +562,7 @@ fn run() {
     let mut buckets: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();
     miner::update_state(|s| {
         s.phase = "CPU".into();
-        s.frequency_hz = 240_000_000;
+        s.frequency_hz = cpu_mhz() * 1_000_000;
     });
     loop {
         if last_temp.elapsed() >= Duration::from_secs(1) {

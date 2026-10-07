@@ -42,6 +42,13 @@ bool wa_usb_mounted(void);
 /// callback fired). Sending before that is not allowed.
 bool wa_usb_net_ready(void);
 
+/// The CPU clock in MHz as the ROM counts it.
+int wa_cpu_freq_mhz(void);
+
+/// Switch the CPU clock (80, 160 or 240 MHz; sdkconfig starts at 160).
+/// Returns the clock afterwards, or -1 for a value the chip has not got.
+int wa_cpu_freq_set(int mhz);
+
 /// Restart into the ROM download mode (USB-Serial/JTAG comes back).
 void wa_reboot_to_bootloader(void) __attribute__((noreturn));
 

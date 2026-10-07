@@ -965,7 +965,15 @@ fn device(c: &mut Canvas) {
             x0,
             r,
         );
-        kv(c, l("Clock", "Takt"), "240 MHz", 62, gfx::FG, x0, r);
+        kv(
+            c,
+            l("Clock", "Takt"),
+            &format!("{} MHz", crate::cpuminer::cpu_mhz()),
+            62,
+            gfx::FG,
+            x0,
+            r,
+        );
         kv(
             c,
             l("Uptime", "Laufzeit"),
