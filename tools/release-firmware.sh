@@ -15,6 +15,14 @@
 # Neither is ever printed. Before publishing, the image is uploaded to the
 # test miner SOAK_HOST (default .41) and watched for 5 min
 # (tools/soak-test.py); announce that to anyone else using the miner.
+#
+# A fourth asset, tested-on.txt, lists the board profiles the image ran
+# on (one id per line). Only the T-Display-S3 reads it: the devkit is
+# offered a release only when its own id is in the file (firmware
+# update.rs). TESTED_ON="nerdqaxe-plus-plus bitaxe-gamma" names the boards
+# of your own soak; t-display-s3 must not be written by hand, it is added
+# only when SOAK_DEVKIT=<host> is set and the soak on that devkit passed
+# in this run. Without the file no devkit installs the release.
 set -euo pipefail
 
 TAG="${1:?usage: $0 vX.Y.Z [notes-file]}"
@@ -44,9 +52,10 @@ espflash save-image --chip esp32s3 --flash-size 16mb \
 # its config.json (wallet, pool) in NerdMiner's SPIFFS partition, flash
 # 0x310000..0x3F0000: the first 64 KB in the tail of WarpAxe's ota_0
 # (0x20000 + 0x300000), the rest in the head of ota_1. The first install
-# writes only ota_0 and the devkit takes no OTA, so the file survives as
-# long as the app ends below 0x310000, i.e. is at most 0x2F0000 bytes; the
-# first start reads it from there (src/cpuminer.rs import_nerdminer).
+# writes only ota_0, so the file survives it as long as the app ends
+# below 0x310000, i.e. is at most 0x2F0000 bytes; the first start reads it
+# from there (src/cpuminer.rs import_nerdminer). A later online update
+# writes ota_1 over the rest of it, which is fine: the import is done.
 # The gate binds every board's release to that window. Should it bite one
 # day, the plan is to give up the import (the devkit's first start then
 # asks for Wi-Fi and wallet like any board) rather than hold a release
@@ -118,15 +127,35 @@ if [ "${SKIP_SOAK:-0}" != 1 ]; then
     "$ROOT/tools/soak-test.py" "${SOAK_HOST:-192.168.178.41}" --upload "$OUT/warpaxe.bin" \
         --minutes "${SOAK_MINUTES:-5}" || { echo "soak test failed: not published" >&2; exit 1; }
 fi
+# The boards the release ran on (see the header). The devkit's id comes
+# only from a passed soak on a devkit in this run, never from TESTED_ON.
+TESTED="${TESTED_ON:-}"
+case " $TESTED " in *" t-display-s3 "*)
+    echo "TESTED_ON must not name t-display-s3 by hand: set SOAK_DEVKIT=<host> and let the soak add it" >&2; exit 1;;
+esac
+if [ -n "${SOAK_DEVKIT:-}" ]; then
+    # A devkit flashed over USB has no install record (that record is
+    # what the soak on SOAK_HOST covers), so --no-record is set here.
+    "$ROOT/tools/soak-test.py" "$SOAK_DEVKIT" --upload "$OUT/warpaxe.bin" --no-record \
+        --minutes "${SOAK_MINUTES:-5}" || { echo "devkit soak failed: not published" >&2; exit 1; }
+    TESTED="$TESTED t-display-s3"
+fi
+ASSETS="warpaxe.bin warpaxe.bin.sha256 warpaxe.bin.sig warpaxe-factory.bin web-flasher.tar.gz install.sha256"
+if [ -n "${TESTED// /}" ]; then
+    printf '%s\n' $TESTED > "$OUT/tested-on.txt"
+    ASSETS="$ASSETS tested-on.txt"
+    echo "tested-on.txt: $TESTED"
+else
+    echo "no TESTED_ON and no SOAK_DEVKIT: the release carries no tested-on.txt, no devkit will install it" >&2
+fi
 
 BODY="WarpAxe $TAG"
 [ -n "$NOTES_FILE" ] && BODY="$(cat "$NOTES_FILE")"
 REL="$(python3 -c 'import json,sys; print(json.dumps({"tag_name":sys.argv[1],"target_commitish":sys.argv[2],"name":"WarpAxe "+sys.argv[1],"body":sys.argv[3],"draft":False,"prerelease":False}))' "$TAG" "$COMMIT" "$BODY")"
 ID="$(curl -sf -X POST -H "Authorization: token $TOKEN" -H 'Content-Type: application/json' \
     -d "$REL" "$API/releases" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')"
-for f in warpaxe.bin warpaxe.bin.sha256 warpaxe.bin.sig warpaxe-factory.bin \
-    web-flasher.tar.gz install.sha256; do
+for f in $ASSETS; do
     curl -sf -X POST -H "Authorization: token $TOKEN" \
         -F "attachment=@$OUT/$f" "$API/releases/$ID/assets?name=$f" >/dev/null
 done
-echo "release $TAG (id $ID) published: update (warpaxe.bin + .sha256 + .sig) and first-install parts"
+echo "release $TAG (id $ID) published: update (warpaxe.bin + .sha256 + .sig), first-install parts, tested-on.txt (${TESTED:-none})"
