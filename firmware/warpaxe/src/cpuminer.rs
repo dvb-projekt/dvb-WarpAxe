@@ -208,7 +208,10 @@ pub fn info() -> Info {
 }
 
 /// The ESP-IDF temperature sensor driver's handle, installed on first use.
-static DIE_SENSOR: Mutex<Option<usize>> = Mutex::new(None);
+/// The ESP-IDF temperature sensor driver's handle, installed on first
+/// use: `None` before, `Some(None)` after a failure (warned once, never
+/// retried), `Some(Some(handle))` when it reads.
+static DIE_SENSOR: Mutex<Option<Option<usize>>> = Mutex::new(None);
 
 /// The ESP32-S3's die temperature in °C: what the devkit shows as its
 /// chip temperature, having no sensor on a chip it does not have. The
@@ -225,17 +228,20 @@ pub fn die_temp_c() -> Option<f32> {
         let mut h: sys::temperature_sensor_handle_t = core::ptr::null_mut();
         let rc = unsafe { sys::temperature_sensor_install(&cfg, &mut h) };
         if rc != sys::ESP_OK {
-            log::warn!("cpu miner: temperature sensor install failed ({rc})");
+            log::warn!("cpu miner: temperature sensor install failed ({rc}); no die temperature");
+            *g = Some(None);
             return None;
         }
         let rc = unsafe { sys::temperature_sensor_enable(h) };
         if rc != sys::ESP_OK {
-            log::warn!("cpu miner: temperature sensor enable failed ({rc})");
+            log::warn!("cpu miner: temperature sensor enable failed ({rc}); no die temperature");
+            unsafe { sys::temperature_sensor_uninstall(h) };
+            *g = Some(None);
             return None;
         }
-        *g = Some(h as usize);
+        *g = Some(Some(h as usize));
     }
-    let h = (*g)? as sys::temperature_sensor_handle_t;
+    let h = (*g)?? as sys::temperature_sensor_handle_t;
     let mut c = 0f32;
     (unsafe { sys::temperature_sensor_get_celsius(h, &mut c) } == sys::ESP_OK).then_some(c)
 }
