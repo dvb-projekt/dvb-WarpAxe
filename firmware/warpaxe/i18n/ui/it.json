@@ -316,5 +316,6 @@
   "hc_note": "Letti ogni secondo dai contatori dei chip, come fa AxeOS (hashrateMonitor nell’API).",
   "hc_wait": "I contatori partono qualche secondo dopo i chip.",
   "vr_phases": "fasi",
-  "vr_domains": "domini di tensione"
+  "vr_domains": "domini di tensione",
+  "hc_total": "Totale"
 }

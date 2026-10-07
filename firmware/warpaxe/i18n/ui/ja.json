@@ -316,5 +316,6 @@
   "hc_note": "AxeOS と同じく、チップ自身のカウンターから毎秒読み取ります（API の hashrateMonitor）。",
   "hc_wait": "カウンターはチップ起動から数秒後に動き始めます。",
   "vr_phases": "フェーズ",
-  "vr_domains": "電圧ドメイン"
+  "vr_domains": "電圧ドメイン",
+  "hc_total": "合計"
 }

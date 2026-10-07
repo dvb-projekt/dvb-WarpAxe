@@ -316,5 +316,6 @@
   "hc_note": "与 AxeOS 相同，每秒从芯片自身的计数器读取（API 中的 hashrateMonitor）。",
   "hc_wait": "计数器在芯片启动几秒后开始工作。",
   "vr_phases": "相",
-  "vr_domains": "电压域"
+  "vr_domains": "电压域",
+  "hc_total": "合计"
 }

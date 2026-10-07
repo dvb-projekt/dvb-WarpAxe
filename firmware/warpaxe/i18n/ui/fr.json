@@ -316,5 +316,6 @@
   "hc_note": "Lus chaque seconde dans les compteurs des puces, comme le fait AxeOS (hashrateMonitor dans l’API).",
   "hc_wait": "Les compteurs démarrent quelques secondes après les puces.",
   "vr_phases": "phases",
-  "vr_domains": "domaines de tension"
+  "vr_domains": "domaines de tension",
+  "hc_total": "Total"
 }
