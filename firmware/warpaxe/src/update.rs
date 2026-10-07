@@ -10,6 +10,14 @@
 //! Schnorr over the SHA-256, checked with [`RELEASE_KEY`]). A release
 //! without a signature still installs for now, marked unsigned; that
 //! tolerance goes once every published release carries one.
+//!
+//! The T-Display-S3 (the devkit, experimental) updates the same way but
+//! is offered only a release that ran on it: the release's fourth asset
+//! `tested-on.txt` lists the profile ids the image was soaked on, one
+//! per line (`tools/release-firmware.sh` writes it, the devkit's line
+//! only after a soak on a devkit in the same run). Without the file, or
+//! without its profile in it, the devkit shows the release as a notice
+//! and installs nothing. Boards with chips are offered every release.
 
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::Mutex;
@@ -26,6 +34,9 @@ use crate::{config, diag, display};
 const LATEST: &str =
     "https://git.warppool.org/api/v1/repos/dvb-projekt/dvb-WarpAxe/releases/latest";
 const ASSET: &str = "warpaxe.bin";
+/// The boards a release ran on, one profile id per line; only the devkit
+/// reads it (see the module doc).
+const TESTED_ASSET: &str = "tested-on.txt";
 /// The release signing key (x-only secp256k1). The private half lives on
 /// the maintainer's machine only; `tools/release-firmware.sh` signs.
 const RELEASE_KEY: [u8; 32] = [
@@ -49,9 +60,15 @@ pub struct Release {
     pub sha_url: String,
     #[serde(skip)]
     pub sig_url: Option<String>,
+    #[serde(skip)]
+    pub tested_url: Option<String>,
     /// The release carries a signature file.
     pub signed: bool,
     pub size: u64,
+    /// The release may be installed on this board: always on a board
+    /// with chips; on the devkit only when the release's `tested-on.txt`
+    /// names its profile. `available` stays false without it.
+    pub tested_here: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -113,13 +130,31 @@ pub fn request_check() {
     REQUEST.store(1, Ordering::Relaxed);
 }
 
-/// Start an install of the latest release; false if none is known.
+/// Start an install of the latest release; false if none is known, or
+/// if the release did not run on this board (the devkit, see the module
+/// doc): the watcher decides that at the check, this is the second lock.
 pub fn request_install() -> bool {
-    if state().latest.is_none() {
+    let Some(r) = state().latest else {
+        return false;
+    };
+    if !r.tested_here {
+        log::warn!(
+            "update: {} refused, its {TESTED_ASSET} does not name the {}",
+            r.tag,
+            crate::board::profile().name
+        );
         return false;
     }
     REQUEST.store(2, Ordering::Relaxed);
     true
+}
+
+/// Whether `tested-on.txt` (one profile id per line, `#` starts a
+/// comment) names `profile`.
+fn names_profile(text: &str, profile: &str) -> bool {
+    text.lines()
+        .map(|l| l.split('#').next().unwrap_or("").trim())
+        .any(|l| l == profile)
 }
 
 /// "v1.2.3" → (1, 2, 3, 1); "1.2.3-rc4" → (1, 2, 3, 0): a pre-release sorts
@@ -176,15 +211,19 @@ fn check() {
         s.error.clear();
     });
     match fetch_latest() {
-        Ok(r) => {
+        Ok(mut r) => {
             let newer = semver(&r.version) > semver(env!("CARGO_PKG_VERSION"));
+            if crate::board::devkit() {
+                r.tested_here = tested_here(&r);
+            }
             log::info!(
-                "update: latest {} ({})",
+                "update: latest {} ({}{})",
                 r.tag,
-                if newer { "newer" } else { "installed or older" }
+                if newer { "newer" } else { "installed or older" },
+                if r.tested_here { "" } else { ", not released for this board" }
             );
             update(|s| {
-                s.available = newer;
+                s.available = newer && r.tested_here;
                 s.latest = Some(r);
                 s.phase = "idle".into();
             });
@@ -201,6 +240,30 @@ fn check() {
         s.checked_uptime_s = diag::uptime_s();
         s.checked_unix = crate::clock::unix_now();
     });
+}
+
+/// The devkit's gate: the release's `tested-on.txt` names this board's
+/// profile. A release without the file, or one that cannot be read,
+/// is not offered (and says why in the log).
+fn tested_here(r: &Release) -> bool {
+    let profile = crate::board::profile().name;
+    let Some(url) = &r.tested_url else {
+        log::info!("update: {} carries no {TESTED_ASSET}: not offered on the {profile}", r.tag);
+        return false;
+    };
+    match get(url, 4 * 1024, |_| {}) {
+        Ok(b) => {
+            let yes = names_profile(&String::from_utf8_lossy(&b), profile);
+            if !yes {
+                log::info!("update: {} did not run on the {profile}: not offered", r.tag);
+            }
+            yes
+        }
+        Err(e) => {
+            log::warn!("update: {} {TESTED_ASSET}: {e}: not offered on the {profile}", r.tag);
+            false
+        }
+    }
 }
 
 fn fetch_latest() -> anyhow::Result<Release> {
@@ -224,6 +287,7 @@ fn fetch_latest() -> anyhow::Result<Release> {
     let (sha_url, _) = find(&format!("{ASSET}.sha256"))
         .ok_or_else(|| anyhow::anyhow!("release {tag} has no {ASSET}.sha256"))?;
     let sig_url = find(&format!("{ASSET}.sig")).map(|(u, _)| u);
+    let tested_url = find(TESTED_ASSET).map(|(u, _)| u);
     let notes: String = v["body"]
         .as_str()
         .unwrap_or("")
@@ -240,7 +304,11 @@ fn fetch_latest() -> anyhow::Result<Release> {
         sha_url,
         signed: sig_url.is_some(),
         sig_url,
+        tested_url,
         size,
+        // The devkit decides at the check (tested_here); every other
+        // board takes every release.
+        tested_here: true,
     })
 }
 
