@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-342%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.20-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.21-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.20).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.21).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -250,7 +250,8 @@ back at any time with `GET /api/v1/display/frame`.
   noise does not fill the chart), then temperature, fan/power and pool
   instruments; live log. Optional (*Settings → Dashboard*, off by default):
   the hash counters per chip and domain, a weak domain marked in colour,
-  and the error rate over the last minute. The BM1373 has eight hash
+  a total line on boards with several chips, and the error rate over the
+  last minute. The BM1373 has eight hash
   domains, not four: WarpAxe reads all eight counters (0x88–0x8B and
   0xAC–0xAF), where AxeOS reads four and doubles them. Its error rate runs
   higher than the BM1370's (about 2.5 % on a NerdAxe Gaia at its hand
@@ -368,7 +369,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
-| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 400 MHz; clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
@@ -402,8 +403,14 @@ published: a release lists the boards it was tested on in
   `<wallet>.WarpMiner`, the pool is WarpPool (Stratum V1, a share
   difficulty of 0.005, about 40 shares an hour). Without NerdMiner's
   settings it is offered in the board choice, never taken on its own.
+- Stratum V2 works too: WarpPool from v1.37.1 recognises the board by its
+  agent string (`warpaxe-cpu/… (nerdminer-class)`) and opens its channel
+  at the same small difficulty. Other Sv2 pools may start a channel far
+  too high for a few hundred kH/s, so that no share ever arrives; stay on
+  V1 there.
 - The web UI and the display show kH/s, the ESP32-S3's own temperature,
-  shares per hour and the uptime; settings are read-only. At 85 °C the
+  shares per hour and the uptime; its Settings page has the display only
+  (no clock, voltage or fans). At 85 °C the
   hashing pauses, at 75 °C it resumes.
 - The way back to NerdMiner is the web flasher's full backup, restored
   over USB (download mode: hold BOOT, press RST, release BOOT).

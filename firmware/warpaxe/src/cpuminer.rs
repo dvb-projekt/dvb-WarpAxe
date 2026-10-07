@@ -270,7 +270,7 @@ pub fn nominal_hash_rate() -> f64 {
     if k > 0.0 {
         k * 1e3
     } else {
-        230e3
+        290e3
     }
 }
 
