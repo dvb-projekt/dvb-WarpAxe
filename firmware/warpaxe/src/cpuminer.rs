@@ -665,12 +665,60 @@ fn run() {
     }
 }
 
-/// First start on the devkit: the Wi-Fi and the wallet a NerdMiner left
-/// in flash, where WarpAxe has nothing yet. Returns what was taken,
-/// never a value. The pool is WarpPool, whatever the NerdMiner mined to.
+/// First start on the devkit: the wallet a NerdMiner left in flash, and
+/// with it the Wi-Fi the ESP-IDF Wi-Fi library stored (NerdMiner's, as
+/// the library keeps the station's SSID and password in its own NVS
+/// namespace). Returns what was taken, never a value. The pool is
+/// WarpPool, whatever the NerdMiner mined to.
+///
+/// The wallet decides: only a found config.json proves a NerdMiner was
+/// here, and only then is the Wi-Fi taken over. Every firmware on an
+/// ESP fills the Wi-Fi library's store, so a board with chips whose bus
+/// stayed silent must not join an old network on its own. A password
+/// that does not read as UTF-8 skips the Wi-Fi: an SSID without its
+/// password would only fail and open the hotspot anyway.
 pub fn import_nerdminer() -> Vec<&'static str> {
     let mut cfg = config::get();
     let mut took = Vec::new();
+    if !cfg.stratum_user.is_empty() {
+        return took;
+    }
+    let mut scan = ConfigScan::default();
+    let mut buf = vec![0u8; 4096];
+    let end = nerdminer::SPIFFS_FLASH_ADDR + nerdminer::SPIFFS_SIZE;
+    let mut addr = nerdminer::SPIFFS_FLASH_ADDR;
+    while addr < end {
+        let rc = unsafe {
+            sys::esp_flash_read(
+                core::ptr::null_mut(),
+                buf.as_mut_ptr().cast(),
+                addr,
+                buf.len() as u32,
+            )
+        };
+        if rc != sys::ESP_OK {
+            log::warn!("cpu miner: flash read at {addr:#x} failed ({rc})");
+            break;
+        }
+        scan.feed(&buf);
+        addr += buf.len() as u32;
+    }
+    let copies = scan.copies;
+    let Some(user) = scan.result().and_then(|c| nerdminer::stratum_user(&c.btc)) else {
+        log::info!("cpu miner: no NerdMiner config.json with a wallet in flash ({copies} copies)");
+        return took;
+    };
+    cfg.stratum_user = user;
+    cfg.stratum_url = nerdminer::POOL_HOST.into();
+    cfg.stratum_port = nerdminer::POOL_PORT;
+    cfg.stratum_protocol = "SV1".into();
+    cfg.stratum_tls = 0;
+    // No integer suggest: the session asks for SUGGESTED_DIFFICULTY
+    // instead (an integer would only raise what the pool's NerdMiner band
+    // starts at).
+    cfg.suggested_difficulty = 0;
+    took.push("wallet (nerdminer)");
+    log::info!("cpu miner: wallet taken from NerdMiner's config.json ({copies} copies in flash)");
     if cfg.ssid.is_empty() {
         if let Some(part) = config::partition() {
             match EspNvs::new(part, nerdminer::WIFI_NAMESPACE, false) {
@@ -681,69 +729,32 @@ pub fn import_nerdminer() -> Vec<&'static str> {
                         .ok()
                         .flatten()
                         .and_then(nerdminer::wifi_ssid);
-                    if let Some(ssid) = ssid {
-                        let mut pbuf = [0u8; 96];
-                        cfg.wifi_pass = nvs
-                            .get_raw(nerdminer::WIFI_PASSWORD_KEY, &mut pbuf)
-                            .ok()
-                            .flatten()
-                            .and_then(nerdminer::wifi_password)
-                            .unwrap_or_default();
-                        cfg.ssid = ssid;
-                        took.push("wifi (nerdminer)");
-                    } else {
-                        log::info!("cpu miner: no station SSID in the Wi-Fi library's storage");
+                    let mut pbuf = [0u8; 96];
+                    let pass = nvs
+                        .get_raw(nerdminer::WIFI_PASSWORD_KEY, &mut pbuf)
+                        .ok()
+                        .flatten()
+                        .and_then(nerdminer::wifi_password);
+                    match (ssid, pass) {
+                        (Some(ssid), Some(pass)) => {
+                            cfg.ssid = ssid;
+                            cfg.wifi_pass = pass;
+                            took.push("wifi (esp wifi store)");
+                        }
+                        (Some(_), None) => log::warn!(
+                            "cpu miner: the Wi-Fi library's password is unreadable, Wi-Fi not taken"
+                        ),
+                        (None, _) => {
+                            log::info!("cpu miner: no station SSID in the Wi-Fi library's storage")
+                        }
                     }
                 }
                 Err(e) => log::info!("cpu miner: no Wi-Fi library namespace in NVS ({e})"),
             }
         }
     }
-    if cfg.stratum_user.is_empty() {
-        let mut scan = ConfigScan::default();
-        let mut buf = vec![0u8; 4096];
-        let end = nerdminer::SPIFFS_FLASH_ADDR + nerdminer::SPIFFS_SIZE;
-        let mut addr = nerdminer::SPIFFS_FLASH_ADDR;
-        while addr < end {
-            let rc = unsafe {
-                sys::esp_flash_read(
-                    core::ptr::null_mut(),
-                    buf.as_mut_ptr().cast(),
-                    addr,
-                    buf.len() as u32,
-                )
-            };
-            if rc != sys::ESP_OK {
-                log::warn!("cpu miner: flash read at {addr:#x} failed ({rc})");
-                break;
-            }
-            scan.feed(&buf);
-            addr += buf.len() as u32;
-        }
-        let copies = scan.copies;
-        match scan.result().and_then(|c| nerdminer::stratum_user(&c.btc)) {
-            Some(user) => {
-                cfg.stratum_user = user;
-                cfg.stratum_url = nerdminer::POOL_HOST.into();
-                cfg.stratum_port = nerdminer::POOL_PORT;
-                cfg.stratum_protocol = "SV1".into();
-                cfg.stratum_tls = 0;
-                // No integer suggest: the session asks for
-                // SUGGESTED_DIFFICULTY instead (an integer would only
-                // raise what the pool's NerdMiner band starts at).
-                cfg.suggested_difficulty = 0;
-                took.push("wallet (nerdminer)");
-                log::info!("cpu miner: wallet taken from NerdMiner's config.json ({copies} copies in flash)");
-            }
-            None => log::info!(
-                "cpu miner: no NerdMiner config.json with a wallet in flash ({copies} copies)"
-            ),
-        }
-    }
-    if !took.is_empty() {
-        if let Err(e) = config::save(&cfg) {
-            log::warn!("cpu miner: saving the imported settings failed: {e}");
-        }
+    if let Err(e) = config::save(&cfg) {
+        log::warn!("cpu miner: saving the imported settings failed: {e}");
     }
     took
 }
