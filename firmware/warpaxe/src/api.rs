@@ -48,6 +48,11 @@ fn asic_model() -> &'static str {
     board::chip().name
 }
 
+/// The answer of every update endpoint on the T-Display-S3 (see
+/// update::request_install): it is installed over USB only.
+const DEVKIT_NO_UPDATE: &str =
+    "the T-Display-S3 is installed with the web flasher only (no updates over the air)";
+
 fn mac_str(m: [u8; 6]) -> String {
     format!(
         "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -847,12 +852,18 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
     server.fn_handler("/api/v1/update/check", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        if board::devkit() {
+            return reply_json(req, 403, &json!({"error": DEVKIT_NO_UPDATE}));
+        }
         log::info!("update: check requested from {}", peer(&mut req));
         crate::update::request_check();
         reply_json(req, 200, &json!({"checking": true}))
     })?;
     server.fn_handler("/api/v1/update/install", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        if board::devkit() {
+            return reply_json(req, 403, &json!({"error": DEVKIT_NO_UPDATE}));
+        }
         let who = peer(&mut req);
         if crate::update::request_install() {
             log::warn!(
