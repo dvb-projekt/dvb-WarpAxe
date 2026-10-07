@@ -392,14 +392,17 @@ fn pool_refuse(v: &mut serde_json::Value) -> Option<String> {
 }
 
 fn running_partition() -> String {
+    // Only a found slot is kept: right after a start the OTA handle can
+    // be taken (the update task marks the slot), and a cached failure
+    // showed "?" until the next restart.
     static SLOT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    SLOT.get_or_init(|| {
-        EspOta::new()
-            .and_then(|o| o.get_running_slot())
-            .map(|s| s.label.to_string())
-            .unwrap_or_else(|_| "?".into())
-    })
-    .clone()
+    if let Some(s) = SLOT.get() {
+        return s.clone();
+    }
+    match EspOta::new().and_then(|o| o.get_running_slot()) {
+        Ok(s) => SLOT.get_or_init(|| s.label.to_string()).clone(),
+        Err(_) => "?".into(),
+    }
 }
 
 /// WarpAxe's own state document.
