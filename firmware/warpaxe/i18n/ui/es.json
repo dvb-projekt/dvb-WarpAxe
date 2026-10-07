@@ -237,7 +237,7 @@
   "bd_unsup_title": "Placa reconocida: {m}",
   "bd_unsup": "WarpAxe todavía no puede hacer funcionar esta placa, así que sus chips siguen apagados. Vuelve a instalar el firmware anterior, o elige una placa abajo solo si estás seguro de que se reconoció mal.",
   "upd_unsigned": "Esta versión no lleva firma; se puede instalar, pero el minero no puede comprobar quién la compiló.",
-  "upd_untested": "not yet released for this board",
+  "upd_untested": "aún no publicada para esta placa",
   "st_overheat_latched": "Sobrecalentado 3× en una hora: permanece apagado",
   "dlmode": "Modo de descarga",
   "dlmode_s": "Para reinstalar por USB con el flasheador web (warppool.org/warpaxe)",

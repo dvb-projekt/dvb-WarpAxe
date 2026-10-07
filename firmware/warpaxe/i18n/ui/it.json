@@ -237,7 +237,7 @@
   "bd_unsup_title": "Scheda riconosciuta: {m}",
   "bd_unsup": "WarpAxe non può ancora far funzionare questa scheda, quindi i chip restano spenti. Reinstalla il firmware precedente, oppure scegli una scheda qui sotto solo se sei sicuro che sia stata riconosciuta in modo errato.",
   "upd_unsigned": "Questa release non è firmata: si può installare, ma il miner non può verificare chi l'ha compilata.",
-  "upd_untested": "not yet released for this board",
+  "upd_untested": "non ancora rilasciata per questa scheda",
   "st_overheat_latched": "Surriscaldato 3× in un'ora: resta spento",
   "dlmode": "Modalità download",
   "dlmode_s": "Per reinstallare via USB con il flasher web (warppool.org/warpaxe)",

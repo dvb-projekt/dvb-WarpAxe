@@ -237,7 +237,7 @@
   "bd_unsup_title": "Carte reconnue : {m}",
   "bd_unsup": "WarpAxe ne sait pas encore faire fonctionner cette carte, ses puces restent donc hors tension. Réinstallez le firmware précédent, ou choisissez une carte ci-dessous seulement si vous êtes sûr qu’elle a été mal reconnue.",
   "upd_unsigned": "Cette version ne porte aucune signature ; elle s'installe, mais le mineur ne peut pas vérifier qui l'a compilée.",
-  "upd_untested": "not yet released for this board",
+  "upd_untested": "pas encore validée pour cette carte",
   "st_overheat_latched": "Surchauffe 3× en une heure : reste coupé",
   "dlmode": "Mode téléchargement",
   "dlmode_s": "Pour une réinstallation par USB avec le flasheur web (warppool.org/warpaxe)",

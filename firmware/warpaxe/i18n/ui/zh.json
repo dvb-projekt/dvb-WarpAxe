@@ -237,7 +237,7 @@
   "bd_unsup_title": "已识别：{m}",
   "bd_unsup": "WarpAxe 暂不支持此主板，因此芯片保持关闭。请刷回之前的固件；只有在确定识别有误时，才在下方选择主板。",
   "upd_unsigned": "此版本未附带签名；仍可安装，但矿机无法验证它是由谁构建的。",
-  "upd_untested": "not yet released for this board",
+  "upd_untested": "尚未针对此板卡发布",
   "st_overheat_latched": "一小时内过热 3 次：保持关闭",
   "dlmode": "下载模式",
   "dlmode_s": "用于通过 USB 和网页刷写工具重新安装（warppool.org/warpaxe）",
