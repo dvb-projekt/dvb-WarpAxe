@@ -25,6 +25,13 @@ pub struct AsicMonitor {
     pub error_count: u32,
     /// GH/s per domain, scaled as AxeOS reports them.
     pub domains: Vec<f32>,
+    /// GH/s of the error counter (NerdOS `errorHashRate`, served by
+    /// `/api/v2/dashboard`, not part of AxeOS's shape).
+    #[serde(skip)]
+    pub error_ghs: f32,
+    /// GH/s of the total counter over the last full minute.
+    #[serde(skip)]
+    pub total_1m: f32,
 }
 
 #[derive(Clone, Debug, Default, Serialize)]
@@ -502,6 +509,8 @@ fn run(mut uart: ChipUart) {
                             total: c.total.ghs,
                             error_count: c.error.value,
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
+                            error_ghs: c.error.ghs,
+                            total_1m: c.total.ghs_1m,
                         })
                         .collect();
                     let pct = mon.error_percent();

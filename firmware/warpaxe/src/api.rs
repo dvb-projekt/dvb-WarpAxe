@@ -53,6 +53,33 @@ fn asic_model() -> &'static str {
 const DEVKIT_NO_UPDATE: &str =
     "the T-Display-S3 is installed with the web flasher only (no updates over the air)";
 
+/// NerdOS `GET /api/v2/dashboard` → `performance` (v1.1.1-alpha4,
+/// shufps, ESP-Miner-NerdQAxePlus #706): hash rates and per chip the hash
+/// rate and the error hash rate, GH/s, from the chips' own counters. Only
+/// the `performance` object; `hashRate1d` is null (three hours are kept).
+fn dashboard_v2() -> serde_json::Value {
+    let m = miner::state();
+    let i = system_info();
+    let chips: Vec<serde_json::Value> = m
+        .hashrate_monitor
+        .iter()
+        .map(|a| json!({"hashRate": a.total, "errorHashRate": a.error_ghs}))
+        .collect();
+    let one_min: f32 = m.hashrate_monitor.iter().map(|a| a.total_1m).sum();
+    json!({"performance": {
+        "hashRateTimestamp": diag::uptime_s() * 1000,
+        "hashRate": m.hashrate_now_ghs,
+        "hashRate1m": one_min,
+        "hashRate10m": m.hashrate_ghs,
+        "hashRate1h": crate::history::hour_ghs(),
+        "hashRate1d": null,
+        "bestDiff": i["bestDiff"], "bestSessionDiff": i["bestSessionDiff"],
+        "sharesAccepted": i["sharesAccepted"], "sharesRejected": i["sharesRejected"],
+        "frequency": i["frequency"], "asicCount": i["asicCount"], "smallCoreCount": i["smallCoreCount"],
+        "chips": chips,
+    }})
+}
+
 fn mac_str(m: [u8; 6]) -> String {
     format!(
         "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
@@ -491,6 +518,11 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         )?;
         r.write_all(UI.as_bytes())?;
         Ok::<(), EspIOError>(())
+    })?;
+
+    server.fn_handler("/api/v2/dashboard", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        reply_json(req, 200, &dashboard_v2())
     })?;
 
     server.fn_handler("/api/v2/settings", Method::Get, |req| {

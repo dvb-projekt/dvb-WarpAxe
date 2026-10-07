@@ -114,3 +114,11 @@ pub fn recent_ghs(n: usize) -> Vec<f32> {
         })
         .unwrap_or_default()
 }
+
+/// The average hashrate over the last hour (or what is kept of it),
+/// GH/s; `None` before the first sample.
+pub fn hour_ghs() -> Option<f32> {
+    let n = (3600 / INTERVAL_S) as usize;
+    let v = recent_ghs(n);
+    (!v.is_empty()).then(|| v.iter().sum::<f32>() / v.len() as f32)
+}
