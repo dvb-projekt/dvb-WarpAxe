@@ -455,10 +455,12 @@ function chart() {
   ${ta ? axis(ta, dT, "°C", "#00E0FF", "left") : ""}</div>
   <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px;padding:0 52px">${clockLabels()}</div>`;
 }
-function tbar(label, v, target, limit, max, limitLabel = t("shutdown_at")) {
+function tbar(label, v, target, limit, max, limitLabel = t("shutdown_at"), cpu = false) {
   if (v == null) return "";
   const pct = x => Math.min(100, x / max * 100).toFixed(1) + "%";
-  const col = limit != null && v >= limit - 2 ? "var(--err)" : target && v >= target + 5 ? "var(--warn)" : "var(--ok)";
+  // Boards with chips colour as in v0.1.17 (red at the limit, yellow at target + 3); the devkit as its display does (red 2 °C before its limit).
+  const red = limit != null && (cpu ? v >= limit - 2 : v >= limit), warm = target && v >= target + 3;
+  const col = red ? "var(--err)" : warm ? "var(--warn)" : "var(--ok)";
   return `<div style="display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:baseline"><span class="mute" style="font-size:14px">${label}</span><span class="num" style="font-size:22px;color:${col}">${nf(v, 1)} °C</span></div>
   <div class="bar"><div class="f" style="width:${pct(v)};background:${col}"></div>${target ? `<div class="m" style="left:${pct(target)};background:var(--fg)"></div>` : ""}${limit ? `<div class="m" style="left:${pct(limit)};background:var(--err)"></div>` : ""}</div>
   <div class="num dim" style="display:flex;justify-content:space-between;font-size:12px"><span>${target ? t("target") + " " + target + " °C" : ""}</span><span>${limit ? limitLabel + " " + limit + " °C" : ""}</span></div></div>`;
@@ -501,7 +503,7 @@ function dashboard() {
       <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</div>
   </section>
   <div class="g3">
-    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp")) : tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
+    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
     <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}><h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>
       <div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
       <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>
