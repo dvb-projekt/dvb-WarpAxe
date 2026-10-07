@@ -775,7 +775,8 @@ function boardBanner() {
   if (!d || (d.status !== "choose" && d.status !== "unsupported")) return "";
   const unsup = d.status === "unsupported";
   const all = info.boardModels || [], cand = d.candidates || [];
-  const opts = [...cand.map(n => all.find(b => b.name === n)).filter(Boolean), ...all.filter(b => !cand.includes(b.name))];
+  // The chipless T-Display-S3 is on offer only when nothing fits: a board that answered on a bus is not one.
+  const opts = [...cand.map(n => all.find(b => b.name === n)).filter(Boolean), ...all.filter(b => !cand.includes(b.name) && (!b.experimental || cand.length === 0))];
   return `<section class="card" style="border-color:rgba(245,185,66,.45);background:rgba(245,185,66,.06);display:flex;flex-direction:column;gap:12px">
     <h2 class="warn">${unsup ? t("bd_unsup_title", {m: esc(d.model || "")}) : t("bd_title")}</h2>
     <div class="mute" style="font-size:14px">${t(unsup ? "bd_unsup" : cand.length ? "bd_some" : "bd_none")}</div>
