@@ -746,7 +746,7 @@ function statusText(i, err) {
 }
 function systemPage() {
   const i = info, err = i.boardError, fine = !i.overheat_mode && !i.shutdown && !err && !i.power_fault;
-  return `<div class="g2"><section class="card" style="display:flex;flex-direction:column;gap:14px${i.cpuMiner ? ";display:none" : ""}"><h2>${t("fw_update")}</h2>
+  return `<div class="g2"><section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("fw_update")}</h2>
     <div><div class="row"><span class="mute">${t("installed")}</span><span class="num">${esc(i.version)}</span></div><div class="row"><span class="mute">${t("partition")}</span><span class="num">${esc(i.runningPartition)}</span></div></div>
     <div id="online">${onlineHtml()}</div>
     <label class="drop" id="drop"><input type="file" id="fw" accept=".bin" hidden><svg width="28" height="28" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M4 20h16" fill="none" stroke="#9CA8BD" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="fwname" style="font-size:14px">${t("drop")}</span><span class="dim" style="font-size:12px">${t("drop_s")}</span></label>
