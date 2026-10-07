@@ -237,6 +237,7 @@
   "bd_unsup_title": "検出されたボード: {m}",
   "bd_unsup": "WarpAxe はまだこのボードに対応していないため、チップの電源はオフのままです。以前のファームウェアを書き戻すか、誤って検出されたと確信できる場合にのみ、下の一覧からボードを選んでください。",
   "upd_unsigned": "このリリースには署名がありません。インストールはできますが、誰がビルドしたかをマイナーは確認できません。",
+  "upd_untested": "not yet released for this board",
   "st_overheat_latched": "1時間以内に3回過熱：オフのまま",
   "dlmode": "ダウンロードモード",
   "dlmode_s": "Web 書き込みツールで USB 経由で再インストールする場合に使用します（warppool.org/warpaxe）",
