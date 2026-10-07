@@ -394,9 +394,10 @@ fn session(
         // authorizing); the pool may ignore it.
         let suggest = config::get().suggested_difficulty;
         if board::devkit() {
-            // The devkit: a fraction, and as the first request of the
-            // session, which WarpPool takes as the start value even over a
-            // stored snapshot (an integer would only raise it).
+            // The devkit: a fraction, and as the session's first difficulty
+            // request (right after configure, subscribe and authorize),
+            // which WarpPool takes as the start value even over a stored
+            // snapshot (an integer would only raise it).
             {
                 let d = crate::cpuminer::SUGGESTED_DIFFICULTY;
                 hello.push_str(

@@ -140,7 +140,7 @@ static BEST_DIFF: Mutex<f64> = Mutex::new(0.0);
 /// it runs on, the start-up probe's rate at high priority (kH/s × 10),
 /// microseconds spent inside the batches (wrapping; the coordinator takes
 /// the difference), and the last batch's microseconds per hash × 100.
-static WORKER_CORE: [AtomicU32; 2] = [AtomicU32::new(9), AtomicU32::new(9)];
+static WORKER_CORE: [AtomicU32; 2] = [AtomicU32::new(u32::MAX), AtomicU32::new(u32::MAX)];
 static PROBE_KHS10: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
 static BUSY_US: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
 static US_PER_HASH100: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
@@ -168,8 +168,9 @@ pub struct Info {
     /// Nonces of the current job handed out so far.
     #[serde(rename = "nonceProgress")]
     pub nonce_progress: u32,
-    /// Core of the peripheral worker and of the software worker.
-    pub cores: [u32; 2],
+    /// Core of the peripheral worker and of the software worker (null
+    /// until each has started).
+    pub cores: [Option<u32>; 2],
     /// Start-up probe at high priority, kH/s: the uncontended ceiling.
     #[serde(rename = "probeKhs")]
     pub probe_khs: [f64; 2],
@@ -200,7 +201,7 @@ pub fn info() -> Info {
     i.die_temp_c = die_temp_c();
     i.best_diff = *BEST_DIFF.lock().unwrap();
     for k in 0..2 {
-        i.cores[k] = WORKER_CORE[k].load(Ordering::Relaxed);
+        i.cores[k] = Some(WORKER_CORE[k].load(Ordering::Relaxed)).filter(|c| *c != u32::MAX);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
         i.us_per_hash[k] = f64::from(US_PER_HASH100[k].load(Ordering::Relaxed)) / 100.0;
     }
@@ -631,7 +632,9 @@ fn run() {
                 i.sw_khs = d_sw / dt / 1e3;
                 for k in 0..2 {
                     let b = BUSY_US[k].load(Ordering::Relaxed);
-                    i.busy_pct[k] = f64::from(b.wrapping_sub(last_busy[k])) / dt / 1e4;
+                    // Batches straddle the second, so the share can read a
+                    // little over 100.
+                    i.busy_pct[k] = (f64::from(b.wrapping_sub(last_busy[k])) / dt / 1e4).min(100.0);
                     last_busy[k] = b;
                 }
             }
