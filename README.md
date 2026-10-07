@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-342%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.18-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.19-7B5CFF"></a>
 </p>
 
 ---
@@ -45,7 +45,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.18).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.19).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
@@ -271,7 +271,9 @@ back at any time with `GET /api/v1/display/frame`.
   the miner ("NerdAxe Gaia · WarpAxe"), so several open tabs tell their
   miners apart.
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
-  /api/system`, `/api/system/asic`, `/api/v2/settings`, restart, OTA upload.
+  /api/system`, `/api/system/asic`, `/api/v2/settings`, NerdOS's
+  `/api/v2/dashboard` (its `performance` object: hash rates and, per chip,
+  the hash rate and the error hash rate), restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
@@ -382,9 +384,11 @@ core with a precomputed midstate, as NerdMiner v2 does (`src/mining.cpp`),
 and a software loop on the other, together about 230 kH/s on USB power.
 That is a lottery ticket, not a miner: at today's network difficulty the
 expected time to a block is far longer than the age of the universe.
-It is marked experimental and stays at the version it was installed
-with: no online update, no upload; the web flasher is the only way in,
-and its backup the way back.
+It is marked experimental. It takes online updates like every other
+board, but only releases that ran on a T-Display-S3 before they were
+published: a release lists the boards it was tested on in
+`tested-on.txt`, and the T-Display-S3 shows a newer one without it as
+"not yet released for this board" and does not install it.
 
 - Installed with the same image and the same web flasher as every other
   board. On the first start a board on which nothing answers on the I²C
@@ -452,7 +456,8 @@ Install* (a bar under the header follows it on every page and says when
 the miner is back on the new version), or upload `warpaxe.bin` from the
 [releases page](https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases).
 Every release carries `warpaxe.bin` (one image for all boards — the board is
-configuration), `warpaxe.bin.sha256` and `warpaxe.bin.sig`; for the first
+configuration), `warpaxe.bin.sha256`, `warpaxe.bin.sig` and `tested-on.txt`
+(the boards it ran on before it was published); for the first
 install also `warpaxe-factory.bin` (bootloader, partition table and app in
 one image) and `web-flasher.tar.gz` (the web flasher as published), with
 their checksums in `install.sha256`. `tools/verify-release.py` checks an
