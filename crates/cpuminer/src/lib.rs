@@ -1,7 +1,8 @@
 //! Mining on the ESP32-S3 itself, for the bare LilyGO T-Display-S3
 //! (the NerdMiner devkit): no BM13xx, the header is hashed by the S3's
-//! SHA peripheral and, on the second core, in software. A toy behind the
-//! firmware's `cpu-miner` feature; it never ships in a release image.
+//! SHA peripheral and, on the second core, in software. Part of the
+//! shared firmware image since v0.1.18, marked experimental: it runs
+//! whenever the board profile has no chips (`board::devkit`).
 //!
 //! What lives here is everything that runs on the host too: the SHA-256
 //! arithmetic with a midstate over the header's first 64 bytes

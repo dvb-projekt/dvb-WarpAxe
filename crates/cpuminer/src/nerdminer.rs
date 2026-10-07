@@ -20,8 +20,11 @@
 //!   with its "deleted" flag cleared (bit 7 = 0); the live one keeps
 //!   it set. The backup had twelve copies, eleven deleted, with
 //!   different wallets. After WarpAxe's first install the region lies
-//!   in the tail of `ota_0` (0x20000 + 0x300000) and survives until the
-//!   first OTA writes there — hence the import on the first start only.
+//!   partly in the tail of `ota_0` (0x20000 + 0x300000, the first 64 KB)
+//!   and partly in the head of `ota_1`. The first install writes only
+//!   `ota_0`, up to where the app ends (the release script keeps that
+//!   below 0x310000), and the devkit takes no OTA, so the file stays;
+//!   the import still runs on the first start only, with the profile.
 
 use serde::Deserialize;
 

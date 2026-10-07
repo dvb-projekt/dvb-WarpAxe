@@ -41,14 +41,24 @@ mkdir -p "$OUT"
 espflash save-image --chip esp32s3 --flash-size 16mb \
     "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" "$OUT/warpaxe.bin" >/dev/null
 # Room for the NerdMiner import: a T-Display-S3 that ran NerdMiner keeps
-# its config.json (wallet, pool) in NerdMiner's SPIFFS partition at flash
-# 0x310000, which lies in the tail of WarpAxe's ota_0 (0x20000 + 0x300000).
-# The first install writes only the app, so the settings survive it as
+# its config.json (wallet, pool) in NerdMiner's SPIFFS partition, flash
+# 0x310000..0x3F0000: the first 64 KB in the tail of WarpAxe's ota_0
+# (0x20000 + 0x300000), the rest in the head of ota_1. The first install
+# writes only ota_0 and the devkit takes no OTA, so the file survives as
 # long as the app ends below 0x310000, i.e. is at most 0x2F0000 bytes; the
-# first start reads them from there (src/cpuminer.rs import_nerdminer).
+# first start reads it from there (src/cpuminer.rs import_nerdminer).
+# The gate binds every board's release to that window. Should it bite one
+# day, the plan is to give up the import (the devkit's first start then
+# asks for Wi-Fi and wallet like any board) rather than hold a release
+# for the boards with chips; Oliver decides then. The headroom is printed
+# so the day does not come as a surprise.
 APP_BYTES=$(wc -c < "$OUT/warpaxe.bin")
-if [ "$APP_BYTES" -gt $((0x2F0000)) ]; then
-    echo "warpaxe.bin is $APP_BYTES bytes, more than 0x2F0000: it would overwrite a NerdMiner's config.json on the first install" >&2; exit 1
+HEADROOM=$((0x2F0000 - APP_BYTES))
+echo "import window headroom: $HEADROOM bytes below 0x2F0000 (app $APP_BYTES bytes)"
+if [ "$HEADROOM" -lt 0 ]; then
+    echo "warpaxe.bin is $APP_BYTES bytes, more than 0x2F0000: it would overwrite a NerdMiner's config.json on the first install (see the comment above)" >&2; exit 1
+elif [ "$HEADROOM" -lt $((256 * 1024)) ]; then
+    echo "warning: less than 256 KB left below the import window" >&2
 fi
 # The first install from a stock firmware, over USB: the parts for the web
 # flasher (bootloader, partition table, empty OTA data so the new table

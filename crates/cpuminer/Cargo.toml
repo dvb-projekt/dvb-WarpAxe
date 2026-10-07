@@ -1,6 +1,6 @@
 [package]
 name = "warpaxe-cpuminer"
-description = "Hashing without a BM13xx, for the T-Display-S3 devkit: SHA-256 with a header midstate, the block layout the ESP32-S3's SHA peripheral eats, and the one-time import of a NerdMiner's Wi-Fi and wallet. Host-tested; the firmware brings the registers and the flash. A toy behind the firmware's `cpu-miner` feature, never in a release."
+description = "Hashing without a BM13xx, for the T-Display-S3 devkit: SHA-256 with a header midstate, the block layout the ESP32-S3's SHA peripheral eats, and the one-time import of a NerdMiner's Wi-Fi and wallet. Host-tested; the firmware brings the registers and the flash. In the shared image since v0.1.18, experimental, active only on a profile without chips."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
