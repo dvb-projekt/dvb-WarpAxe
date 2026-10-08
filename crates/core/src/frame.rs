@@ -12,10 +12,12 @@
 //! included: `payload + 3` for a command, `payload + 4` for a job.
 //!
 //! One frame kind comes *from* the chip, fixed at eleven bytes on the
-//! BM1366/68/70/73:
+//! BM1366/68/70/73 and at nine on the BM1397 (six payload bytes, see
+//! [`SHORT_RESPONSE_LEN`]):
 //!
 //! ```text
 //! response AA 55 | 8 bytes | flags:3 crc:5
+//! BM1397   AA 55 | 6 bytes | flags:3 crc:5
 //! ```
 //!
 //! Bit 7 of the last byte says "job result" (a nonce) as opposed to a
@@ -41,9 +43,12 @@ pub const RX_PREAMBLE: [u8; 2] = [0xAA, 0x55];
 /// Fixed length of a chip response on the BM1366/68/70/73.
 pub const RESPONSE_LEN: usize = 11;
 
-/// Largest frame the reference driver will build. Same cap here so a
-/// caller-supplied buffer of this size always suffices.
-pub const MAX_FRAME_LEN: usize = 128;
+/// Largest frame the reference driver will build: 160 bytes, the
+/// BM1397 driver's buffer (`bm1397.c`, `uint8_t buf[160]`), which holds
+/// its 146-byte four-midstate job plus framing (152). The BM1370's
+/// longest frame is the 88-byte job. Same cap here so a caller-supplied
+/// buffer of this size always suffices.
+pub const MAX_FRAME_LEN: usize = 160;
 
 /// Bit 7 of a response's last byte: job result rather than register read.
 pub const FLAG_JOB: u8 = 0x80;
@@ -235,7 +240,9 @@ impl Response {
 /// Rejects wrong length, wrong preamble and bad CRC — the caller decides
 /// whether to resynchronise or count a `Desync`. Nothing here consumes
 /// a stream; feeding bytes one at a time is the decoder's job (M1, part 2).
-/// Length of the BM1373's chip-id reply: `AA 55` + 6 payload + flags:crc.
+/// Length of the BM1373's chip-id reply and of every BM1397 response:
+/// `AA 55` + 6 payload + flags:crc (ESP-Miner `bm1397_asic_result_t`,
+/// WantClue `asic_result`).
 pub const SHORT_RESPONSE_LEN: usize = 9;
 
 /// Encode a short (9-byte) chip-id reply: the six payload bytes are
@@ -247,8 +254,8 @@ pub fn encode_short_response(buf: &mut [u8; SHORT_RESPONSE_LEN], payload: &[u8; 
 }
 
 /// Decode a response of either length: 11 bytes (jobs, register reads)
-/// or 9 (the BM1373 chip-id reply, whose six payload bytes are
-/// zero-padded to eight).
+/// or 9 (the BM1373 chip-id reply and every BM1397 response, whose six
+/// payload bytes are zero-padded to eight).
 pub fn decode_response(bytes: &[u8]) -> Result<Response, FrameError> {
     if bytes.len() == SHORT_RESPONSE_LEN {
         if bytes[0..2] != RX_PREAMBLE {

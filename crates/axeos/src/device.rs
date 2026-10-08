@@ -253,12 +253,16 @@ impl Device {
             )
             .unwrap();
             self.chain.feed(&buf[..k]);
-            let hcn = regs::hash_counting_number(
-                w.frequency_hz(self.profile.pll.xtal_hz) as u32,
-                self.profile.cores,
-                1,
-                self.profile.hcn_errata,
-            );
+            let hcn = match self.profile.hcn {
+                warpaxe_core::chip::Hcn::Computed { errata } => regs::hash_counting_number(
+                    w.frequency_hz(self.profile.pll.xtal_hz) as u32,
+                    self.profile.cores,
+                    1,
+                    errata,
+                ),
+                warpaxe_core::chip::Hcn::Fixed(v) => v,
+                warpaxe_core::chip::Hcn::None => 0,
+            };
             let k = encode_cmd(
                 &mut buf,
                 Group::All,

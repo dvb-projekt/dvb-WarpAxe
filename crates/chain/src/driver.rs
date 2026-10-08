@@ -12,17 +12,23 @@
 //! everything it cannot.
 //!
 //! Job ids: the chip echoes four bits of the id it was given (bits 6..3
-//! of the byte), so there are sixteen distinguishable jobs in flight;
-//! [`SLOTS`] is that number, and a slot is reused after sixteen
-//! submissions. The caller keeps its own map from [`WorkRef::serial`]
-//! to whatever the pool gave it.
+//! of the byte), so there are sixteen distinguishable jobs in flight on
+//! the BM1366/68/70/73 and thirty-two on the BM1397 (bits 7..2);
+//! [`SLOTS`] holds the larger number, and a slot is reused after that
+//! many submissions. The caller keeps its own map from
+//! [`WorkRef::serial`] to whatever the pool gave it.
+//!
+//! The BM1397 path: no version rolling in the chip, so [`Chain::submit`]
+//! sends the profile's number of midstates per job, one per version the
+//! driver rolled with the BIP 320 mask, and a nonce's version is the
+//! job's rolled as many times as the midstate number it carries.
 
 use core::fmt;
 
-use warpaxe_core::chip::{render, ChipProfile, Render, Rendered};
+use warpaxe_core::chip::{render, ChipProfile, Hcn, Render, Rendered};
 use warpaxe_core::decoder::{self, RxDecoder};
 use warpaxe_core::frame::{encode_cmd, encode_job, FrameError, Group, Op, MAX_FRAME_LEN};
-use warpaxe_core::job::{Job, JobIds};
+use warpaxe_core::job::{self, Job, JobIds, MidstateJob, MIDSTATE_JOB_LEN_4};
 use warpaxe_core::pll;
 use warpaxe_core::regs::{self, read_payload, reg, write_payload};
 use warpaxe_core::result::{JobResult, RegisterResult};
@@ -32,8 +38,9 @@ use crate::uart::Uart;
 
 /// Chips the driver can address. Octaxe has 8; 16 leaves room.
 pub const MAX_CHIPS: usize = 16;
-/// Distinguishable jobs in flight: the chip echoes four id bits.
-pub const SLOTS: usize = 16;
+/// Distinguishable jobs in flight at most: the BM1397 echoes five id
+/// bits ([`ChipProfile::job_slots`]).
+pub const SLOTS: usize = 32;
 /// Recent nonce keys remembered per chip for duplicate detection.
 const RECENT: usize = 8;
 /// Key that no real nonce can produce (job id ≤ 120 in bits 48..55).
@@ -411,6 +418,7 @@ impl Chain {
         self.recent_at = [0; MAX_CHIPS];
         self.slots = [Slot::default(); SLOTS];
         self.decoder.reset();
+        self.decoder.set_frame_len(self.profile.response_len);
         self.frequency_hz = 0;
         self.target_hz = self.config.frequency_hz;
         self.difficulty = self.config.difficulty;
@@ -469,7 +477,7 @@ impl Chain {
             u16::from(self.chip_count),
             self.profile.small_cores,
             self.profile.cores,
-            1 << 16,
+            self.profile.versions_per_job(),
             1000,
             u32::MAX,
         );
@@ -553,6 +561,11 @@ impl Chain {
             return Ok(());
         }
         let regs = self.monitor.registers();
+        if regs.is_empty() {
+            // No counter registers known on this chip (BM1397).
+            self.counter_cursor = None;
+            return Ok(());
+        }
         let addr = self
             .profile
             .command_address(self.chips[usize::from(chip)].address);
@@ -627,19 +640,39 @@ impl Chain {
         }
         let job_id = self.ids.advance();
         self.serial = self.serial.wrapping_add(1);
-        let job = Job {
-            job_id,
-            starting_nonce: work.starting_nonce,
-            nbits: work.nbits,
-            ntime: work.ntime,
-            merkle_root: work.merkle_root,
-            prev_block_hash: work.prev_block_hash,
-            version: work.version,
-        };
         let mut buf = [0u8; MAX_FRAME_LEN];
-        let n = encode_job(&mut buf, &job.to_bytes()).map_err(Error::Frame)?;
+        let n = if self.profile.host_midstates > 0 {
+            // The BM1397 wants the header's first block hashed here, in
+            // header order: the work carries both hashes word-reversed,
+            // as the BM1370 takes them.
+            let job = MidstateJob::build(
+                job_id,
+                self.profile.host_midstates,
+                work.starting_nonce,
+                work.nbits,
+                work.ntime,
+                &job::reverse_words(&work.prev_block_hash),
+                &job::reverse_words(&work.merkle_root),
+                work.version,
+                regs::BIP320_VERSION_MASK,
+            );
+            let mut payload = [0u8; MIDSTATE_JOB_LEN_4];
+            let len = job.write(&mut payload);
+            encode_job(&mut buf, &payload[..len]).map_err(Error::Frame)?
+        } else {
+            let job = Job {
+                job_id,
+                starting_nonce: work.starting_nonce,
+                nbits: work.nbits,
+                ntime: work.ntime,
+                merkle_root: work.merkle_root,
+                prev_block_hash: work.prev_block_hash,
+                version: work.version,
+            };
+            encode_job(&mut buf, &job.to_bytes()).map_err(Error::Frame)?
+        };
         uart.write(&buf[..n]).map_err(Error::Uart)?;
-        self.slots[slot_of(job_id)] = Slot {
+        self.slots[self.profile.job_slot(job_id)] = Slot {
             serial: self.serial,
             version: work.version,
             ntime: work.ntime,
@@ -666,7 +699,7 @@ impl Chain {
 
     /// Retire one job, if it is still the one in its slot.
     pub fn retire(&mut self, work: WorkRef) {
-        let s = &mut self.slots[slot_of(work.job_id)];
+        let s = &mut self.slots[self.profile.job_slot(work.job_id)];
         if s.serial == work.serial {
             s.live = false;
         }
@@ -712,9 +745,11 @@ impl Chain {
                             self.found = 0;
                             self.decoder.set_frame_len(self.profile.chip_id_reply_len);
                             // A chip may answer with the full 11 bytes where
-                            // the profile expects 9 (BM1373 on the Gaia).
-                            self.decoder
-                                .set_alt_frame_len(Some(warpaxe_core::frame::RESPONSE_LEN));
+                            // the profile expects 9 (BM1373 on the Gaia); not
+                            // on a chip whose every reply is 9 (BM1397).
+                            let alt = (self.profile.chip_id_reply_len < self.profile.response_len)
+                                .then_some(self.profile.response_len);
+                            self.decoder.set_alt_frame_len(alt);
                             self.mode = Mode::Counting {
                                 until: now_us + self.config.count_window_us,
                             };
@@ -780,8 +815,7 @@ impl Chain {
 
     fn finish_counting(&mut self, now_us: u64, on_event: &mut dyn FnMut(Event)) {
         self.decoder.set_alt_frame_len(None);
-        self.decoder
-            .set_frame_len(warpaxe_core::frame::RESPONSE_LEN);
+        self.decoder.set_frame_len(self.profile.response_len);
         let found = self.found;
         if found == 0 {
             self.fail(InitError::NoChips, on_event);
@@ -820,7 +854,7 @@ impl Chain {
         self.render = None;
         if self.profile.baud_switch_after_ramp_ms.is_none() {
             let (word, baud) = self.profile.fast_uart;
-            self.write_all(uart, reg::FAST_UART_CONFIGURATION, word)?;
+            self.write_all(uart, self.profile.fast_uart_reg, word)?;
             uart.set_baud(baud).map_err(Error::Uart)?;
         }
         if self.difficulty != self.profile.default_difficulty {
@@ -847,26 +881,34 @@ impl Chain {
         now_us: u64,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
-        let hcn = self.profile.hcn_fixed.unwrap_or_else(|| {
-            regs::hash_counting_number(
+        let hcn = match self.profile.hcn {
+            Hcn::Computed { errata } => Some(regs::hash_counting_number(
                 self.frequency_hz,
                 self.profile.cores,
                 u16::from(self.chip_count),
-                self.profile.hcn_errata,
-            )
-        });
-        self.write_all(uart, reg::HASH_COUNTING_NUMBER, hcn.to_be_bytes())?;
+                errata,
+            )),
+            Hcn::Fixed(v) => Some(v),
+            Hcn::None => None,
+        };
+        if let Some(hcn) = hcn {
+            self.write_all(uart, reg::HASH_COUNTING_NUMBER, hcn.to_be_bytes())?;
+        }
         match self.profile.baud_switch_after_ramp_ms {
             // NerdOS's tail for the BM1373, first init only: version
             // rolling on, the chips told the fast rate, the host follows
-            // after the settle time.
+            // after the settle time. The BM1397 (host midstates) gets no
+            // rolling mask: WantClue `nerdnos_init` sets the baud right
+            // after `BM1397_init` and waits 100 ms.
             Some(settle_ms) if !self.init_done => {
-                self.write_all(
-                    uart,
-                    reg::VERSION_ROLLING,
-                    regs::version_mask(regs::BIP320_VERSION_MASK),
-                )?;
-                self.write_all(uart, reg::FAST_UART_CONFIGURATION, self.profile.fast_uart.0)?;
+                if self.profile.host_midstates == 0 {
+                    self.write_all(
+                        uart,
+                        reg::VERSION_ROLLING,
+                        regs::version_mask(regs::BIP320_VERSION_MASK),
+                    )?;
+                }
+                self.write_all(uart, self.profile.fast_uart_reg, self.profile.fast_uart.0)?;
                 self.mode = Mode::BaudSettle {
                     until: now_us + u64::from(settle_ms) * 1000,
                 };
@@ -894,6 +936,15 @@ impl Chain {
         match pll::solve(&self.profile.pll, hz) {
             Some(word) => {
                 let bytes = word.register_bytes(&self.profile.pll);
+                // The BM1397's PLL0 divider first, twice, then the word
+                // twice (cgminer `calc_gsf_freq`, WantClue and ESP-Miner
+                // `BM1397_send_hash_frequency`, 10 ms apart there; a
+                // frame takes about a millisecond at 115200).
+                if let Some((pre_reg, pre_val)) = self.profile.pll_prewrite {
+                    self.write_all(uart, pre_reg, pre_val)?;
+                    self.write_all(uart, pre_reg, pre_val)?;
+                    self.write_all(uart, reg::PLL0_PARAMETER, bytes)?;
+                }
                 self.write_all(uart, reg::PLL0_PARAMETER, bytes)?;
                 self.frequency_hz = word
                     .frequency_hz(self.profile.pll.xtal_hz)
@@ -961,7 +1012,12 @@ impl Chain {
         }
         let p = &f.response.payload;
         if f.response.is_job() {
-            self.on_nonce(JobResult::parse(p), now_us, on_event);
+            let r = if self.profile.host_midstates > 0 {
+                JobResult::parse_bm1397(p)
+            } else {
+                JobResult::parse(p)
+            };
+            self.on_nonce(r, now_us, on_event);
         } else if matches!(self.mode, Mode::Counting { .. }) {
             // Chip-id reply: `[id_hi, id_lo, core_num, addr, 0, 0, 0, 0]`.
             let chip_id = u16::from_be_bytes([p[0], p[1]]);
@@ -1000,7 +1056,7 @@ impl Chain {
             });
             return;
         };
-        let slot = self.slots[slot_of(r.job_id)];
+        let slot = self.slots[self.profile.job_slot(r.job_id)];
         if !slot.live {
             self.stats.stale_local += 1;
             self.chips[chip].stale += 1;
@@ -1010,8 +1066,15 @@ impl Chain {
             });
             return;
         }
+        // The version that hashed: the chip's rolled bits, or (BM1397)
+        // the job's version rolled once per midstate number.
+        let version = if self.profile.host_midstates > 0 {
+            job::rolled_version(slot.version, regs::BIP320_VERSION_MASK, r.midstate_num)
+        } else {
+            r.rolled_version(slot.version)
+        };
         let key = (u64::from(r.job_id) << 48)
-            | (u64::from(r.version_bits >> 13) << 32)
+            | (u64::from((r.version_bits >> 13) | u32::from(r.midstate_num)) << 32)
             | u64::from(r.nonce);
         if self.recent[chip].contains(&key) {
             self.stats.duplicates += 1;
@@ -1037,7 +1100,7 @@ impl Chain {
                 job_id: r.job_id,
             },
             nonce: r.nonce,
-            version: r.rolled_version(slot.version),
+            version,
             ntime: slot.ntime,
             chip: chip as u8,
             core: r.core_id,
@@ -1076,9 +1139,4 @@ impl Chain {
             }
         }
     }
-}
-
-/// Slot for a chip-side job id: the four bits the chip echoes.
-const fn slot_of(job_id: u8) -> usize {
-    ((job_id >> 3) & 0x0F) as usize
 }

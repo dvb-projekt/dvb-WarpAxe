@@ -168,6 +168,9 @@ impl<const N: usize> HashrateMonitor<N> {
 
     /// The registers the driver polls per chip of this chain, in order.
     pub fn registers(&self) -> &'static [u8] {
+        if self.domains == 0 {
+            return &[];
+        }
         if self.domains > 4 {
             &Self::REGISTERS_8
         } else {

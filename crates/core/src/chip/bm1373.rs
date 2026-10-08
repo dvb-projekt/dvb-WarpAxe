@@ -18,7 +18,7 @@
 //! answer single-chip commands at address ÷ 4, and that the chain
 //! hashes after this sequence.
 
-use super::{ChipProfile, InitStep};
+use super::{ChipProfile, Hcn, InitStep};
 use crate::pll::PllSpec;
 use crate::regs::{reg, FAST_UART_1M, FAST_UART_1M_BAUD};
 
@@ -101,13 +101,15 @@ pub const BM1373: ChipProfile = ChipProfile {
     name: "BM1373",
     chip_id: 0x1372,
     chip_id_reply_len: 9,
+    response_len: 11,
+    host_midstates: 0,
     chip_id_alias: 0x1373,
     address_stride: 16,
     command_address_shift: 2,
     // ESP-Miner: "the generic BM13xx nonce-space calculation makes
     // BM1372/BM1373 chips search overlapping work; this is the known-good
     // S21 Pro stock register value." NerdOS uses the same 0x1EB5.
-    hcn_fixed: Some(0x0000_1EB5),
+    hcn: Hcn::Fixed(0x0000_1EB5),
     cores: 128,
     small_cores: 6860,
     // Eight domain counters, 0x88–0x8B and 0xAC–0xAF, each about an
@@ -122,7 +124,6 @@ pub const BM1373: ChipProfile = ChipProfile {
     ],
     pll: PllSpec::bm1370(),
     job_id_step: 24,
-    hcn_errata: 0,
     // Never seen a reply yet: the full second the reference drivers allow.
     count_window_ms: 1000,
     // A Gaia (2026-09-29) answered the chip-id read but never hashed with
@@ -130,7 +131,9 @@ pub const BM1373: ChipProfile = ChipProfile {
     baud_switch_after_ramp_ms: Some(500),
     // NerdOS `m_asicJobIntervalMs` on the Gaia.
     job_interval_ms: 1500,
+    fast_uart_reg: reg::FAST_UART_CONFIGURATION,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
+    pll_prewrite: None,
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
     init_post: INIT_POST,

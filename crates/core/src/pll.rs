@@ -28,6 +28,32 @@
 
 use core::ops::RangeInclusive;
 
+/// Which search picks the dividers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Solver {
+    /// ESP-Miner `pll_get_parameters()`: every legal triple, closest
+    /// frequency, then lowest VCO, then smallest post-divider product.
+    EspMiner,
+    /// cgminer `driver-gekko.c` `calc_gsf_freq()`, the BM1397 formula
+    /// NerdNOS runs (`BM1397_send_hash_frequency`): the target is
+    /// clamped to 50–650 MHz, the dividers are fixed by the frequency
+    /// band (refdiv 1 above 500 MHz else 2; postdiv1 3 up to 150 MHz, 2
+    /// up to 250, else 1; postdiv2 always 5), and the feedback divider
+    /// is `ceil(f · divider / 25 MHz)` — the result is never below the
+    /// target. 300 MHz → fb 120, refdiv 2, postdivs 1·5 (`40 78 02 15`).
+    Gekko,
+}
+
+/// How the post-dividers go into the register's last byte.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PostdivEncoding {
+    /// `(postdiv1 − 1) << 4 | (postdiv2 − 1)` (BM1366/68/70/73).
+    MinusOne,
+    /// `postdiv1 << 4 | postdiv2`, three bits each (BM1397: ESP-Miner
+    /// `BM1397_send_hash_frequency`, cgminer `calc_gsf_freq`).
+    Direct,
+}
+
 /// The PLL's legal ranges. Per chip; `f_xtal` is 25 MHz on every BM13xx.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PllSpec {
@@ -43,7 +69,12 @@ pub struct PllSpec {
     pub postdiv: RangeInclusive<u8>,
     /// VCO frequency (Hz) at or above which the "VCO scale" bit is set in
     /// the PLL register. `bm1370.c`: `fb·25/refdiv >= 2400 ? 0x50 : 0x40`.
+    /// `u64::MAX` never sets it (the BM1397 writes `0x40` always).
     pub vco_scale_from_hz: u64,
+    /// The divider search.
+    pub solver: Solver,
+    /// The register's post-divider byte.
+    pub postdiv_encoding: PostdivEncoding,
 }
 
 impl PllSpec {
@@ -55,6 +86,8 @@ impl PllSpec {
             refdiv: 1..=2,
             postdiv: 1..=7,
             vco_scale_from_hz: 2_400_000_000,
+            solver: Solver::EspMiner,
+            postdiv_encoding: PostdivEncoding::MinusOne,
         }
     }
 
@@ -63,6 +96,23 @@ impl PllSpec {
         PllSpec {
             fb: 60..=200,
             ..Self::bm1370()
+        }
+    }
+
+    /// BM1397 as NerdNOS and cgminer drive it: the `calc_gsf_freq`
+    /// bands, feedback divider up to 0x104 (the formula's `famax`),
+    /// post-dividers written as they are, VCO-scale byte fixed at 0x40.
+    /// ESP-Miner's `bm1397.c` searches fb 60–200 with the generic solver
+    /// instead (300 MHz → `40 48 02 31`); this is the one the .46 runs.
+    pub const fn bm1397() -> Self {
+        PllSpec {
+            xtal_hz: 25_000_000,
+            fb: 16..=260,
+            refdiv: 1..=2,
+            postdiv: 1..=7,
+            vco_scale_from_hz: u64::MAX,
+            solver: Solver::Gekko,
+            postdiv_encoding: PostdivEncoding::Direct,
         }
     }
 }
@@ -106,40 +156,52 @@ impl PllWord {
     }
 
     /// The four payload bytes the reference driver writes to the PLL
-    /// register (`0x08` on BM1370): `[vco_scale, fb, refdiv, postdivs]`
-    /// with `postdivs = (postdiv1-1) << 4 | (postdiv2-1)`.
+    /// register (`0x08`): `[vco_scale, fb, refdiv, postdivs]` with
+    /// `postdivs` per [`PllSpec::postdiv_encoding`].
     ///
     /// Layout from `BM1370_send_hash_frequency()`. `fb` is truncated to a
-    /// byte as the driver does; every spec this crate ships keeps it
-    /// below 256.
+    /// byte as the driver does; on the BM1397 (cgminer `calc_gsf_freq`)
+    /// its ninth bit goes into the first byte (`0x40 + (fa >> 8)`).
     pub fn register_bytes(&self, spec: &PllSpec) -> [u8; 4] {
         let vco_scale = if self.vco_hz(spec.xtal_hz) >= spec.vco_scale_from_hz {
             0x50
         } else {
             0x40
         };
-        [
-            vco_scale,
-            self.fb as u8,
-            self.refdiv,
-            ((self.postdiv1 - 1) & 0x0F) << 4 | ((self.postdiv2 - 1) & 0x0F),
-        ]
+        match spec.postdiv_encoding {
+            PostdivEncoding::MinusOne => [
+                vco_scale,
+                self.fb as u8,
+                self.refdiv,
+                ((self.postdiv1 - 1) & 0x0F) << 4 | ((self.postdiv2 - 1) & 0x0F),
+            ],
+            PostdivEncoding::Direct => [
+                vco_scale | ((self.fb >> 8) & 0x01) as u8,
+                self.fb as u8,
+                self.refdiv,
+                (self.postdiv1 & 0x07) << 4 | (self.postdiv2 & 0x07),
+            ],
+        }
     }
-}
 
-impl PllWord {
     /// Read a divider setting back from the four register bytes
-    /// ([`PllWord::register_bytes`] inverted). The VCO-scale byte is
-    /// derived, not stored, so it is ignored here. `None` if a
-    /// post-divider nibble decodes to zero (illegal: dividers are 1..).
-    pub const fn from_register_bytes(b: [u8; 4]) -> Option<Self> {
-        let postdiv1 = (b[3] >> 4) + 1;
-        let postdiv2 = (b[3] & 0x0F) + 1;
-        if b[2] == 0 {
+    /// ([`PllWord::register_bytes`] inverted). The VCO-scale bit is
+    /// derived, not stored, so it is ignored here. `None` if a divider
+    /// decodes to zero (illegal: dividers are 1..).
+    pub const fn from_register_bytes(b: [u8; 4], spec: &PllSpec) -> Option<Self> {
+        let (fb, postdiv1, postdiv2) = match spec.postdiv_encoding {
+            PostdivEncoding::MinusOne => (b[1] as u16, (b[3] >> 4) + 1, (b[3] & 0x0F) + 1),
+            PostdivEncoding::Direct => (
+                b[1] as u16 | ((b[0] & 0x01) as u16) << 8,
+                b[3] >> 4,
+                b[3] & 0x0F,
+            ),
+        };
+        if b[2] == 0 || postdiv1 == 0 || postdiv2 == 0 || fb == 0 {
             return None;
         }
         Some(PllWord {
-            fb: b[1] as u16,
+            fb,
             refdiv: b[2],
             postdiv1,
             postdiv2,
@@ -147,12 +209,55 @@ impl PllWord {
     }
 }
 
-/// Find the divider setting closest to `target_hz` under `spec`.
+/// Find the divider setting for `target_hz` under `spec`, with the
+/// spec's solver.
 ///
 /// `None` only when no `(refdiv, postdiv1, postdiv2)` triple puts a
 /// feedback divider inside the window — for the BM1370 window that does
-/// not happen anywhere between 50 and 1200 MHz.
+/// not happen anywhere between 50 and 1200 MHz; the gekko formula always
+/// has an answer (it clamps the target).
 pub fn solve(spec: &PllSpec, target_hz: u32) -> Option<PllWord> {
+    match spec.solver {
+        Solver::EspMiner => solve_esp_miner(spec, target_hz),
+        Solver::Gekko => Some(solve_gekko(spec, target_hz)),
+    }
+}
+
+/// cgminer `calc_gsf_freq()` for the BM1397, as WantClue's
+/// `BM1397_send_hash_frequency` has it. Works in whole MHz like the C
+/// (`frequency` is a float there, but NerdNOS passes an integer);
+/// sub-MHz parts of `target_hz` are rounded to the nearest MHz first.
+pub fn solve_gekko(spec: &PllSpec, target_hz: u32) -> PllWord {
+    let mhz = (u64::from(target_hz) + 500_000) / 1_000_000;
+    let f1 = mhz.clamp(50, 650);
+    let (mut fb, mut fc1, fc2) = (2u64, 1u64, 5u64);
+    if f1 >= 500 {
+        fb = 1;
+    } else if f1 <= 150 {
+        fc1 = 3;
+    } else if f1 <= 250 {
+        fc1 = 2;
+    }
+    // basef = 25 · ceil(f1 · fb · fc1 · fc2 / 25); fa = basef / 25
+    let prod = f1 * fb * fc1 * fc2;
+    let mut fa = prod.div_ceil(25);
+    // "code failure ... basef isn't 400 to 6000": the C falls back to
+    // 200 MHz (fa 80, fb 2, fc1 1, fc2 5 — `freqbuf` default).
+    if fa < u64::from(*spec.fb.start()) || fa > u64::from(*spec.fb.end()) {
+        fa = 80;
+        fb = 2;
+        fc1 = 1;
+    }
+    PllWord {
+        fb: fa as u16,
+        refdiv: fb as u8,
+        postdiv1: fc1 as u8,
+        postdiv2: fc2 as u8,
+    }
+}
+
+/// ESP-Miner's search (see [`Solver::EspMiner`]).
+pub fn solve_esp_miner(spec: &PllSpec, target_hz: u32) -> Option<PllWord> {
     let xtal = u64::from(spec.xtal_hz);
     let target = u64::from(target_hz);
 
@@ -374,14 +479,85 @@ mod tests {
         let spec = PllSpec::bm1370();
         for t in [400u32, 525, 600, 640, 690] {
             let w = solve_mhz(&spec, t).unwrap();
-            let back = PllWord::from_register_bytes(w.register_bytes(&spec)).unwrap();
+            let back = PllWord::from_register_bytes(w.register_bytes(&spec), &spec).unwrap();
             assert_eq!(back, w, "{t} MHz");
         }
         assert_eq!(
-            PllWord::from_register_bytes([0x40, 0xA8, 0x00, 0x30]),
+            PllWord::from_register_bytes([0x40, 0xA8, 0x00, 0x30], &spec),
             None,
             "refdiv 0"
         );
+        let g = PllSpec::bm1397();
+        for t in [50u32, 100, 200, 300, 400, 500, 650] {
+            let w = solve_mhz(&g, t).unwrap();
+            let back = PllWord::from_register_bytes(w.register_bytes(&g), &g).unwrap();
+            assert_eq!(back, w, "{t} MHz");
+        }
+        assert_eq!(
+            PllWord::from_register_bytes([0x40, 0x78, 0x02, 0x05], &g),
+            None,
+            "postdiv1 0"
+        );
+    }
+
+    /// `calc_gsf_freq` by hand, as cgminer's comments walk it: the
+    /// stock 300 MHz of the NerdNOS gives `fa` 120, `fb` 2, `fc1` 1,
+    /// `fc2` 5 → `00 08 40 78 02 15`, exactly 300 MHz. The bands: 56.25
+    /// (our ramp start) triples up, 200 doubles up, 650 halves down.
+    #[test]
+    fn gekko_formula_reproduces_cgminer() {
+        let g = PllSpec::bm1397();
+        let w = solve_mhz(&g, 300).unwrap();
+        assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (120, 2, 1, 5));
+        assert_eq!(w.register_bytes(&g), [0x40, 0x78, 0x02, 0x15]);
+        assert_eq!(w.frequency_hz(g.xtal_hz), 300_000_000);
+        // 56.25 MHz: f1 = 56 (rounded), fc1 = 3: 56·2·3·5 = 1680 →
+        // ceil(1680/25) = 68 → 25·68/30 = 56.67 MHz.
+        let w = solve(&g, 56_250_000).unwrap();
+        assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (68, 2, 3, 5));
+        assert_eq!(w.frequency_hz(g.xtal_hz), 56_666_667);
+        // 200 MHz: fc1 = 2: 200·2·2·5 = 4000 → fa 160 → 200 MHz.
+        let w = solve_mhz(&g, 200).unwrap();
+        assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (160, 2, 2, 5));
+        assert_eq!(w.register_bytes(&g), [0x40, 0xA0, 0x02, 0x25]);
+        // 650 MHz: fb = 1: 650·5 = 3250 → fa 130 → 650 MHz.
+        let w = solve_mhz(&g, 650).unwrap();
+        assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (130, 1, 1, 5));
+        // The clamp: 700 is treated as 650, 20 as 50.
+        assert_eq!(solve_mhz(&g, 700), solve_mhz(&g, 650));
+        assert_eq!(solve_mhz(&g, 20), solve_mhz(&g, 50));
+        // 210 (NerdNOS after an overheat): 210·2·2·5 = 4200 → fa 168 →
+        // 210 MHz; 425 (Bitaxe Max stock): 4250 → fa 170 → 425.
+        assert_eq!(
+            solve_mhz(&g, 210).unwrap().frequency_hz(g.xtal_hz),
+            210_000_000
+        );
+        assert_eq!(
+            solve_mhz(&g, 425).unwrap().frequency_hz(g.xtal_hz),
+            425_000_000
+        );
+        // Never below the target, never more than 25/divider above it.
+        for mhz in 50..=650u32 {
+            let w = solve_mhz(&g, mhz).unwrap();
+            let f = w.frequency_hz(g.xtal_hz);
+            assert!(f >= u64::from(mhz) * 1_000_000, "{mhz}");
+            assert!(f < (u64::from(mhz) + 5) * 1_000_000, "{mhz}: {f}");
+        }
+    }
+
+    /// ESP-Miner's own BM1397 path (`pll_get_parameters(…, 60, 200)`,
+    /// generic solver, direct post-divider nibbles) at 300 MHz:
+    /// `40 48 02 31`, the alternative on record.
+    #[test]
+    fn esp_miner_bm1397_window_for_the_record() {
+        let spec = PllSpec {
+            fb: 60..=200,
+            solver: Solver::EspMiner,
+            ..PllSpec::bm1397()
+        };
+        let w = solve_mhz(&spec, 300).unwrap();
+        assert_eq!((w.fb, w.refdiv, w.postdiv1, w.postdiv2), (72, 2, 3, 1));
+        assert_eq!(w.register_bytes(&spec), [0x40, 0x48, 0x02, 0x31]);
     }
 
     proptest::proptest! {
@@ -400,6 +576,22 @@ mod tests {
         }
 
         /// What the solver returns is always inside the spec.
+        /// The gekko word always decodes to what was written and lands
+        /// within the formula's bounds.
+        #[test]
+        fn gekko_words_round_trip(hz in 1_000_000u32..1_000_000_000) {
+            let g = PllSpec::bm1397();
+            let w = solve(&g, hz).unwrap();
+            proptest::prop_assert!(g.fb.contains(&w.fb));
+            proptest::prop_assert!((1..=2).contains(&w.refdiv));
+            proptest::prop_assert!((1..=3).contains(&w.postdiv1));
+            proptest::prop_assert_eq!(w.postdiv2, 5);
+            let back = PllWord::from_register_bytes(w.register_bytes(&g), &g).unwrap();
+            proptest::prop_assert_eq!(back, w);
+            let f = w.frequency_hz(g.xtal_hz);
+            proptest::prop_assert!((50_000_000..=655_000_000).contains(&f));
+        }
+
         #[test]
         fn solutions_respect_the_spec(hz in 50_000_000u32..1_200_000_000) {
             let spec = PllSpec::bm1370();

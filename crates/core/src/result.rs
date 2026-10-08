@@ -26,6 +26,21 @@
 //! `bm1370_asic_result_cmd_t`, `BM1370_process_work`), vectors from
 //! `test_version_rolling.c` and `test_bitmain_job_packets.c`. The BM1373
 //! uses the same layout.
+//!
+//! The BM1397 answers with six payload bytes ([`JobResult::parse_bm1397`]):
+//!
+//! ```text
+//! job result     nonce[4] | midstate_num | id
+//! register read  value[4] | asic_address | register
+//! ```
+//!
+//! No version bytes: the chip does not roll. The `id` byte carries the
+//! job id in bits 7..2 (a multiple of 4, as sent) and in bits 1..0 the
+//! number of the midstate that produced the nonce, which is the number
+//! of times the host rolled the version for it. Source: ESP-Miner
+//! `bm1397.c` (`bm1397_asic_result_job_t`, `BM1397_process_work`),
+//! WantClue `bm1397.cpp` (`BM1397_proccess_work`), the response vectors
+//! in `test_asic_result_job.c` (id 0x13 → job 0x10, midstate 3).
 
 /// A nonce the chip found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,12 +80,56 @@ impl JobResult {
         }
     }
 
+    /// Interpret a BM1397 job-result payload (six bytes, zero-padded to
+    /// eight by the decoder). `version_bits` is 0: the version is the
+    /// job's, rolled `midstate_num` times by the host
+    /// ([`crate::job::rolled_version`]). The small-core id is not in
+    /// this response (ESP-Miner reads the id byte's low nibble, which
+    /// is the midstate number); 0 here.
+    pub fn parse_bm1397(p: &[u8; 8]) -> Self {
+        let wire = [p[0], p[1], p[2], p[3]];
+        let nonce_be = u32::from_be_bytes(wire);
+        JobResult {
+            job_id: p[5] & 0xFC,
+            nonce: u32::from_le_bytes(wire),
+            asic_address: ((nonce_be >> 17) & 0xFF) as u8,
+            core_id: ((nonce_be >> 25) & 0x7F) as u8,
+            small_core_id: 0,
+            version_bits: 0,
+            midstate_num: p[5] & 0x03,
+        }
+    }
+
     /// The header version that produced this nonce, given the job's base
     /// version. The reference driver ORs; bits the base already has set
     /// stay set.
     pub const fn rolled_version(&self, base_version: u32) -> u32 {
         base_version | self.version_bits
     }
+}
+
+/// Build a BM1397 job-result payload (six bytes of it; the simulator's
+/// side of [`JobResult::parse_bm1397`]): the chip's address and core in
+/// the nonce's high bits, the job id and midstate number in the id byte.
+pub fn bm1397_job_result_payload(
+    job_id: u8,
+    nonce_low17: u32,
+    asic_address: u8,
+    core_id: u8,
+    midstate_num: u8,
+) -> [u8; 6] {
+    let nonce_be = (u32::from(core_id & 0x7F) << 25)
+        | (u32::from(asic_address) << 17)
+        | (nonce_low17 & 0x1_FFFF);
+    let be = nonce_be.to_be_bytes();
+    [
+        be[0],
+        be[1],
+        be[2],
+        be[3],
+        0x00,
+        (job_id & 0xFC) | (midstate_num & 0x03),
+    ]
 }
 
 /// A register value the chip reported.
@@ -188,7 +247,49 @@ mod tests {
         assert_eq!(p, [0x9b, 0x04, 0x4c, 0x0a, 0x00, 0x23, 0x00, 0x01]);
     }
 
+    /// `test_asic_result_job.c`: wire id 0x13 is job 0x10, midstate 3,
+    /// which rolls 0x20000004 to 0x20006004 under the BIP 320 mask; the
+    /// nonce goes out as it came (memcpy, little-endian).
+    #[test]
+    fn parses_a_bm1397_result() {
+        let nonce: u32 = 0x6100_0002;
+        let le = nonce.to_le_bytes();
+        let p = [le[0], le[1], le[2], le[3], 0x00, 0x13, 0x00, 0x00];
+        let r = JobResult::parse_bm1397(&p);
+        assert_eq!(r.job_id, 0x10);
+        assert_eq!(r.midstate_num, 3);
+        assert_eq!(r.nonce, nonce);
+        assert_eq!(r.version_bits, 0);
+        assert_eq!(
+            crate::job::rolled_version(0x2000_0004, 0x1fff_e000, r.midstate_num),
+            0x2000_6004
+        );
+        // The hardware test in `test_job_command.c`: nonce 9B 04 4C 0A for
+        // job 0x18, midstate 2.
+        let r = JobResult::parse_bm1397(&[0x9B, 0x04, 0x4C, 0x0A, 0x00, 0x18 | 2, 0, 0]);
+        assert_eq!((r.job_id, r.midstate_num, r.nonce), (0x18, 2, 0x0a4c_049b));
+    }
+
     proptest::proptest! {
+        #[test]
+        fn bm1397_results_round_trip(
+            job_id in (0u8..32).prop_map(|k| k * 4),
+            low17 in 0u32..(1 << 17),
+            addr in 0u8..=255,
+            core in 0u8..128,
+            k in 0u8..4,
+        ) {
+            let six = bm1397_job_result_payload(job_id, low17, addr, core, k);
+            let mut p = [0u8; 8];
+            p[..6].copy_from_slice(&six);
+            let r = JobResult::parse_bm1397(&p);
+            proptest::prop_assert_eq!(r.job_id, job_id);
+            proptest::prop_assert_eq!(r.midstate_num, k);
+            proptest::prop_assert_eq!(r.asic_address, addr);
+            proptest::prop_assert_eq!(r.core_id, core);
+            proptest::prop_assert_eq!(u32::from_be_bytes(r.nonce.to_le_bytes()) & 0x1_FFFF, low17);
+        }
+
         #[test]
         fn job_result_round_trips(
             job_id in (0u8..8).prop_map(|k| k * 16),

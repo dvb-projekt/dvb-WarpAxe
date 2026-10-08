@@ -20,10 +20,12 @@ use warpaxe_core::frame::{
     encode_response, encode_short_response, Group, Header, Op, FLAG_JOB, RESPONSE_LEN,
     SHORT_RESPONSE_LEN,
 };
-use warpaxe_core::job::{Job, JOB_LEN};
+use warpaxe_core::job::{Job, MidstateJob, JOB_LEN};
 use warpaxe_core::pll::PllWord;
 use warpaxe_core::regs::{self, reg};
-use warpaxe_core::result::{job_result_payload, register_result_payload};
+use warpaxe_core::result::{
+    bm1397_job_result_payload, job_result_payload, register_result_payload,
+};
 
 use crate::fault::Fault;
 use crate::rng::Pcg32;
@@ -69,6 +71,8 @@ pub struct SimChip {
     state: ChipState,
     now_us: u64,
     job: Option<Job>,
+    /// Midstates the current job came with (BM1397), 0 for a header job.
+    job_midstates: u8,
     job_ends_us: u64,
     next_nonce_us: u64,
     baud: u32,
@@ -107,6 +111,7 @@ impl SimChip {
             state: ChipState::Reset,
             now_us: 0,
             job: None,
+            job_midstates: 0,
             job_ends_us: 0,
             next_nonce_us: u64::MAX,
             baud: 115_200,
@@ -152,7 +157,8 @@ impl SimChip {
     /// hash.
     pub fn frequency_hz(&self) -> u64 {
         let v = self.regs[usize::from(reg::PLL0_PARAMETER)].to_be_bytes();
-        PllWord::from_register_bytes(v).map_or(0, |w| w.frequency_hz(self.profile.pll.xtal_hz))
+        PllWord::from_register_bytes(v, &self.profile.pll)
+            .map_or(0, |w| w.frequency_hz(self.profile.pll.xtal_hz))
     }
 
     /// Difficulty implied by the ticket-mask register.
@@ -165,9 +171,15 @@ impl SimChip {
         self.baud
     }
 
-    /// The job being worked on.
+    /// The job being worked on (for a BM1397 midstate job: its id,
+    /// nonce, nbits and ntime; the hashes are zero).
     pub fn job(&self) -> Option<&Job> {
         self.job.as_ref()
+    }
+
+    /// Midstates the current job carries (BM1397); 0 for a header job.
+    pub fn job_midstates(&self) -> u8 {
+        self.job_midstates
     }
 
     /// Inject a fault. Faults accumulate; see [`Fault`].
@@ -280,12 +292,12 @@ impl SimChip {
 
     fn write_register(&mut self, r: u8, v: u32) {
         self.stats.writes += 1;
-        if r == reg::FAST_UART_CONFIGURATION && self.has(|f| matches!(f, Fault::BaudSwitchIgnored))
-        {
+        let baud_reg = r == self.profile.fast_uart_reg;
+        if baud_reg && self.has(|f| matches!(f, Fault::BaudSwitchIgnored)) {
             return;
         }
         self.regs[usize::from(r)] = v;
-        if r == reg::FAST_UART_CONFIGURATION && v.to_be_bytes() == self.profile.fast_uart.0 {
+        if baud_reg && v.to_be_bytes() == self.profile.fast_uart.0 {
             self.baud = self.profile.fast_uart.1;
         }
         if r == reg::PLL0_PARAMETER || r == reg::TICKET_MASK {
@@ -303,12 +315,18 @@ impl SimChip {
             // `[id_hi, id_lo, core_num, addr, 0, 0, 0, 0]` — the reference
             // driver logs bytes 4 and 5 of the frame as CORE_NUM and ADDR.
             let id = self.profile.chip_id.to_be_bytes();
+            // A BM1397 answers `13 97 18 00` (WantClue's `chip_id[]`).
+            let core_num = if self.profile.chip_id == 0x1397 {
+                0x18
+            } else {
+                0x00
+            };
             if self.profile.chip_id_reply_len == SHORT_RESPONSE_LEN {
-                // BM1373: nine bytes, six of payload.
-                self.emit_short(&[id[0], id[1], 0x00, self.address, 0, 0], 0x00, out);
+                // BM1373, BM1397: nine bytes, six of payload.
+                self.emit(&[id[0], id[1], core_num, self.address, 0, 0], 0x00, out);
                 return;
             }
-            [id[0], id[1], 0x00, self.address, 0, 0, 0, 0]
+            [id[0], id[1], core_num, self.address, 0, 0, 0, 0]
         } else {
             let mut v = self.regs[usize::from(r)];
             if self.has(|f| matches!(f, Fault::RegReadCorrupt { reg } if *reg == r)) {
@@ -316,24 +334,53 @@ impl SimChip {
             }
             register_result_payload(v, self.address, r)
         };
-        self.emit(&payload, 0x00, out);
+        if self.profile.response_len == SHORT_RESPONSE_LEN {
+            // Six bytes: value, address, register (`bm1397_asic_result_cmd_t`).
+            self.emit(&payload[..6], 0x00, out);
+        } else {
+            self.emit(&payload, 0x00, out);
+        }
     }
 
     fn handle_job(&mut self, payload: &[u8]) {
         if self.state != ChipState::Addressed {
             self.stats.violations += 1;
         }
-        if payload.len() != JOB_LEN {
-            self.stats.violations += 1;
-            return;
-        }
-        let mut b = [0u8; JOB_LEN];
-        b.copy_from_slice(payload);
-        let job = Job::from_bytes(&b);
+        let job = if self.profile.host_midstates > 0 {
+            // A midstate job: the chip never sees the header fields.
+            let Some(m) = MidstateJob::from_bytes(payload) else {
+                self.stats.violations += 1;
+                return;
+            };
+            self.job_midstates = m.num_midstates;
+            Job {
+                job_id: m.job_id,
+                starting_nonce: m.starting_nonce,
+                nbits: m.nbits,
+                ntime: m.ntime,
+                merkle_root: [0; 32],
+                prev_block_hash: [0; 32],
+                version: 0,
+            }
+        } else {
+            if payload.len() != JOB_LEN {
+                self.stats.violations += 1;
+                return;
+            }
+            let mut b = [0u8; JOB_LEN];
+            b.copy_from_slice(payload);
+            self.job_midstates = 0;
+            Job::from_bytes(&b)
+        };
         self.stats.jobs += 1;
         // How long the chip works this job before it runs out of nonce
-        // space (with version rolling): the reference driver's timeout.
-        let versions = 1u32 << 16;
+        // space (with version rolling, or over the midstates it was
+        // given): the reference driver's timeout.
+        let versions = if self.job_midstates > 0 {
+            u32::from(self.job_midstates)
+        } else {
+            1u32 << 16
+        };
         let ms = regs::job_timeout_ms(
             self.frequency_hz().min(u64::from(u32::MAX)) as u32,
             1,
@@ -419,32 +466,45 @@ impl SimChip {
         let Some(job) = self.job.as_ref() else { return };
         let job_id = job.job_id;
         let mask16 = (self.regs[usize::from(reg::VERSION_ROLLING)] & 0xFFFF) as u16;
-        let payload = if self.has(
+        let short = self.profile.response_len == SHORT_RESPONSE_LEN;
+        let len = if short { 6 } else { 8 };
+        let mut payload = [0u8; 8];
+        if self.has(
             |f| matches!(f, Fault::GarbageNonces { per_mille } if self.rng_peek_chance(*per_mille)),
         ) {
-            let mut p = [0u8; 8];
-            for b in &mut p {
+            for b in &mut payload[..len] {
                 *b = (self.rng.next_u32() & 0xFF) as u8;
             }
             self.rng.next_u32();
-            p
         } else {
             let low17 = self.rng.next_u32() & 0x1_FFFF;
             let core = self.rng.below(u32::from(self.profile.cores)) as u8;
-            let small = self.rng.below(16) as u8;
-            let vbits = (self.rng.next_u32() as u16) & mask16;
-            job_result_payload(job_id, low17, self.nonce_address, core, small, vbits)
-        };
+            if self.job_midstates > 0 {
+                // BM1397: which of the midstates hit, in the id byte.
+                let k = self.rng.below(u32::from(self.job_midstates)) as u8;
+                payload[..6].copy_from_slice(&bm1397_job_result_payload(
+                    job_id,
+                    low17,
+                    self.nonce_address,
+                    core,
+                    k,
+                ));
+            } else {
+                let small = self.rng.below(16) as u8;
+                let vbits = (self.rng.next_u32() as u16) & mask16;
+                payload = job_result_payload(job_id, low17, self.nonce_address, core, small, vbits);
+            }
+        }
         self.stats.nonces += 1;
         if self.silenced() {
             self.stats.suppressed += 1;
             return;
         }
-        self.emit(&payload, FLAG_JOB, out);
+        self.emit(&payload[..len], FLAG_JOB, out);
         if self.has(|f| matches!(f, Fault::DuplicateNonce { per_mille } if self.rng_peek_chance(*per_mille))) {
             self.rng.next_u32();
             self.stats.nonces += 1;
-            self.emit(&payload, FLAG_JOB, out);
+            self.emit(&payload[..len], FLAG_JOB, out);
         }
         self.last_nonce = Some(payload);
     }
@@ -457,27 +517,35 @@ impl SimChip {
         r.chance_per_mille(per_mille)
     }
 
-    fn emit_short(&mut self, payload: &[u8; 6], flags: u8, out: &mut Vec<u8>) {
-        let mut frame = [0u8; SHORT_RESPONSE_LEN];
-        encode_short_response(&mut frame, payload, flags);
-        out.extend_from_slice(&frame);
-    }
-
-    fn emit(&mut self, payload: &[u8; 8], flags: u8, out: &mut Vec<u8>) {
+    /// Send a response: eleven bytes for an eight-byte payload, nine for
+    /// a six-byte one (BM1373 chip id, every BM1397 reply).
+    fn emit(&mut self, payload: &[u8], flags: u8, out: &mut Vec<u8>) {
         let mut frame = [0u8; RESPONSE_LEN];
-        encode_response(&mut frame, payload, flags);
+        let n = if payload.len() == 6 {
+            let mut six = [0u8; 6];
+            six.copy_from_slice(payload);
+            let mut short = [0u8; SHORT_RESPONSE_LEN];
+            encode_short_response(&mut short, &six, flags);
+            frame[..SHORT_RESPONSE_LEN].copy_from_slice(&short);
+            SHORT_RESPONSE_LEN
+        } else {
+            let mut eight = [0u8; 8];
+            eight.copy_from_slice(payload);
+            encode_response(&mut frame, &eight, flags);
+            RESPONSE_LEN
+        };
         if let Some(Fault::BitFlipTx { per_mille }) = self
             .faults
             .iter()
             .find(|f| matches!(f, Fault::BitFlipTx { .. }))
             .copied()
         {
-            for b in &mut frame {
+            for b in &mut frame[..n] {
                 if self.rng.chance_per_mille(per_mille) {
                     *b ^= 1 << self.rng.below(8);
                 }
             }
         }
-        out.extend_from_slice(&frame);
+        out.extend_from_slice(&frame[..n]);
     }
 }

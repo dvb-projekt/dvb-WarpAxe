@@ -7,6 +7,7 @@ use std::convert::Infallible;
 use warpaxe_chain::{Chain, Config, Error, Event, InitError, Phase, Uart, Work};
 use warpaxe_core::chip::bm1370::BM1370;
 use warpaxe_core::chip::bm1373::BM1373;
+use warpaxe_core::chip::bm1397::BM1397;
 use warpaxe_core::chip::ChipProfile;
 use warpaxe_core::regs::reg;
 use warpaxe_sim::chain::SimChain;
@@ -475,6 +476,94 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
         let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
         assert!(n > 50, "chip {i} yielded only {n} nonces in 10 s");
     }
+}
+
+/// The BM1397 path end to end against the simulator: the chip answers
+/// the id read with nine bytes, the init is WantClue's register list,
+/// the clock is written with the PLL0 divider first and the gekko word,
+/// nothing goes to the hash counting number or the version-rolling
+/// mask, the baud switch is the MISC_CONTROL write followed by the host
+/// 100 ms later, jobs are 146-byte midstate packets, and every nonce
+/// comes back with the version the midstate number says.
+#[test]
+fn bm1397_brings_up_with_nine_byte_replies_midstate_jobs_and_no_rolling() {
+    // Difficulty 1: a job lasts 56 ms of the bench's 100 ms interval, so
+    // at the stock 256 a nonce would take minutes.
+    let config = Config {
+        expected_chips: 1,
+        difficulty: 1,
+        ..Config::for_profile(&BM1397)
+    };
+    let mut b = Bench::with(&BM1397, 1, config);
+    b.run_until_ready(20_000);
+    assert_eq!(b.drv.chip_count(), 1);
+    assert!(b.has(|e| matches!(
+        e,
+        Event::ChipFound {
+            chip_id: 0x1397,
+            ..
+        }
+    )));
+    let chip = &b.uart.sim.chips()[0];
+    assert_eq!(chip.state(), ChipState::Addressed);
+    assert_eq!(chip.stats().violations, 0);
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+    assert_eq!(b.drv.stats().decoder.dropped, 0);
+    // The register file after init: WantClue's six writes, the ticket
+    // mask for difficulty 8, the PLL0 divider and the gekko word for
+    // 300 MHz, the UART divider; nothing in 0x10 or 0xA4.
+    assert_eq!(chip.register(0x80), 0);
+    assert_eq!(chip.register(0x84), 0);
+    assert_eq!(chip.register(reg::ORDERED_CLOCK_ENABLE), 1);
+    assert_eq!(chip.register(reg::CORE_REGISTER_CONTROL), 0x8000_8074);
+    assert_eq!(chip.register(reg::PLL3_PARAMETER), 0xC070_0111);
+    assert_eq!(chip.register(reg::FAST_UART_CONFIGURATION), 0x0600_000F);
+    assert_eq!(chip.ticket_difficulty(), 1);
+    assert_eq!(chip.register(reg::PLL0_DIVIDER), 0x0F0F_0F00);
+    assert_eq!(chip.register(reg::PLL0_PARAMETER), 0x4078_0215);
+    assert_eq!(chip.frequency_hz(), 300_000_000);
+    assert_eq!(b.drv.frequency_hz(), 300_000_000);
+    assert_eq!(chip.register(reg::MISC_CONTROL), 0x0000_6131);
+    assert_eq!(chip.baud(), 1_562_500);
+    assert_eq!(b.uart.host_baud, 1_562_500);
+    assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0, "never written");
+    assert_eq!(chip.register(reg::VERSION_ROLLING), 0, "never written");
+    assert_eq!(b.uart.lost_to_baud, 0, "host and chip switched together");
+    // Four versions of 2³² nonces at 300 MHz × 672 small cores: the
+    // chip is through a job in well under 100 ms.
+    assert!(
+        b.drv.work_timeout_us() < 100_000,
+        "{}",
+        b.drv.work_timeout_us()
+    );
+
+    b.mine_ms(5_000);
+    let chip = &b.uart.sim.chips()[0];
+    assert!(chip.stats().jobs >= 50);
+    assert_eq!(chip.job_midstates(), 4, "four midstates per job");
+    assert_eq!(chip.stats().violations, 0);
+    let sim_nonces = u64::from(chip.stats().nonces);
+    assert!(sim_nonces > 50, "{sim_nonces}");
+    let yielded = b.count(|e| matches!(e, Event::Nonce(_))) as u64;
+    assert_eq!(yielded, sim_nonces);
+    assert_eq!(b.drv.stats().unknown_chip, 0);
+    // The version of every nonce is the job's base rolled 0–3 times by
+    // the BIP 320 mask, and all four midstates get hit.
+    let mut seen = [false; 4];
+    for e in &b.events {
+        if let Event::Nonce(f) = e {
+            let k = (f.version - 0x2000_0000) / 0x2000;
+            assert!(k < 4, "version {:#x}", f.version);
+            assert_eq!(f.version, 0x2000_0000 + k * 0x2000);
+            seen[k as usize] = true;
+        }
+    }
+    assert_eq!(seen, [true; 4]);
+    // No counter reads: the chip has no domain registers we know.
+    let reads_before = chip.stats().reads;
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.run_ms(10);
+    assert_eq!(b.uart.sim.chips()[0].stats().reads, reads_before);
 }
 
 /// The chips' hash counters read back the way ESP-Miner's hashrate

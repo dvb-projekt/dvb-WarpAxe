@@ -13,7 +13,7 @@
 //! reply (`AA 55 13 70 00 00 00 00 00 00 10`, see `crc.rs`); the second
 //! is that this sequence, sent byte for byte, brings the chip up.
 
-use super::{ChipProfile, InitStep};
+use super::{ChipProfile, Hcn, InitStep};
 use crate::pll::PllSpec;
 use crate::regs::{reg, FAST_UART_1M, FAST_UART_1M_BAUD};
 
@@ -145,10 +145,12 @@ pub const BM1370: ChipProfile = ChipProfile {
     name: "BM1370",
     chip_id: 0x1370,
     chip_id_reply_len: 11,
+    response_len: 11,
+    host_midstates: 0,
     chip_id_alias: 0,
     address_stride: 0,
     command_address_shift: 0,
-    hcn_fixed: None,
+    hcn: Hcn::Computed { errata: 2 * 134 },
     cores: 128,
     small_cores: 2040,
     domains: 4,
@@ -159,11 +161,12 @@ pub const BM1370: ChipProfile = ChipProfile {
     voltage_options_mv: &[1000, 1060, 1100, 1150, 1200, 1250],
     pll: PllSpec::bm1370(),
     job_id_step: 24,
-    hcn_errata: 2 * 134,
     count_window_ms: 500,
     baud_switch_after_ramp_ms: None,
     job_interval_ms: 0,
+    fast_uart_reg: reg::FAST_UART_CONFIGURATION,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
+    pll_prewrite: None,
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
     init_post: INIT_POST,

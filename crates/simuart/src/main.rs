@@ -1,4 +1,4 @@
-//! `warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips 1] [--seed 7] [--chip bm1370|bm1373]`
+//! `warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips 1] [--seed 7] [--chip bm1370|bm1373|bm1397]`
 //!
 //! Hardware-in-the-loop without the ASIC: the firmware on the board drives
 //! its UART exactly as it would drive a chain; on this side `SimChain`
@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 
 use warpaxe_core::chip::bm1370::BM1370;
 use warpaxe_core::chip::bm1373::BM1373;
+use warpaxe_core::chip::bm1397::BM1397;
 use warpaxe_core::chip::ChipProfile;
 use warpaxe_sim::{ChipState, SimChain};
 
@@ -43,13 +44,14 @@ fn main() {
     let profile: &'static ChipProfile = match chip_name.to_ascii_lowercase().as_str() {
         "bm1370" => &BM1370,
         "bm1373" => &BM1373,
+        "bm1397" => &BM1397,
         other => {
-            eprintln!("unknown --chip {other}: bm1370 or bm1373");
+            eprintln!("unknown --chip {other}: bm1370, bm1373 or bm1397");
             std::process::exit(2);
         }
     };
     if port_name.is_empty() {
-        eprintln!("usage: warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips N] [--seed S] [--chip bm1370|bm1373]");
+        eprintln!("usage: warpaxe-simuart --port /dev/cu.usbserial-XXXX [--chips N] [--seed S] [--chip bm1370|bm1373|bm1397]");
         eprintln!("ports seen:");
         for p in serialport::available_ports().unwrap_or_default() {
             eprintln!("  {}", p.port_name);

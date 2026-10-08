@@ -18,6 +18,7 @@
 
 pub mod bm1370;
 pub mod bm1373;
+pub mod bm1397;
 
 use crate::frame::{Group, Op};
 use crate::pll::PllSpec;
@@ -70,6 +71,24 @@ pub enum InitStep {
     CountChips,
 }
 
+/// The hash counting number (register 0x10): how far each core rolls
+/// the nonce before the chip moves on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hcn {
+    /// Computed from clock, cores and chip count
+    /// ([`crate::regs::hash_counting_number`]) minus an erratum margin
+    /// (2·134 on the BM1370).
+    Computed {
+        /// Counts subtracted from the computed value.
+        errata: u32,
+    },
+    /// A fixed value (BM1373: the S21 Pro stock register).
+    Fixed(u32),
+    /// Not written at all: the BM1397 drivers (ESP-Miner, NerdNOS,
+    /// cgminer) never touch register 0x10.
+    None,
+}
+
 /// What one chip is, and how to bring it up.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChipProfile {
@@ -77,8 +96,18 @@ pub struct ChipProfile {
     pub name: &'static str,
     /// The id the chip answers with on a register-0 read.
     pub chip_id: u16,
-    /// Length of that reply on the wire (11 on BM1370, 9 on BM1373).
+    /// Length of that reply on the wire (11 on BM1370, 9 on BM1373 and
+    /// BM1397).
     pub chip_id_reply_len: usize,
+    /// Length of every other response (nonces, register reads): 11 on
+    /// the BM1366/68/70/73, 9 on the BM1397.
+    pub response_len: usize,
+    /// Midstates the host computes and sends per job: 0 = the chip hashes
+    /// the header from scratch and rolls the version itself (the 82-byte
+    /// job); 4 = the BM1397, which gets one midstate per host-rolled
+    /// version ([`crate::job::MidstateJob`]) and echoes the midstate
+    /// number in its nonce.
+    pub host_midstates: u8,
     /// A second chip id the same driver accepts (BM1373 answers 0x1372
     /// or 0x1373); 0 = none.
     pub chip_id_alias: u16,
@@ -87,9 +116,8 @@ pub struct ChipProfile {
     /// Single-chip commands go to the chip's address shifted right by
     /// this (BM1373: 2); replies carry the full address.
     pub command_address_shift: u8,
-    /// A fixed hash counting number instead of the computed one
-    /// (BM1373: the S21 Pro stock value).
-    pub hcn_fixed: Option<u32>,
+    /// The hash counting number: computed, fixed, or never written.
+    pub hcn: Hcn,
     /// Hash cores per chip.
     pub cores: u16,
     /// Small cores per chip: what the nominal hashrate multiplies by.
@@ -114,10 +142,9 @@ pub struct ChipProfile {
     pub voltage_options_mv: &'static [u16],
     /// The PLL's legal ranges.
     pub pll: PllSpec,
-    /// Step between job ids (24 on BM1368/70/73, 8 on BM1366).
+    /// Step between job ids (24 on BM1368/70/73, 8 on BM1366, 4 on the
+    /// BM1397).
     pub job_id_step: u8,
-    /// Margin subtracted from the hash counting number (2·134 on BM1370).
-    pub hcn_errata: u32,
     /// How long the driver collects chip-id replies after the read-all,
     /// ms. ESP-Miner and NerdOS wait up to 1 s per reply; 500 ms has
     /// always been enough for a BM1370 chain.
@@ -134,9 +161,18 @@ pub struct ChipProfile {
     /// hash counting number re-found the same nonces on the Gaia without
     /// it (87 % duplicates, 2026-09-29).
     pub job_interval_ms: u16,
-    /// Value for the UART register that raises the baud rate, and the
-    /// host rate to switch to afterwards.
+    /// The register that sets the chip's UART rate: 0x28
+    /// (`FAST_UART_CONFIGURATION`) on the BM1366/68/70/73, 0x18
+    /// (`MISC_CONTROL`, divider bits 9–13) on the BM1397.
+    pub fast_uart_reg: u8,
+    /// Value for that register that raises the baud rate, and the host
+    /// rate to switch to afterwards.
     pub fast_uart: ([u8; 4], u32),
+    /// A register written (twice, like the reference) before every PLL0
+    /// write: the BM1397's PLL0 divider `0x70 ← 0F 0F 0F 00` (cgminer
+    /// `prefreq`, WantClue `prefreq1`, ESP-Miner `prefreq1`). `None` on
+    /// the chips whose drivers write PLL0 alone.
+    pub pll_prewrite: Option<(u8, [u8; 4])>,
     /// Initialisation before and including chain enumeration and
     /// addressing; `SetAddress` expands per chip.
     pub init_chain: &'static [InitStep],
@@ -207,6 +243,38 @@ impl ChipProfile {
     /// True for the profile's chip id or its alias.
     pub const fn is_chip_id(&self, id: u16) -> bool {
         id == self.chip_id || (self.chip_id_alias != 0 && id == self.chip_id_alias)
+    }
+
+    /// Distinguishable jobs in flight: the bits of the job id the chip
+    /// echoes. Sixteen on the BM1366/68/70/73 (bits 7..4 of the id byte,
+    /// `(id & 0xF0) >> 1` of a step-24 id), thirty-two on the BM1397
+    /// (bits 7..2, ids in steps of 4).
+    pub const fn job_slots(&self) -> usize {
+        if self.host_midstates > 0 {
+            32
+        } else {
+            16
+        }
+    }
+
+    /// The slot a chip-side job id (as handed out and as echoed) belongs
+    /// to, below [`ChipProfile::job_slots`].
+    pub const fn job_slot(&self, job_id: u8) -> usize {
+        if self.host_midstates > 0 {
+            ((job_id >> 2) & 0x1F) as usize
+        } else {
+            ((job_id >> 3) & 0x0F) as usize
+        }
+    }
+
+    /// How many versions one job lets the chip search: 2¹⁶ with
+    /// hardware rolling (the BIP 320 mask), else the midstates sent.
+    pub const fn versions_per_job(&self) -> u32 {
+        if self.host_midstates > 0 {
+            self.host_midstates as u32
+        } else {
+            1 << 16
+        }
     }
 }
 
@@ -595,13 +663,37 @@ mod tests {
     }
 
     #[test]
+    fn job_slots_follow_the_echoed_bits() {
+        let p = &bm1370::BM1370;
+        assert_eq!(p.job_slots(), 16);
+        assert_eq!(p.job_slot(24), 3);
+        assert_eq!(p.job_slot(120), 15);
+        assert_eq!(p.job_slot(16), 2);
+        let q = &bm1397::BM1397;
+        assert_eq!(q.job_slots(), 32);
+        assert_eq!(q.job_slot(4), 1);
+        assert_eq!(q.job_slot(124), 31);
+        assert_eq!(
+            q.job_slot(0x18 | 2),
+            6,
+            "the midstate bits do not move the slot"
+        );
+        assert_eq!(p.versions_per_job(), 65536);
+        assert_eq!(q.versions_per_job(), 4);
+    }
+
+    #[test]
     fn bm1370_profile_numbers() {
         let p = &bm1370::BM1370;
         assert_eq!(p.chip_id, 0x1370);
         assert_eq!((p.cores, p.small_cores, p.domains), (128, 2040, 4));
         assert_eq!(p.stock, (525_000_000, 1150));
         assert_eq!(p.job_id_step, 24);
-        assert_eq!(p.hcn_errata, 268);
+        assert_eq!(p.hcn, Hcn::Computed { errata: 268 });
+        assert_eq!(p.response_len, 11);
+        assert_eq!(p.host_midstates, 0);
+        assert_eq!(p.fast_uart_reg, reg::FAST_UART_CONFIGURATION);
+        assert_eq!(p.pll_prewrite, None);
         assert_eq!(
             p.frequency_options_mhz,
             &[400, 490, 525, 550, 600, 625, 690]

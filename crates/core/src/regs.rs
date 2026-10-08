@@ -19,6 +19,20 @@ use crate::pll::{PllSpec, PllWord};
 pub mod reg {
     /// Chip id; read with `GROUP_ALL` to enumerate the chain.
     pub const CHIP_ID: u8 = 0x00;
+    /// BM1397 hash-rate register (ESP-Miner `REGISTER_HASHRATE`,
+    /// WantClue `BM1397_read_hashrate`): bit 31 long/short window, bits
+    /// 30..0 the rate in units of 2²⁰ hashes per second.
+    pub const BM1397_HASHRATE: u8 = 0x04;
+    /// BM1397 ordered-clock enable (`ORDERED_CLOCK_ENABLE`, init writes
+    /// `00 00 00 01`).
+    pub const ORDERED_CLOCK_ENABLE: u8 = 0x20;
+    /// BM1397 PLL0 divider (`prefreq`, written `0F 0F 0F 00` before every
+    /// PLL0 parameter write; cgminer `calc_gsf_freq`).
+    pub const PLL0_DIVIDER: u8 = 0x70;
+    /// BM1397 clock order control 0 (init writes zero).
+    pub const CLOCK_ORDER_CONTROL_0: u8 = 0x80;
+    /// BM1397 clock order control 1 (init writes zero).
+    pub const CLOCK_ORDER_CONTROL_1: u8 = 0x84;
     /// Hash-clock PLL parameters: `[vco_scale, fb, refdiv, postdivs]`.
     pub const PLL0_PARAMETER: u8 = 0x08;
     /// Hash counting number: how far each core rolls the nonce.
@@ -183,6 +197,26 @@ pub const FAST_UART_1M: [u8; 4] = [0x11, 0x30, 0x02, 0x00];
 /// The host baud rate to switch to after writing [`FAST_UART_1M`].
 pub const FAST_UART_1M_BAUD: u32 = 1_000_000;
 
+/// Value for the BM1397's [`reg::MISC_CONTROL`] that sets its UART
+/// divider: `baud = 25 MHz / ((divider + 1) · 8)`, the divider in the
+/// low five bits of the third byte (bits 9–13 of the register), the
+/// rest as the reference writes it (`00 00 6x 31`; the default of 26
+/// gives 115 749). WantClue NerdNOS `BM1397_set_max_baud` uses divider
+/// 1 (1 562 500), ESP-Miner divider 0 (3 125 000).
+pub const fn bm1397_misc_control_baud(divider: u8) -> [u8; 4] {
+    [0x00, 0x00, 0x60 | (divider & 0x1F), 0x31]
+}
+
+/// The baud rate a BM1397 divider selects.
+pub const fn bm1397_baud(divider: u8) -> u32 {
+    25_000_000 / ((divider as u32 + 1) * 8)
+}
+
+/// The BM1397 fast rate as NerdNOS runs it: divider 1.
+pub const BM1397_FAST_UART: [u8; 4] = bm1397_misc_control_baud(1);
+/// Its host baud rate, 1 562 500.
+pub const BM1397_FAST_UART_BAUD: u32 = bm1397_baud(1);
+
 /// Hash counting number for the whole nonce space at 100 %.
 ///
 /// The chip rolls `2³² / cores_up / chips_up` nonces per job on each
@@ -338,6 +372,19 @@ mod tests {
         assert_eq!(reverse_bits(0xFF), 0xFF);
         assert_eq!(reverse_bits(0x00), 0x00);
         assert_eq!(reverse_bits(0x12), 0x48);
+    }
+
+    /// WantClue `BM1397_set_max_baud` (divider 1, `0b01100001`) and
+    /// `BM1397_set_default_baud` (divider 26, `0b01111010`, 115 749);
+    /// ESP-Miner's divider 0 gives 3 125 000.
+    #[test]
+    fn bm1397_baud_words_match_both_references() {
+        assert_eq!(BM1397_FAST_UART, [0x00, 0x00, 0x61, 0x31]);
+        assert_eq!(BM1397_FAST_UART_BAUD, 1_562_500);
+        assert_eq!(bm1397_misc_control_baud(26), [0x00, 0x00, 0x7A, 0x31]);
+        assert_eq!(bm1397_baud(26), 115_740);
+        assert_eq!(bm1397_misc_control_baud(0), [0x00, 0x00, 0x60, 0x31]);
+        assert_eq!(bm1397_baud(0), 3_125_000);
     }
 
     /// `BM1370_set_max_baud()`.
