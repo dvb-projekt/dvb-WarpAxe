@@ -201,7 +201,9 @@ back at any time with `GET /api/v1/display/frame`.
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
 - The Wi-Fi radio stays awake (no modem sleep), so a new job from the
-  pool does not wait for the access point's next beacon (~100 ms).
+  pool does not wait for the access point's next beacon (~100 ms). The
+  NerdNOS is the exception: fanless next to the ESP32-S3, it keeps modem
+  sleep on, as its stock firmware does, for a few degrees less.
 - Block height, network difficulty and the pool's coinbase tag read from the
   job; a nonce at or above the network difficulty is reported as a found
   block.
