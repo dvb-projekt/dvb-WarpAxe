@@ -193,6 +193,26 @@ stock's mask churn (158 mask changes in the hour, one every 27 s, driven
 by its periodic `suggest_difficulty`), which only a much longer run could
 show. It is not "more work", so it does not explain the heat.
 
+## Rollback after a failed update, proven on the devkit (2026-10-08)
+
+Since a51ce13 the bootloader has app rollback: an image written over
+the air boots once as pending-verify and the app marks itself valid at
+chain ready, or after three minutes up on a board without a chain. The
+bootloader is never updated over the air — a device gets it with one
+USB flash (bootloader, partition table, app); the web flasher ships it
+from the first install. Test on the devkit, three cycles with an image
+that panics ten seconds after boot: each time the bootloader came back
+to the previous app within a minute; with c8ae5f2 the API reads
+otaState "aborted" afterwards and the System page says the miner went
+back to this version. Two lessons on the way: after a USB flash of a
+device that had been updated over the air, erase otadata or it keeps
+booting the other slot; and never read the otadata partition from an
+HTTP handler — esp_ota_get_last_invalid_partition there hung the HTTP
+server for good (pings fine, port 80 dead) 35 s after boot, so the
+image state is read once on the main task at boot. Same family as
+0.1.5's reboot every minute: PSRAM-stacked threads and HTTP handlers
+keep away from flash, NVS and esp_ota_*.
+
 ## Gaps and open points before a flash
 
 1. **Midstate byte order** is the one all three references compute; a wrong
