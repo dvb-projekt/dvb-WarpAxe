@@ -414,6 +414,53 @@ pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
     Ok(clean)
 }
 
+/// The last config changes over the API: when (unix seconds, 0 before
+/// NTP), from which address, which keys. Kept across reboots so "who
+/// changed the worker?" has an answer after the fact.
+const PATCHES_KEY: &str = "patches";
+const PATCHES_MAX: usize = 12;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PatchRecord {
+    pub t: u64,
+    pub ip: String,
+    pub keys: Vec<String>,
+}
+
+pub fn patches() -> Vec<PatchRecord> {
+    let mut g = NVS.lock().unwrap();
+    let Some(nvs) = g.as_mut() else {
+        return Vec::new();
+    };
+    let mut buf = vec![0u8; 2048];
+    nvs.get_str(PATCHES_KEY, &mut buf)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(s.trim_end_matches('\0')).ok())
+        .unwrap_or_default()
+}
+
+pub fn record_patch(ip: &str, keys: &[String]) {
+    let mut list = patches();
+    list.push(PatchRecord {
+        t: crate::clock::unix_now().unwrap_or(0),
+        ip: ip.into(),
+        keys: keys.to_vec(),
+    });
+    while list.len() > PATCHES_MAX {
+        list.remove(0);
+    }
+    // Secrets never go in: only key names are stored.
+    if let Ok(json) = serde_json::to_string(&list) {
+        let mut g = NVS.lock().unwrap();
+        if let Some(nvs) = g.as_mut() {
+            if let Err(e) = nvs.set_str(PATCHES_KEY, &json) {
+                log::warn!("config: saving the patch record failed: {e}");
+            }
+        }
+    }
+}
+
 /// Record a nonce difficulty; writes NVS only when the all-time best rises,
 /// which after the first hours is rare.
 pub fn raise_best_diff(diff: u64) {

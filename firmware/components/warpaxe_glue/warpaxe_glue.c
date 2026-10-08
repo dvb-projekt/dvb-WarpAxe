@@ -202,6 +202,12 @@ void wa_reboot_to_bootloader(void)
 
 #define WA_LOG_LINES 128
 #define WA_LOG_COLS 120
+/* The first lines of a boot (config loaded, board detected, imports)
+ * are kept for good in front of the ring: the ring alone lost them to
+ * the ~40 httpd handler registrations within two seconds (2026-10-08). */
+#define WA_BOOT_LINES 40
+static char s_boot[WA_BOOT_LINES][WA_LOG_COLS];
+static int s_boot_count = 0;
 static char s_lines[WA_LOG_LINES][WA_LOG_COLS];
 static int s_head = 0;
 static int s_count = 0;
@@ -223,11 +229,19 @@ static void wa_push_line(const char *buf, int n)
             line[o++] = c;
         }
         line[o] = 0;
+        // Noise that says nothing after the fact.
+        if (o > 0 && strstr(line, "Registered Httpd server handler")) {
+            return;
+        }
         if (o > 0) {
             portENTER_CRITICAL_SAFE(&s_mux);
-            memcpy(s_lines[s_head], line, sizeof line);
-            s_head = (s_head + 1) % WA_LOG_LINES;
-            if (s_count < WA_LOG_LINES) s_count++;
+            if (s_boot_count < WA_BOOT_LINES) {
+                memcpy(s_boot[s_boot_count++], line, sizeof line);
+            } else {
+                memcpy(s_lines[s_head], line, sizeof line);
+                s_head = (s_head + 1) % WA_LOG_LINES;
+                if (s_count < WA_LOG_LINES) s_count++;
+            }
             portEXIT_CRITICAL_SAFE(&s_mux);
         }
     }
@@ -299,15 +313,20 @@ void wa_log_capture_start(void)
 
 int wa_log_count(void)
 {
-    return s_count;
+    return s_boot_count + s_count;
 }
 
 void wa_log_line(int i, char *buf, size_t n)
 {
     if (n == 0) return;
     portENTER_CRITICAL_SAFE(&s_mux);
-    int idx = ((s_head - s_count + i) % WA_LOG_LINES + WA_LOG_LINES) % WA_LOG_LINES;
-    strncpy(buf, s_lines[idx], n - 1);
+    if (i < s_boot_count) {
+        strncpy(buf, s_boot[i], n - 1);
+    } else {
+        int j = i - s_boot_count;
+        int idx = ((s_head - s_count + j) % WA_LOG_LINES + WA_LOG_LINES) % WA_LOG_LINES;
+        strncpy(buf, s_lines[idx], n - 1);
+    }
     portEXIT_CRITICAL_SAFE(&s_mux);
     buf[n - 1] = 0;
 }

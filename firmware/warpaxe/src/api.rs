@@ -340,7 +340,9 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         ("fallbackStratumTLS", 0.0, 1.0),
         ("vrTargetTemp", 40.0, 90.0),
         ("pidTargetTemp", 35.0, 85.0),
-        ("jobInterval", 100.0, 5000.0),
+        // 10 ms: a BM1397 scans its nonce space in ~100 ms at 250 MHz, so
+        // cadence experiments need the range below the old 100 ms floor.
+        ("jobInterval", 10.0, 5000.0),
     ] {
         // 0 = the default.
         if let Some(x) = num(k) {
@@ -425,6 +427,7 @@ pub fn v1_state() -> serde_json::Value {
             "wifi": { "connected": n.wifi_connected, "ip": n.wifi_ip, "rssi": n.wifi_rssi },
         },
         "http_hits": diag::HTTP_HITS.load(Ordering::Relaxed),
+        "config_patches": config::patches(),
         "last_crash": diag::last_crash(),
         "core_dump_bytes": diag::core_dump().map(|(_, n)| n),
         "stratum": stratum::state(),
@@ -645,6 +648,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     server.fn_handler("/api/system", Method::Patch, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let who = peer(&mut req);
         let body = read_body(&mut req, 4096)?;
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) if limits_refuse(&v).is_some() => {
@@ -656,10 +660,13 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             {
                 Ok(cfg) => {
                     crate::display::touch();
-                    log::info!(
-                        "config patched: {:?}",
-                        v.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())
-                    );
+                    let keys: Vec<String> =
+                        v.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                    // Who changed what, kept across reboots: a worker renamed
+                    // in the web UI showed at the pool hours later (2026-10-08)
+                    // and nobody could say where the change had come from.
+                    log::info!("config patched from {who}: {keys:?}");
+                    config::record_patch(&who, &keys);
                     if v.get("frequency").is_some() {
                         miner::request_frequency(cfg.frequency);
                     }
