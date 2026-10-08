@@ -663,6 +663,19 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     if v.get("frequency").is_some() {
                         miner::request_frequency(cfg.frequency);
                     }
+                    // Any pool field (main or fallback, the fallback
+                    // switch, the suggested difficulty): the session is
+                    // rebuilt from the new config at once.
+                    let pool_change = v.as_object().is_some_and(|o| {
+                        o.keys().any(|k| {
+                            k.starts_with("stratum")
+                                || k.starts_with("fallbackStratum")
+                                || k == "useFallbackStratum"
+                        })
+                    });
+                    if pool_change {
+                        stratum::reconnect();
+                    }
                     if v.get("coreVoltage").is_some() {
                         board::request_core_mv(cfg.core_voltage);
                     }

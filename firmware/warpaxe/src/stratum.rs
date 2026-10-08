@@ -237,6 +237,24 @@ const PRIMARY_PROBE: Duration = Duration::from_secs(300);
 /// The live stream while on the fallback, so the probe thread can end
 /// that session once the main pool answers again.
 static FALLBACK_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
+/// The link of the running session, whichever pool: `reconnect` closes
+/// it so `run` builds the next session from the current config.
+static CURRENT_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
+/// Set by `reconnect`: the session that ends next did so on purpose, so
+/// `run` neither counts a failure nor waits for the backoff.
+static RECONNECT: AtomicBool = AtomicBool::new(false);
+
+/// Pool settings changed over the API: end the running session now, so
+/// the new pool, worker, password, TLS or protocol applies within
+/// seconds instead of at the next reboot (Oliver renamed a worker on
+/// 2026-10-08 and the pool saw it hours later, at an OTA reboot).
+pub fn reconnect() {
+    RECONNECT.store(true, Ordering::Relaxed);
+    if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
+        log::info!("stratum: pool settings changed, reconnecting");
+        s.shutdown();
+    }
+}
 
 fn run() {
     let mut backoff = Duration::from_secs(3);
@@ -304,6 +322,16 @@ fn run() {
             None => session(&host, port, tls, &user, &pass, on_fallback),
         };
         *FALLBACK_STREAM.lock().unwrap() = None;
+        *CURRENT_STREAM.lock().unwrap() = None;
+        if RECONNECT.swap(false, Ordering::Relaxed) {
+            // Ended on purpose after a settings change: straight back in
+            // with the new settings, main pool first.
+            update(|s| s.connected = false);
+            on_fallback = false;
+            fails = 0;
+            backoff = Duration::from_secs(3);
+            continue;
+        }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
             log::warn!("stratum: main pool answers again, leaving the fallback");
             on_fallback = false;
@@ -373,6 +401,7 @@ fn session(
     // No try_clone: ESP-IDF has no dup(). The link is read on this thread
     // and written on a small writer thread (see `link`).
     let stream = Arc::new(Link::connect(host, port, tls)?);
+    *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     if fallback {
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
@@ -697,6 +726,8 @@ fn session_v2(
     let now = now.unwrap_or(0) as u32;
 
     let stream = Arc::new(Link::connect(host, port, false)?);
+
+    *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     if fallback {
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
