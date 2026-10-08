@@ -25,8 +25,10 @@ Sources:
 - The NerdNOS firmware (MIT): [WantClue/NerdMiner_v2](https://github.com/WantClue/NerdMiner_v2),
   branch `nerdnos`, `src/drivers/nerd-nos/nos_images/nos_initScreen.png`
   (the "NERD NOS" lettering with the bottle, cut from the top left).
-  Consent for the name and logo on the boot screen is still open: the
-  agreements above name NerdQAxe, NerdOctaxe, NerdAxe and NerdQX, not NerdNOS.
+  solomining.de answered on 2026-10-08 that the NerdNOS is not theirs, and
+  that as long as WarpAxe is open source they have nothing against showing
+  all the logos, without a request for each one. The NerdNOS artwork is
+  WantClue's; his consent is still open.
 
 "NerdQAxe", "NerdOctaxe", "NerdAxe" and "NerdQX" are trade marks
 registered by solomining.de (Bolt Engineering GmbH) on behalf of OSMU.
