@@ -173,6 +173,49 @@ Register 0x4C counted 335 in eight minutes against 20 nonces, so on the
 BM1397 it is not the error counter the BM1370 has (or it counts every
 core result); the web UI showed it as a 35 % error rate. Since
 3c58ec8's successor the driver reads only 0x04 on this chip and the
-error figures stay at zero until 0x4C is understood. The GPIO12 pulse and the GPIO13 line did
+error figures are null (API) and a dash (UI) until 0x4C is understood;
+the host checks every nonce against the ticket mask itself
+(`below_ticket`, `duplicates` in `/api/v1/state`). The GPIO12 pulse and the GPIO13 line did
 what the stock firmware's do; which one is the reset and which the buck
 enable is still only inferred.
+
+## What register 0x04 measures (experiment 2026-10-08, 02:10–02:19 UTC)
+
+The .46 ran firmware 85872f8 at 250 MHz with the stock 1.4 V rail. The
+driver's job cadence and the clock were changed over the API, each
+setting held 60–90 s, then register 0x04 read ten times and the chain's
+nonce count noted. The long window lags by minutes, so the short-window
+readings carry the comparison.
+
+| Setting | 0x04 short (GH/s) | 0x04 long | Nominal 672 × f | Nonces in the phase |
+|---|---|---|---|---|
+| 250 MHz, jobs every ~37 ms (default) | 130–153 | 136–138 | 168.0 | 62 in 416 s → 164 GH/s |
+| 250 MHz, jobs every 200 ms | 128–140 | 138 | 168.0 | 23 in 154 s (phase mixed) |
+| 250 MHz, jobs every 100 ms | 135–149 | 138 | 168.0 | 8 in 102 s → 86 GH/s |
+| 300 MHz, default cadence | 169–180 | 144 (rising) | 201.6 | 20 in 127 s → 173 GH/s |
+| 200 MHz, default cadence | 85–106 | 139 (falling) | 134.4 | 15 in 131 s → 126 GH/s |
+| 250 MHz again | 132–142 | 138 | 168.0 | 16 in 127 s → 138 GH/s |
+
+Nonce figures are rough: at a chip difficulty of 256 a phase holds 8–20
+nonces (±25–35 %). Two things are clear anyway:
+
+* **The register is not a count of hashes done.** With jobs every
+  100–200 ms the chip runs out of nonce space (2³² nonces at 168 big
+  cores × 250 MHz take about 100 ms) and the nonce rate roughly halved,
+  while 0x04 did not move. ESP-Miner's reading of 0x04 (count × 2²⁰ H/s,
+  bit 31 the long window) was taken over from the BM1370; on the BM1397
+  the value behaves like a capacity figure that falls short of 672 × f
+  by a roughly constant 50–60 GH/s (86 % at 300, 81 % at 250, 70 % at
+  200 MHz), not like a hash counter.
+* **The pool decides.** Pool-side share rate (Warppool, 1-min buckets):
+  300 MHz 01:33–01:47 UTC 36 shares ≈ 169 GH/s, 250 MHz 02:02–02:10 UTC
+  16 shares ≈ 165 GH/s, both ±25 %. A real deficit at 300 MHz of about
+  15 % is plausible and would be invisible as errors: a core that
+  computes wrongly finds no nonce rather than a wrong one (`below_ticket`
+  stays 0). Judging a clock step needs an hour at the pool (≈100 shares,
+  ±10 %), not the register.
+
+The web UI's hash-counter card shows the register as it is read; the
+dashboard's hashrate comes from shares. The register's short-window
+value tracks the clock closely enough to show that the chip follows a
+clock change.
