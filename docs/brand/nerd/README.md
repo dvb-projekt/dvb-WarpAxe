@@ -11,8 +11,9 @@ sprites:
 | `nerdaxe-wordmark.png` | NerdAxe Gamma | NerdOS theme `NerdAxeGamma` |
 | `nerdqx-wordmark.png` | NerdQX (Q1370, Q1373) | NerdOS theme `NerdQX` |
 | `nerdaxe-gaia-wordmark.png` | NerdAxe Gaia | BitMaker theme `NerdAxeGaia` |
+| `nerdnos-wordmark.png` | NerdNOS | NerdNOS firmware boot screen `nos_initScreen.png` |
 
-Sources, both GPLv3:
+Sources:
 
 - NerdOS: [shufps/ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus),
   `main/displays/images/themes/<theme>/Raw Images/initscreen2.png`;
@@ -21,6 +22,11 @@ Sources, both GPLv3:
 - BitMaker's Gaia firmware: [BitMaker-hub/ESP-Miner-NerdQAxePlus](https://github.com/BitMaker-hub/ESP-Miner-NerdQAxePlus),
   tag `gaia-v1.1.1`, `main/displays/images/themes/NerdAxeGaia/Raw Images/initscreen2.png`
   (interface by @bitmaker).
+- The NerdNOS firmware (MIT): [WantClue/NerdMiner_v2](https://github.com/WantClue/NerdMiner_v2),
+  branch `nerdnos`, `src/drivers/nerd-nos/nos_images/nos_initScreen.png`
+  (the "NERD NOS" lettering with the bottle, cut from the top left).
+  Consent for the name and logo on the boot screen is still open: the
+  agreements above name NerdQAxe, NerdOctaxe, NerdAxe and NerdQX, not NerdNOS.
 
 "NerdQAxe", "NerdOctaxe", "NerdAxe" and "NerdQX" are trade marks
 registered by solomining.de (Bolt Engineering GmbH) on behalf of OSMU.

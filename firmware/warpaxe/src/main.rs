@@ -71,6 +71,8 @@ static MARK_GAIA: (i32, i32, &[u8]) = (
     40,
     include_bytes!("splash/mark_nerdaxe-gaia_108x40.rgb565a"),
 );
+static MARK_NERDNOS: (i32, i32, &[u8]) =
+    (51, 40, include_bytes!("splash/mark_nerdnos_51x40.rgb565a"));
 static MARK_NERDQX: (i32, i32, &[u8]) =
     (86, 38, include_bytes!("splash/mark_nerdqx_86x38.rgb565a"));
 static MARK_BITAXE: (i32, i32, &[u8]) =
@@ -111,6 +113,7 @@ fn draw_splash(d: &mut display::Display) {
                 "nerdoctaxe-gamma" => Some(MARK_OCTAXE),
                 "nerdaxe-gamma" => Some(MARK_NERDAXE),
                 "nerdaxe-gaia" => Some(MARK_GAIA),
+                "nerdnos" => Some(MARK_NERDNOS),
                 "q1370" | "q1373" => Some(MARK_NERDQX),
                 "bitaxe-naja-duo" | "bitaxe-gamma-hex" => Some(MARK_BITAXE),
                 _ => None,

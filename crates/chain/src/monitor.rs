@@ -202,6 +202,13 @@ impl<const N: usize> HashrateMonitor<N> {
     /// errors until it is understood.
     pub const REGISTERS_RATE: [u8; 1] = [reg::BM1397_HASHRATE];
 
+    /// Whether the chips have an error counter the monitor reads. A chip
+    /// read through its rate register alone (the BM1397) has none: its
+    /// error fields are unmeasured, not zero.
+    pub fn has_error_counter(&self) -> bool {
+        self.rate_register.is_none()
+    }
+
     /// The registers the driver polls per chip of this chain, in order.
     pub fn registers(&self) -> &'static [u8] {
         if self.domains == 0 {

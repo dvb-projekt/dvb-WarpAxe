@@ -20,9 +20,10 @@ use warpaxe_chain::Uart;
 pub struct AsicMonitor {
     /// GH/s from the chip's total counter.
     pub total: f32,
-    /// The raw error counter value, as AxeOS reports it.
+    /// The raw error counter value, as AxeOS reports it; null on a chip
+    /// without an error counter (the BM1397).
     #[serde(rename = "errorCount")]
-    pub error_count: u32,
+    pub error_count: Option<u32>,
     /// GH/s per domain, scaled as AxeOS reports them.
     pub domains: Vec<f32>,
     /// GH/s of the error counter (NerdOS `errorHashRate`, served by
@@ -88,9 +89,9 @@ pub struct MinerState {
     pub hashrate_monitor: Vec<AsicMonitor>,
     /// Hash errors as a percentage of the chips' total (AxeOS
     /// `error_percentage`), from the last second's readings.
-    pub error_percent: f32,
+    pub error_percent: Option<f32>,
     /// The same over the last full minute: what a controller acts on.
-    pub error_percent_1m: f32,
+    pub error_percent_1m: Option<f32>,
     pub blocks_found: u32,
     pub last_block: Option<(u64, u64)>,
 }
@@ -511,14 +512,14 @@ fn run(mut uart: ChipUart) {
                         .enumerate()
                         .map(|(i, c)| AsicMonitor {
                             total: c.total.ghs,
-                            error_count: c.error.value,
+                            error_count: mon.has_error_counter().then_some(c.error.value),
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
                             error_ghs: c.error.ghs,
                             total_1m: c.total.ghs_1m,
                         })
                         .collect();
-                    let pct = mon.error_percent();
-                    let pct_1m = mon.error_percent_1m();
+                    let pct = mon.has_error_counter().then(|| mon.error_percent());
+                    let pct_1m = mon.has_error_counter().then(|| mon.error_percent_1m());
                     update(|s| {
                         s.hashrate_monitor = asics;
                         s.error_percent = pct;

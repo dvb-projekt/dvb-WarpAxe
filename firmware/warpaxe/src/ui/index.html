@@ -507,7 +507,7 @@ function dashboard() {
   </section>
   <div class="g3">
     <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.hasFan === false ? null : i.pidTargetTemp, i.overheat_temp, maxT)}${i.hasVr === false ? "" : tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
-    <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}>${i.hasFan === false ? "" : `<h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>`}
+    <section class="card ins"${i.cpuMiner || (i.hasFan === false && i.hasVr === false) ? ' style="display:none"' : ""}>${i.hasFan === false ? "" : `<h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>`}
       ${i.hasVr === false ? "" : `<div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
       <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>`}
       <div class="row" style="margin:0"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>
@@ -560,7 +560,7 @@ function hcCard(i) {
   // is a real 0 (a Gamma can run minutes without a single error).
   const e1 = i.errorPercentage1m, ep = e1 != null ? (e1 > 0 || i.uptimeSeconds > 90 ? e1 : null) : i.errorPercentage;
   const epc = ep == null || b1373 ? "" : ep >= 5 ? "err" : ep >= 1 ? "warn" : "ok";
-  const gh = v => v >= 1000 ? `${nf(v / 1000, 2)} TH/s` : `${nf(v, 0)} GH/s`;
+  const gh = v => v >= 1000 ? `${nf(v / 1000, 2)} TH/s` : `${nf(v, 2)} GH/s`;
   const rows = m.map((a, k) => {
     const all = a.domains || [], d = all.filter(v => v != null), mean = d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0, top = Math.max(mean * 1.25, ...d, 1);
     const bars = all.map((v, j) => {
@@ -692,9 +692,10 @@ function settingsPage() {
   const pre = asic?.frequencyOptions?.length ? {f: asic.frequencyOptions, v: asic.voltageOptions || cp.v, df: asic.defaultFrequency, dv: asic.defaultVoltage} : cp;
   const html = `<form id="sf">` +
   (oc ? `<div class="note" style="background:rgba(255,90,90,.08);border:1px solid rgba(255,90,90,.35);align-items:center;flex-wrap:wrap"><b class="err">OC</b><span class="mute" style="flex:1">${t("oc_warn")}</span><button type="button" class="btn" data-act="ocoff" style="height:36px">${t("oc_off")}</button></div>` : "") +
-  sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint})
-      : sel("frequency", c.frequency, pre.f, pre.df, {hint: t("oc_hint")}) + sel("coreVoltage", c.coreVoltage, pre.v, pre.dv, {hint: vHint})),
-    `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
+  // A board with a fixed core rail (hasVr false: the NerdNOS) keeps only the clock here, stepped by hand; nothing regulates it.
+  sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + (i.hasVr === false ? "" : fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint}))
+      : sel("frequency", c.frequency, pre.f, pre.df, {hint: t("oc_hint")}) + (i.hasVr === false ? "" : sel("coreVoltage", c.coreVoltage, pre.v, pre.dv, {hint: vHint}))),
+    i.hasVr === false ? "" : `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
   // A board without a fan the firmware can drive (hasFan false: the NerdNOS) keeps only the stop temperature here.
   sec(t("fan_temp"), i.hasFan === false ? "" : t(two ? (c.linkFans ? "fan_temp_hint_linked" : "fan_temp_hint_two") : "fan_temp_hint_one"), (i.hasFan === false ? "" : tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85})) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + (i.hasFan === false ? "" : fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")}) + (two ? tog("linkFans", c.linkFans, t("linkFans_s"), true) : ""))) +
   (oc ? xpSec(c, i, two) : "") +
