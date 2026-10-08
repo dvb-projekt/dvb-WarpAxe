@@ -378,7 +378,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, fixed by resistors (about 1.4 V) | **runs** since 2026-10-08, at 250 MHz (300 MHz reached 69 °C with a case fan; the board has none of its own); the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; offered on the first start, never taken on its own; the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
+| NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08, at 250 MHz (300 MHz reached 69 °C with a case fan; the board has none of its own); the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; offered on the first start, never taken on its own; the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken
@@ -566,7 +566,7 @@ reverse engineering, chiefly [ESP-Miner](https://github.com/bitaxeorg/ESP-Miner)
 (GPL-3.0) and, for the Nerd boards,
 [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (GPL-3.0); for the BM1397 also ESP-Miner's Bitaxe Max driver, cgminer's
-`driver-gekko.c` (GPL-3.0) and the NerdNOS firmware,
+`driver-gekko.c` (GPL-3.0), the NerdNOS hardware ([WantClue/NerdNOS](https://github.com/WantClue/NerdNOS), rev 1.3) and its firmware,
 [WantClue/NerdMiner_v2](https://github.com/WantClue/NerdMiner_v2) branch
 `nerdnos` (MIT), compared step by step in
 [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md). Every constant lifted from there says so in its doc comment;
