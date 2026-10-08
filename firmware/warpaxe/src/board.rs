@@ -2101,16 +2101,26 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 };
                 imported.extend(crate::cpuminer::import_nerdminer(worker));
                 let settings = imported.contains(&"wallet (nerdminer)");
-                match detect::bare_board(settings, ntc.is_some()) {
+                // The carrier's core rail on GPIO3 (read-only), 1.4 V on a
+                // NerdNOS; a bare board's pin floats.
+                let rail = ntc
+                    .is_some()
+                    .then(|| crate::ntc::Reader::new_pin(3).and_then(|r| r.millivolts()))
+                    .flatten();
+                if ntc.is_some() {
+                    log::info!("board: GPIO3 reads {rail:?} mV (the NerdNOS core rail would be ~1400)");
+                }
+                match detect::bare_board(settings, ntc.is_some(), rail) {
                     Detection::Board(p, why) => {
                         log::warn!(
-                            "board: {why}, hashing on the CPU; took {}",
+                            "board: {why}; {}; took {}",
+                            if p.asic_count == 0 { "hashing on the CPU" } else { "chips on" },
                             imported.join(", ")
                         );
                         let mut cfg = config::get();
                         cfg.board_model = p.name.into();
                         if let Err(e) = config::save(&cfg) {
-                            log::warn!("board: saving the devkit profile failed: {e}");
+                            log::warn!("board: saving the {} profile failed: {e}", p.name);
                         }
                         *DETECT.lock().unwrap() = Some(DetectInfo {
                             status: "detected",

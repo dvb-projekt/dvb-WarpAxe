@@ -167,15 +167,28 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
 
 /// Nothing answered on either bus and the stock firmware stored no
 /// keys: a LilyGO T-Display-S3 on its own, or on the NerdNOS carrier.
-/// Two read-only signs: a NerdMiner's `config.json` in flash (both
-/// stock firmwares are NerdMiner forks), and the NerdNOS's thermistor
-/// divider on GPIO2, which reads a steady mid-rail voltage where a bare
-/// board's pin floats ([`crate::ntc::Config::plausible`]). With the
-/// thermistor the NerdNOS is offered first, never taken: nothing may
-/// drive its chip's reset line until someone says so, and a bare board
-/// with NerdMiner's settings becomes the devkit as before. Without
-/// either sign the choice is open.
-pub fn bare_board(nerdminer_settings: bool, thermistor: bool) -> Detection {
+/// Read-only signs: a NerdMiner's `config.json` in flash (both stock
+/// firmwares are NerdMiner forks), the NerdNOS's thermistor divider on
+/// GPIO2, which reads a steady mid-rail voltage where a bare board's pin
+/// floats ([`crate::ntc::Config::plausible`]), and the carrier's 1.4 V
+/// core rail on GPIO3 (rev 1.3 schematic: U1 pad 4 = VDD, the
+/// TPS566247's output, 1.398 V by its divider). Thermistor and rail
+/// together exist on no other board: that is the NerdNOS, taken outright
+/// (2026-10-08; before, it was offered first and chosen by hand). The
+/// thermistor alone still only offers it: nothing may drive a chip's
+/// reset line on a guess. A bare board with NerdMiner's settings becomes
+/// the devkit as before; without any sign the choice is open.
+pub fn bare_board(
+    nerdminer_settings: bool,
+    thermistor: bool,
+    core_rail_mv: Option<u16>,
+) -> Detection {
+    if thermistor && core_rail_mv.is_some_and(nerdnos_rail) {
+        return Detection::Board(
+            &NERDNOS,
+            "a thermistor divider on GPIO2 and the 1.4 V core rail on GPIO3: the NerdNOS carrier",
+        );
+    }
     match (thermistor, nerdminer_settings) {
         (true, true) => Detection::Choose(
             &[&NERDNOS, &T_DISPLAY_S3_DEVKIT],
@@ -191,6 +204,13 @@ pub fn bare_board(nerdminer_settings: bool, thermistor: bool) -> Detection {
         ),
         (false, false) => Detection::Choose(&[], "no known chips answered"),
     }
+}
+
+/// The NerdNOS core rail as GPIO3 reads it: 1.4 V nominal (1393–1400 mV
+/// seen on the .46), with room for the divider's tolerance and a rail
+/// under load. A floating pin or a 3.3 V signal is not it.
+pub fn nerdnos_rail(mv: u16) -> bool {
+    (1250..=1550).contains(&mv)
 }
 
 /// Stock NVS first, then the bus.
@@ -223,6 +243,36 @@ pub fn detect(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_nerdnos_is_taken_with_thermistor_and_rail_only() {
+        use super::*;
+        match bare_board(false, true, Some(1398)) {
+            Detection::Board(p, _) => assert_eq!(p.name, "nerdnos"),
+            other => panic!("{other:?}"),
+        }
+        // Rail without the thermistor, thermistor without the rail, or a
+        // rail reading that is not 1.4 V: offered, not taken.
+        assert!(matches!(
+            bare_board(false, false, Some(1398)),
+            Detection::Choose(..)
+        ));
+        assert!(matches!(
+            bare_board(false, true, None),
+            Detection::Choose(..)
+        ));
+        assert!(matches!(
+            bare_board(true, true, Some(3290)),
+            Detection::Choose(..)
+        ));
+        assert!(matches!(
+            bare_board(false, true, Some(0)),
+            Detection::Choose(..)
+        ));
+        assert!(
+            matches!(bare_board(true, false, None), Detection::Board(p, _) if p.name == "t-display-s3")
+        );
+    }
+
     use super::*;
 
     const NONE: (Option<&str>, Option<&str>, Option<&str>) = (None, None, None);
@@ -336,10 +386,10 @@ mod tests {
     #[test]
     fn a_bare_t_display_is_the_devkit_a_thermistor_offers_the_nerdnos() {
         assert!(
-            matches!(bare_board(true, false), Detection::Board(p, _) if p.name == "t-display-s3")
+            matches!(bare_board(true, false, None), Detection::Board(p, _) if p.name == "t-display-s3")
         );
         for settings in [true, false] {
-            match bare_board(settings, true) {
+            match bare_board(settings, true, None) {
                 Detection::Choose(c, _) => assert_eq!(
                     c.iter().map(|p| p.name).collect::<Vec<_>>(),
                     ["nerdnos", "t-display-s3"]

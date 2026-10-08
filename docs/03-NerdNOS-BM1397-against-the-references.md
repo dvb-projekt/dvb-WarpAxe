@@ -193,6 +193,18 @@ stock's mask churn (158 mask changes in the hour, one every 27 s, driven
 by its periodic `suggest_difficulty`), which only a much longer run could
 show. It is not "more work", so it does not explain the heat.
 
+## First start without a hand: the NerdNOS detects itself (2026-10-08)
+
+The rev 1.3 schematic gave a signature no other board has: the
+thermistor divider on GPIO2 (a steady mid-rail voltage where a bare
+T-Display's pin floats) together with the carrier's 1.4 V core rail on
+GPIO3 (U1 pad 4 = VDD, the TPS566247's 1.398 V). With both, the first
+start takes the NerdNOS profile outright and the chips run from the
+first boot; the .46 needed `PATCH boardModel` and a restart before. The
+thermistor alone still only offers the choice, as nothing may drive a
+chip's reset line on a guess, and the worst case of a wrong take is a
+chain that finds no chip and stops.
+
 ## Rollback after a failed update, proven on the devkit (2026-10-08)
 
 Since a51ce13 the bootloader has app rollback: an image written over
