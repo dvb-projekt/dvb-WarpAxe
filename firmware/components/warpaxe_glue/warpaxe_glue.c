@@ -154,9 +154,14 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len)
     return err;
 }
 
+// A host is there and talking. tud_mounted() alone stays true after the
+// cable is pulled on a board powered from elsewhere (the NerdNOS from its
+// carrier's USB-C): the ESP32-S3's PHY has no VBUS sense, so no bus reset
+// ever clears the configured state. A pulled cable looks like a suspend
+// (no bus activity for 3 ms), and tud_suspended() reports that.
 bool wa_usb_mounted(void)
 {
-    return tud_mounted();
+    return tud_mounted() && !tud_suspended();
 }
 
 int wa_cpu_freq_mhz(void)
