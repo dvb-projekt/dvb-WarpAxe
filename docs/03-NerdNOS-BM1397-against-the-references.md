@@ -200,7 +200,14 @@ thermistor divider on GPIO2 (a steady mid-rail voltage where a bare
 T-Display's pin floats) together with the carrier's 1.4 V core rail on
 GPIO3 (U1 pad 4 = VDD, the TPS566247's 1.398 V). With both, the first
 start takes the NerdNOS profile outright and the chips run from the
-first boot; the .46 needed `PATCH boardModel` and a restart before. The
+first boot; the .46 needed `PATCH boardModel` and a restart before. One
+catch found on the first try: the buck's enable (GPIO13) has a 10 k
+pull-down, so the rail is off at every boot and GPIO3 read 0 mV. With
+the thermistor there, the first start drives GPIO13 high for 150 ms for
+the reading and back off; the chip stays in reset meanwhile (RST floats
+high through R14 into the inverter), and a bare T-Display has nothing on
+that pin. Verified on the .46 with 66cdbe1: 1399 mV, profile taken,
+chain ready 18 s after boot. The
 thermistor alone still only offers the choice, as nothing may drive a
 chip's reset line on a guess, and the worst case of a wrong take is a
 chain that finds no chip and stops.
