@@ -398,7 +398,7 @@ mod tests {
             }
         }
         assert_eq!(
-            bare_board(false, false),
+            bare_board(false, false, None),
             Detection::Choose(&[], "no known chips answered")
         );
         assert!(!TESTED.contains(&NERDNOS.name), "never run");
