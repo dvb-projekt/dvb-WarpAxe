@@ -519,9 +519,16 @@ pub fn mark_app_valid(why: &str) {
     }
 }
 
-/// The bootloader's view of the running image, for the API.
+/// The bootloader's view, for the API: "aborted" when the last update
+/// never proved itself and the bootloader came back to this image (the
+/// aborted state sits on the other slot, which
+/// esp_ota_get_last_invalid_partition names; the running image itself
+/// reads "valid"); otherwise the running image's own state.
 pub fn ota_state() -> &'static str {
     use esp_idf_svc::sys as sys;
+    if !unsafe { sys::esp_ota_get_last_invalid_partition() }.is_null() {
+        return "aborted";
+    }
     let part = unsafe { sys::esp_ota_get_running_partition() };
     if part.is_null() {
         return "unknown";
