@@ -240,6 +240,29 @@ pub struct Profile {
     /// it is used to (the NerdNOS's GPIO12, WantClue `_reset`; see
     /// [`NERDNOS`]). `None` on every other board.
     pub stock_reset_pulse: Option<u8>,
+    /// A power estimate for a board without any power reading
+    /// ([`PowerEstimate`]); `None` where the regulator reports power.
+    pub power_estimate: Option<PowerEstimate>,
+}
+
+/// A power figure for a board that measures none: `base_w` for the
+/// controller, display and regulator losses plus `per_ghz_w` per GHz of
+/// chip clock (dynamic power scales with the clock at a fixed core
+/// voltage). Reported as the board's power with `powerEstimated: true`,
+/// never as a measurement.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PowerEstimate {
+    /// Watts with the chip clock at zero.
+    pub base_w: f32,
+    /// Watts per GHz of chip clock.
+    pub per_ghz_w: f32,
+}
+
+impl PowerEstimate {
+    /// The estimate at a chip clock in Hz.
+    pub fn watts(&self, hz: u32) -> f32 {
+        self.base_w + self.per_ghz_w * (hz as f32 / 1e9)
+    }
 }
 
 /// The chip power-enable line: driven to `active_high` 20 ms before the
@@ -304,6 +327,13 @@ impl Profile {
         } else {
             base
         }
+    }
+
+    /// The board drives a fan: a thermal part with a fan output. A
+    /// thermistor-only board (the NerdNOS) and the devkit have none the
+    /// firmware can see, whatever is blowing in the case.
+    pub fn has_fan(&self) -> bool {
+        !matches!(self.thermal, Thermal::None | Thermal::Ntc(_))
     }
 
     /// The profile for a board name from the config; `None` for a
@@ -424,6 +454,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// Bitaxe Gamma Duo (650): two BM1370 of the XP bin on the 5 V Gamma
@@ -597,6 +628,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -649,6 +681,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -704,6 +737,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// NerdAxe Gaia: one BM1373 on a 12 V carrier (BitMaker fork of NerdOS,
@@ -768,6 +802,7 @@ pub const NERDAXE_GAIA: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -821,6 +856,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    power_estimate: None,
 };
 
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
@@ -1040,6 +1076,13 @@ pub const NERDNOS: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: Some(12),
+    // The OSMU wiki's "about 8 W at stock" (300 MHz) less about 1.5 W for
+    // the T-Display-S3, its LCD and the LDOs: 21.7 W per GHz of clock.
+    // Nothing on the board measures power.
+    power_estimate: Some(PowerEstimate {
+        base_w: 1.5,
+        per_ghz_w: 21.7,
+    }),
 };
 
 /// Not in [`ALL`], so it cannot be configured by name.
@@ -1295,6 +1338,20 @@ mod tests {
         assert!(p.voltage_options.is_empty());
         assert!(p.frequency_options.contains(&300));
         assert_eq!(p.asic_enable, None);
+        assert!(!p.has_fan());
+        assert!(BITAXE_GAMMA.has_fan());
+        assert!(!T_DISPLAY_S3_DEVKIT.has_fan());
+        let e = p.power_estimate.unwrap();
+        assert!(
+            (e.watts(300_000_000) - 8.01).abs() < 0.02,
+            "{}",
+            e.watts(300_000_000)
+        );
+        assert!((e.watts(0) - 1.5).abs() < 0.01);
+        assert!(ALL
+            .iter()
+            .filter(|q| q.name != "nerdnos")
+            .all(|q| q.power_estimate.is_none()));
         assert_eq!(Profile::by_name("nerdnos"), Some(p));
         // The other boards keep their reset lines as they were.
         for q in ALL {

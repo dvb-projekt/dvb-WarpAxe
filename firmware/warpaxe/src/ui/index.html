@@ -326,6 +326,8 @@ const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt
 const nf = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
 // The T-Display-S3 without chips (`cpuMiner` in the info): a few hundred kH/s, not TH/s.
 const cpuHs = i => i.cpuMiner ? {v: nf(i.cpuMiner.khs10m, 2), u: "kH/s", sub: `SHA ${nf(i.cpuMiner.hwKhs, 2)} · CPU ${nf(i.cpuMiner.swKhs, 2)} kH/s`} : null;
+// A rate in GH/s with the unit it reads best in: TH/s from 1 TH/s, else GH/s (a BM1397 does ~200).
+const hru = g => g == null ? {v: "–", u: "TH/s"} : g >= 1000 ? {v: nf(g / 1000, 2), u: "TH/s"} : {v: nf(g, g >= 100 ? 0 : 1), u: "GH/s"};
 function sfx(v) { if (v == null || isNaN(v)) return "–"; const u = ["", "k", "M", "G", "T", "P", "E"]; let i = 0; while (v >= 1000 && i < 6) { v /= 1000; i++; } return nf(v, i ? 2 : 0) + (u[i] ? " " + u[i] : ""); }
 function upt(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " " + t("days") + " " : "") + h + " h " + String(m).padStart(2, "0") + " min"; }
 function toast(msg, cls) { const e = $("#toast"); e.textContent = msg; e.className = "show " + (cls || ""); clearTimeout(toast.h); toast.h = setTimeout(() => e.className = "", 3500); }
@@ -395,11 +397,11 @@ function kpis(i) {
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), stalePct = tot ? (i.sharesRejected / tot * 100) : 0;
   const k = (l, v, u, s, c) => `<div class="card kpi"><div class="lbl">${l}</div><div class="v"><b style="color:${c || "var(--fg)"}">${v}</b><span class="mute">${u}</span></div><div class="s">${s}</div></div>`;
   const c = cpuHs(i);
-  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), nf(th, 2), "TH/s", `${t("expected")} ${nf(exp, 2)} TH/s`)}${c ? "" : k(t("efficiency"), nf(eff, 1), "J/TH", `${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${c ? k(t("bestdiff"), nf(i.cpuMiner.bestDiff, 3), "", t("since_boot"), "var(--btc)") : k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
+  return `<div class="g4">${c ? k(t("hashrate10"), c.v, c.u, c.sub) : k(t("hashrate10"), hru(th == null ? null : th * 1000).v, hru(exp * 1000).u, `${t("expected")} ${hru(exp * 1000).v} ${hru(exp * 1000).u}`)}${c ? "" : k(t("efficiency"), (i.powerEstimated ? "≈" : "") + nf(eff, 1), "J/TH", `${i.powerEstimated ? "≈" : ""}${nf(i.power, 1)} ${t("power_w")}`)}${k(t("shares"), nf(i.sharesAccepted), "", `${nf(i.sharesRejected)} ${t("rejected")} · ${nf(stalePct, 2)} %`)}${c ? k(t("bestdiff"), nf(i.cpuMiner.bestDiff, 3), "", t("since_boot"), "var(--btc)") : k(t("bestdiff"), sfx(i.bestSessionDiff), "", `${t("since_boot")} · ${t("alltime")} ${sfx(i.bestDiff)}`, "var(--btc)")}</div>`;
 }
 function clockLabels() {
   const now = lang === "de" ? "jetzt" : "now";
-  if (!hist.unixNow) return `<span>−${span / 60} min</span><span>TH/s · °C</span><span>${now}</span>`;
+  if (!hist.unixNow) return `<span>−${span / 60} min</span><span>${info?.cpuMiner ? "kH/s" : (info?.expectedHashrate || 0) < 1000 ? "GH/s" : "TH/s"} · °C</span><span>${now}</span>`;
   const fmt = sec => new Date(sec * 1000).toLocaleTimeString(lang, {hour: "2-digit", minute: "2-digit"});
   return `<span>${fmt(hist.unixNow - span)}</span><span>${fmt(hist.unixNow - span / 2)}</span><span>${fmt(hist.unixNow)}</span>`;
 }
@@ -416,7 +418,7 @@ function chart() {
   // The hashrate line is a one-minute moving average: a 10 s point counts
   // only a dozen chip results on a Gamma, so single points scatter by a
   // third; a minute keeps real dips and drops the counting noise.
-  const cpu = !!info?.cpuMiner, raw = hist.hashrate.map(v => v == null ? null : cpu ? v * 1e6 : v / 1000), tc = hist.temp;
+  const cpu = !!info?.cpuMiner, gh = !cpu && (info?.expectedHashrate || 0) < 1000, raw = hist.hashrate.map(v => v == null ? null : cpu ? v * 1e6 : gh ? v : v / 1000), tc = hist.temp;
   const dt = hist.t.length > 1 ? (hist.t[hist.t.length - 1] - hist.t[0]) / (hist.t.length - 1) : 10;
   const win = Math.max(1, Math.round(120 / (dt || 10)));
   const hr = raw.map((v, k) => { if (v == null) return null; let sum = 0, n = 0; for (let j = Math.max(0, k - win + 1); j <= k; j++) if (raw[j] != null) { sum += raw[j]; n++; } return sum / n; });
@@ -447,7 +449,7 @@ function chart() {
   const dH = ha.step < 0.1 ? 2 : 1, dT = ta && ta.step < 1 ? 1 : 0;
   const axis = (a, d, u, col, align) => `<div class="num" style="display:flex;flex-direction:column;justify-content:space-between;height:${H}px;font-size:11px;color:${col};text-align:${align};min-width:44px">${Array.from({length: a.n + 1}, (_, k) => `<span style="line-height:0">${nf(a.hi - a.step * k, d)}</span>`).join("")}</div>`;
   return `<div style="display:flex;gap:8px;align-items:stretch;padding:6px 0">
-  ${axis(ha, dH, cpu ? "kH/s" : "TH/s", "#A994FF", "right")}
+  ${axis(ha, dH, cpu ? "kH/s" : gh ? "GH/s" : "TH/s", "#A994FF", "right")}
   <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="none" role="img" aria-label="${t("history")}" style="flex:1;min-width:0;overflow:visible">${grid}
     <polygon points="${first},${H} ${hl} ${last},${H}" fill="#7B5CFF" fill-opacity=".12"/>
     <polyline points="${hl}" fill="none" stroke="#7B5CFF" stroke-width="2" vector-effect="non-scaling-stroke"/>
@@ -494,19 +496,19 @@ function dashboard() {
     <div class="dhid">${chips}<div class="dhname"><h1>${esc(i.boardName || i.boardVersion)}<span class="fam" style="color:${f.col};border-color:${f.col}">${t(f.key)}</span></h1><div class="mute" style="font-size:13px">${sub}</div></div>
       <div class="dhmeta"><div><span class="lbl">${t("uptime")}</span><b>${upt(i.uptimeSeconds)}</b></div><div><span class="lbl">${t("firmware")}</span><b>${esc(i.version)}</b></div><div><span class="lbl">${t("wifi")}</span><b style="display:flex;align-items:center;gap:6px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</b></div></div></div>
     <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${c ? c.v : nf(th, 2)}</span><span class="swunit">${c ? c.u : "TH/s"}</span></div>
-      <div class="dhsub">${c ? c.sub : `${t("expected")} ${nf(exp, 2)} TH/s${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}`}</div></div>
-      <div class="dhfacts">${c ? "" : `<div><span class="lbl">${t("efficiency")}</span><b>${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
-        <div><span class="lbl">${t("power")}</span><b>${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>`}
+      <div class="dhsub">${c ? c.sub : `${t("expected")} ${hru(exp * 1000).v} ${hru(exp * 1000).u}${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}`}</div></div>
+      <div class="dhfacts">${c ? "" : `<div><span class="lbl">${t("efficiency")}</span><b>${i.powerEstimated ? "≈" : ""}${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
+        <div><span class="lbl">${t("power")}</span><b>${i.powerEstimated ? "≈" : ""}${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>`}
         <div><span class="lbl">${t("shares")}</span><b>${nf(i.sharesAccepted)}</b><small>${nf(i.sharesRejected)} ${t("rejected")} · ${nf(rejPct, 2)} %</small></div>
         <div><span class="lbl">${t("bestdiff")}</span><b style="color:var(--btc)">${c ? nf(i.cpuMiner.bestDiff, 3) : sfx(i.bestSessionDiff)}</b><small>${c ? t("since_boot") : `${t("alltime")} ${sfx(i.bestDiff)}`}</small></div></div></div>
     <div class="dhchart"><div class="top"><span class="lbl">${t("history")}</span><div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap"><span class="legend"><span style="width:14px;height:3px;border-radius:2px;background:#7B5CFF"></span>${t("legend_hr")}</span><span class="legend"><span style="width:14px;border-top:2px dashed #00E0FF"></span>${t("legend_temp")}</span>
       <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</div>
   </section>
   <div class="g3">
-    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
-    <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}><h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>
-      <div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
-      <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>
+    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${i.hasVr === false ? "" : tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
+    <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}>${i.hasFan === false ? "" : `<h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>`}
+      ${i.hasVr === false ? "" : `<div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
+      <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>`}
       <div class="row" style="margin:0"><span class="mute">${t("clock")}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div></section>
     <section class="card ins"><h2>${t("pool")}<small class="${i.stratumConnected ? "ok" : "err"}">${t(i.stratumConnected ? "connected" : "disconnected")}</small></h2>
       <div class="plink"><span class="dot" style="${!i.stratumConnected ? "background:var(--err);box-shadow:0 0 10px var(--err)" : i.isUsingFallbackStratum ? "background:var(--warn);box-shadow:0 0 10px var(--warn)" : ""}"></span><span class="host">${esc(i.isUsingFallbackStratum ? i.activePool : `${i.stratumURL}:${i.stratumPort}`)}</span><span class="num" style="font-size:12px;color:var(--plasma);white-space:nowrap">${i.stratumProtocolActive === "SV2" ? "Sv2 · Noise" : "V1"}${i.stratumTLSActive ? " · TLS" : ""}</span></div>
@@ -692,7 +694,8 @@ function settingsPage() {
   sec(t("tuning"), tuneHint, (oc ? fld("frequency", c.frequency, {type: "number", min: 100, max: asic?.absMaxFrequency || 1200, hint: fHint}) + fld("coreVoltage", c.coreVoltage, {type: "number", min: asic?.absMinVoltage || 700, max: asic?.absMaxVoltage || 1400, hint: vHint})
       : sel("frequency", c.frequency, pre.f, pre.df, {hint: t("oc_hint")}) + sel("coreVoltage", c.coreVoltage, pre.v, pre.dv, {hint: vHint})),
     `<div class="note" style="margin-top:16px;background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3)"><b class="warn">WarpTune</b><span class="mute">${t("tuner_note")}</span></div>`) +
-  sec(t("fan_temp"), t(two ? (c.linkFans ? "fan_temp_hint_linked" : "fan_temp_hint_two") : "fan_temp_hint_one"), tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85}) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")}) + (two ? tog("linkFans", c.linkFans, t("linkFans_s"), true) : "")) +
+  // A board without a fan the firmware can drive (hasFan false: the NerdNOS) keeps only the stop temperature here.
+  sec(t("fan_temp"), i.hasFan === false ? "" : t(two ? (c.linkFans ? "fan_temp_hint_linked" : "fan_temp_hint_two") : "fan_temp_hint_one"), (i.hasFan === false ? "" : tog("autofanspeed", c.autofanspeed, t("autofan_s")) + tog("invertfanpolarity", c.invertfanpolarity, t("invertfan_s")) + fld("pidTargetTemp", c.pidTargetTemp || i.pidTargetTemp, {type: "number", min: 35, max: 85})) + fld("overheat_temp", c.overheat_temp || i.overheat_temp, {type: "number", min: 50, max: 90, hint: t("overheat_s")}) + (i.hasFan === false ? "" : fld("minFanSpeed", c.minFanSpeed, {type: "number", min: 0, max: 100, hint: t("minFan_s")}) + fld("fanspeed", c.fanspeed, {type: "number", min: 0, max: 100, hint: t("fanspeed_s")}) + (two ? tog("linkFans", c.linkFans, t("linkFans_s"), true) : ""))) +
   (oc ? xpSec(c, i, two) : "") +
   sec(t("display"), t("display_hint"), tog("flipscreen", c.flipscreen) + tog("invertscreen", c.invertscreen) + fld("displayTimeout", c.displayTimeout, {type: "number", min: 0, max: 1440}) + ssel("displayLanguage", c.displayLanguage || "en", [["en", "English"], ["de", "Deutsch"], ["es", "Español"], ["fr", "Français"], ["it", "Italiano"], ["pt", "Português"]]) +
     tog("btcPrice", c.btcPrice, t("btc_s"), true) + ssel("priceCurrency", c.priceCurrency || "EUR", CUR),
@@ -979,7 +982,7 @@ function swStation(addr, j, self, record) {
   const best = j.bestDiff, isRec = typeof best === "number" && best === record && record > 0;
   return `<div class="swst" style="--c:${c}"><div class="swsh"><div style="min-width:0"><div class="swname"><span class="swdot" style="background:${hot ? "var(--err)" : th > 0 ? "var(--ok)" : "var(--warn)"}"></span>${esc(j.hostname || addr)}</div>
     <div class="swsub">${self ? t("sw_this") : esc(addr)} · ${esc(fw)} · ${esc(chips)}</div></div>${icons}</div>
-    <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${cpu ? nf(j.hashRate * 1e6, 1) : nf(th, 2)}<small>${cpu ? "kH/s" : "TH/s"}</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${cpu ? nf(j.hashRate * 1e6, 1) : hru(j.hashRate).v}<small>${cpu ? "kH/s" : hru(j.hashRate).u}</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
     ${swSpark(sw.hist[addr] || [], c)}
     <div class="swg">${swGauge(cpu ? "ESP32-S3" : t("sw_chip"), j.temp, j.overheat_temp || 75)}${cpu ? "" : swGauge(t("sw_vr"), j.vrTemp, j.vrOverheatTemp || 105)}</div>
     <div class="swfoot"><span>${cpu ? "" : `${nf(w, 1)} W${eff == null ? "" : " · " + nf(eff, 1) + " J/TH"}`}</span><span>${nf(j.sharesAccepted)} / <span class="${j.sharesRejected ? "warn" : ""}">${nf(j.sharesRejected)}</span></span><span title="${t("sw_best")}" style="${isRec ? "color:var(--btc)" : ""}">${swBest(best)}</span></div></div>`;

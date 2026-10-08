@@ -72,6 +72,9 @@ pub struct BoardState {
     /// boards — what AxeOS and NerdOS each report as `current`.
     pub iout_ma: Option<f32>,
     pub power_w: Option<f32>,
+    /// `power_w` is the profile's estimate, not a measurement (the
+    /// NerdNOS: nothing on the board reads power).
+    pub power_estimated: bool,
     /// The regulator's output current (IOUT), A, on every board.
     pub core_current_a: Option<f32>,
     /// Its over-current warning limit as written at init, A.
@@ -1459,6 +1462,15 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 );
                 status = vr.status();
             }
+            // A board that measures no power: the profile's estimate from
+            // the chip clock, flagged as such for the API and the display.
+            let mut power_estimated = false;
+            if power.is_none() {
+                if let Some(e) = profile.power_estimate {
+                    power = Some(e.watts(crate::miner::state().frequency_hz));
+                    power_estimated = true;
+                }
+            }
             // The core rail on a board that senses it on the ADC instead
             // of reporting it from a regulator.
             if let Some(Thermal::Ntc {
@@ -1638,6 +1650,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 s.vout_mv = vout.map(|v| v * 1000.0);
                 s.iout_ma = current.map(|a| a * 1000.0);
                 s.power_w = power;
+                s.power_estimated = power_estimated;
                 s.core_current_a = core_current;
                 s.core_current_warn_a = core_current_warn;
                 s.fan_rpm = rpm.0;

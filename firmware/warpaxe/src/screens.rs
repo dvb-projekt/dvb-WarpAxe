@@ -788,7 +788,15 @@ fn cockpit(c: &mut Canvas) {
         }
     } else {
         let pw = b.power_w.unwrap_or(0.0);
-        let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
+        // An estimate (no power reading on the board) says so in the label.
+        let (lbl_p, lbl_e) = if b.power_estimated {
+            (
+                l("POWER EST.", "LEISTUNG CA."),
+                l("EFFIC. EST.", "EFFIZ. CA."),
+            )
+        } else {
+            (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"))
+        };
         big(c, lbl_p, &num(f64::from(pw), 1), "W", 66, gfx::FG);
         let eff = if m.hashrate_ghs > 1.0 {
             f64::from(pw) / (m.hashrate_ghs / 1000.0)
@@ -1097,12 +1105,19 @@ fn device(c: &mut Canvas) {
         format!("{} A", num(f64::from(v) / 1000.0, 2))
     });
     kv(c, l("Current", "Strom"), &amps, 62, gfx::FG, r2, e);
-    let pw = b
-        .power_w
-        .map_or("–".into(), |v| format!("{} W", num(f64::from(v), 1)));
+    let pw = b.power_w.map_or("–".into(), |v| {
+        format!(
+            "{}{} W",
+            if b.power_estimated { "~" } else { "" },
+            num(f64::from(v), 1)
+        )
+    });
     kv(c, l("Power", "Leistung"), &pw, 80, gfx::FG, r2, e);
+    let has_fan = board::profile().has_fan();
     let fan = |rpm: u16, pct: u8| {
-        if rpm == 0 && pct > 0 {
+        if !has_fan {
+            "–".to_string()
+        } else if rpm == 0 && pct > 0 {
             l("not connected", "nicht belegt").to_string()
         } else {
             format!("{rpm} rpm")
