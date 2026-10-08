@@ -44,3 +44,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 # TLS left too little contiguous memory for the RSA check of a server
 # certificate (-0x4290, MPI alloc) and the online update failed.
 CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC=y
+# A new app must mark itself valid once it runs (update::mark_app_valid at
+# chain ready, or after three minutes); a crash or boot loop before that
+# makes the bootloader start the previous app instead. The bootloader must
+# be reflashed over USB once for this to take effect (an OTA never touches it).
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

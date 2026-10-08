@@ -462,6 +462,7 @@ fn run(mut uart: ChipUart) {
                         log::info!("miner: chain ready, {} chip(s)", chain.chip_count());
                         CORES.lock().unwrap().clear();
                         board::chain_ready();
+                        crate::update::mark_app_valid("chain ready");
                     }
                     Event::Register {
                         address,

@@ -19,7 +19,7 @@
 //! without its profile in it, the devkit shows the release as a notice
 //! and installs nothing. Boards with chips are offered every release.
 
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -494,5 +494,48 @@ fn install() {
             "cannot start the writer: {e} ({} bytes internal RAM free)",
             diag::free_heap_internal()
         ));
+    }
+}
+
+static MARKED_VALID: AtomicBool = AtomicBool::new(false);
+
+/// The running app has proven itself: tell the bootloader so, so it keeps
+/// booting this image. With CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE an OTA'd
+/// image boots once as "pending verify"; a reset before this call (a
+/// crash, a boot loop) makes the bootloader fall back to the previous app
+/// — the difference between a cased NerdNOS that heals itself and one
+/// that needs its case opened for a USB cable. Called at chain ready and,
+/// as a fallback for boards without a chain, after three minutes. A no-op
+/// when the image is already valid or the bootloader predates rollback.
+pub fn mark_app_valid(why: &str) {
+    if MARKED_VALID.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let rc = unsafe { esp_idf_svc::sys::esp_ota_mark_app_valid_cancel_rollback() };
+    if rc == esp_idf_svc::sys::ESP_OK {
+        log::info!("update: app marked valid ({why}); no rollback to the previous image");
+    } else {
+        log::warn!("update: mark app valid ({why}) returned {rc}");
+    }
+}
+
+/// The bootloader's view of the running image, for the API.
+pub fn ota_state() -> &'static str {
+    use esp_idf_svc::sys as sys;
+    let part = unsafe { sys::esp_ota_get_running_partition() };
+    if part.is_null() {
+        return "unknown";
+    }
+    let mut st: sys::esp_ota_img_states_t = 0;
+    if unsafe { sys::esp_ota_get_state_partition(part, &mut st) } != sys::ESP_OK {
+        return "unknown";
+    }
+    match st {
+        sys::esp_ota_img_states_t_ESP_OTA_IMG_NEW => "new",
+        sys::esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY => "pending-verify",
+        sys::esp_ota_img_states_t_ESP_OTA_IMG_VALID => "valid",
+        sys::esp_ota_img_states_t_ESP_OTA_IMG_INVALID => "invalid",
+        sys::esp_ota_img_states_t_ESP_OTA_IMG_ABORTED => "aborted",
+        _ => "undefined",
     }
 }

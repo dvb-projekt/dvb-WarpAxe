@@ -166,6 +166,15 @@ fn main() {
         log::error!("config init failed: {e}");
     }
 
+    // The fallback for boards that never report a chain (the devkit, chips
+    // off on purpose): the image counts as good after three minutes up.
+    std::thread::Builder::new()
+        .stack_size(3072)
+        .spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(180));
+            update::mark_app_valid("three minutes up");
+        })
+        .ok();
     set_step("BOARD BUS");
     board::init_bus(peripherals.i2c0);
     // Chips in reset and the core rail off before USB, Wi-Fi and the rest
