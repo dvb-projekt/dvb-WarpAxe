@@ -314,6 +314,13 @@ back at any time with `GET /api/v1/display/frame`.
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second
   value) and `errorPercentage1m` (over the last full minute, for tuners).
+  Also `otaState` (the running image: `valid`, `pending-verify`, or
+  `aborted` after a rollback), `dieTempC` (the ESP32-S3's own sensor),
+  `yieldPercent` (the nonce-weighted 10-minute rate against small cores ×
+  clock, on chips without an error counter such as the BM1397),
+  `clockStep` (a step down after an overheat on a board without a fan to
+  drive), and `hasFan`, `hasVr` and `powerEstimated` (what the board has
+  to measure and drive).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device
@@ -356,9 +363,22 @@ back at any time with `GET /api/v1/display/frame`.
 - **Back to the stock firmware**: *System → Back to the stock firmware*
   explains the way (over USB, with the backup the web flasher saved) and
   opens the flasher's restore section.
+- **Rollback** of an update that does not start: the new image boots on
+  trial and marks itself good once the chips run (at the latest after
+  three minutes up); a reset before that — a crash, the watchdog, a power
+  cut — brings the previous version back, and the System page says so
+  (`otaState` `aborted`). This needs the bootloader of v0.1.22 or later,
+  which only a USB install writes: a reinstall with the web flasher
+  (settings kept) gives it to a miner that came by online update.
 - Downloads are tried up to three times; the log names the address that
   started an install, an upload or an update check, and the last install
-  (version and signature result) is kept across the restart.
+  (version and signature result) is kept across the restart. Every
+  settings change is logged with the address it came from (`/api/v1/state`
+  → `config_patches`). A web UI tab open during an update from elsewhere
+  reloads itself once the miner answers with the new firmware.
+- Pool settings apply at once: a change to the main or fallback pool, the
+  worker or the suggested difficulty closes the session and the miner
+  reconnects with the new settings, no restart.
 - Upload a `warpaxe.bin` in the web UI, or `curl --data-binary @warpaxe.bin
   http://<miner>/api/system/OTA` — a manual upload is your own image and is
   not signature-checked.
@@ -380,7 +400,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08: at 300 MHz the pool counted ≈ 190 GH/s over an hour, the stock firmware ≈ 180 GH/s on the same pool and clock (±6–9 % each); ours runs there, at about 73 °C with a case fan (the board has none of its own); after an overheat stop it comes back one clock step lower; the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; offered on the first start, never taken on its own; the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
+| NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08: at 300 MHz the pool counted ≈ 190 GH/s over an hour, the stock firmware ≈ 180 GH/s on the same pool and clock (±6–9 % each); ours runs there, at about 73 °C with a case fan (the board has none of its own); after an overheat stop it comes back one clock step lower; the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; taken on the first start when the thermistor on GPIO2 and the 1.4 V rail on GPIO3 both answer (the buck switched on for 150 ms for the reading, the chip held in reset); the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken
@@ -468,7 +488,8 @@ up and updates itself:
    so the setup hotspot's name and password show while you choose.
 4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
-   network adapter). If there was no Wi-Fi to take over, or it cannot be
+   network adapter; a second WarpAxe on the same computer needs another
+   number in *Network → USB address*, e.g. 192.168.8.1). If there was no Wi-Fi to take over, or it cannot be
    reached, the miner opens its setup hotspot after three minutes: join
    `WarpAxe-XXXX` with the password on its display and choose your network.
 
