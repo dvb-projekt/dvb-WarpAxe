@@ -2101,15 +2101,25 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 };
                 imported.extend(crate::cpuminer::import_nerdminer(worker));
                 let settings = imported.contains(&"wallet (nerdminer)");
-                // The carrier's core rail on GPIO3 (read-only), 1.4 V on a
-                // NerdNOS; a bare board's pin floats.
-                let rail = ntc
-                    .is_some()
-                    .then(|| crate::ntc::Reader::new_pin(3).and_then(|r| r.millivolts()))
-                    .flatten();
-                if ntc.is_some() {
-                    log::info!("board: GPIO3 reads {rail:?} mV (the NerdNOS core rail would be ~1400)");
-                }
+                // The carrier's core rail on GPIO3: 1.4 V on a NerdNOS once
+                // its buck runs. The buck's EN (GPIO13, "PEN") has a 10 k
+                // pull-down, so the rail is off at every boot and GPIO3
+                // read 0 mV on the .46's first start (2026-10-08). With the
+                // thermistor there, the enable goes high for 150 ms for the
+                // reading and back off: the chip stays in reset meanwhile
+                // (RST floats high through R14 into the inverter), and on a
+                // bare T-Display GPIO13 is a free header pin.
+                let rail = ntc.is_some().then(|| {
+                    esp_output(13, true);
+                    std::thread::sleep(Duration::from_millis(150));
+                    let mv = crate::ntc::Reader::new_pin(3).and_then(|r| r.millivolts());
+                    esp_output(13, false);
+                    unsafe {
+                        sys::gpio_set_direction(13, sys::gpio_mode_t_GPIO_MODE_INPUT);
+                    }
+                    log::info!("board: GPIO3 reads {mv:?} mV with GPIO13 high (the NerdNOS core rail would be ~1400)");
+                    mv
+                }).flatten();
                 match detect::bare_board(settings, ntc.is_some(), rail) {
                     Detection::Board(p, why) => {
                         log::warn!(
