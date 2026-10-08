@@ -170,7 +170,28 @@ all the time) where the Arduino stock leaves modem sleep on, and the USB
 network link to the Mac (TinyUSB NCM) that the stock run did not have.
 Since this change a board without a fan leaves modem sleep on, and
 `dieTempC` in `/api/system/info` shows the ESP32-S3's own temperature
-on every board. The USB test is Oliver's: cable off for 20 minutes.
+on every board.
+
+Results the same morning, all at 300 MHz: the USB cable off for 20
+minutes changed nothing (74.2–74.3 °C; a 0.8 °C bump coincided with a
+vacuum cleaner in the room). Modem sleep took the ESP's die from 59.4 to
+56.4 °C and the chip's plateau from 73.9–74.4 to 73.2–73.4 °C. About two
+degrees over the stock firmware remain unexplained — the display, the
+processor at 56 °C in the same case, or the room; two degrees is what the
+vacuum cleaner did. Oliver's decision: leave it so, modem sleep stays for
+boards without a fan, the rest is not chased.
+
+**A/B at the pool, 300 MHz, one hour each (Warppool #2, Σ share
+difficulty × 2³² / time):** stock 05:16–06:16 UTC 131 shares → 179.8 GH/s
+±9 %; WarpAxe 662322c 06:29–07:29 UTC 248 shares → 190.9 GH/s ±6 %,
+halves 194.3 / 187.4. Neither side lost shares (0 rejected, no low-diff,
+stale or duplicate on either). The 6 % lie inside the combined ±11 %, so
+the honest reading is "at least on par with the stock, about 90–95 % of
+672 × f on the fixed 1.4 V rail" — the chip, not the driver. If the
+difference is real, it would be work lost on the chip side under the
+stock's mask churn (158 mask changes in the hour, one every 27 s, driven
+by its periodic `suggest_difficulty`), which only a much longer run could
+show. It is not "more work", so it does not explain the heat.
 
 ## Gaps and open points before a flash
 
@@ -265,7 +286,7 @@ nonces (±25–35 %). Two things are clear anyway:
 * **The pool decides.** Pool-side share rate (Warppool, 1-min buckets):
   300 MHz 01:33–01:47 UTC 36 shares ≈ 169 GH/s, 250 MHz 02:02–02:10 UTC
   16 shares ≈ 165 GH/s, both ±25 %. A real deficit at 300 MHz of about
-  15 % is plausible and would be invisible as errors: a core that
+  10–15 % is there under both firmwares (A/B below) and is invisible as errors: a core that
   computes wrongly finds no nonce rather than a wrong one (`below_ticket`
   stays 0). Judging a clock step needs an hour at the pool (≈100 shares,
   ±10 %), not the register.
