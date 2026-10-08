@@ -688,14 +688,20 @@ enum Thermal {
         bus: SharedI2c,
         offset: f32,
     },
-    /// NerdNOS: a thermistor beside the chip on the ADC, no fan.
-    Ntc(crate::ntc::Reader),
+    /// NerdNOS: a thermistor beside the chip on the ADC, no fan, and the
+    /// core rail on a second ADC pin where the board senses it.
+    Ntc {
+        temp: crate::ntc::Reader,
+        vcore: Option<crate::ntc::Reader>,
+    },
 }
 
 impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
-            Thermal::Ntc(r) => r.celsius().ok_or_else(|| "thermistor at a rail".into()),
+            Thermal::Ntc { temp, .. } => {
+                temp.celsius().ok_or_else(|| "thermistor at a rail".into())
+            }
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Emc2103(t) => t.chip_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Nano(sensors) => {
@@ -722,7 +728,7 @@ impl Thermal {
     /// RPM of the chip fan, and of the second output where there is one.
     fn rpm(&mut self) -> (u16, Option<u16>) {
         match self {
-            Thermal::Ntc(_) => (0, None),
+            Thermal::Ntc { .. } => (0, None),
             Thermal::Emc2101(t) => (t.fan_rpm().unwrap_or(0), None),
             Thermal::Emc2103(t) => (t.fan_rpm().unwrap_or(0), None),
             Thermal::Nano([a, b]) => (a.fan_rpm().unwrap_or(0), Some(b.fan_rpm().unwrap_or(0))),
@@ -735,7 +741,9 @@ impl Thermal {
     /// PWM polarity of the Nerd fan outputs; nothing on the EMC2101.
     fn set_polarity(&mut self, invert: bool) -> bool {
         match self {
-            Thermal::Emc2101(_) | Thermal::Emc2103(_) | Thermal::Nano(_) | Thermal::Ntc(_) => true,
+            Thermal::Emc2101(_) | Thermal::Emc2103(_) | Thermal::Nano(_) | Thermal::Ntc { .. } => {
+                true
+            }
             Thermal::Nerd { fans, .. } => fans.set_polarity(invert).is_ok(),
         }
     }
@@ -743,7 +751,7 @@ impl Thermal {
     fn set_fans(&mut self, chip: u8, vr: u8) -> bool {
         match self {
             // No fan to drive; the duty is reported as 0 (see `run`).
-            Thermal::Ntc(_) => true,
+            Thermal::Ntc { .. } => true,
             Thermal::Emc2101(t) => t.set_fan_percent(chip).is_ok(),
             Thermal::Emc2103(t) => t.set_fan_percent(chip).is_ok(),
             // Both fans follow the chip loop (ForgeOS drives one speed).
@@ -960,7 +968,16 @@ fn start_nerdnos(profile: &'static Profile, cfg: warpaxe_board::ntc::Config) {
                 ),
                 None => log::warn!("board: thermistor on GPIO{} gives no reading", cfg.gpio),
             }
-            Some(Thermal::Ntc(r))
+            // The core rail, sensed directly (WantClue `nerdnos_get_vcore`).
+            let vcore = cfg.vcore_gpio.and_then(crate::ntc::Reader::new_pin);
+            if let Some(v) = vcore.as_ref() {
+                log::info!(
+                    "board: core rail on GPIO{:?} reads {:?} mV",
+                    cfg.vcore_gpio,
+                    v.millivolts()
+                );
+            }
+            Some(Thermal::Ntc { temp: r, vcore })
         }
         None => {
             update(|s| {
@@ -1423,6 +1440,19 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 );
                 status = vr.status();
             }
+            // The core rail on a board that senses it on the ADC instead
+            // of reporting it from a regulator.
+            if let Some(Thermal::Ntc {
+                vcore: Some(sense), ..
+            }) = thermal.as_mut()
+            {
+                vout = plausible(
+                    sense.millivolts().map(|mv| f32::from(mv) / 1000.0),
+                    0.0,
+                    2.0,
+                    "vcore",
+                );
+            }
             let mut rpm = (0, None);
             if let Some(t) = thermal.as_mut() {
                 match t.chip_temp_c().and_then(|c| {
@@ -1774,7 +1804,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // Reported every pass, not only on a change: a manual 100 %
             // equal to the start-up duty was shown as 0 % / "–". A board
             // without a fan reports none.
-            let shown = if matches!(t, Thermal::Ntc(_)) {
+            let shown = if matches!(t, Thermal::Ntc { .. }) {
                 (0, 0)
             } else {
                 fans

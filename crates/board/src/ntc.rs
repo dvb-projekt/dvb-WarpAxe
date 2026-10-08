@@ -22,6 +22,10 @@ pub struct Config {
     pub r_pullup_ohm: f32,
     /// The divider's supply, mV.
     pub vref_mv: u16,
+    /// An ADC1 GPIO that senses the core rail directly (WantClue
+    /// `adc.cpp`: `VCORE_CHANNEL ADC1_CHANNEL_2`, GPIO3, raw millivolts),
+    /// if the board has one. Reported as the board's VOUT.
+    pub vcore_gpio: Option<u8>,
 }
 
 impl Config {
@@ -32,6 +36,7 @@ impl Config {
         r0_ohm: 10_000.0,
         r_pullup_ohm: 10_000.0,
         vref_mv: 3300,
+        vcore_gpio: Some(3),
     };
 
     /// Temperature for a midpoint voltage, °C; `None` when the voltage

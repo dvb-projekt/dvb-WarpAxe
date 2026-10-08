@@ -26,8 +26,8 @@ ntc.rs, miner.rs}`.
 
 | # | Step | WantClue (the .46) | ESP-Miner (Bitaxe Max) | WarpAxe | Same? |
 |---|---|---|---|---|---|
-| 1 | Chip run/stop line at boot | `PEN` GPIO13 output high in `BM1397_init`, stays high | TPS546 rail off until init; reset low | GPIO13 held **low** from `quiesce()` until the chain starts (chip in reset / unpowered, like ESP-Miner's boot); high from the first `reset_chain` on | differs on purpose: the chip sits idle until the miner is ready, as on every other board |
-| 2 | Reset pulse | `_reset()`: GPIO12 **high** 100 ms, **low** 100 ms, stays low (once, at init) | RST **low** 100 ms, **high** 100 ms, stays high | GPIO13 low 100 ms → high, then GPIO12 high 100 ms → low, then 100 ms (`reset_chain` + `stock_reset_pulse`), before **every** chain start | see "Reset and PEN" below |
+| 1 | Core power enable at boot | `PEN` GPIO13 output high in `BM1397_init`, stays high | TPS546 rail off until init; reset low | GPIO13 held **low** from `quiesce()` until the chain starts (rail off, like ESP-Miner's boot); high from the first `reset_chain` on | differs on purpose: the chip sits unpowered until the miner is ready, as on every other board |
+| 2 | Reset pulse | `_reset()`: GPIO12 **high** 100 ms, **low** 100 ms, stays low (once, at init) | RST **low** 100 ms, **high** 100 ms, stays high | GPIO13 low 100 ms → high, then GPIO12 high 100 ms → low, then 100 ms (`reset_chain` + `stock_reset_pulse`), before **every** chain start | WantClue's sequence; see "Two board revisions" below |
 | 3 | UART | UART1, TX GPIO17, RX GPIO18, 115200, 8N1 | 115200 | UART1 GPIO17/18 at 115200 (`uart.rs`) | yes |
 | 4 | Chip count | `CMD_READ 00` to all, 9-byte replies `AA 55 13 97 18 00 …`, 1 s timeout each | same (`count_asic_chips`, length 9) | `ReadAll 00`, replies of `chip_id_reply_len` 9 collected for 1 s | yes |
 | 5 | Wait | 20 ms (`SLEEP_TIME`) | 20 ms | `Delay 20` | yes |
@@ -48,32 +48,50 @@ ntc.rs, miner.rs}`.
 | 20 | Hash-rate register | reads 0x04 every 2.5 s: `(v & 0x7fffffff) << 20` H/s, bit 31 = long window, both logged | 0x04 and 0x4C once a second; `v & 0x7fffffff` × 2²⁰ H/s, only the short window, 0x007FFFFF discarded | 0x04 and 0x4C once a second (`REGISTERS_RATE`); short window → `hashrateMonitor.asics[0].hashRate`, long → the minute figure, 0x007FFFFF discarded | yes; see "Register 0x04" below |
 | 21 | Temperature | NTC on GPIO2 (ADC1_CH1), 10 k / B 3380 against 3.3 V, every 5 s | EMC2101 diode | the same divider formula (`ntc.rs`), every second, −40…150 °C plausibility | yes |
 | 22 | Overheat | > 80 °C: PEN low, wait until < 70 °C, PEN high, `BM1397_init(210, 1)` | 75/90 °C, rail off | > 80 °C (or no reading for 60 s): GPIO13 **low** (reset held), ≥ 60 s, ≤ 70 °C: miner pulses the reset and re-inits at the configured clock; third stop within an hour latches | same line, same limits; WarpAxe re-inits at the configured clock, WantClue drops to 210 MHz |
-| 23 | Core voltage | fixed by R12/R13 on the TPSM863257 (0.6 V · (1 + 40.2/30) = 1.40 V) | TPS546, 1100–1500 mV | reported as 1400 mV, no options, no slider | yes |
+| 23 | Core voltage | fixed by resistors on the TPSM863257 (old revision: R12/R13, 0.6 V · (1 + 40.2/30) = 1.40 V); sensed on GPIO3 (`nerdnos_get_vcore`, logged) | TPS546, 1100–1500 mV | reported as 1400 mV, no options, no slider; the rail read on GPIO3 every second as VOUT (plausibility 0–2 V) | yes |
 | 24 | Power / current | none | TPS546 readings | none (the tiles show "–") | yes |
 | 25 | Display | T-Display-S3 (ST7789 i80) | OLED | ST7789 i80, flip from the setting (default upright) | orientation unverified |
 
-## Reset and PEN: what the PCB says
+## Two board revisions: the published PCB and the one the .46 is
 
-The published PCB (`NerdNOS.kicad_pcb`) has, in `BM1397/RST → R3 100k →
-RST_N → R4 120k → GND`, a 3.3 V → 1.8 V divider into the chip's **NRSTI**
-(active low). Only one header line reaches the chip, and the TPSM863257's
-EN pin hangs on R10 19.1k / R11 10k / C11 — no GPIO. GPIO13 ("PEN") is not
-on any net of that PCB, GPIO12 ("RST") neither; the designer's header net
-names (GPIO1/2/10) do not match WantClue's pins (17/18/2/12/13) either, so
-the .46 is probably a later revision.
+The dates settle which is newer. The KiCad repository
+(benjamin-wilson/NerdNOS) was last changed on **2024-05-23** ("fixed 0v8
+and 1v8"; the PCB on 2024-04-30, "fixed 12pin position"). WantClue's
+firmware has its first working version on **2024-09-07** (`nerdnos.h`,
+unchanged since), the thermistor on 2024-09-09, the higher baud rate on
+2024-11-12, release v1.0 on 2024-11-19, the last touch on 2026-05-04.
 
-Two readings fit the fact that the .46 hashes under WantClue's firmware,
-whose `_reset()` leaves GPIO12 **low**:
+The two do not describe the same board. Against the LilyGO T-Display-S3
+pinout (left header, 3V end down: 3V, 1, 2, 3, 10, 11, 12, 13, NC, NC,
+GND, 5V; right header: GND, GND, 43, 44, 18, 17, 21, 16, NC, GND, GND, 3V):
 
-* (A) GPIO13 is the line into NRSTI (high = run, low = reset) and GPIO12 is
-  unconnected: WantClue's "PEN high" releases the chip, its RST pulse does
-  nothing, its "PEN low" on an overheat holds the chip in reset.
-* (C) GPIO13 really is a buck enable and GPIO12 an active-high reset.
+| Line | Published PCB (J2 on the left header) | WantClue `nerdnos.h` (the .46) |
+|---|---|---|
+| chain TX (ESP → chip CI) | GPIO1 (J2.11) | GPIO17 (native U1 TXD, right header) |
+| chain RX (chip RO → ESP) | GPIO2 (J2.10) | GPIO18 (native U1 RXD, right header) |
+| thermistor | GPIO10 (J2.8, the net the schematic calls TMP) | GPIO2 (ADC1_CH1) |
+| core rail sense | none | GPIO3 (ADC1_CH2, `nerdnos_get_vcore`) |
+| chip reset | GPIO3 (J2.9, "RST", 100k/120k divider into NRSTI, active low) | GPIO12 ("RST", pulsed high 100 ms then low) |
+| core power enable | none: the buck's EN sits on R10/R11 | GPIO13 ("PEN", high to run, low after an overheat) |
 
-WarpAxe drives both lines exactly as WantClue does (13 high to run, low to
-stop; 12 pulsed high then held low before each init), which is right under
-either reading. **Open for Oliver**: which header pins the .46's carrier
-uses, and whether its buck has a GPIO on EN.
+WantClue's pins cannot be wired to the published board, and the .46 hashes
+under WantClue's firmware. So the .46 is a **later revision than the
+published KiCad**, with no schematic public: the UART moved to the S3's
+native U1 pins on the right header, the thermistor to GPIO2, and the
+carrier got a core rail sense on GPIO3 and two control lines next to each
+other on the left header (12, 13). The published PCB is the older, not the
+right, variant for the .46; WantClue's firmware is the only description of
+the .46's wiring, and it is the one WarpAxe follows.
+
+Since WantClue's `_reset()` pulses GPIO12 **high** and leaves it low while
+the chip hashes, the new revision's reset is active high on the ESP side
+(an inverter into NRSTI), and GPIO13 is what its name says, the buck's
+enable. WarpAxe drives both exactly as the stock firmware does: GPIO13 low
+at boot and on an overheat stop, high before an init; GPIO12 high 100 ms
+then low after GPIO13 went high. If GPIO13 should turn out to be the reset
+line itself (the old revision's wiring on a new header), the same drive is
+still right. One assumption stays: that the .46 matches WantClue's
+`nerdnos.h` and not a third revision.
 
 ## Register 0x04: how the value is read
 
@@ -106,11 +124,14 @@ the "long" window is. The error counter 0x4C is read as on the BM1370.
 2. **Clock cap 400 MHz**, options 200–400, stock 300: nothing above has been
    measured on this USB-powered, fanless board.
 3. **Display orientation** on the carrier: unknown; the flip setting covers it.
-4. **Detection**: on the first start the NTC divider on GPIO2 offers
-   `nerdnos` first (never taken); a bare T-Display-S3 with NerdMiner's
-   settings stays the devkit. If the .46's NTC does not sit on GPIO2 after
-   all, the board can still be chosen by hand.
-5. **Chip id reply**: the simulator answers `13 97 18 00`; the real one must
+4. **Detection**: on the first start the NTC divider on GPIO2 (WantClue's
+   pin) offers `nerdnos` first (never taken); a bare T-Display-S3 with
+   NerdMiner's settings stays the devkit. If the .46's NTC does not sit on
+   GPIO2 after all, the board can still be chosen by hand.
+5. **Board revision**: the .46 is assumed to be the revision WantClue's
+   `nerdnos.h` describes (see "Two board revisions"); the published KiCad
+   is older and wired differently.
+6. **Chip id reply**: the simulator answers `13 97 18 00`; the real one must
    match (`ChipFound { chip_id: 0x1397 }` in the log).
 
 ## Before the first flash on the .46 (rules in force)

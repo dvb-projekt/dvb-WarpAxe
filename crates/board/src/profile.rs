@@ -971,29 +971,31 @@ pub const Q1373: Profile = Profile {
 /// Every profile this firmware knows.
 /// What a first start runs on until the board is known: no bus, no
 /// regulator, no display, no chips; the web UI asks which board it is.
-/// NerdNOS: a LilyGO T-Display-S3 on a carrier with one BM1397
-/// (benjamin-wilson/NerdNOS, KiCad; the stock firmware is WantClue's
-/// NerdMiner_v2 branch `nerdnos`, read 2026-10-08). Pins as WantClue's
-/// `nerdnos.h` has them, which is what runs on Oliver's .46: chain UART
-/// on GPIO17/18 through a TXU0202 level shifter, the NTC on GPIO2, and
-/// two control lines the stock firmware calls RST (GPIO12: driven high
-/// 100 ms, then low, once at init) and PEN (GPIO13: high from init on,
-/// low to stop the chip after an overheat, high again before a
-/// re-init).
+/// NerdNOS: a LilyGO T-Display-S3 on a carrier with one BM1397. Pins as
+/// WantClue's `nerdnos.h` has them (NerdMiner_v2 branch `nerdnos`,
+/// first working version 2024-09-07, the firmware on Oliver's .46):
+/// chain UART on GPIO17/18 (the S3's native U1, right header) through
+/// a TXU0202 level shifter, the NTC on GPIO2, the core rail sensed on
+/// GPIO3, and two control lines the stock firmware calls RST (GPIO12:
+/// driven high 100 ms, then low, once at init) and PEN (GPIO13: high
+/// from init on, low to stop the chip after an overheat, high again
+/// before a re-init).
 ///
-/// On the published PCB only one header line reaches the chip: through
-/// a 100 k / 120 k divider into NRSTI, active low — and the TPSM863257
-/// buck's EN hangs on its own resistors, no GPIO. So whichever of the
-/// two lines that is, the chip runs while it is high and sits in reset
-/// while it is low, and there is no way to cut its 1.4 V rail. Hence
-/// `asic_reset` is GPIO13, driven exactly as the stock firmware drives
-/// PEN (low at boot and on an overheat stop, a low–high pulse before
-/// every init), and GPIO12 gets the stock pulse too
-/// (`stock_reset_pulse`). The core voltage is fixed by R12 40.2 k /
-/// R13 30 k on the buck (0.6 V reference → 1.40 V): no voltage choices,
-/// `default_core_mv` is reported only, and nothing reads power or
-/// current. USB-C powered, no fan: the clock is capped at 400 MHz until
-/// someone has measured more.
+/// The published KiCad (benjamin-wilson/NerdNOS, last change 2024-05-23)
+/// is an older revision: it uses the left header only (TX GPIO1, RX
+/// GPIO2, reset GPIO3, NTC GPIO10), has a single line into the chip's
+/// NRSTI through a 100 k / 120 k divider, and ties the TPSM863257's EN
+/// to resistors. WantClue's pins cannot be wired to that board, so the
+/// .46 is a later revision, for which no schematic is public. WarpAxe
+/// therefore drives the lines exactly as the stock firmware does, which
+/// is right whether GPIO13 is a buck enable or the reset itself:
+/// `asic_reset` is GPIO13 (low at boot and on an overheat stop, a
+/// low–high pulse before every init), and GPIO12 gets the stock pulse
+/// after it (`stock_reset_pulse`). The core voltage is set by resistors
+/// on the buck (the old revision: R12 40.2 k / R13 30 k, 0.6 V reference
+/// → 1.40 V): no voltage choices, `default_core_mv` is reported only;
+/// the rail is read on GPIO3 for display. USB-C powered, no fan: the
+/// clock is capped at 400 MHz until someone has measured more.
 pub const NERDNOS: Profile = Profile {
     name: "nerdnos",
     model: "NerdNOS",
@@ -1284,6 +1286,7 @@ mod tests {
         assert!(p.tps546().is_none() && p.tps53647().is_none());
         assert_eq!(p.regulator_min_core_mv(), 0);
         assert_eq!(p.thermal, Thermal::Ntc(ntc::Config::NERDNOS));
+        assert_eq!(ntc::Config::NERDNOS.vcore_gpio, Some(3));
         assert_eq!(p.display, Display::St7789I80);
         assert_eq!(p.i2c, None);
         assert_eq!((p.default_frequency_mhz, p.default_core_mv), (300, 1400));
