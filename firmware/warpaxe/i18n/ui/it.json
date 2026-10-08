@@ -323,5 +323,6 @@
   "clock_step_note": "Abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz.",
   "hc_yield": "resa",
   "usbSubnet": "Indirizzo USB (192.168.x.1)",
-  "usb_subnet_s": "Un secondo WarpAxe sullo stesso computer ha bisogno di un altro numero qui."
+  "usb_subnet_s": "Un secondo WarpAxe sullo stesso computer ha bisogno di un altro numero qui.",
+  "ota_aborted": "L'ultimo aggiornamento non è partito: il miner è tornato a questa versione."
 }

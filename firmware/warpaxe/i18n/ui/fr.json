@@ -323,5 +323,6 @@
   "clock_step_note": "Abaissée de {from} à {to} MHz après une surchauffe à {at}. Un redémarrage repart à {cfg} MHz.",
   "hc_yield": "rendement",
   "usbSubnet": "Adresse USB (192.168.x.1)",
-  "usb_subnet_s": "Un deuxième WarpAxe sur le même ordinateur a besoin d'un autre numéro ici."
+  "usb_subnet_s": "Un deuxième WarpAxe sur le même ordinateur a besoin d'un autre numéro ici.",
+  "ota_aborted": "La dernière mise à jour n'a pas démarré : le mineur est revenu à cette version."
 }

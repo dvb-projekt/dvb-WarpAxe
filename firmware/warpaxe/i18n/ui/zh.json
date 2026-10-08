@@ -323,5 +323,6 @@
   "clock_step_note": "{at} 过热后已从 {from} MHz 降至 {to} MHz。重启后将重新以 {cfg} MHz 开始。",
   "hc_yield": "产出率",
   "usbSubnet": "USB 地址（192.168.x.1）",
-  "usb_subnet_s": "同一台电脑上的第二台 WarpAxe 需要在此使用不同的数字。"
+  "usb_subnet_s": "同一台电脑上的第二台 WarpAxe 需要在此使用不同的数字。",
+  "ota_aborted": "上次更新未能启动：矿机已恢复到此版本。"
 }

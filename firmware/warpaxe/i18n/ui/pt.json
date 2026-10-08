@@ -323,5 +323,6 @@
   "clock_step_note": "Reduzido de {from} para {to} MHz após um superaquecimento às {at}. Uma reinicialização volta a começar em {cfg} MHz.",
   "hc_yield": "rendimento",
   "usbSubnet": "Endereço USB (192.168.x.1)",
-  "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui."
+  "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui.",
+  "ota_aborted": "A última atualização não iniciou: o minerador voltou para esta versão."
 }

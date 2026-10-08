@@ -323,5 +323,6 @@
   "clock_step_note": "Bajada de {from} a {to} MHz tras un sobrecalentamiento a las {at}. Al reiniciar vuelve a empezar con {cfg} MHz.",
   "hc_yield": "rendimiento",
   "usbSubnet": "Dirección USB (192.168.x.1)",
-  "usb_subnet_s": "Un segundo WarpAxe en el mismo ordenador necesita aquí otro número."
+  "usb_subnet_s": "Un segundo WarpAxe en el mismo ordenador necesita aquí otro número.",
+  "ota_aborted": "La última actualización no arrancó: el minero volvió a esta versión."
 }
