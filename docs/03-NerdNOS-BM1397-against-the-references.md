@@ -215,7 +215,22 @@ nonces (±25–35 %). Two things are clear anyway:
   stays 0). Judging a clock step needs an hour at the pool (≈100 shares,
   ±10 %), not the register.
 
+**Second look, 03:00 UTC, worker renamed to .WarpNOS at 02:39.** The
+firmware's own hashrate weights every nonce with the chip difficulty in
+force when it came (the ticket follows the pool's VarDiff below 256:
+219 → 128), so it is the figure to trust on the device: 120–135 GH/s at
+250 MHz over the first 18 minutes (163 nonces, 92 shares sent, 92
+accepted, 71 under the pool difficulty, 0 under the ticket). The pool's
+diff-weighted 105 GH/s ±13 % over 15 minutes and the register's 136–138
+GH/s sit around the same value. The naive 164 GH/s above assumed
+difficulty 256 for every nonce and is too high. So the register may well
+report what the chip delivers — about 80–86 % of 672 × f at 250 and
+300 MHz — and its indifference to the 100–200 ms cadence rests on eight
+nonces (±35 %) and is not proven either way. What stands: the chip
+delivers 15–20 % under 672 × f on the stock 1.4 V rail, invisibly (no
+wrong nonces), and an hour at the pool per clock step is the measure.
+
 The web UI's hash-counter card shows the register as it is read; the
-dashboard's hashrate comes from shares. The register's short-window
+dashboard's hashrate comes from nonces weighted with the chip difficulty. The register's short-window
 value tracks the clock closely enough to show that the chip follows a
 clock change.
