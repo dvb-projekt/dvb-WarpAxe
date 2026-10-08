@@ -1047,8 +1047,18 @@ document.addEventListener("input", e => {
   if (e.target.id === "swevery") { sw.every = Number(e.target.value); try { localStorage.setItem("swEvery", sw.every); } catch (er) {} e.target.parentElement.lastChild.textContent = t("sw_every", {s: sw.every}); }
 });
 
+// The firmware this page was loaded from. When the miner comes back on
+// another one (an update started in another tab, by a tool or over the
+// API), the page reloads so it is the new UI and not the old one.
+let loadedFw = null;
 async function load(full) {
   try { info = await get("/api/system/info"); } catch (e) { info = null; header(); return; }
+  const fw = info.gitHash || info.version;
+  if (loadedFw === null) loadedFw = fw;
+  else if (fw && fw !== loadedFw && !watch) {
+    try { sessionStorage.setItem("wa_upd_done", String(info.version || "").replace(/^warpaxe /, "")); } catch (e) {}
+    location.reload(); return;
+  }
   tabTitle(info);
   if (full || !state || route !== "dashboard") { try { state = await get("/api/v1/state"); } catch (e) {} }
   if (full && asic === null) { try { asic = await get("/api/system/asic"); } catch (e) { asic = false; } }
