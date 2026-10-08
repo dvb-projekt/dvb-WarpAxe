@@ -993,11 +993,21 @@ fn start_nerdnos(profile: &'static Profile, cfg: warpaxe_board::ntc::Config) {
             // The core rail, sensed directly (WantClue `nerdnos_get_vcore`).
             let vcore = cfg.vcore_gpio.and_then(crate::ntc::Reader::new_pin);
             if let Some(v) = vcore.as_ref() {
-                log::info!(
-                    "board: core rail on GPIO{:?} reads {:?} mV",
-                    cfg.vcore_gpio,
-                    v.millivolts()
-                );
+                // Read here the rail is still off: the chip sits in reset
+                // until the miner's first init. Say so, not just "0 mV".
+                match v.millivolts() {
+                    Some(mv) if mv >= 100 => {
+                        log::info!("board: core rail on GPIO{:?} reads {mv} mV", cfg.vcore_gpio)
+                    }
+                    Some(mv) => log::info!(
+                        "board: core rail on GPIO{:?} reads {mv} mV: off until the chip starts",
+                        cfg.vcore_gpio
+                    ),
+                    None => log::warn!(
+                        "board: core rail on GPIO{:?} gives no reading",
+                        cfg.vcore_gpio
+                    ),
+                }
             }
             Some(Thermal::Ntc { temp: r, vcore })
         }
