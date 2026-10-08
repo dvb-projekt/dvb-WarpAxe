@@ -320,5 +320,8 @@
   "hc_total": "Totale",
   "tuning_clk": "Frequenza",
   "overheat_s_novr": "Chip oltre questo valore: si ferma finché non scende di 10 °C",
-  "clock_step_note": "Abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz."
+  "clock_step_note": "Abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz.",
+  "hc_yield": "resa",
+  "usbSubnet": "Indirizzo USB (192.168.x.1)",
+  "usb_subnet_s": "Un secondo WarpAxe sullo stesso computer ha bisogno di un altro numero qui."
 }

@@ -91,6 +91,11 @@ pub fn system_info() -> serde_json::Value {
     let b = board::state();
     let profile = board::profile();
     #[allow(unused_mut)]
+    // Delivered against small cores × clock (see yieldPercent below).
+    let expected_ghs =
+        f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9;
+    let yield_percent = (expected_ghs > 0.0 && m.hashrate_ghs > 0.0)
+        .then(|| (f64::from(m.hashrate_ghs) / expected_ghs * 100.0).min(999.0));
     let mut v = json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
         "boardDetect": board::detect_info(),
@@ -118,10 +123,7 @@ pub fn system_info() -> serde_json::Value {
         // nonce-weighted ten-minute figure: a chip without an error counter
         // (the BM1397) shows a failing core only as missing nonces, so this
         // is its health figure (the .46 runs 90–95 % on its 1.4 V rail).
-        "yieldPercent": {
-            let expected = f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9;
-            (expected > 0.0 && m.hashrate_ghs > 0.0).then(|| (f64::from(m.hashrate_ghs) / expected * 100.0).min(999.0))
-        },
+        "yieldPercent": yield_percent,
         // The devkit's shares sit below 1: its figures with decimals.
         "bestDiff": if board::devkit() { json!(config::best_diff_f()) } else { json!(config::best_diff()) },
         "bestSessionDiff": if board::devkit() { json!(crate::cpuminer::info().best_diff) } else { json!(m.best_session_diff) },
