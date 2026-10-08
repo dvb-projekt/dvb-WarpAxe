@@ -1075,15 +1075,17 @@ fn device(c: &mut Canvas) {
     );
     let vr = b.vr_temp_c.map_or("–".into(), |t| format!("{t} °C"));
     kv(c, l("Regulator", "Regler"), &vr, 62, gfx::FG, x0, r);
-    kv(
-        c,
-        l("Clock", "Takt"),
-        &format!("{} MHz", m.frequency_hz / 1_000_000),
-        80,
-        gfx::FG,
-        x0,
-        r,
-    );
+    // After an overheat step the actual clock stands next to the
+    // configured one: "275/300 MHz" (a restart begins at 300 again).
+    let clock = match &m.clock_step {
+        Some(_) => format!(
+            "{}/{} MHz",
+            m.frequency_hz / 1_000_000,
+            crate::config::get().frequency
+        ),
+        None => format!("{} MHz", m.frequency_hz / 1_000_000),
+    };
+    kv(c, l("Clock", "Takt"), &clock, 80, gfx::FG, x0, r);
     let meas = b
         .vout_mv
         .map(|v| p.core_mv_for_vout(v / 1000.0))

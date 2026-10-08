@@ -8,7 +8,12 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use esp_idf_svc::sys::{self as sys, tusb, EspError};
 
-pub const IP: [u8; 4] = [192, 168, 7, 1];
+/// The device's address on the USB link: 192.168.<usbSubnet>.1, 7 unless
+/// the owner set another (two WarpAxe on one computer).
+pub fn ip() -> [u8; 4] {
+    let n = crate::config::get().usb_subnet;
+    [192, 168, if n == 0 { 7 } else { n }, 1]
+}
 
 static mut NETIF: *mut sys::esp_netif_obj = null_mut();
 pub static RX_FRAMES: AtomicU32 = AtomicU32::new(0);
@@ -20,7 +25,8 @@ pub static TX_DROPPED: AtomicU32 = AtomicU32::new(0);
 static SEEN_RX: AtomicBool = AtomicBool::new(false);
 
 pub fn ip_string() -> String {
-    format!("{}.{}.{}.{}", IP[0], IP[1], IP[2], IP[3])
+    let ip = ip();
+    format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3])
 }
 
 pub fn base_mac() -> [u8; 6] {
@@ -99,9 +105,9 @@ pub fn start_netif() -> Result<(), EspError> {
     unsafe {
         let ip_info: &'static sys::esp_netif_ip_info_t =
             Box::leak(Box::new(sys::esp_netif_ip_info_t {
-                ip: ip4(IP),
+                ip: ip4(ip()),
                 netmask: ip4([255, 255, 255, 0]),
-                gw: ip4(IP),
+                gw: ip4(ip()),
             }));
         let mut base: sys::esp_netif_inherent_config_t = core::mem::zeroed();
         base.flags =

@@ -161,6 +161,12 @@ pub struct Config {
     /// A diagnostic knob: 1 makes the chips report every nonce.
     #[serde(rename = "asicDifficulty")]
     pub asic_difficulty: u32,
+    /// The USB network: the device is 192.168.<usbSubnet>.1. Default 7, as
+    /// the docs and the web flasher say; a second WarpAxe on the same
+    /// computer gets another number by hand (two links on one subnet
+    /// leave the computer unable to reach either). Applied at boot.
+    #[serde(rename = "usbSubnet")]
+    pub usb_subnet: u8,
 }
 
 impl Default for Config {
@@ -222,6 +228,7 @@ impl Default for Config {
             job_interval_ms: 0,
             asic_count: 0,
             asic_difficulty: 0,
+            usb_subnet: 7,
         }
     }
 }

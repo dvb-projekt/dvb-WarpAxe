@@ -114,6 +114,14 @@ pub fn system_info() -> serde_json::Value {
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
+        // What the chips deliver against small cores × clock, from the
+        // nonce-weighted ten-minute figure: a chip without an error counter
+        // (the BM1397) shows a failing core only as missing nonces, so this
+        // is its health figure (the .46 runs 90–95 % on its 1.4 V rail).
+        "yieldPercent": {
+            let expected = f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9;
+            (expected > 0.0 && m.hashrate_ghs > 0.0).then(|| (f64::from(m.hashrate_ghs) / expected * 100.0).min(999.0))
+        },
         // The devkit's shares sit below 1: its figures with decimals.
         "bestDiff": if board::devkit() { json!(config::best_diff_f()) } else { json!(config::best_diff()) },
         "bestSessionDiff": if board::devkit() { json!(crate::cpuminer::info().best_diff) } else { json!(m.best_session_diff) },
@@ -133,7 +141,7 @@ pub fn system_info() -> serde_json::Value {
         "vrProbe": b.vr_probe,
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
-        "hostname": cfg.hostname,
+        "hostname": cfg.hostname, "usbSubnet": cfg.usb_subnet,
         "wifiStatus": if n.wifi_connected { "Connected!" } else { "Not connected" },
         "wifiRSSI": n.wifi_rssi.unwrap_or(0),
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
@@ -328,6 +336,7 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         ("manualFanSpeed2", 0.0, 100.0),
         ("fanspeed", 0.0, 100.0),
         ("minFanSpeed", 0.0, 100.0),
+        ("usbSubnet", 1.0, 254.0),
     ] {
         if let Some(x) = num(k) {
             if !(lo..=hi).contains(&x) {
