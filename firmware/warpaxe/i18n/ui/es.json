@@ -317,5 +317,7 @@
   "hc_wait": "Los contadores arrancan unos segundos después de los chips.",
   "vr_phases": "fases",
   "vr_domains": "dominios de tensión",
-  "hc_total": "Total"
+  "hc_total": "Total",
+  "tuning_clk": "Frecuencia",
+  "overheat_s_novr": "Chip por encima: se detiene hasta que baje 10 °C"
 }

@@ -317,5 +317,7 @@
   "hc_wait": "Les compteurs démarrent quelques secondes après les puces.",
   "vr_phases": "phases",
   "vr_domains": "domaines de tension",
-  "hc_total": "Total"
+  "hc_total": "Total",
+  "tuning_clk": "Fréquence",
+  "overheat_s_novr": "Puce au-delà : elle s'arrête jusqu'à avoir refroidi de 10 °C"
 }

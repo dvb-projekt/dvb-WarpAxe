@@ -317,5 +317,7 @@
   "hc_wait": "I contatori partono qualche secondo dopo i chip.",
   "vr_phases": "fasi",
   "vr_domains": "domini di tensione",
-  "hc_total": "Totale"
+  "hc_total": "Totale",
+  "tuning_clk": "Frequenza",
+  "overheat_s_novr": "Chip oltre questo valore: si ferma finché non scende di 10 °C"
 }

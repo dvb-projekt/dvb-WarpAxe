@@ -317,5 +317,7 @@
   "hc_wait": "Os contadores começam a contar alguns segundos depois dos chips.",
   "vr_phases": "fases",
   "vr_domains": "domínios de tensão",
-  "hc_total": "Total"
+  "hc_total": "Total",
+  "tuning_clk": "Clock",
+  "overheat_s_novr": "Chip acima dela: ele para até esfriar 10 °C"
 }
