@@ -5,12 +5,12 @@
 
 #![allow(dead_code)]
 
+#[path = "../../../firmware/warpaxe/src/display_i18n.rs"]
+mod display_i18n;
 #[path = "../../../firmware/warpaxe/src/gfx/mod.rs"]
 mod gfx;
 #[path = "../../../firmware/warpaxe/src/screens.rs"]
 mod screens;
-#[path = "../../../firmware/warpaxe/src/display_i18n.rs"]
-mod display_i18n;
 
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
@@ -35,7 +35,11 @@ mod display {
     impl Lcd {
         pub fn orient(&mut self, _f: bool, _i: bool) {}
         pub fn canvas(&mut self) -> crate::gfx::Canvas<'_> {
-            crate::gfx::Canvas { fb: &mut self.fb, w: WIDTH as i32, h: HEIGHT as i32 }
+            crate::gfx::Canvas {
+                fb: &mut self.fb,
+                w: WIDTH as i32,
+                h: HEIGHT as i32,
+            }
         }
         pub fn blit(&mut self, f: &[u8]) {
             let n = f.len().min(self.fb.len());
@@ -58,13 +62,19 @@ mod display {
             if (0..128).contains(&x) && (0..32).contains(&y) {
                 let i = (y as usize / 8) * 128 + x as usize;
                 let b = 1u8 << (y % 8);
-                if on { self.fb[i] |= b } else { self.fb[i] &= !b }
+                if on {
+                    self.fb[i] |= b
+                } else {
+                    self.fb[i] &= !b
+                }
             }
         }
         pub fn bitmap(&mut self, bits: &[u8]) {
             for y in 0..32 {
                 for x in 0..128 {
-                    let on = bits.get(y * 16 + x / 8).is_some_and(|b| b & (0x80 >> (x % 8)) != 0);
+                    let on = bits
+                        .get(y * 16 + x / 8)
+                        .is_some_and(|b| b & (0x80 >> (x % 8)) != 0);
                     self.pixel(x as i32, y as i32, on);
                 }
             }
@@ -78,7 +88,11 @@ mod display {
                         if bits & (1 << row) != 0 {
                             for dy in 0..scale {
                                 for dx in 0..scale {
-                                    self.pixel((cx + col * scale + dx) as i32, (y + row * scale + dy) as i32, true);
+                                    self.pixel(
+                                        (cx + col * scale + dx) as i32,
+                                        (y + row * scale + dy) as i32,
+                                        true,
+                                    );
                                 }
                             }
                         }
@@ -108,7 +122,11 @@ mod clock {
 
 mod history {
     pub fn recent_ghs(n: usize) -> Vec<f32> {
-        let base = if crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed) { 1310.0 } else { 6520.0 };
+        let base = if crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed) {
+            1310.0
+        } else {
+            6520.0
+        };
         (0..n.min(360))
             .map(|i| {
                 let t = i as f32;
@@ -125,7 +143,10 @@ mod market {
         pub fees: Option<(f64, f64, f64)>,
     }
     pub fn get() -> Option<Market> {
-        Some(Market { price: Some(("EUR".into(), 74_245.0)), fees: Some((2.0, 1.0, 1.0)) })
+        Some(Market {
+            price: Some(("EUR".into(), 74_245.0)),
+            fees: Some((2.0, 1.0, 1.0)),
+        })
     }
 }
 
@@ -162,6 +183,29 @@ mod config {
     pub fn best_diff() -> u64 {
         11_200_000
     }
+    pub fn best_diff_f() -> f64 {
+        0.0381
+    }
+}
+
+mod cpuminer {
+    pub struct Info {
+        pub hw_khs: f64,
+        pub sw_khs: f64,
+        pub candidates: u32,
+        pub best_diff: f64,
+    }
+    pub fn info() -> Info {
+        Info {
+            hw_khs: 214.6,
+            sw_khs: 76.9,
+            candidates: 41,
+            best_diff: 0.0127,
+        }
+    }
+    pub fn cpu_mhz() -> u32 {
+        240
+    }
 }
 
 mod board {
@@ -179,22 +223,62 @@ mod board {
         pub fan2_rpm: Option<u16>,
         pub overheat_latched: bool,
         pub overheat_cause: Option<&'static str>,
+        pub power_estimated: bool,
     }
     pub fn gamma() -> bool {
         crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn state() -> BoardState {
         if gamma() {
-            BoardState { temp_c: Some(62.3), vr_temp_c: Some(55), vin_mv: Some(5120.0), vout_mv: Some(1140.0), iout_ma: Some(20500.0), power_w: Some(23.4), fan_pct: 100, fan_rpm: 5020, fan2_pct: None, fan2_rpm: None, overheat_latched: false, overheat_cause: None }
+            BoardState {
+                temp_c: Some(62.3),
+                vr_temp_c: Some(55),
+                vin_mv: Some(5120.0),
+                vout_mv: Some(1140.0),
+                iout_ma: Some(20500.0),
+                power_w: Some(23.4),
+                fan_pct: 100,
+                fan_rpm: 5020,
+                fan2_pct: None,
+                fan2_rpm: None,
+                overheat_latched: false,
+                overheat_cause: None,
+                power_estimated: profile().name == "nerdnos",
+            }
         } else {
-            BoardState { temp_c: Some(56.2), vr_temp_c: Some(50), vin_mv: Some(12050.0), vout_mv: Some(1238.0), iout_ma: Some(9140.0), power_w: Some(109.5), fan_pct: 59, fan_rpm: 1831, fan2_pct: Some(25), fan2_rpm: Some(0), overheat_latched: false, overheat_cause: None }
+            BoardState {
+                temp_c: Some(56.2),
+                vr_temp_c: Some(50),
+                vin_mv: Some(12050.0),
+                vout_mv: Some(1238.0),
+                iout_ma: Some(9140.0),
+                power_w: Some(109.5),
+                fan_pct: 59,
+                fan_rpm: 1831,
+                fan2_pct: Some(25),
+                fan2_rpm: Some(0),
+                overheat_latched: false,
+                overheat_cause: None,
+                power_estimated: profile().name == "nerdnos",
+            }
         }
     }
     pub fn profile() -> &'static Profile {
         // PREVIEW_BOARD=nerdoctaxe-gamma renders another Nerd board's titles.
-        let own = if gamma() { "bitaxe-gamma" } else { "nerdqaxe-plusplus" };
-        let name: &str = &*Box::leak(std::env::var("PREVIEW_BOARD").unwrap_or_else(|_| own.into()).into_boxed_str());
+        let own = if gamma() {
+            "bitaxe-gamma"
+        } else {
+            "nerdqaxe-plusplus"
+        };
+        let name: &str = &*Box::leak(
+            std::env::var("PREVIEW_BOARD")
+                .unwrap_or_else(|_| own.into())
+                .into_boxed_str(),
+        );
         Profile::by_name(name).expect("profile")
+    }
+    pub fn devkit() -> bool {
+        profile().asic_count == 0 && profile().name != "undetected"
     }
     pub fn overheat() -> bool {
         false
@@ -229,8 +313,16 @@ mod net {
         pub wifi_rssi: Option<i32>,
     }
     pub fn state() -> NetState {
-        let ip = if crate::board::gamma() { "192.168.178.42" } else { "192.168.178.41" };
-        NetState { wifi_ip: Some(ip.into()), usb_ip: None, wifi_rssi: Some(-66) }
+        let ip = if crate::board::gamma() {
+            "192.168.178.42"
+        } else {
+            "192.168.178.41"
+        };
+        NetState {
+            wifi_ip: Some(ip.into()),
+            usb_ip: None,
+            wifi_rssi: Some(-66),
+        }
     }
     pub fn hotspot() -> Option<(String, String)> {
         crate::HOTSPOT
@@ -256,7 +348,12 @@ mod stratum {
     pub fn state() -> StratumState {
         StratumState {
             // Gamma on V1 with TLS, the Nerd boards on Sv2, as the test miners run.
-            pool: if crate::board::gamma() { "pool.warppool.org:3334" } else { "pool.warppool.org:3336" }.into(),
+            pool: if crate::board::gamma() {
+                "pool.warppool.org:3334"
+            } else {
+                "pool.warppool.org:3336"
+            }
+            .into(),
             tls: crate::board::gamma(),
             using_fallback: false,
             authorized: true,
@@ -281,7 +378,9 @@ fn main() {
     std::fs::create_dir_all(&dir).expect("out dir");
 
     // LCD: five pages, then the special screens.
-    let mut d = display::Display::Lcd(display::Lcd { fb: vec![0; 320 * 170 * 2] });
+    let mut d = display::Display::Lcd(display::Lcd {
+        fb: vec![0; 320 * 170 * 2],
+    });
     let mut ui = screens::Ui::new();
     let names = ["cockpit", "bitcoin", "device", "pool", "log"];
     for (i, n) in names.iter().enumerate() {
