@@ -165,6 +165,9 @@ fn main() {
     if let Err(e) = config::init(nvs.clone()) {
         log::error!("config init failed: {e}");
     }
+    // On the main task, before any thread with a PSRAM stack exists: it
+    // reads the otadata partition from flash.
+    update::init_ota_state();
 
     // The fallback for boards that never report a chain (the devkit, chips
     // off on purpose): the image counts as good after three minutes up.

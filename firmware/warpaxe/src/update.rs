@@ -513,36 +513,50 @@ pub fn mark_app_valid(why: &str) {
     }
     let rc = unsafe { esp_idf_svc::sys::esp_ota_mark_app_valid_cancel_rollback() };
     if rc == esp_idf_svc::sys::ESP_OK {
+        if *OTA_STATE.lock().unwrap() == "pending-verify" {
+            *OTA_STATE.lock().unwrap() = "valid";
+        }
         log::info!("update: app marked valid ({why}); no rollback to the previous image");
     } else {
         log::warn!("update: mark app valid ({why}) returned {rc}");
     }
 }
 
-/// The bootloader's view, for the API: "aborted" when the last update
-/// never proved itself and the bootloader came back to this image (the
-/// aborted state sits on the other slot, which
-/// esp_ota_get_last_invalid_partition names; the running image itself
-/// reads "valid"); otherwise the running image's own state.
-pub fn ota_state() -> &'static str {
+/// The bootloader's view of the running image, read ONCE at boot on the
+/// main task and kept: esp_ota_get_last_invalid_partition and
+/// esp_ota_get_state_partition read the otadata partition from flash,
+/// and a flash read from a thread whose stack sits in PSRAM (the HTTP
+/// server's) hangs it — the devkit's API went silent 35 s after a
+/// rollback on 2026-10-08 while the device still answered pings.
+/// "aborted" when the last update never proved itself and the bootloader
+/// came back to this image (the aborted mark sits on the other slot);
+/// otherwise the running image's own state; "valid" once marked.
+static OTA_STATE: Mutex<&'static str> = Mutex::new("unknown");
+
+pub fn init_ota_state() {
     use esp_idf_svc::sys as sys;
-    if !unsafe { sys::esp_ota_get_last_invalid_partition() }.is_null() {
-        return "aborted";
-    }
-    let part = unsafe { sys::esp_ota_get_running_partition() };
-    if part.is_null() {
-        return "unknown";
-    }
-    let mut st: sys::esp_ota_img_states_t = 0;
-    if unsafe { sys::esp_ota_get_state_partition(part, &mut st) } != sys::ESP_OK {
-        return "unknown";
-    }
-    match st {
-        sys::esp_ota_img_states_t_ESP_OTA_IMG_NEW => "new",
-        sys::esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY => "pending-verify",
-        sys::esp_ota_img_states_t_ESP_OTA_IMG_VALID => "valid",
-        sys::esp_ota_img_states_t_ESP_OTA_IMG_INVALID => "invalid",
-        sys::esp_ota_img_states_t_ESP_OTA_IMG_ABORTED => "aborted",
-        _ => "undefined",
-    }
+    let state = if !unsafe { sys::esp_ota_get_last_invalid_partition() }.is_null() {
+        "aborted"
+    } else {
+        let part = unsafe { sys::esp_ota_get_running_partition() };
+        let mut st: sys::esp_ota_img_states_t = 0;
+        if part.is_null() || unsafe { sys::esp_ota_get_state_partition(part, &mut st) } != sys::ESP_OK {
+            "unknown"
+        } else {
+            match st {
+                sys::esp_ota_img_states_t_ESP_OTA_IMG_NEW => "new",
+                sys::esp_ota_img_states_t_ESP_OTA_IMG_PENDING_VERIFY => "pending-verify",
+                sys::esp_ota_img_states_t_ESP_OTA_IMG_VALID => "valid",
+                sys::esp_ota_img_states_t_ESP_OTA_IMG_INVALID => "invalid",
+                sys::esp_ota_img_states_t_ESP_OTA_IMG_ABORTED => "aborted",
+                _ => "undefined",
+            }
+        }
+    };
+    *OTA_STATE.lock().unwrap() = state;
+    log::info!("update: image state at boot: {state}");
+}
+
+pub fn ota_state() -> &'static str {
+    *OTA_STATE.lock().unwrap()
 }
