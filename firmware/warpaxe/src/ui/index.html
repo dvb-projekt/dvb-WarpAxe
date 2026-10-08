@@ -325,9 +325,10 @@ const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const nf = (v, d = 0) => (v == null || isNaN(v)) ? "–" : Number(v).toLocaleString(lang, {minimumFractionDigits: d, maximumFractionDigits: d});
 // The T-Display-S3 without chips (`cpuMiner` in the info): a few hundred kH/s, not TH/s.
+// Below a terahash the rate keeps two decimals, like the kH/s of the devkit and the stock firmware.
 const cpuHs = i => i.cpuMiner ? {v: nf(i.cpuMiner.khs10m, 2), u: "kH/s", sub: `SHA ${nf(i.cpuMiner.hwKhs, 2)} · CPU ${nf(i.cpuMiner.swKhs, 2)} kH/s`} : null;
 // A rate in GH/s with the unit it reads best in: TH/s from 1 TH/s, else GH/s (a BM1397 does ~200).
-const hru = g => g == null ? {v: "–", u: "TH/s"} : g >= 1000 ? {v: nf(g / 1000, 2), u: "TH/s"} : {v: nf(g, g >= 100 ? 0 : 1), u: "GH/s"};
+const hru = g => g == null ? {v: "–", u: "TH/s"} : g >= 1000 ? {v: nf(g / 1000, 2), u: "TH/s"} : {v: nf(g, 2), u: "GH/s"};
 function sfx(v) { if (v == null || isNaN(v)) return "–"; const u = ["", "k", "M", "G", "T", "P", "E"]; let i = 0; while (v >= 1000 && i < 6) { v /= 1000; i++; } return nf(v, i ? 2 : 0) + (u[i] ? " " + u[i] : ""); }
 function upt(s) { const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return (d ? d + " " + t("days") + " " : "") + h + " h " + String(m).padStart(2, "0") + " min"; }
 function toast(msg, cls) { const e = $("#toast"); e.textContent = msg; e.className = "show " + (cls || ""); clearTimeout(toast.h); toast.h = setTimeout(() => e.className = "", 3500); }

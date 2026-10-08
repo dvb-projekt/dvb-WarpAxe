@@ -198,7 +198,9 @@ fn hashrate(ghs: f64) -> (String, &'static str) {
     } else if board::devkit() && ghs < 1.0 {
         (num(ghs * 1e3, 2), "MH/s")
     } else {
-        (num(ghs, 0), "GH/s")
+        // Two decimals like the kH/s of the devkit: a single BM1397 moves in
+        // the second place, not the hundreds.
+        (num(ghs, 2), "GH/s")
     }
 }
 
