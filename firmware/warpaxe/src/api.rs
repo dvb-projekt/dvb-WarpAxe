@@ -114,7 +114,9 @@ pub fn system_info() -> serde_json::Value {
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
-        "bestDiff": config::best_diff(), "bestSessionDiff": m.best_session_diff,
+        // The devkit's shares sit below 1: its figures with decimals.
+        "bestDiff": if board::devkit() { json!(config::best_diff_f()) } else { json!(config::best_diff()) },
+        "bestSessionDiff": if board::devkit() { json!(crate::cpuminer::info().best_diff) } else { json!(m.best_session_diff) },
         "freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(),
         "coreVoltage": cfg.core_voltage,
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),

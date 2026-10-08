@@ -1245,8 +1245,12 @@ fn pool(c: &mut Canvas) {
         308,
     );
     let best = if board::devkit() {
-        // The devkit's shares sit below 1: decimals, session only.
-        format!("{} / –", num(crate::cpuminer::info().best_diff, 3))
+        // The devkit's shares sit below 1: decimals, session / all-time.
+        format!(
+            "{} / {}",
+            num(crate::cpuminer::info().best_diff, 3),
+            num(config::best_diff_f(), 3)
+        )
     } else {
         format!(
             "{} / {}",

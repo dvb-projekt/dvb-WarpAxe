@@ -255,6 +255,13 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     );
     *CONFIG.lock().unwrap() = Some(cfg);
     *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
+    *BEST_DIFF_F.lock().unwrap() = nvs
+        .get_u64(BEST_F_KEY)
+        .ok()
+        .flatten()
+        .map(f64::from_bits)
+        .filter(|v| v.is_finite() && *v >= 0.0)
+        .unwrap_or(0.0);
     // Read once here, on the main task: a thread whose stack is in PSRAM must
     // not touch flash (the cache is off while it reads), and the update
     // watcher is such a thread (0.1.5 rebooted every minute once the record
@@ -280,16 +287,45 @@ pub fn partition() -> Option<EspDefaultNvsPartition> {
 /// A mutex, not an atomic: Xtensa has no 64-bit atomics.
 static BEST_DIFF: Mutex<u64> = Mutex::new(0);
 const BEST_KEY: &str = "bestdiff";
+/// The same with its decimals, for the devkit, whose shares sit below 1
+/// (the integer above stays 0 there). Stored as the f64's bits.
+static BEST_DIFF_F: Mutex<f64> = Mutex::new(0.0);
+const BEST_F_KEY: &str = "bestdiff_f";
 
 pub fn best_diff() -> u64 {
     *BEST_DIFF.lock().unwrap()
 }
 
+/// All-time best difficulty with its decimals (the devkit's figure).
+pub fn best_diff_f() -> f64 {
+    *BEST_DIFF_F.lock().unwrap()
+}
+
+/// Record a difficulty with its decimals; NVS only when the best rises.
+pub fn raise_best_diff_f(diff: f64) {
+    {
+        let mut best = BEST_DIFF_F.lock().unwrap();
+        if !(diff > *best) {
+            return;
+        }
+        *best = diff;
+    }
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_u64(BEST_F_KEY, diff.to_bits()) {
+            log::warn!("config: storing best diff: {e}");
+        }
+    }
+}
+
 /// Forget the all-time best difficulty.
 pub fn reset_best_diff() {
     *BEST_DIFF.lock().unwrap() = 0;
+    *BEST_DIFF_F.lock().unwrap() = 0.0;
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if let Err(e) = nvs.set_u64(BEST_KEY, 0) {
+            log::warn!("config: resetting best diff: {e}");
+        }
+        if let Err(e) = nvs.set_u64(BEST_F_KEY, 0) {
             log::warn!("config: resetting best diff: {e}");
         }
     }

@@ -520,6 +520,7 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
         );
     });
     config::raise_best_diff(diff as u64);
+    config::raise_best_diff_f(diff);
     if st.network_difficulty > 0.0 && diff >= st.network_difficulty {
         log::warn!(
             "cpu miner: BLOCK FOUND at height {} (diff {diff:.0})",
