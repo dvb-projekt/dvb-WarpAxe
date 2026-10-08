@@ -115,6 +115,7 @@ pub const BM1373: ChipProfile = ChipProfile {
     // Eight domain counters, 0x88–0x8B and 0xAC–0xAF, each about an
     // eighth of the total (NerdAxe Gaia, 2026-10-01); read all, no ×2.
     domains: 8,
+    rate_register: None,
     domain_hashrate_scale: 1,
     default_difficulty: 4096,
     stock: (425_000_000, 1010),

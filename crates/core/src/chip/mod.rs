@@ -126,6 +126,11 @@ pub struct ChipProfile {
     /// ([`crate::regs::reg::domain_count`]): 4 on the BM1370, 8 on the
     /// BM1373 (measured, see `DOMAIN_4_COUNT`).
     pub domains: u8,
+    /// A register the chip reports its own hash rate in, instead of
+    /// counters: the BM1397's 0x04 (units of 2²⁰ H/s, bit 31 = long
+    /// window; [`crate::regs::bm1397_hashrate`]). `None` on the chips
+    /// with domain counters.
+    pub rate_register: Option<u8>,
     /// What a domain counter reading is multiplied by to give the
     /// domain's hashrate. 1. ESP-Miner uses 2 on the BM1373
     /// (`main/device_config.h`, `domain_hashrate_scale` 2.0) because it
@@ -694,6 +699,7 @@ mod tests {
         assert_eq!(p.host_midstates, 0);
         assert_eq!(p.fast_uart_reg, reg::FAST_UART_CONFIGURATION);
         assert_eq!(p.pll_prewrite, None);
+        assert_eq!(p.rate_register, None);
         assert_eq!(
             p.frequency_options_mhz,
             &[400, 490, 525, 550, 600, 625, 690]

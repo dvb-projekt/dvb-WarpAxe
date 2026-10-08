@@ -371,7 +371,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, output fixed by resistors (1.4 V, no PMBus) | profile only, not run yet: the first chip without version rolling (four host midstates per job), board temperature from a thermistor on the ADC, no power reading; offered on the first start when the thermistor divider answers on GPIO2, never taken on its own; see `docs/03-NerdNOS-BM1397-against-the-references.md` |
+| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, output fixed by resistors (1.4 V, no PMBus) | profile only, not run yet: the first chip without version rolling (four host midstates per job), board temperature from a thermistor on the ADC, the chip's own rate from its register 0x04, no power reading; offered on the first start when the thermistor divider answers on GPIO2, never taken on its own; see `docs/03-NerdNOS-BM1397-against-the-references.md` |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken

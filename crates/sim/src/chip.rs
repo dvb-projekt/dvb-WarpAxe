@@ -89,6 +89,8 @@ pub struct SimChip {
     next_domain: u8,
     /// Error hashes not yet counted.
     error_acc: f64,
+    /// Rate-register reads so far: the windows alternate, short first.
+    rate_reads: u32,
 }
 
 impl SimChip {
@@ -124,6 +126,7 @@ impl SimChip {
             hash_acc: 0.0,
             next_domain: 0,
             error_acc: 0.0,
+            rate_reads: 0,
         }
     }
 
@@ -327,6 +330,20 @@ impl SimChip {
                 return;
             }
             [id[0], id[1], core_num, self.address, 0, 0, 0, 0]
+        } else if self.profile.rate_register == Some(r) {
+            // The BM1397 reports what it hashes: clock × small cores while
+            // a job is in, in units of 2²⁰ H/s, the two windows in turn.
+            // Nobody has captured whether the real chip alternates or
+            // which window comes first.
+            let busy = self.job.is_some() && self.now_us <= self.job_ends_us && !self.hung();
+            let hs = if busy {
+                self.frequency_hz() * u64::from(self.profile.small_cores)
+            } else {
+                0
+            };
+            let long = self.rate_reads % 2 == 1;
+            self.rate_reads += 1;
+            register_result_payload(regs::bm1397_hashrate_value(hs, long), self.address, r)
         } else {
             let mut v = self.regs[usize::from(r)];
             if self.has(|f| matches!(f, Fault::RegReadCorrupt { reg } if *reg == r)) {

@@ -212,6 +212,37 @@ pub const fn bm1397_baud(divider: u8) -> u32 {
     25_000_000 / ((divider as u32 + 1) * 8)
 }
 
+/// Hashes per count of the BM1397's hash-rate register (ESP-Miner
+/// `HASHRATE_UNIT 0x100000`, WantClue `<< 20llu`).
+pub const BM1397_HASHRATE_UNIT: u64 = 1 << 20;
+
+/// What the BM1397 reports in register 0x04 (`BM1397_HASHRATE`): the
+/// rate in hashes per second and whether it is the long window (bit 31
+/// set) or the short one. `None` for the value 0x007FFFFF, which
+/// ESP-Miner treats as "no reading" (`update_hashrate`); WantClue logs
+/// both windows, ESP-Miner uses the short one.
+pub const fn bm1397_hashrate(value: u32) -> Option<(u64, bool)> {
+    let count = value & 0x7FFF_FFFF;
+    if count == 0x007F_FFFF {
+        return None;
+    }
+    Some((
+        count as u64 * BM1397_HASHRATE_UNIT,
+        value & 0x8000_0000 != 0,
+    ))
+}
+
+/// The register value a BM1397 would report for a rate, for the
+/// simulator: the count in units of 2²⁰, the window in bit 31.
+pub const fn bm1397_hashrate_value(hashes_per_s: u64, long_window: bool) -> u32 {
+    let count = (hashes_per_s / BM1397_HASHRATE_UNIT) as u32 & 0x7FFF_FFFF;
+    if long_window {
+        count | 0x8000_0000
+    } else {
+        count
+    }
+}
+
 /// The BM1397 fast rate as NerdNOS runs it: divider 1.
 pub const BM1397_FAST_UART: [u8; 4] = bm1397_misc_control_baud(1);
 /// Its host baud rate, 1 562 500.
@@ -385,6 +416,25 @@ mod tests {
         assert_eq!(bm1397_baud(26), 115_740);
         assert_eq!(bm1397_misc_control_baud(0), [0x00, 0x00, 0x60, 0x31]);
         assert_eq!(bm1397_baud(0), 3_125_000);
+    }
+
+    /// 300 MHz × 672 small cores = 201.6 GH/s is a count of 192 260
+    /// (0x2EF04); the .46's 153 GH/s would be 145 912; 0x007FFFFF is no
+    /// reading (ESP-Miner); bit 31 marks the long window.
+    #[test]
+    fn bm1397_hashrate_register_reads_in_2_to_the_20() {
+        assert_eq!(bm1397_hashrate(0x0002_EF04), Some((192_260 << 20, false)));
+        assert_eq!(bm1397_hashrate(0x8002_EF04), Some((192_260 << 20, true)));
+        assert_eq!(bm1397_hashrate(0x007F_FFFF), None);
+        assert_eq!(bm1397_hashrate(0x807F_FFFF), None);
+        assert_eq!(bm1397_hashrate(0), Some((0, false)));
+        let v = bm1397_hashrate_value(201_600_000_000, false);
+        assert_eq!(v, 192_260);
+        assert_eq!(bm1397_hashrate(v).unwrap().0, 192_260 << 20);
+        assert_eq!(
+            bm1397_hashrate_value(153_000_000_000, true),
+            0x8000_0000 | 145_912
+        );
     }
 
     /// `BM1370_set_max_baud()`.

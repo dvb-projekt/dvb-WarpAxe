@@ -559,11 +559,40 @@ fn bm1397_brings_up_with_nine_byte_replies_midstate_jobs_and_no_rolling() {
         }
     }
     assert_eq!(seen, [true; 4]);
-    // No counter reads: the chip has no domain registers we know.
+    // The counter round on this chip is two reads: the rate register
+    // 0x04 and the error counter 0x4C, the replies nine bytes each. The
+    // rate comes back in units of 2²⁰ H/s: 300 MHz × 672 = 201.6 GH/s is
+    // 192 260; the short window is the rate, the long one the minute
+    // figure, both as `hashrateMonitor` reports them.
     let reads_before = chip.stats().reads;
+    let w = b.work();
+    b.drv.submit(&mut b.uart, &w, b.now).unwrap();
     b.drv.request_counters(&mut b.uart).unwrap();
-    b.run_ms(10);
-    assert_eq!(b.uart.sim.chips()[0].stats().reads, reads_before);
+    b.run_ms(5);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.run_ms(5);
+    assert_eq!(b.uart.sim.chips()[0].stats().reads, reads_before + 4);
+    let rates: Vec<u32> = b
+        .events
+        .iter()
+        .filter_map(|e| match e {
+            Event::Register {
+                register: 0x04,
+                value,
+                ..
+            } => Some(*value),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rates, vec![192_260, 0x8000_0000 | 192_260]);
+    let m = b.drv.monitor();
+    assert_eq!(m.registers(), &[0x04, 0x4C]);
+    let c = m.chips()[0];
+    assert!((c.total.ghs - 201.6).abs() < 0.01, "{}", c.total.ghs);
+    assert!((c.total.ghs_1m - 201.6).abs() < 0.01, "{}", c.total.ghs_1m);
+    assert_eq!(c.error.value, 0);
+    assert_eq!(m.domains(), 0);
+    assert!((m.total_ghs() - 201.6).abs() < 0.01);
 }
 
 /// The chips' hash counters read back the way ESP-Miner's hashrate

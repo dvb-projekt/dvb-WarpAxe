@@ -45,7 +45,7 @@ ntc.rs, miner.rs}`.
 | 17 | Nonce reply | 9 B: nonce LE, midstate_num, id; job = `(id & 0xFC) >> 2`, midstate = `id & 3` | same (job = `id & 0xFC`) | `parse_bm1397`: job = `id & 0xFC`, midstate = `id & 3`, slot = `id >> 2` (32 slots) | yes |
 | 18 | Version of a nonce | job version rolled `midstate` times | same | same (`rolled_version`) | yes |
 | 19 | Register vs nonce reply | heuristic (`midstate_num == 0 && !(nonce & 0x7f)`) | bit 7 of the last byte | bit 7 of the last byte (CRC-covered) | as ESP-Miner |
-| 20 | Hash-rate counters | reads 0x04 every 2.5 s ("hashrate reported by asic") | 0x04 and 0x4C per chip | none yet (`domains: 0`): the pool-side rate from nonces | **gap**: 0x04 readout not implemented |
+| 20 | Hash-rate register | reads 0x04 every 2.5 s: `(v & 0x7fffffff) << 20` H/s, bit 31 = long window, both logged | 0x04 and 0x4C once a second; `v & 0x7fffffff` × 2²⁰ H/s, only the short window, 0x007FFFFF discarded | 0x04 and 0x4C once a second (`REGISTERS_RATE`); short window → `hashrateMonitor.asics[0].hashRate`, long → the minute figure, 0x007FFFFF discarded | yes; see "Register 0x04" below |
 | 21 | Temperature | NTC on GPIO2 (ADC1_CH1), 10 k / B 3380 against 3.3 V, every 5 s | EMC2101 diode | the same divider formula (`ntc.rs`), every second, −40…150 °C plausibility | yes |
 | 22 | Overheat | > 80 °C: PEN low, wait until < 70 °C, PEN high, `BM1397_init(210, 1)` | 75/90 °C, rail off | > 80 °C (or no reading for 60 s): GPIO13 **low** (reset held), ≥ 60 s, ≤ 70 °C: miner pulses the reset and re-inits at the configured clock; third stop within an hour latches | same line, same limits; WarpAxe re-inits at the configured clock, WantClue drops to 210 MHz |
 | 23 | Core voltage | fixed by R12/R13 on the TPSM863257 (0.6 V · (1 + 40.2/30) = 1.40 V) | TPS546, 1100–1500 mV | reported as 1400 mV, no options, no slider | yes |
@@ -75,21 +75,42 @@ stop; 12 pulsed high then held low before each init), which is right under
 either reading. **Open for Oliver**: which header pins the .46's carrier
 uses, and whether its buck has a GPIO on EN.
 
+## Register 0x04: how the value is read
+
+The BM1397 has no hash counters; it reports a rate. The register reads
+back as a 32-bit value: bit 31 names the window (0 short, 1 long), bits
+30..0 the rate in units of 2²⁰ = 1 048 576 hashes per second (ESP-Miner
+`HASHRATE_UNIT`, WantClue `<< 20llu`). ESP-Miner discards the value
+0x007FFFFF as "no reading" and uses the short window only; WantClue logs
+both. WarpAxe reads 0x04 and the error counter 0x4C once a second like the
+other chips, puts the short window into the chip's rate and the long one
+into its minute figure, and discards 0x007FFFFF.
+
+| Value read | Window | Count | Rate |
+|---|---|---|---|
+| `0x0002EF04` | short | 192 260 | 201.6 GH/s — 300 MHz × 672 small cores, the nominal rate |
+| `0x8002EF04` | long | 192 260 | 201.6 GH/s over the long window |
+| `0x00023A00` | short | 145 920 | 153.0 GH/s — what the .46 showed in its API on 2026-10-08 |
+| `0x007FFFFF` | — | — | no reading (ESP-Miner), ignored |
+| `0x00000000` | short | 0 | 0 GH/s: no job in the chip |
+
+Open until a real reply is seen: whether the chip alternates the two
+windows on successive reads (the simulator does, short first) and how long
+the "long" window is. The error counter 0x4C is read as on the BM1370.
+
 ## Gaps and open points before a flash
 
-1. **Hash-rate register 0x04** is not read; the UI shows the pool-side rate
-   only (as the devkit does). Easy to add once a reply is seen.
-2. **Midstate byte order** is the one all three references compute; a wrong
+1. **Midstate byte order** is the one all three references compute; a wrong
    order would show up at once as `below_ticket` nonces (header re-hash
    fails) — watch that counter on the first run.
-3. **Clock cap 400 MHz**, options 200–400, stock 300: nothing above has been
+2. **Clock cap 400 MHz**, options 200–400, stock 300: nothing above has been
    measured on this USB-powered, fanless board.
-4. **Display orientation** on the carrier: unknown; the flip setting covers it.
-5. **Detection**: on the first start the NTC divider on GPIO2 offers
+3. **Display orientation** on the carrier: unknown; the flip setting covers it.
+4. **Detection**: on the first start the NTC divider on GPIO2 offers
    `nerdnos` first (never taken); a bare T-Display-S3 with NerdMiner's
    settings stays the devkit. If the .46's NTC does not sit on GPIO2 after
    all, the board can still be chosen by hand.
-6. **Chip id reply**: the simulator answers `13 97 18 00`; the real one must
+5. **Chip id reply**: the simulator answers `13 97 18 00`; the real one must
    match (`ChipFound { chip_id: 0x1397 }` in the log).
 
 ## Before the first flash on the .46 (rules in force)

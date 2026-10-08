@@ -95,11 +95,13 @@ pub const BM1397: ChipProfile = ChipProfile {
     command_address_shift: 0,
     hcn: Hcn::None,
     // ESP-Miner `main/device_config.h`: core_count 168, small_core_count
-    // 672, hash_domains 1 (no domain counter registers are read; the
-    // chip reports a rate in register 0x04 instead).
+    // 672, hash_domains 1. No domain counters are read; the chip reports
+    // a rate in register 0x04 (ESP-Miner `REGISTER_HASHRATE`, WantClue
+    // `BM1397_read_hashrate` every 2.5 s), the error counter is 0x4C.
     cores: 168,
     small_cores: 672,
     domains: 0,
+    rate_register: Some(reg::BM1397_HASHRATE),
     domain_hashrate_scale: 1,
     default_difficulty: 256,
     // NerdNOS `BM1397_init(300, 1)` on a core rail the TPSM863257 sets by
@@ -211,6 +213,7 @@ mod tests {
         assert_eq!(p.host_midstates, 4);
         assert_eq!(p.hcn, Hcn::None);
         assert_eq!((p.cores, p.small_cores, p.domains), (168, 672, 0));
+        assert_eq!(p.rate_register, Some(0x04));
         assert_eq!(p.stock, (300_000_000, 1400));
         assert_eq!(p.job_id_step, 4);
         assert_eq!(p.fast_uart_reg, reg::MISC_CONTROL);

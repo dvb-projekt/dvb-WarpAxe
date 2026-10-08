@@ -386,7 +386,11 @@ impl Chain {
             chip_count: 0,
             found: 0,
             chips: [ChipStatus::default(); MAX_CHIPS],
-            monitor: HashrateMonitor::new(profile.domains, profile.domain_hashrate_scale),
+            monitor: HashrateMonitor::new(
+                profile.domains,
+                profile.domain_hashrate_scale,
+                profile.rate_register,
+            ),
             recent: [[NO_KEY; RECENT]; MAX_CHIPS],
             recent_at: [0; MAX_CHIPS],
             slots: [Slot::default(); SLOTS],
@@ -562,7 +566,7 @@ impl Chain {
         }
         let regs = self.monitor.registers();
         if regs.is_empty() {
-            // No counter registers known on this chip (BM1397).
+            // No counter or rate registers known on this chip.
             self.counter_cursor = None;
             return Ok(());
         }

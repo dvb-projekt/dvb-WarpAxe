@@ -8,12 +8,18 @@
 //! a second apart are ignored, as the reference does, so a burst of
 //! replies cannot fake a spike.
 //!
+//! The BM1397 has no counters: it reports a rate in register 0x04, in
+//! units of 2²⁰ H/s with bit 31 telling a long window from a short one
+//! (ESP-Miner `update_hashrate`, WantClue `process_hashrate_response`).
+//! That value goes straight into the chip's total: the short window as
+//! the second-by-second rate, the long one as the minute rate.
+//!
 //! The reference reports the raw error counter value, not a rate, as
 //! `errorCount`; both are kept here. BM1373 domain counters run at half
 //! speed in the reference's reading (`domain_hashrate_scale` 2.0 in
 //! ESP-Miner `main/device_config.h`), applied by [`HashrateMonitor::domain_ghs`].
 
-use warpaxe_core::regs::reg;
+use warpaxe_core::regs::{self, reg};
 
 /// Hashes per counter step.
 pub const HASH_COUNT_UNIT: f64 = 4_294_967_296.0;
@@ -85,6 +91,26 @@ impl Measurement {
     }
 }
 
+impl Measurement {
+    /// A rate the chip reported itself (BM1397 register 0x04): the short
+    /// window is the rate, the long one the minute rate. The raw value
+    /// is kept as `value`; a reading the reference calls invalid
+    /// (0x007FFFFF) changes nothing.
+    fn report_rate(&mut self, value: u32, now_us: u64) {
+        let Some((hs, long)) = regs::bm1397_hashrate(value) else {
+            return;
+        };
+        let ghs = (hs as f64 / 1e9) as f32;
+        if long {
+            self.ghs_1m = ghs;
+        } else {
+            self.ghs = ghs;
+        }
+        self.value = value;
+        self.time_us = now_us;
+    }
+}
+
 /// Counter steps over `dt_us` as GH/s.
 fn rate_ghs(steps: u32, dt_us: u64) -> f32 {
     let hashes = f64::from(steps) * HASH_COUNT_UNIT;
@@ -116,18 +142,21 @@ pub struct HashrateMonitor<const N: usize> {
     count: usize,
     domains: usize,
     domain_scale: f32,
+    /// The chip's own rate register, if it has one instead of counters.
+    rate_register: Option<u8>,
 }
 
 impl<const N: usize> HashrateMonitor<N> {
     /// For a chain of chips with `domains` domains each; `domain_scale`
     /// is what a domain reading is multiplied by (1.0, or 2.0 on the
     /// BM1373).
-    pub fn new(domains: u8, domain_scale: u8) -> Self {
+    pub fn new(domains: u8, domain_scale: u8, rate_register: Option<u8>) -> Self {
         HashrateMonitor {
             chips: [ChipMonitor::default(); N],
             count: 0,
             domains: usize::from(domains).min(MAX_DOMAINS),
             domain_scale: f32::from(domain_scale.max(1)),
+            rate_register,
         }
     }
 
@@ -166,10 +195,17 @@ impl<const N: usize> HashrateMonitor<N> {
         reg::TOTAL_COUNT,
     ];
 
+    /// The BM1397's two: its rate register and the error counter
+    /// (ESP-Miner `REGISTER_MAP`).
+    pub const REGISTERS_RATE: [u8; 2] = [reg::BM1397_HASHRATE, reg::ERROR_COUNT];
+
     /// The registers the driver polls per chip of this chain, in order.
     pub fn registers(&self) -> &'static [u8] {
         if self.domains == 0 {
-            return &[];
+            return match self.rate_register {
+                Some(reg::BM1397_HASHRATE) => &Self::REGISTERS_RATE,
+                _ => &[],
+            };
         }
         if self.domains > 4 {
             &Self::REGISTERS_8
@@ -185,6 +221,10 @@ impl<const N: usize> HashrateMonitor<N> {
             return false;
         }
         let m = &mut self.chips[chip];
+        if self.rate_register == Some(register) {
+            m.total.report_rate(value, now_us);
+            return true;
+        }
         match register {
             reg::TOTAL_COUNT => m.total.update(value, now_us),
             reg::ERROR_COUNT => m.error.update(value, now_us),
@@ -266,7 +306,7 @@ mod tests {
 
     #[test]
     fn a_second_reading_gives_the_rate_and_a_burst_is_ignored() {
-        let mut m: HashrateMonitor<4> = HashrateMonitor::new(4, 1);
+        let mut m: HashrateMonitor<4> = HashrateMonitor::new(4, 1, None);
         m.set_chip_count(2);
         assert!(m.on_register(0, reg::TOTAL_COUNT, 1000, 1_000_000));
         assert_eq!(m.chips()[0].total.ghs, 0.0, "one reading is no rate");
@@ -286,7 +326,7 @@ mod tests {
 
     #[test]
     fn a_restarted_counter_or_garbage_reading_is_not_a_rate() {
-        let mut m: HashrateMonitor<8> = HashrateMonitor::new(4, 1);
+        let mut m: HashrateMonitor<8> = HashrateMonitor::new(4, 1, None);
         m.set_chip_count(8);
         // Chip 3 reads normally: 300 steps a second.
         m.on_register(3, reg::TOTAL_COUNT, 100_000, 1_000_000);
@@ -309,9 +349,39 @@ mod tests {
         assert!((m.chips()[3].total.ghs - good).abs() < 0.1);
     }
 
+    /// A BM1397 reports its rate instead of counting: the short window
+    /// is the rate at once, the long one the minute figure, the invalid
+    /// marker changes nothing, and the two registers read are 0x04 and
+    /// the error counter.
+    #[test]
+    fn a_reported_rate_goes_straight_into_the_total() {
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(0, 1, Some(reg::BM1397_HASHRATE));
+        m.set_chip_count(1);
+        assert_eq!(m.registers(), &[0x04, 0x4C]);
+        assert!(m.on_register(0, 0x04, 192_260, 1_000));
+        let c = m.chips()[0];
+        assert!((c.total.ghs - 201.6).abs() < 0.01, "{}", c.total.ghs);
+        assert_eq!(c.total.ghs_1m, 0.0);
+        assert!(m.on_register(0, 0x04, 0x8000_0000 | 145_912, 2_000));
+        let c = m.chips()[0];
+        assert!((c.total.ghs - 201.6).abs() < 0.01);
+        assert!((c.total.ghs_1m - 153.0).abs() < 0.01, "{}", c.total.ghs_1m);
+        assert!(m.on_register(0, 0x04, 0x007F_FFFF, 3_000));
+        assert_eq!(
+            m.chips()[0].total.value,
+            0x8000_0000 | 145_912,
+            "invalid: unchanged"
+        );
+        assert!((m.total_ghs() - 201.6).abs() < 0.01);
+        assert!((m.total_1m_ghs() - 153.0).abs() < 0.01);
+        // Without a rate register a counterless chip reads nothing.
+        let none: HashrateMonitor<1> = HashrateMonitor::new(0, 1, None);
+        assert!(none.registers().is_empty());
+    }
+
     #[test]
     fn the_minute_window_smooths_one_bad_second() {
-        let mut m: HashrateMonitor<1> = HashrateMonitor::new(4, 1);
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(4, 1, None);
         m.set_chip_count(1);
         let mut total = 0u32;
         let mut err = 0u32;
@@ -340,7 +410,7 @@ mod tests {
 
     #[test]
     fn a_wrapped_counter_still_gives_the_difference() {
-        let mut m: HashrateMonitor<1> = HashrateMonitor::new(4, 1);
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(4, 1, None);
         m.set_chip_count(1);
         m.on_register(0, reg::TOTAL_COUNT, u32::MAX - 9, 1);
         m.on_register(0, reg::TOTAL_COUNT, 90, 1_000_001);
@@ -350,7 +420,7 @@ mod tests {
 
     #[test]
     fn domains_errors_and_the_bm1373_scale() {
-        let mut m: HashrateMonitor<2> = HashrateMonitor::new(4, 2);
+        let mut m: HashrateMonitor<2> = HashrateMonitor::new(4, 2, None);
         m.set_chip_count(1);
         for (r, v) in [
             (reg::DOMAIN_0_COUNT, 0),
@@ -391,12 +461,12 @@ mod tests {
 
     #[test]
     fn eight_domains_read_all_eight_registers_and_add_up_without_a_scale() {
-        let mut m: HashrateMonitor<1> = HashrateMonitor::new(8, 1);
+        let mut m: HashrateMonitor<1> = HashrateMonitor::new(8, 1, None);
         m.set_chip_count(1);
         assert_eq!(m.registers().len(), 10);
         assert_eq!(m.registers()[5], reg::DOMAIN_4_COUNT);
         assert_eq!(m.registers()[9], reg::TOTAL_COUNT);
-        let four: HashrateMonitor<1> = HashrateMonitor::new(4, 1);
+        let four: HashrateMonitor<1> = HashrateMonitor::new(4, 1, None);
         assert_eq!(four.registers().len(), 6);
         for r in m.registers() {
             m.on_register(0, *r, 0, 5);
