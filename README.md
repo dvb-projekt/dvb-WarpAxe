@@ -203,7 +203,7 @@ back at any time with `GET /api/v1/display/frame`.
 - The Wi-Fi radio stays awake (no modem sleep), so a new job from the
   pool does not wait for the access point's next beacon (~100 ms). The
   NerdNOS is the exception: fanless next to the ESP32-S3, it keeps modem
-  sleep on, as its stock firmware does, for a few degrees less.
+  sleep on, as its stock firmware does, to keep the heat down.
 - Block height, network difficulty and the pool's coinbase tag read from the
   job; a nonce at or above the network difficulty is reported as a found
   block.
