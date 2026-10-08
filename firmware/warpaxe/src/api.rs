@@ -141,7 +141,7 @@ pub fn system_info() -> serde_json::Value {
         "staleAfterCleanHist": st.stale_after_clean_hist, "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
         "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": asic_model(),
-        "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000,
+        "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000, "clockStep": m.clock_step,
         // Chips flagged silent right now, and the chain restarts after a
         // silent minute: in all, and in a row at the current core
         // voltage (two or more = the chips do not run at this voltage).

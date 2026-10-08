@@ -319,5 +319,6 @@
   "vr_domains": "domínios de tensão",
   "hc_total": "Total",
   "tuning_clk": "Clock",
-  "overheat_s_novr": "Chip acima dela: ele para até esfriar 10 °C"
+  "overheat_s_novr": "Chip acima dela: ele para até esfriar 10 °C",
+  "clock_step_note": "Reduzido de {from} para {to} MHz após um superaquecimento às {at}. Uma reinicialização volta a começar em {cfg} MHz."
 }

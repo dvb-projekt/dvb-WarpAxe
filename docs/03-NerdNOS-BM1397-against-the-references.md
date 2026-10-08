@@ -138,6 +138,26 @@ Open until a real reply is seen: whether the chip alternates the two
 windows on successive reads (the simulator does, short first) and how long
 the "long" window is. The error counter 0x4C is read as on the BM1370.
 
+## Overheat on a board without a fan: one clock step down
+
+Since 2026-10-08 (Oliver's wish): after an overheat stop on a board the
+firmware cannot cool (`hasFan` false, the NerdNOS), the chip comes back
+one clock option lower (300 → 275 → 250 …) instead of at the same clock;
+the stock firmware drops to a fixed 210 MHz instead. The step lives in
+RAM only: a reboot starts at the configured clock, a clock set by hand
+(`PATCH /api/system`) clears it. The API reports it as `clockStep`
+(`fromMhz`, `toMhz`, `atUptimeSeconds`, `cause`), `frequencyActual`
+shows the stepped clock, and the dashboard's clock card comes back with
+a note saying from what to what, when, and that a restart begins at the
+configured clock. WarpTune never sees `clockStep`: it would set the clock
+by hand and so clear the step. The .46 is not in WarpTune; if a board
+without a fan is ever tuned, the tuner has to read `clockStep` first.
+
+The chip difficulty starts at the profile default (256) and follows a
+lower pool VarDiff only after it has been unchanged for a minute, so the
+first seconds after a connect (difficulty 1, 4, 16 …) no longer flood
+the host with nonces.
+
 ## Gaps and open points before a flash
 
 1. **Midstate byte order** is the one all three references compute; a wrong

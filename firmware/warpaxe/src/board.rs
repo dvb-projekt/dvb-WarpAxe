@@ -1630,6 +1630,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     },
                 );
                 if cooled {
+                    let was_hot = matches!(g.stopped(), Some(Cause::Hot));
                     g.resumed();
                     drop(g);
                     temp_lost_s = 0;
@@ -1637,6 +1638,16 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     log::warn!(
                         "board: cooled down (chip {temp:?} °C, regulator {vr_temp:?} °C): core voltage back on"
                     );
+                    // A board without a fan to drive cannot cool itself at
+                    // the same clock: it comes back one option lower (the
+                    // stock NerdNOS firmware drops to 210 MHz for good).
+                    if was_hot && !profile.has_fan() {
+                        if let Some((from, to)) = crate::miner::step_down_after_overheat() {
+                            log::warn!(
+                                "board: no fan to drive: the chip comes back at {to} MHz instead of {from}; a restart begins at the configured clock again"
+                            );
+                        }
+                    }
                     update(|s| {
                         if s.last_error.starts_with("temp:") {
                             s.last_error.clear();

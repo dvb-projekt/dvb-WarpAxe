@@ -319,5 +319,6 @@
   "vr_domains": "电压域",
   "hc_total": "合计",
   "tuning_clk": "频率",
-  "overheat_s_novr": "芯片超过此温度时：停止运行，直到降低 10 °C"
+  "overheat_s_novr": "芯片超过此温度时：停止运行，直到降低 10 °C",
+  "clock_step_note": "{at} 过热后已从 {from} MHz 降至 {to} MHz。重启后将重新以 {cfg} MHz 开始。"
 }

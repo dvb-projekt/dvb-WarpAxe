@@ -319,5 +319,6 @@
   "vr_domains": "電圧ドメイン",
   "hc_total": "合計",
   "tuning_clk": "クロック",
-  "overheat_s_novr": "チップがこの温度を超えると停止（10 °C下がるまで）"
+  "overheat_s_novr": "チップがこの温度を超えると停止（10 °C下がるまで）",
+  "clock_step_note": "{at}の過熱により{from} MHzから{to} MHzに下げました。再起動すると{cfg} MHzから始まります。"
 }

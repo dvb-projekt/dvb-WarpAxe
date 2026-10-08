@@ -11,6 +11,8 @@
 #include "freertos/task.h"
 #include "esp_system.h"
 #include "soc/rtc_cntl_reg.h"
+#include "esp_mac.h"
+#include "sdkconfig.h"
 #include "soc/rtc.h"
 #include "esp_private/esp_clk.h"
 #include "tinyusb.h"
@@ -69,9 +71,30 @@ bool wa_usb_net_ready(void)
 
 esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ctx)
 {
-    // NULL descriptors: esp_tinyusb builds them from Kconfig
-    // (TINYUSB_NET_MODE_NCM + TINYUSB_CDC_ENABLED).
-    const tinyusb_config_t usb_cfg = {0};
+    // Device and configuration descriptors: esp_tinyusb builds them from
+    // Kconfig (TINYUSB_NET_MODE_NCM + TINYUSB_CDC_ENABLED). The string
+    // descriptors are its default list with one change: the serial is the
+    // base MAC (as the ROM's USB-Serial/JTAG reports it), not Kconfig's
+    // "123456" that every WarpAxe would share — two of them on one host
+    // get distinct port names then. The order and count must match
+    // esp_tinyusb's descriptor_str_default (usb_descriptors.c).
+    static const char s_lang[] = {0x09, 0x04};
+    static char s_serial[13];
+    static const char *s_strings[7];
+    uint8_t mac[6] = {0};
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(s_serial, sizeof s_serial, "%02X%02X%02X%02X%02X%02X",
+             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    s_strings[0] = s_lang;
+    s_strings[1] = CONFIG_TINYUSB_DESC_MANUFACTURER_STRING;
+    s_strings[2] = CONFIG_TINYUSB_DESC_PRODUCT_STRING;
+    s_strings[3] = s_serial;
+    s_strings[4] = CONFIG_TINYUSB_DESC_CDC_STRING;
+    s_strings[5] = "USB net";
+    s_strings[6] = "";  // MAC string, filled by the net driver
+    tinyusb_config_t usb_cfg = {0};
+    usb_cfg.string_descriptor = s_strings;
+    usb_cfg.string_descriptor_count = 7;
     esp_err_t err = tinyusb_driver_install(&usb_cfg);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "tinyusb_driver_install: %s", esp_err_to_name(err));

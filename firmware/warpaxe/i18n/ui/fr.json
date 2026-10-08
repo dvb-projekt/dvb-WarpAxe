@@ -319,5 +319,6 @@
   "vr_domains": "domaines de tension",
   "hc_total": "Total",
   "tuning_clk": "Fréquence",
-  "overheat_s_novr": "Puce au-delà : elle s'arrête jusqu'à avoir refroidi de 10 °C"
+  "overheat_s_novr": "Puce au-delà : elle s'arrête jusqu'à avoir refroidi de 10 °C",
+  "clock_step_note": "Abaissée de {from} à {to} MHz après une surchauffe à {at}. Un redémarrage repart à {cfg} MHz."
 }

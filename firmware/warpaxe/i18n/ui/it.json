@@ -319,5 +319,6 @@
   "vr_domains": "domini di tensione",
   "hc_total": "Totale",
   "tuning_clk": "Frequenza",
-  "overheat_s_novr": "Chip oltre questo valore: si ferma finché non scende di 10 °C"
+  "overheat_s_novr": "Chip oltre questo valore: si ferma finché non scende di 10 °C",
+  "clock_step_note": "Abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz."
 }

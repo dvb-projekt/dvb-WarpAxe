@@ -15,6 +15,19 @@ use crate::uart::ChipUart;
 use crate::{board, config, diag, stratum};
 use warpaxe_chain::Uart;
 
+/// A clock step after an overheat stop: from the clock that overheated
+/// to the next lower option, at an uptime second.
+#[derive(Clone, Debug, Serialize)]
+pub struct ClockStep {
+    #[serde(rename = "fromMhz")]
+    pub from_mhz: u32,
+    #[serde(rename = "toMhz")]
+    pub to_mhz: u32,
+    #[serde(rename = "atUptimeSeconds")]
+    pub at_uptime_s: u64,
+    pub cause: &'static str,
+}
+
 /// One chip in `hashrateMonitor.asics`, in AxeOS's shape.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct AsicMonitor {
@@ -87,6 +100,10 @@ pub struct MinerState {
     /// The chips' own hash counters (AxeOS `hashrateMonitor`): one entry
     /// per chip.
     pub hashrate_monitor: Vec<AsicMonitor>,
+    /// The clock step taken after an overheat stop on a board without a
+    /// fan to drive (the NerdNOS): kept until a reboot or a clock set by
+    /// hand; `frequencyActual` shows the stepped clock.
+    pub clock_step: Option<ClockStep>,
     /// Hash errors as a percentage of the chips' total (AxeOS
     /// `error_percentage`), from the last second's readings.
     pub error_percent: Option<f32>,
@@ -100,6 +117,45 @@ static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
 /// Clock the API asked for (MHz); the loop applies it as a ramp without
 /// restarting the chain. 0 until the chain has started.
 static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
+/// A clock ceiling after an overheat stop on a board without a fan: the
+/// next option below the clock that overheated. Lives in RAM only, so a
+/// reboot starts at the configured clock again; a clock set by hand
+/// clears it.
+static STEP_CAP_MHZ: AtomicU32 = AtomicU32::new(0);
+
+/// The configured clock under the overheat step, if one is in force.
+fn capped_mhz(mhz: u32) -> u32 {
+    let cap = STEP_CAP_MHZ.load(Ordering::Relaxed);
+    if cap > 0 {
+        mhz.min(cap)
+    } else {
+        mhz
+    }
+}
+
+/// After an overheat stop on a board that cannot cool itself: the chip
+/// comes back one clock option lower (the stock NerdNOS firmware drops to
+/// a fixed 210 MHz). Returns (from, to); None at the lowest option.
+pub fn step_down_after_overheat() -> Option<(u32, u32)> {
+    let current = capped_mhz(config::get().frequency);
+    let lower = board::profile()
+        .frequency_options
+        .iter()
+        .copied()
+        .filter(|&o| o < current)
+        .max()?;
+    STEP_CAP_MHZ.store(lower, Ordering::Relaxed);
+    WANTED_MHZ.store(lower, Ordering::Relaxed);
+    update(|s| {
+        s.clock_step = Some(ClockStep {
+            from_mhz: current,
+            to_mhz: lower,
+            at_uptime_s: diag::uptime_s(),
+            cause: "hot",
+        })
+    });
+    Some((current, lower))
+}
 
 /// A register scan asked for over the API (diagnostics, read-only): the
 /// registers `from..=to` of one chip, read between the work like the
@@ -191,6 +247,9 @@ pub fn reset_best_session() {
 }
 
 pub fn request_frequency(mhz: u32) {
+    // A clock set by hand ends the overheat step.
+    STEP_CAP_MHZ.store(0, Ordering::Relaxed);
+    update(|s| s.clock_step = None);
     WANTED_MHZ.store(mhz, Ordering::Relaxed);
 }
 
@@ -238,15 +297,20 @@ fn run(mut uart: ChipUart) {
             continue;
         }
         let cfg = config::get();
+        let start_mhz = capped_mhz(cfg.frequency);
         // The chips filter at the profile's default ticket mask (256 on a
         // BM1370) regardless of the pool difficulty: enough nonces for a
         // steady hashrate estimate, the pool threshold is applied on the
         // re-hash before a submit. asicDifficulty overrides both.
+        // The chain starts at the profile's default; a pool difficulty
+        // below it is followed only once VarDiff has settled (below), so
+        // the first seconds after a connect (difficulty 1, 4, 16 …) do
+        // not flood the host with nonces.
         let chip_cap = board::chip().default_difficulty;
         let pool_diff = if cfg.asic_difficulty > 0 {
             cfg.asic_difficulty
         } else {
-            (stratum::state().difficulty.max(1.0) as u32).min(chip_cap)
+            chip_cap
         };
         let profile = board::profile();
         // Reset pulse (an ESP GPIO, or the expander pin on the Q13xx; a
@@ -271,27 +335,36 @@ fn run(mut uart: ChipUart) {
         }
         let chain_cfg = ChainConfig {
             expected_chips: cfg.asic_count,
-            frequency_hz: cfg.frequency.saturating_mul(1_000_000),
+            frequency_hz: start_mhz.saturating_mul(1_000_000),
             difficulty: pool_diff,
             ..ChainConfig::for_profile(board::chip())
         };
         let mut chain = Chain::new(board::chip(), chain_cfg);
+        if start_mhz != cfg.frequency {
+            log::warn!(
+                "miner: chain starts at {start_mhz} MHz under the overheat step, not the configured {} MHz",
+                cfg.frequency
+            );
+        }
         chain.start(now_us());
         update(|s| {
             s.phase = "INIT".into();
             s.difficulty = pool_diff;
         });
         log::info!(
-            "miner: chain start, target {} MHz, difficulty {pool_diff}",
-            cfg.frequency
+            "miner: chain start, target {start_mhz} MHz, difficulty {pool_diff}"
         );
 
         // serial -> (job, notify count when built, uptime s when built)
         let mut jobs: HashMap<u32, (Job, u64, u64)> = HashMap::new();
         let mut gate = WorkGate::new(stratum::state().clean_jobs);
         let mut applied_diff = pool_diff;
-        let mut applied_mhz = cfg.frequency;
-        WANTED_MHZ.store(cfg.frequency, Ordering::Relaxed);
+        // The pool difficulty last seen and since when: VarDiff has settled
+        // after a minute without a change.
+        let mut pool_diff_seen = stratum::state().difficulty;
+        let mut pool_diff_since = Instant::now();
+        let mut applied_mhz = start_mhz;
+        WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
         let mut buckets: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();
@@ -529,10 +602,17 @@ fn run(mut uart: ChipUart) {
                 let st = stratum::state();
                 let cfg_now = config::get();
                 let forced = cfg_now.asic_difficulty;
+                if st.difficulty != pool_diff_seen {
+                    pool_diff_seen = st.difficulty;
+                    pool_diff_since = Instant::now();
+                }
+                let settled = pool_diff_since.elapsed() >= Duration::from_secs(60);
                 let want = if forced > 0 {
                     forced
-                } else {
+                } else if settled {
                     (st.difficulty.max(1.0) as u32).min(chip_cap)
+                } else {
+                    chip_cap
                 };
                 if want != applied_diff {
                     if chain.set_difficulty(&mut uart, want).is_ok() {
