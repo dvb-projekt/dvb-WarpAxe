@@ -158,6 +158,20 @@ lower pool VarDiff only after it has been unchanged for a minute, so the
 first seconds after a connect (difficulty 1, 4, 16 …) no longer flood
 the host with nonces.
 
+## Warmer than the stock firmware at the same work (2026-10-08)
+
+Stock at 300 MHz for an hour: 69.5–71.3 °C, 179.8 GH/s at the pool.
+WarpAxe at 300 MHz right after it, same case, same fan: 74 °C after
+26 minutes at 177 GH/s. The thermistor formula and the ADC calibration
+are the same in both, so the extra heat is real and not from the chip's
+work. Suspects on the T-Display in the same closed case: WarpAxe kept
+the Wi-Fi radio awake on every board (`WIFI_PS_NONE`, tenths of a watt
+all the time) where the Arduino stock leaves modem sleep on, and the USB
+network link to the Mac (TinyUSB NCM) that the stock run did not have.
+Since this change a board without a fan leaves modem sleep on, and
+`dieTempC` in `/api/system/info` shows the ESP32-S3's own temperature
+on every board. The USB test is Oliver's: cable off for 20 minutes.
+
 ## Gaps and open points before a flash
 
 1. **Midstate byte order** is the one all three references compute; a wrong

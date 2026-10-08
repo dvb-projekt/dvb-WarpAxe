@@ -230,7 +230,19 @@ fn hotspot_credentials() -> (String, String) {
 /// access point's beacons (~100 ms), so jobs from the pool, API answers
 /// and pings wait for the next one; a miner on mains power gains nothing
 /// from the few tenths of a watt it saves.
+///
+/// Except a board without a fan to drive (the NerdNOS): its T-Display
+/// sits in the same closed case as the chip, and those tenths of a watt
+/// showed up as 3 °C on the chip's thermistor against the stock firmware
+/// (2026-10-08, 300 MHz, same hashrate: 74 °C against 71). A job 100 ms
+/// late costs a 170 GH/s chip nothing, so the radio sleeps there. The
+/// devkit keeps the radio awake: its CPU miner submits shares every few
+/// seconds and feels the beacon wait.
 fn no_modem_sleep() {
+    if !crate::board::profile().has_fan() && !crate::board::devkit() {
+        log::info!("wifi: modem sleep stays on (no fan to drive: the radio's heat reaches the chip)");
+        return;
+    }
     let r = unsafe { esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE) };
     if r != 0 {
         log::warn!("wifi: power save off failed: {r}");

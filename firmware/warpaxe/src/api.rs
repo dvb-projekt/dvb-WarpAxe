@@ -142,6 +142,9 @@ pub fn system_info() -> serde_json::Value {
         "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": asic_model(),
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000, "clockStep": m.clock_step,
+        // The ESP32-S3's own die temperature, on every board: how warm the
+        // controller next to the chip runs (the NerdNOS shares a case with it).
+        "dieTempC": crate::cpuminer::die_temp_c(),
         // Chips flagged silent right now, and the chain restarts after a
         // silent minute: in all, and in a row at the current core
         // voltage (two or more = the chips do not run at this voltage).
