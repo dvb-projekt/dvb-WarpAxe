@@ -22,6 +22,7 @@ mod link;
 mod market;
 mod miner;
 mod net;
+mod ntc;
 mod screens;
 mod stratum;
 mod uart;

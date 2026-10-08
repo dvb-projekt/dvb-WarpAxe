@@ -255,9 +255,13 @@ fn run(mut uart: ChipUart) {
         // previous init (every restart after the first failed with
         // NoChips).
         // A 10 ms pulse restarts a BM1370; a board brought up in NerdOS's
-        // order (the Gaia) holds it as long as its profile says (350 ms).
+        // order (the Gaia) holds it as long as its profile says (350 ms),
+        // and so does one whose reset line is its only switch (the
+        // NerdNOS: 100 ms, WantClue `_reset`).
         let pulse = match profile.vr {
-            warpaxe_board::Vr::Tps546Nerd { enable: None, .. } => profile.reset_low_ms.max(10),
+            warpaxe_board::Vr::Tps546Nerd { enable: None, .. } | warpaxe_board::Vr::None => {
+                profile.reset_low_ms.max(10)
+            }
             _ => 10,
         };
         board::reset_chain(pulse, profile.reset_release_ms);

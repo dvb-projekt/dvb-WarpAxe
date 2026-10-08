@@ -34,7 +34,7 @@ use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
-use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, ChipProfile};
+use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, bm1397::BM1397, ChipProfile};
 
 use crate::config;
 
@@ -190,6 +190,7 @@ pub fn chip() -> &'static ChipProfile {
     match profile().asic {
         Asic::Bm1370 => &BM1370,
         Asic::Bm1373 => &BM1373,
+        Asic::Bm1397 => &BM1397,
     }
 }
 
@@ -347,12 +348,22 @@ pub fn chain_ready() {
 }
 
 /// Pull the chain's reset low, then release it, with the given timing.
-/// Nothing happens on a board without a reset line.
+/// Nothing happens on a board without a reset line. On a board with a
+/// `stock_reset_pulse` line (the NerdNOS's GPIO12) that line goes high
+/// for `low_ms` and back low once the reset is released, as the stock
+/// firmware does it (WantClue: PEN high, then `_reset`: RST high 100 ms,
+/// low 100 ms, then the init).
 pub fn reset_chain(low_ms: u32, release_ms: u32) {
     if let Some(pin) = RESET.lock().unwrap().as_ref() {
         pin.set(false);
         std::thread::sleep(Duration::from_millis(u64::from(low_ms)));
         pin.set(true);
+        if let Some(p) = profile().stock_reset_pulse {
+            let aux = Pin::Esp(p);
+            aux.output(true);
+            std::thread::sleep(Duration::from_millis(u64::from(low_ms)));
+            aux.set(false);
+        }
         std::thread::sleep(Duration::from_millis(u64::from(release_ms)));
     }
 }
@@ -677,11 +688,14 @@ enum Thermal {
         bus: SharedI2c,
         offset: f32,
     },
+    /// NerdNOS: a thermistor beside the chip on the ADC, no fan.
+    Ntc(crate::ntc::Reader),
 }
 
 impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
+            Thermal::Ntc(r) => r.celsius().ok_or_else(|| "thermistor at a rail".into()),
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Emc2103(t) => t.chip_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Nano(sensors) => {
@@ -708,6 +722,7 @@ impl Thermal {
     /// RPM of the chip fan, and of the second output where there is one.
     fn rpm(&mut self) -> (u16, Option<u16>) {
         match self {
+            Thermal::Ntc(_) => (0, None),
             Thermal::Emc2101(t) => (t.fan_rpm().unwrap_or(0), None),
             Thermal::Emc2103(t) => (t.fan_rpm().unwrap_or(0), None),
             Thermal::Nano([a, b]) => (a.fan_rpm().unwrap_or(0), Some(b.fan_rpm().unwrap_or(0))),
@@ -720,13 +735,15 @@ impl Thermal {
     /// PWM polarity of the Nerd fan outputs; nothing on the EMC2101.
     fn set_polarity(&mut self, invert: bool) -> bool {
         match self {
-            Thermal::Emc2101(_) | Thermal::Emc2103(_) | Thermal::Nano(_) => true,
+            Thermal::Emc2101(_) | Thermal::Emc2103(_) | Thermal::Nano(_) | Thermal::Ntc(_) => true,
             Thermal::Nerd { fans, .. } => fans.set_polarity(invert).is_ok(),
         }
     }
     /// Drive the chip fan and, on the Nerd boards, the regulator fan.
     fn set_fans(&mut self, chip: u8, vr: u8) -> bool {
         match self {
+            // No fan to drive; the duty is reported as 0 (see `run`).
+            Thermal::Ntc(_) => true,
             Thermal::Emc2101(t) => t.set_fan_percent(chip).is_ok(),
             Thermal::Emc2103(t) => t.set_fan_percent(chip).is_ok(),
             // Both fans follow the chip loop (ForgeOS drives one speed).
@@ -801,6 +818,10 @@ pub fn start() {
         pin.output(en.active_high);
         *ASIC_ENABLE.lock().unwrap() = Some((pin, en.active_high));
         std::thread::sleep(Duration::from_millis(20));
+    }
+    if let ThermalKind::Ntc(cfg) = profile.thermal {
+        start_nerdnos(profile, cfg);
+        return;
     }
     let Some(bus) = i2c() else {
         return;
@@ -917,6 +938,39 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
     std::thread::sleep(Duration::from_millis(u64::from(profile.reset_low_ms)));
     reset_chain(profile.reset_low_ms, profile.reset_release_ms);
     spawn_run(profile, vr, thermal);
+}
+
+/// The NerdNOS: no regulator and no bus, a thermistor on the ADC, the
+/// chip's run/stop line as the reset (held low since `quiesce`; the
+/// miner releases it with the stock pulse in `reset_chain`). The board
+/// loop runs for the temperature alone: an overheat or a lost sensor
+/// holds the chip in reset, as the stock firmware drops its PEN.
+fn start_nerdnos(profile: &'static Profile, cfg: warpaxe_board::ntc::Config) {
+    if let Some(p) = profile.stock_reset_pulse {
+        // Idle low until the first init, like the stock firmware's RST.
+        Pin::Esp(p).output(false);
+    }
+    let thermal = match crate::ntc::Reader::new(cfg) {
+        Some(r) => {
+            match r.millivolts() {
+                Some(mv) => log::info!(
+                    "board: thermistor on GPIO{} reads {mv} mV ({:?} °C)",
+                    cfg.gpio,
+                    cfg.celsius(mv)
+                ),
+                None => log::warn!("board: thermistor on GPIO{} gives no reading", cfg.gpio),
+            }
+            Some(Thermal::Ntc(r))
+        }
+        None => {
+            update(|s| {
+                s.has_thermal = false;
+                s.last_error = "ntc: adc failed".into();
+            });
+            None
+        }
+    };
+    spawn_run(profile, None, thermal);
 }
 
 /// The Nerd power-up, NerdOS `initAsics`: everything off and the chain
@@ -1259,7 +1313,8 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
             mux,
             channels,
         } => nano_thermal(config, mux, channels, &bus),
-        ThermalKind::None => None,
+        // A thermistor board never comes through here (`start_nerdnos`).
+        ThermalKind::None | ThermalKind::Ntc(_) => None,
     };
     spawn_run(profile, Some(Regulator::Tps546(vr, Flavor::Nerd)), thermal);
 }
@@ -1484,6 +1539,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     vr.off();
                 }
                 asic_power(false);
+                hold_reset_without_regulator(profile, vr.is_none());
                 pf.disabled();
                 POWERED.store(false, Ordering::Relaxed);
                 if let Some(t) = thermal.as_mut() {
@@ -1560,15 +1616,19 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 vr.off();
             }
             asic_power(false);
+            hold_reset_without_regulator(profile, vr.is_none());
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
+            // The chip power-enable line first (ESP-Miner's order); on a
+            // board without a regulator the chain comes back when the
+            // miner pulses the reset.
+            asic_power(true);
             let ok = match vr.as_mut() {
                 Some(vr) => {
                     // Latched fault bits stay until cleared; a fault that
                     // is still there trips the guard again after the grace.
-                    asic_power(true);
                     vr.clear_faults();
                     match vr.on(profile.vout_for_core_mv(applied_mv)) {
                         Ok(()) => true,
@@ -1712,8 +1772,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 fans = want;
             }
             // Reported every pass, not only on a change: a manual 100 %
-            // equal to the start-up duty was shown as 0 % / "–".
-            let shown = fans;
+            // equal to the start-up duty was shown as 0 % / "–". A board
+            // without a fan reports none.
+            let shown = if matches!(t, Thermal::Ntc(_)) {
+                (0, 0)
+            } else {
+                fans
+            };
             update(|s| {
                 s.fan_pct = shown.0;
                 // The Nano's second fan runs at the first one's speed.
@@ -1721,6 +1786,20 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             });
         }
         std::thread::sleep(Duration::from_millis(u64::from(SAMPLE_MS)));
+    }
+}
+
+/// A board without a regulator has one way to stop its chip: the reset
+/// line. Held low here on an overheat stop or a shutdown (the NerdNOS,
+/// whose stock firmware drops the same line as "PEN"); the miner's
+/// `reset_chain` releases it when the chain may run again.
+fn hold_reset_without_regulator(profile: &Profile, no_regulator: bool) {
+    if !no_regulator || profile.asic_reset.is_none() {
+        return;
+    }
+    if let Some(pin) = RESET.lock().unwrap().as_ref() {
+        pin.set(false);
+        log::warn!("board: chip held in reset (no regulator to switch off)");
     }
 }
 
@@ -1916,27 +1995,46 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             // bus is dead must not quietly turn into a CPU miner. A board
             // with a boardModel in NVS never gets here (init_bus).
             let mut imported = imported;
+            let mut c = c;
+            let mut why = why;
             if c.is_empty() && stock_keys == (None, None, None) {
                 imported.extend(crate::cpuminer::import_nerdminer());
-                if imported.contains(&"wallet (nerdminer)") {
-                    let p = &warpaxe_board::T_DISPLAY_S3_DEVKIT;
-                    log::warn!(
-                        "board: nothing on either bus, a NerdMiner's config.json in flash: the T-Display-S3 devkit, hashing on the CPU; took {}",
-                        imported.join(", ")
-                    );
-                    let mut cfg = config::get();
-                    cfg.board_model = p.name.into();
-                    if let Err(e) = config::save(&cfg) {
-                        log::warn!("board: saving the devkit profile failed: {e}");
+                let settings = imported.contains(&"wallet (nerdminer)");
+                // The NerdNOS carrier's thermistor divider on GPIO2, read
+                // once (read-only; a bare board's pin floats).
+                let (samples, ntc) = crate::ntc::probe(warpaxe_board::ntc::Config::NERDNOS);
+                log::info!(
+                    "board: GPIO2 reads {samples:?} mV: {}",
+                    match ntc {
+                        Some(t) => format!("a thermistor at {t:.1} °C (NerdNOS?)"),
+                        None => "no thermistor divider".into(),
                     }
-                    *DETECT.lock().unwrap() = Some(DetectInfo {
-                        status: "detected",
-                        why: "nothing answered, a NerdMiner's settings in flash: the T-Display-S3 devkit",
-                        candidates: vec![p.name],
-                        imported,
-                        model: None,
-                    });
-                    return p;
+                );
+                match detect::bare_board(settings, ntc.is_some()) {
+                    Detection::Board(p, why) => {
+                        log::warn!(
+                            "board: {why}, hashing on the CPU; took {}",
+                            imported.join(", ")
+                        );
+                        let mut cfg = config::get();
+                        cfg.board_model = p.name.into();
+                        if let Err(e) = config::save(&cfg) {
+                            log::warn!("board: saving the devkit profile failed: {e}");
+                        }
+                        *DETECT.lock().unwrap() = Some(DetectInfo {
+                            status: "detected",
+                            why,
+                            candidates: vec![p.name],
+                            imported,
+                            model: None,
+                        });
+                        return p;
+                    }
+                    Detection::Choose(c2, why2) => {
+                        c = c2;
+                        why = why2;
+                    }
+                    Detection::Unsupported(..) => {}
                 }
             }
             let p = warpaxe_board::profile::undetected_for(c);
