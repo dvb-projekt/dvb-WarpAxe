@@ -10,7 +10,7 @@
 //! into the firmware): the firmware then reports the board and refuses
 //! to power the chain, instead of guessing.
 
-use crate::{emc2101, emc2103, ina260, pca9544, tps53647, tps546};
+use crate::{emc2101, emc2103, ina260, ntc, pca9544, tps53647, tps546};
 
 /// The mining chip on the board; the firmware picks the
 /// `warpaxe_core` chip profile from it.
@@ -20,6 +20,8 @@ pub enum Asic {
     Bm1370,
     /// BM1373 (Q1373 / Gaia).
     Bm1373,
+    /// BM1397 (NerdNOS, Bitaxe Max).
+    Bm1397,
 }
 
 /// The core-voltage regulator.
@@ -114,6 +116,9 @@ pub enum Thermal {
         /// Mux channel of the first and the second sensor.
         channels: [u8; 2],
     },
+    /// A thermistor divider on an ADC pin, no fan (the NerdNOS). The
+    /// arithmetic is [`crate::ntc`]; the firmware reads the ADC.
+    Ntc(ntc::Config),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,6 +234,12 @@ pub struct Profile {
     /// A GPIO that must enable the chips' power before the regulator
     /// goes on (ESP-Miner `asic_enable`, Naja Duo and Gamma Hex).
     pub asic_enable: Option<AsicEnable>,
+    /// A second line the stock firmware pulses high for `reset_low_ms`
+    /// and then holds low before its first chip init, which the
+    /// firmware repeats before every chain start so the board sees what
+    /// it is used to (the NerdNOS's GPIO12, WantClue `_reset`; see
+    /// [`NERDNOS`]). `None` on every other board.
+    pub stock_reset_pulse: Option<u8>,
 }
 
 /// The chip power-enable line: driven to `active_high` 20 ms before the
@@ -412,6 +423,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
     abs_max_core_mv: 0,
     display_flip: false,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// Bitaxe Gamma Duo (650): two BM1370 of the XP bin on the 5 V Gamma
@@ -584,6 +596,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     abs_max_core_mv: 1200,
     display_flip: false,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// The NerdMiner V2 / bare LilyGO T-Display-S3 as devkit: chain UART on
@@ -635,6 +648,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     abs_max_core_mv: 0,
     display_flip: false,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// Every Nerd board: a LilyGO T-Display-S3 on a carrier. Chain UART
@@ -689,6 +703,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     abs_max_core_mv: 0,
     display_flip: true,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// NerdAxe Gaia: one BM1373 on a 12 V carrier (BitMaker fork of NerdOS,
@@ -752,6 +767,7 @@ pub const NERDAXE_GAIA: Profile = Profile {
     // (2026-09-29), like the other Nerd carriers.
     display_flip: true,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// NerdQAxe++: four BM1370 on 12 V, TPS53647 three-phase (enable
@@ -804,6 +820,7 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     abs_max_core_mv: 1400,
     display_flip: true,
     asic_enable: None,
+    stock_reset_pulse: None,
 };
 
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
@@ -954,6 +971,75 @@ pub const Q1373: Profile = Profile {
 /// Every profile this firmware knows.
 /// What a first start runs on until the board is known: no bus, no
 /// regulator, no display, no chips; the web UI asks which board it is.
+/// NerdNOS: a LilyGO T-Display-S3 on a carrier with one BM1397
+/// (benjamin-wilson/NerdNOS, KiCad; the stock firmware is WantClue's
+/// NerdMiner_v2 branch `nerdnos`, read 2026-10-08). Pins as WantClue's
+/// `nerdnos.h` has them, which is what runs on Oliver's .46: chain UART
+/// on GPIO17/18 through a TXU0202 level shifter, the NTC on GPIO2, and
+/// two control lines the stock firmware calls RST (GPIO12: driven high
+/// 100 ms, then low, once at init) and PEN (GPIO13: high from init on,
+/// low to stop the chip after an overheat, high again before a
+/// re-init).
+///
+/// On the published PCB only one header line reaches the chip: through
+/// a 100 k / 120 k divider into NRSTI, active low — and the TPSM863257
+/// buck's EN hangs on its own resistors, no GPIO. So whichever of the
+/// two lines that is, the chip runs while it is high and sits in reset
+/// while it is low, and there is no way to cut its 1.4 V rail. Hence
+/// `asic_reset` is GPIO13, driven exactly as the stock firmware drives
+/// PEN (low at boot and on an overheat stop, a low–high pulse before
+/// every init), and GPIO12 gets the stock pulse too
+/// (`stock_reset_pulse`). The core voltage is fixed by R12 40.2 k /
+/// R13 30 k on the buck (0.6 V reference → 1.40 V): no voltage choices,
+/// `default_core_mv` is reported only, and nothing reads power or
+/// current. USB-C powered, no fan: the clock is capped at 400 MHz until
+/// someone has measured more.
+pub const NERDNOS: Profile = Profile {
+    name: "nerdnos",
+    model: "NerdNOS",
+    asic: Asic::Bm1397,
+    asic_count: 1,
+    uart_tx: 17,
+    uart_rx: 18,
+    asic_reset: Some(13),
+    // WantClue `_reset`: 100 ms in, 100 ms out.
+    reset_low_ms: 100,
+    reset_release_ms: 100,
+    i2c: None,
+    vr: Vr::None,
+    voltage_domains: 1,
+    thermal: Thermal::Ntc(ntc::Config::NERDNOS),
+    display: Display::St7789I80,
+    // `BM1397_init(300, 1)`.
+    default_frequency_mhz: 300,
+    default_core_mv: 1400,
+    init_core_mv: 0,
+    nominal_voltage_v: 5,
+    // ~8 W at stock per the OSMU wiki; the USB-C port is the limit.
+    max_power_w: 10,
+    power_offset_w: 0.0,
+    // WantClue `MAX_SAFE_TEMP 80.0` with a 10 °C hysteresis, on a
+    // thermistor beside the chip; yellow from 70.
+    throttle_temp_c: 70.0,
+    max_temp_c: 80.0,
+    vr_throttle_c: 105.0,
+    vr_max_c: 145.0,
+    temp_offset_c: 0.0,
+    fan_target_c: 65.0,
+    // The chip's own 30 ms (WantClue `NERDNOS_JOB_INTERVAL_MS`).
+    job_interval_ms: 0,
+    frequency_options: &[200, 225, 250, 275, 300, 325, 350, 375, 400],
+    voltage_options: &[],
+    abs_max_frequency_mhz: 400,
+    abs_min_core_mv: 0,
+    abs_max_core_mv: 0,
+    // Unknown until seen: the carrier may sit either way round in a
+    // case. The setting flips it.
+    display_flip: false,
+    asic_enable: None,
+    stock_reset_pulse: Some(12),
+};
+
 /// Not in [`ALL`], so it cannot be configured by name.
 pub const UNDETECTED: Profile = Profile {
     name: "undetected",
@@ -1032,6 +1118,7 @@ pub const ALL: &[Profile] = &[
     BITAXE_GAMMA_HEX,
     BITFORGE_NANO,
     T_DISPLAY_S3_DEVKIT,
+    NERDNOS,
     NERDAXE_GAMMA,
     NERDAXE_GAIA,
     NERDQAXE_PLUSPLUS,
@@ -1185,6 +1272,36 @@ mod tests {
     }
 
     #[test]
+    fn nerdnos_is_a_t_display_carrier_with_one_bm1397_and_a_thermistor() {
+        let p = &NERDNOS;
+        assert_eq!(p.asic, Asic::Bm1397);
+        assert_eq!(p.asic_count, 1);
+        assert_eq!((p.uart_tx, p.uart_rx), (17, 18));
+        assert_eq!(p.asic_reset, Some(13), "the stock firmware's PEN");
+        assert_eq!(p.stock_reset_pulse, Some(12), "the stock firmware's RST");
+        assert_eq!((p.reset_low_ms, p.reset_release_ms), (100, 100));
+        assert_eq!(p.vr, Vr::None);
+        assert!(p.tps546().is_none() && p.tps53647().is_none());
+        assert_eq!(p.regulator_min_core_mv(), 0);
+        assert_eq!(p.thermal, Thermal::Ntc(ntc::Config::NERDNOS));
+        assert_eq!(p.display, Display::St7789I80);
+        assert_eq!(p.i2c, None);
+        assert_eq!((p.default_frequency_mhz, p.default_core_mv), (300, 1400));
+        assert_eq!(p.max_temp_c, 80.0);
+        assert_eq!(p.abs_max_frequency_mhz, 400);
+        assert!(p.voltage_options.is_empty());
+        assert!(p.frequency_options.contains(&300));
+        assert_eq!(p.asic_enable, None);
+        assert_eq!(Profile::by_name("nerdnos"), Some(p));
+        // The other boards keep their reset lines as they were.
+        for q in ALL {
+            if q.name != "nerdnos" {
+                assert_eq!(q.stock_reset_pulse, None, "{}", q.name);
+            }
+        }
+    }
+
+    #[test]
     fn core_voltage_scales_with_the_domains() {
         assert_eq!(BITAXE_GAMMA.vout_for_core_mv(1150), 1.15);
         assert_eq!(BITAXE_GAMMA.core_mv_for_vout(1.15), 1150);
@@ -1313,9 +1430,10 @@ mod tests {
         assert_eq!(Q1373.asic_reset, None, "reset sits on the expander");
         assert_eq!(Q1373.asic, Asic::Bm1373);
         assert_eq!(NERDAXE_GAIA.asic, Asic::Bm1373);
+        assert_eq!(NERDNOS.asic, Asic::Bm1397);
         assert!(ALL
             .iter()
-            .filter(|p| p.asic != Asic::Bm1373)
+            .filter(|p| p.asic != Asic::Bm1373 && p.asic != Asic::Bm1397)
             .all(|p| p.asic == Asic::Bm1370));
     }
 

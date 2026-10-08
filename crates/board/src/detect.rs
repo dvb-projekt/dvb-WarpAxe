@@ -13,8 +13,8 @@
 
 use crate::profile::{
     Profile, BITAXE_GAMMA, BITAXE_GAMMA_DUO, BITAXE_GAMMA_HEX, BITAXE_GAMMA_TURBO, BITAXE_NAJA_DUO,
-    BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
-    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373,
+    BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDNOS, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
+    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373, T_DISPLAY_S3_DEVKIT,
 };
 
 /// I²C addresses the probe asks for.
@@ -165,6 +165,34 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
     Detection::Choose(&[], "no known chips answered")
 }
 
+/// Nothing answered on either bus and the stock firmware stored no
+/// keys: a LilyGO T-Display-S3 on its own, or on the NerdNOS carrier.
+/// Two read-only signs: a NerdMiner's `config.json` in flash (both
+/// stock firmwares are NerdMiner forks), and the NerdNOS's thermistor
+/// divider on GPIO2, which reads a steady mid-rail voltage where a bare
+/// board's pin floats ([`crate::ntc::Config::plausible`]). With the
+/// thermistor the NerdNOS is offered first, never taken: nothing may
+/// drive its chip's reset line until someone says so, and a bare board
+/// with NerdMiner's settings becomes the devkit as before. Without
+/// either sign the choice is open.
+pub fn bare_board(nerdminer_settings: bool, thermistor: bool) -> Detection {
+    match (thermistor, nerdminer_settings) {
+        (true, true) => Detection::Choose(
+            &[&NERDNOS, &T_DISPLAY_S3_DEVKIT],
+            "a thermistor divider on GPIO2 and a NerdMiner's settings in flash: the NerdNOS, or a T-Display-S3",
+        ),
+        (true, false) => Detection::Choose(
+            &[&NERDNOS, &T_DISPLAY_S3_DEVKIT],
+            "a thermistor divider on GPIO2: the NerdNOS, or a T-Display-S3",
+        ),
+        (false, true) => Detection::Board(
+            &T_DISPLAY_S3_DEVKIT,
+            "nothing answered, a NerdMiner's settings in flash: the T-Display-S3 devkit",
+        ),
+        (false, false) => Detection::Choose(&[], "no known chips answered"),
+    }
+}
+
 /// Stock NVS first, then the bus.
 pub fn detect(
     stock: (Option<&str>, Option<&str>, Option<&str>),
@@ -301,5 +329,28 @@ mod tests {
             detect(NONE, &[], &[]),
             Detection::Choose(&[], "no known chips answered")
         );
+    }
+
+    /// A thermistor on GPIO2 puts the NerdNOS first in the choice, never
+    /// takes it; NerdMiner's settings alone still make the devkit.
+    #[test]
+    fn a_bare_t_display_is_the_devkit_a_thermistor_offers_the_nerdnos() {
+        assert!(
+            matches!(bare_board(true, false), Detection::Board(p, _) if p.name == "t-display-s3")
+        );
+        for settings in [true, false] {
+            match bare_board(settings, true) {
+                Detection::Choose(c, _) => assert_eq!(
+                    c.iter().map(|p| p.name).collect::<Vec<_>>(),
+                    ["nerdnos", "t-display-s3"]
+                ),
+                d => panic!("{d:?}"),
+            }
+        }
+        assert_eq!(
+            bare_board(false, false),
+            Detection::Choose(&[], "no known chips answered")
+        );
+        assert!(!TESTED.contains(&NERDNOS.name), "never run");
     }
 }

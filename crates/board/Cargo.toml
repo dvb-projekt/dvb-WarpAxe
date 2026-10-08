@@ -7,6 +7,8 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
+# ln and exp for the thermistor formula, without std.
+libm = "0.2"
 
 [lints]
 workspace = true

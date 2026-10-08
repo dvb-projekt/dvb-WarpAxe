@@ -18,6 +18,7 @@ pub mod font;
 pub mod fxl6408;
 pub mod i2c;
 pub mod ina260;
+pub mod ntc;
 pub mod overheat;
 pub mod pca9544;
 pub mod pmbus;
@@ -30,4 +31,4 @@ pub mod tps53647;
 pub mod tps546;
 
 pub use i2c::I2c;
-pub use profile::{Asic, Profile, Thermal, Vr, VrAlt, BITAXE_GAMMA, T_DISPLAY_S3_DEVKIT};
+pub use profile::{Asic, Profile, Thermal, Vr, VrAlt, BITAXE_GAMMA, NERDNOS, T_DISPLAY_S3_DEVKIT};
