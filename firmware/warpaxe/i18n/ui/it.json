@@ -64,7 +64,7 @@
   "reconnects": "Riconnessioni",
   "clean_jobs": "Cambi di blocco",
   "pool_settings": "Impostazioni pool",
-  "pool_hint": "Le modifiche al pool hanno effetto dopo un riavvio.",
+  "pool_hint": "Le modifiche al pool valgono subito: il miner si riconnette.",
   "stratumURL": "Host del pool",
   "stratumPort": "Porta",
   "main_pool": "Pool principale",

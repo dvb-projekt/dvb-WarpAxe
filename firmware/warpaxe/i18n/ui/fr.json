@@ -64,7 +64,7 @@
   "reconnects": "Reconnexions",
   "clean_jobs": "Changements de bloc",
   "pool_settings": "Réglages du pool",
-  "pool_hint": "Les modifications du pool prennent effet après un redémarrage.",
+  "pool_hint": "Les modifications du pool s'appliquent immédiatement : le mineur se reconnecte.",
   "stratumURL": "Hôte du pool",
   "stratumPort": "Port",
   "main_pool": "Pool principal",

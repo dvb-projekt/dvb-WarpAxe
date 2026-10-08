@@ -64,7 +64,7 @@
   "reconnects": "重连次数",
   "clean_jobs": "区块切换",
   "pool_settings": "矿池设置",
-  "pool_hint": "矿池更改在重启后生效。",
+  "pool_hint": "矿池更改立即生效：矿机会重新连接。",
   "stratumURL": "矿池主机",
   "stratumPort": "端口",
   "main_pool": "主矿池",
