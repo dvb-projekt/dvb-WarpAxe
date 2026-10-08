@@ -142,15 +142,26 @@ pub fn wifi_password(blob: &[u8]) -> Option<String> {
     String::from_utf8(blob[..end].to_vec()).ok()
 }
 
+/// The worker name a NerdNOS gets instead of [`WORKER`]: the pool keys
+/// its VarDiff and worker stats by the full name, and a 150 GH/s chip
+/// under the devkit's name would inherit a sub-1 difficulty (Warppool
+/// #2, 2026-10-08).
+pub const WORKER_NERDNOS: &str = "NerdNOS";
+
 /// The stratum user for the devkit: the wallet without any worker
 /// suffix NerdMiner may have had, plus `.WarpMiner`. `None` without a
 /// wallet.
 pub fn stratum_user(btc: &str) -> Option<String> {
+    stratum_user_as(btc, WORKER)
+}
+
+/// The same with a given worker name.
+pub fn stratum_user_as(btc: &str, worker: &str) -> Option<String> {
     let wallet = btc.trim().split('.').next().unwrap_or("").trim();
     if wallet.is_empty() || !wallet.chars().all(|c| c.is_ascii_alphanumeric()) {
         return None;
     }
-    Some(format!("{wallet}.{WORKER}"))
+    Some(format!("{wallet}.{worker}"))
 }
 
 #[cfg(test)]
@@ -234,6 +245,10 @@ mod tests {
         assert_eq!(
             stratum_user(" bc1qabc.nerd1 ").as_deref(),
             Some("bc1qabc.WarpMiner")
+        );
+        assert_eq!(
+            stratum_user_as("bc1qabc.old", WORKER_NERDNOS).as_deref(),
+            Some("bc1qabc.NerdNOS")
         );
         assert_eq!(stratum_user(""), None);
         assert_eq!(stratum_user(".worker"), None);

@@ -709,7 +709,7 @@ fn run() {
 /// stayed silent must not join an old network on its own. A password
 /// that does not read as UTF-8 skips the Wi-Fi: an SSID without its
 /// password would only fail and open the hotspot anyway.
-pub fn import_nerdminer() -> Vec<&'static str> {
+pub fn import_nerdminer(worker: &str) -> Vec<&'static str> {
     let mut cfg = config::get();
     let mut took = Vec::new();
     if !cfg.stratum_user.is_empty() {
@@ -736,7 +736,10 @@ pub fn import_nerdminer() -> Vec<&'static str> {
         addr += buf.len() as u32;
     }
     let copies = scan.copies;
-    let Some(user) = scan.result().and_then(|c| nerdminer::stratum_user(&c.btc)) else {
+    let Some(user) = scan
+        .result()
+        .and_then(|c| nerdminer::stratum_user_as(&c.btc, worker))
+    else {
         log::info!("cpu miner: no NerdMiner config.json with a wallet in flash ({copies} copies)");
         return took;
     };

@@ -2028,8 +2028,6 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             let mut c = c;
             let mut why = why;
             if c.is_empty() && stock_keys == (None, None, None) {
-                imported.extend(crate::cpuminer::import_nerdminer());
-                let settings = imported.contains(&"wallet (nerdminer)");
                 // The NerdNOS carrier's thermistor divider on GPIO2, read
                 // once (read-only; a bare board's pin floats).
                 let (samples, ntc) = crate::ntc::probe(warpaxe_board::ntc::Config::NERDNOS);
@@ -2040,6 +2038,16 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                         None => "no thermistor divider".into(),
                     }
                 );
+                // The worker name the wallet gets: a chip board must not
+                // share the devkit's at the pool (its VarDiff is keyed by
+                // the full name).
+                let worker = if ntc.is_some() {
+                    warpaxe_cpuminer::nerdminer::WORKER_NERDNOS
+                } else {
+                    warpaxe_cpuminer::nerdminer::WORKER
+                };
+                imported.extend(crate::cpuminer::import_nerdminer(worker));
+                let settings = imported.contains(&"wallet (nerdminer)");
                 match detect::bare_board(settings, ntc.is_some()) {
                     Detection::Board(p, why) => {
                         log::warn!(
