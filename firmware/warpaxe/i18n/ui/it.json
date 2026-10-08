@@ -64,7 +64,7 @@
   "reconnects": "Riconnessioni",
   "clean_jobs": "Cambi di blocco",
   "pool_settings": "Impostazioni pool",
-  "pool_hint": "Le modifiche al pool valgono subito: il miner si riconnette.",
+  "pool_hint": "Le modifiche al pool si applicano subito: il miner si riconnette.",
   "stratumURL": "Host del pool",
   "stratumPort": "Porta",
   "main_pool": "Pool principale",
@@ -320,9 +320,9 @@
   "hc_total": "Totale",
   "tuning_clk": "Frequenza",
   "overheat_s_novr": "Chip oltre questo valore: si ferma finché non scende di 10 °C",
-  "clock_step_note": "Abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz.",
+  "clock_step_note": "Frequenza abbassata da {from} a {to} MHz dopo un surriscaldamento alle {at}. Al riavvio riparte da {cfg} MHz.",
   "hc_yield": "resa",
   "usbSubnet": "Indirizzo USB (192.168.x.1)",
-  "usb_subnet_s": "Un secondo WarpAxe sullo stesso computer ha bisogno di un altro numero qui.",
+  "usb_subnet_s": "Per un secondo WarpAxe sullo stesso computer serve un numero diverso qui.",
   "ota_aborted": "L'ultimo aggiornamento non è partito: il miner è tornato a questa versione."
 }

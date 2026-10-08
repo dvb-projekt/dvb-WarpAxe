@@ -319,10 +319,10 @@
   "vr_domains": "电压域",
   "hc_total": "合计",
   "tuning_clk": "频率",
-  "overheat_s_novr": "芯片超过此温度时：停止运行，直到降低 10 °C",
-  "clock_step_note": "{at} 过热后已从 {from} MHz 降至 {to} MHz。重启后将重新以 {cfg} MHz 开始。",
-  "hc_yield": "产出率",
+  "overheat_s_novr": "芯片超过此温度时：芯片停止运行，直到温度降低 10 °C",
+  "clock_step_note": "{at} 发生过热后，频率已从 {from} MHz 降至 {to} MHz。重启后将重新以 {cfg} MHz 开始。",
+  "hc_yield": "达成率",
   "usbSubnet": "USB 地址（192.168.x.1）",
-  "usb_subnet_s": "同一台电脑上的第二台 WarpAxe 需要在此使用不同的数字。",
-  "ota_aborted": "上次更新未能启动：矿机已恢复到此版本。"
+  "usb_subnet_s": "同一台电脑上连接第二台 WarpAxe 时，此处需填写不同的数字。",
+  "ota_aborted": "上次更新未能启动：矿机已回退到此版本。"
 }

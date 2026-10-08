@@ -319,10 +319,10 @@
   "vr_domains": "domaines de tension",
   "hc_total": "Total",
   "tuning_clk": "Fréquence",
-  "overheat_s_novr": "Puce au-delà : elle s'arrête jusqu'à avoir refroidi de 10 °C",
-  "clock_step_note": "Abaissée de {from} à {to} MHz après une surchauffe à {at}. Un redémarrage repart à {cfg} MHz.",
+  "overheat_s_novr": "Puce au-delà : elle s'arrête jusqu'à ce qu'elle ait refroidi de 10 °C",
+  "clock_step_note": "Fréquence abaissée de {from} à {to} MHz après une surchauffe à {at}. Au redémarrage, elle repart de {cfg} MHz.",
   "hc_yield": "rendement",
   "usbSubnet": "Adresse USB (192.168.x.1)",
-  "usb_subnet_s": "Un deuxième WarpAxe sur le même ordinateur a besoin d'un autre numéro ici.",
+  "usb_subnet_s": "Pour un deuxième WarpAxe sur le même ordinateur, indiquez ici un autre numéro.",
   "ota_aborted": "La dernière mise à jour n'a pas démarré : le mineur est revenu à cette version."
 }

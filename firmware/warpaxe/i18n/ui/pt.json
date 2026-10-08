@@ -320,7 +320,7 @@
   "hc_total": "Total",
   "tuning_clk": "Clock",
   "overheat_s_novr": "Chip acima dela: ele para até esfriar 10 °C",
-  "clock_step_note": "Reduzido de {from} para {to} MHz após um superaquecimento às {at}. Uma reinicialização volta a começar em {cfg} MHz.",
+  "clock_step_note": "Clock reduzido de {from} para {to} MHz após um superaquecimento às {at}. Ao reiniciar, ele volta a {cfg} MHz.",
   "hc_yield": "rendimento",
   "usbSubnet": "Endereço USB (192.168.x.1)",
   "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui.",

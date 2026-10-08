@@ -320,9 +320,9 @@
   "hc_total": "合計",
   "tuning_clk": "クロック",
   "overheat_s_novr": "チップがこの温度を超えると停止（10 °C下がるまで）",
-  "clock_step_note": "{at}の過熱により{from} MHzから{to} MHzに下げました。再起動すると{cfg} MHzから始まります。",
-  "hc_yield": "歩留まり",
+  "clock_step_note": "{at}に過熱したため、クロックを{from} MHzから{to} MHzに下げました。再起動すると再び{cfg} MHzから開始します。",
+  "hc_yield": "実効率",
   "usbSubnet": "USBアドレス（192.168.x.1）",
   "usb_subnet_s": "同じコンピューターに2台目のWarpAxeを接続する場合は、ここで別の番号にしてください。",
-  "ota_aborted": "前回のアップデートは起動しませんでした。マイナーはこのバージョンに戻りました。"
+  "ota_aborted": "前回のアップデートは起動できなかったため、マイナーはこのバージョンに戻りました。"
 }
