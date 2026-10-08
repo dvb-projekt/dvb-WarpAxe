@@ -788,16 +788,19 @@ fn cockpit(c: &mut Canvas) {
         }
     } else {
         let pw = b.power_w.unwrap_or(0.0);
-        // An estimate (no power reading on the board) says so in the label.
-        let (lbl_p, lbl_e) = if b.power_estimated {
-            (
-                l("POWER EST.", "LEISTUNG CA."),
-                l("EFFIC. EST.", "EFFIZ. CA."),
-            )
-        } else {
-            (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"))
-        };
-        big(c, lbl_p, &num(f64::from(pw), 1), "W", 66, gfx::FG);
+        // An estimate (no power reading on the board) is marked with a
+        // tilde in front of the value, as on the device page, so the labels
+        // keep their translations in every display language.
+        let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
+        let est = if b.power_estimated { "~" } else { "" };
+        big(
+            c,
+            lbl_p,
+            &format!("{est}{}", num(f64::from(pw), 1)),
+            "W",
+            66,
+            gfx::FG,
+        );
         let eff = if m.hashrate_ghs > 1.0 {
             f64::from(pw) / (m.hashrate_ghs / 1000.0)
         } else {
@@ -806,7 +809,11 @@ fn cockpit(c: &mut Canvas) {
         big(
             c,
             lbl_e,
-            &if eff > 0.0 { num(eff, 1) } else { "–".into() },
+            &if eff > 0.0 {
+                format!("{est}{}", num(eff, 1))
+            } else {
+                "–".into()
+            },
             "J/TH",
             100,
             gfx::FG,

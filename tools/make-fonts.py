@@ -29,7 +29,7 @@ DIGITS = "0123456789.,-–: "
 FONTS = [
     ("HERO", "SpaceGrotesk.ttf", 38, [700], DIGITS),
     ("TITLE", "SpaceGrotesk.ttf", 26, [700], "ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÜÀÂÇÉÈÊËÎÏÔÛÙÑÁÍÓÚÃÕŒ0123456789 .,-!:%’"),
-    ("VAL16", "JetBrainsMono.ttf", 16, [700], DIGITS + "/%"),
+    ("VAL16", "JetBrainsMono.ttf", 16, [700], DIGITS + "/%~"),
     ("VAL12", "JetBrainsMono.ttf", 12, [700], TEXT),
     ("MONO9", "JetBrainsMono.ttf", 9, [500], TEXT),
     ("LABEL11", "Inter.ttf", 11, [14, 600], TEXT),

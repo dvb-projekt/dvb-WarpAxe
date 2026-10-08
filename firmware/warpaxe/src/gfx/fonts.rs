@@ -118,7 +118,8 @@ pub static VAL16: Font = Font {
         Glyph { c: '8', adv: 160, dx: 1, dy: -12, w: 7, h: 12, off: 1004 },
         Glyph { c: '9', adv: 160, dx: 1, dy: -12, w: 8, h: 12, off: 1088 },
         Glyph { c: ':', adv: 160, dx: 3, dy: -9, w: 3, h: 9, off: 1184 },
-        Glyph { c: '–', adv: 160, dx: 1, dy: -6, w: 7, h: 2, off: 1211 },
+        Glyph { c: '~', adv: 160, dx: 1, dy: -8, w: 8, h: 4, off: 1211 },
+        Glyph { c: '–', adv: 160, dx: 1, dy: -6, w: 7, h: 2, off: 1243 },
     ],
 };
 
