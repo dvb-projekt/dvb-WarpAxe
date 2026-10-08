@@ -5,7 +5,7 @@
 <p align="center">
   <strong>Open-source Rust firmware for BM1370 and BM1373 Bitcoin miners</strong><br>
   Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano<br>
-  <a href="#supported-boards">profiles for 8 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  <a href="#supported-boards">profiles for 7 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
@@ -78,7 +78,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards | 5 run, 8 more with a profile (see below) |
+| Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
 
 Where the stock firmware is ahead: far more boards and years of use by a
 large community; AxeOS has a scoreboard, themes, the BAP accessory port
@@ -371,7 +371,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, output fixed by resistors (1.4 V, no PMBus) | profile only, not run yet: the first chip without version rolling (four host midstates per job), board temperature from a thermistor on the ADC, the chip's own rate from its register 0x04, no power reading; offered on the first start when the thermistor divider answers on GPIO2, never taken on its own; see `docs/03-NerdNOS-BM1397-against-the-references.md` |
+| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, output fixed by resistors (1.4 V, no PMBus) | **runs** since 2026-10-08 (Oliver's, the first chip without version rolling: four host midstates per job): at 300 MHz the chip reports 178–199 GH/s in its register 0x04 and the first shares verified and were accepted; board temperature from a thermistor on the ADC, the core rail read on GPIO3, no power reading; offered on the first start when the thermistor divider answers on GPIO2, never taken on its own; the chip is powered through the carrier's own USB-C, the T-Display's port only reaches the logic; see `docs/03-NerdNOS-BM1397-against-the-references.md` |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken

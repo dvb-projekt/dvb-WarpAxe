@@ -1,6 +1,7 @@
 # NerdNOS (BM1397) under WarpAxe, against WantClue's firmware and ESP-Miner
 
-Written 2026-10-08, before anything ran on the chip. The device is
+Written 2026-10-08, before anything ran on the chip; the first run is
+recorded at the end. The device is
 Oliver's NerdNOS (`192.168.178.46`, stock firmware "NerdNOS" 2.0.5, a
 NerdMiner fork by WantClue). The references:
 
@@ -139,3 +140,38 @@ the "long" window is. The error counter 0x4C is read as on the BM1370.
 Full flash backup over USB first; committed images only; Oliver's OK and a
 heads-up to Warppool #2; the preview before the flash. None of this has run
 on a chip.
+
+## The first run on the .46 (2026-10-08, 01:21–01:35 UTC)
+
+Backup of the stock flash over USB (16 MB, 208 s), flash of de340c871,
+first boot 01:26:15Z: the thermistor divider read 1399 mV (33 °C), the
+board was offered as `nerdnos` and chosen over the API, the wallet came in
+as `<wallet>.NerdNOS`. The chip answered `13 97 18 00` and the PLL word
+read back as `c0780215` (bit 7 set: locked). Two things learned:
+
+* **Power.** The chip's core rail comes from the carrier's own USB-C
+  port; the T-Display's port (the data port) only reaches the logic
+  rails. With the carrier unpowered the chip answered every register read
+  and the PLL locked, but the core rail read 0 mV on GPIO3, register 0x04
+  reported 0 and no nonce came. With the PSU back on the carrier and a
+  chip off/on over the API the first nonce came within three seconds of
+  the chain being ready.
+* **Clock.** The config's generic default (525 MHz) was the first chain
+  target until the API set 300 — about 7 s at 525 MHz on the 1.4 V rail,
+  nothing happened. Since then a clock above the profile's ceiling is
+  clamped to the profile's default at boot (`board::init_bus`).
+
+Numbers at 300 MHz after ten minutes: register 0x04 177.6 GH/s in the
+long window and 199.1–199.3 GH/s in the short one (the chip alternates
+the windows on successive reads, short first, as the simulator guessed),
+the pool-side rate from nonces 183–275 GH/s over the first minutes,
+every nonce above the ticket mask (`below_ticket` 0), 16 of 16 shares
+accepted at difficulty 512, core rail 1396–1398 mV, board temperature
+33 → 54 °C in the first eight minutes (stock NerdNOS showed 32–48 °C).
+
+Still open: register 0x4C counted 335 in eight minutes against 20 nonces,
+so on the BM1397 it is not the error counter the BM1370 has (or it counts
+every core result); the API's `errorPercentage` means nothing on this
+board until that is understood. The GPIO12 pulse and the GPIO13 line did
+what the stock firmware's do; which one is the reset and which the buck
+enable is still only inferred.

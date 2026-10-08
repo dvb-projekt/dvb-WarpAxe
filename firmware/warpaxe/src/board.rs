@@ -782,6 +782,25 @@ pub fn init_bus(mut i2c0: I2C0) {
         }
     };
     *PROFILE.lock().unwrap() = Some(profile);
+    // A clock above the board's own ceiling never reaches the chips: the
+    // config's generic default (525 MHz, the Gamma's) ran 7 s on the
+    // NerdNOS's fanless 1.4 V chip after its first start (2026-10-08)
+    // before the API set 300. Clamped to the profile's default and saved,
+    // so the first chain start is already at the board's clock.
+    if profile.abs_max_frequency_mhz > 0 && cfg.frequency > profile.abs_max_frequency_mhz {
+        let mut fixed = config::get();
+        log::warn!(
+            "board: clock {} MHz is above {}'s ceiling of {} MHz: starting at its default {} MHz",
+            fixed.frequency,
+            profile.name,
+            profile.abs_max_frequency_mhz,
+            profile.default_frequency_mhz
+        );
+        fixed.frequency = profile.default_frequency_mhz;
+        if let Err(e) = config::save(&fixed) {
+            log::warn!("board: saving the clock failed: {e}");
+        }
+    }
     update(|s| {
         s.board = profile.name.into();
         s.has_vr = profile.tps546().is_some() || profile.tps53647().is_some();
