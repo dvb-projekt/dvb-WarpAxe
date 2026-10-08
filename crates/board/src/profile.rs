@@ -1017,21 +1017,25 @@ pub const Q1373: Profile = Profile {
 /// from init on, low to stop the chip after an overheat, high again
 /// before a re-init).
 ///
-/// The published KiCad (benjamin-wilson/NerdNOS, last change 2024-05-23)
-/// is an older revision: it uses the left header only (TX GPIO1, RX
-/// GPIO2, reset GPIO3, NTC GPIO10), has a single line into the chip's
-/// NRSTI through a 100 k / 120 k divider, and ties the TPSM863257's EN
-/// to resistors. WantClue's pins cannot be wired to that board, so the
-/// .46 is a later revision, for which no schematic is public. WarpAxe
-/// therefore drives the lines exactly as the stock firmware does, which
-/// is right whether GPIO13 is a buck enable or the reset itself:
-/// `asic_reset` is GPIO13 (low at boot and on an overheat stop, a
-/// low–high pulse before every init), and GPIO12 gets the stock pulse
-/// after it (`stock_reset_pulse`). The core voltage is set by resistors
-/// on the buck (the old revision: R12 40.2 k / R13 30 k, 0.6 V reference
-/// → 1.40 V): no voltage choices, `default_core_mv` is reported only;
-/// the rail is read on GPIO3 for display. USB-C powered, no fan: the
-/// clock is capped at 400 MHz until someone has measured more.
+/// The schematic of this revision is public after all: WantClue/NerdNOS
+/// (rev 1.3, last change 2024-10-31, a fork of benjamin-wilson/NerdNOS
+/// whose own KiCad stopped at an older board in 2024-05). Its PCB nets
+/// confirm every pin above: U1 pad 3 = GPIO2 = TMP (R8 10 k to 3V3, the
+/// NTC to GND), pad 4 = GPIO3 = the 1V4 rail, pad 7 = GPIO12 = RST (R14
+/// 10 k to 3V3, Q1 2N7002 inverting into RST_N, which R1 5.1 k pulls to
+/// 1V8: GPIO12 high = chip in reset, hence the stock's 100 ms high
+/// pulse), pad 8 = GPIO13 = PEN = the buck's EN (R11 10 k to GND: low =
+/// rail off), pads 19/20 = GPIO17/18 = TX/RX through a TXU0202, pad 12 =
+/// the T-Display's 5 V through D1 1N5817 from the carrier's USB-C J3 (so
+/// the chip only runs with the carrier powered). WarpAxe drives the
+/// lines as the stock firmware does: `asic_reset` is GPIO13 (low at boot
+/// and on an overheat stop, a low–high pulse before every init), and
+/// GPIO12 gets the stock pulse after it (`stock_reset_pulse`). The core
+/// voltage is fixed by the buck's divider (U7 TPS566247, 0.6 V reference,
+/// R12 13.3 k / R10 10 k → 1.398 V; 1397–1400 mV read on GPIO3): no
+/// voltage choices, `default_core_mv` is reported only. USB-C powered,
+/// a 2-pin 5 V fan header (J1) without control: the clock is capped at
+/// 400 MHz until someone has measured more.
 pub const NERDNOS: Profile = Profile {
     name: "nerdnos",
     model: "NerdNOS",

@@ -49,7 +49,7 @@ ntc.rs, miner.rs}`.
 | 20 | Hash-rate register | reads 0x04 every 2.5 s: `(v & 0x7fffffff) << 20` H/s, bit 31 = long window, both logged | 0x04 and 0x4C once a second; `v & 0x7fffffff` × 2²⁰ H/s, only the short window, 0x007FFFFF discarded | 0x04 and 0x4C once a second (`REGISTERS_RATE`); short window → `hashrateMonitor.asics[0].hashRate`, long → the minute figure, 0x007FFFFF discarded | yes; see "Register 0x04" below |
 | 21 | Temperature | NTC on GPIO2 (ADC1_CH1), 10 k / B 3380 against 3.3 V, every 5 s | EMC2101 diode | the same divider formula (`ntc.rs`), every second, −40…150 °C plausibility | yes |
 | 22 | Overheat | > 80 °C: PEN low, wait until < 70 °C, PEN high, `BM1397_init(210, 1)` | 75/90 °C, rail off | > 80 °C (or no reading for 60 s): GPIO13 **low** (reset held), ≥ 60 s, ≤ 70 °C: miner pulses the reset and re-inits at the configured clock; third stop within an hour latches | same line, same limits; WarpAxe re-inits at the configured clock, WantClue drops to 210 MHz |
-| 23 | Core voltage | fixed by resistors on the TPSM863257 (old revision: R12/R13, 0.6 V · (1 + 40.2/30) = 1.40 V); sensed on GPIO3 (`nerdnos_get_vcore`, logged) | TPS546, 1100–1500 mV | reported as 1400 mV, no options, no slider; the rail read on GPIO3 every second as VOUT (plausibility 0–2 V) | yes |
+| 23 | Core voltage | fixed by the buck's divider: U7 TPS566247, 0.6 V reference, R12 13.3 k / R10 10 k → 1.398 V (rev 1.3 schematic, WantClue/NerdNOS); 1397–1400 mV read on GPIO3 | TPS546, 1100–1500 mV | reported as 1400 mV, no options, no slider; the rail read on GPIO3 every second as VOUT (plausibility 0–2 V) | yes |
 | 24 | Power / current | none | TPS546 readings | none (the tiles show "–") | yes |
 | 25 | Display | T-Display-S3 (ST7789 i80) | OLED | ST7789 i80, flip from the setting (default upright) | orientation unverified |
 
@@ -77,7 +77,7 @@ GND, 5V; right header: GND, GND, 43, 44, 18, 17, 21, 16, NC, GND, GND, 3V):
 
 WantClue's pins cannot be wired to the published board, and the .46 hashes
 under WantClue's firmware. So the .46 is a **later revision than the
-published KiCad**, with no schematic public: the UART moved to the S3's
+published KiCad** (its schematic turned up later, see below): the UART moved to the S3's
 native U1 pins on the right header, the thermistor to GPIO2, and the
 carrier got a core rail sense on GPIO3 and two control lines next to each
 other on the left header (12, 13). The published PCB is the older, not the
@@ -93,6 +93,27 @@ then low after GPIO13 went high. If GPIO13 should turn out to be the reset
 line itself (the old revision's wiring on a new header), the same drive is
 still right. One assumption stays: that the .46 matches WantClue's
 `nerdnos.h` and not a third revision.
+
+**Settled on 2026-10-08 (Oliver found github.com/WantClue/NerdNOS):** a
+fork of benjamin-wilson/NerdNOS with the later board, rev 1.3, commits
+up to 2024-10-31 ("other buck converter" 08-28, "fixed reset" 09-10,
+Schottky diode so the display's USB cannot feed the buck 09-16, gerbers
+1.3, 2-pin fan header 09-21, heatsink with holes 10-31 by shufps). Its
+PCB nets, read against the T-Display symbol's pin numbers:
+
+| Carrier net | U1 pad | GPIO | Parts on the line |
+|---|---|---|---|
+| TMP | 3 | GPIO2 | R8 10 k to 3V3, NTC to GND |
+| VDD (1V4) | 4 | GPIO3 | the core rail, sensed |
+| RST | 7 | GPIO12 | R14 10 k to 3V3; Q1 2N7002 inverts into RST_N (R1 5.1 k to 1V8): high = chip in reset |
+| PEN | 8 | GPIO13 | U7's EN; R11 10 k to GND: low = rail off |
+| 5V | 12 | — | D1 1N5817 from VBUS (carrier USB-C J3, CC 5.1 k) |
+| TX / RX | 19 / 20 | GPIO17 / GPIO18 | TXU0202 level shifter to CI / RO |
+
+Buck U7 TPS566247DRLR, 0.6 V reference, R12 13.3 k from VDD to VFB and
+R10 10 k to GND: 1.398 V, what GPIO3 reads (1397–1400 mV). J1 is a 2-pin
+5 V fan header without control, HS1 a heatsink. Everything the profile
+drives is confirmed; the "third revision" caveat is gone.
 
 ## Register 0x04: how the value is read
 
