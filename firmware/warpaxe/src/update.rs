@@ -532,9 +532,16 @@ pub fn mark_app_valid(why: &str) {
 /// came back to this image (the aborted mark sits on the other slot);
 /// otherwise the running image's own state; "valid" once marked.
 static OTA_STATE: Mutex<&'static str> = Mutex::new("unknown");
+/// The running app slot's label ("ota_0"), read with the state above.
+static RUNNING: Mutex<String> = Mutex::new(String::new());
 
 pub fn init_ota_state() {
     use esp_idf_svc::sys as sys;
+    let running = unsafe { sys::esp_ota_get_running_partition() };
+    if !running.is_null() {
+        let label = unsafe { core::ffi::CStr::from_ptr((*running).label.as_ptr()) };
+        *RUNNING.lock().unwrap() = label.to_string_lossy().into_owned();
+    }
     let state = if !unsafe { sys::esp_ota_get_last_invalid_partition() }.is_null() {
         "aborted"
     } else {
@@ -559,4 +566,16 @@ pub fn init_ota_state() {
 
 pub fn ota_state() -> &'static str {
     *OTA_STATE.lock().unwrap()
+}
+
+/// The running app slot ("ota_0" / "ota_1"), from the same boot-time read;
+/// "?" only if the OTA API named none. The HTTP handler used to ask the
+/// OTA API on every request while the otadata was erased.
+pub fn running_partition() -> String {
+    let r = RUNNING.lock().unwrap();
+    if r.is_empty() {
+        "?".into()
+    } else {
+        r.clone()
+    }
 }
