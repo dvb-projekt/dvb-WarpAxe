@@ -495,7 +495,7 @@ function dashboard() {
   <section class="dh" style="--fc:${f.col}">
     <div class="dhid">${chips}<div class="dhname"><h1>${esc(i.boardName || i.boardVersion)}<span class="fam" style="color:${f.col};border-color:${f.col}">${t(f.key)}</span></h1><div class="mute" style="font-size:13px">${sub}</div></div>
       <div class="dhmeta"><div><span class="lbl">${t("uptime")}</span><b>${upt(i.uptimeSeconds)}</b></div><div><span class="lbl">${t("firmware")}</span><b>${esc(i.version)}</b></div><div><span class="lbl">${t("wifi")}</span><b style="display:flex;align-items:center;gap:6px">${i.wifiRSSI ? `${bars(i.wifiRSSI)}<span style="color:${rssiCol(i.wifiRSSI)}">${i.wifiRSSI} dBm</span>` : "–"}</b></div></div></div>
-    <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${c ? c.v : nf(th, 2)}</span><span class="swunit">${c ? c.u : "TH/s"}</span></div>
+    <div class="dhmid"><div><div class="lbl">${t("hashrate10")}</div><div><span class="dhbig">${c ? c.v : hru(th == null ? null : th * 1000).v}</span><span class="swunit">${c ? c.u : hru(th == null ? exp * 1000 : th * 1000).u}</span></div>
       <div class="dhsub">${c ? c.sub : `${t("expected")} ${hru(exp * 1000).v} ${hru(exp * 1000).u}${ofExp ? ` · <span class="${ofExp >= 95 ? "ok" : ""}">${nf(ofExp, 0)} %</span>` : ""}`}</div></div>
       <div class="dhfacts">${c ? "" : `<div><span class="lbl">${t("efficiency")}</span><b>${i.powerEstimated ? "≈" : ""}${nf(eff, 1)} <span class="mute" style="font-size:13px">J/TH</span></b></div>
         <div><span class="lbl">${t("power")}</span><b>${i.powerEstimated ? "≈" : ""}${nf(i.power, 1)} <span class="mute" style="font-size:13px">W</span></b></div>`}
@@ -505,7 +505,7 @@ function dashboard() {
       <div class="seg"><button type="button" data-span="3600" class="${span === 3600 ? "on" : ""}">1 h</button><button type="button" data-span="10800" class="${span === 10800 ? "on" : ""}">3 h</button></div></div></div>${chart()}</div>
   </section>
   <div class="g3">
-    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.pidTargetTemp, i.overheat_temp, maxT)}${i.hasVr === false ? "" : tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
+    <section class="card ins"><h2>${t("temperature")}</h2>${i.cpuMiner ? tbar("ESP32-S3", i.temp, null, i.overheat_temp, maxT, t("max_temp"), true) : tbar(t("chips"), i.temp, i.hasFan === false ? null : i.pidTargetTemp, i.overheat_temp, maxT)}${i.hasVr === false ? "" : tbar(t("vreg"), i.vrTemp || null, vrTarget, i.vrOverheatTemp, maxT)}</section>
     <section class="card ins"${i.cpuMiner ? ' style="display:none"' : ""}>${i.hasFan === false ? "" : `<h2>${t("fans")}</h2>${fans}<div style="height:1px;background:var(--line)"></div>`}
       ${i.hasVr === false ? "" : `<div class="row" style="margin:0"><span class="mute">${t("input")}</span><span class="num">${nf(i.voltage == null ? null : i.voltage / 1000, 2)} V · ${nf(i.current == null ? null : i.current / 1000, 1)} A <span class="dim">(${curNote})</span></span></div>
       <div class="row" style="margin:0"><span class="mute">${t("vcore")}</span><span class="num">${i.coreVoltage} / ${i.coreVoltageActual} mV</span></div>`}

@@ -195,9 +195,12 @@ impl<const N: usize> HashrateMonitor<N> {
         reg::TOTAL_COUNT,
     ];
 
-    /// The BM1397's two: its rate register and the error counter
-    /// (ESP-Miner `REGISTER_MAP`).
-    pub const REGISTERS_RATE: [u8; 2] = [reg::BM1397_HASHRATE, reg::ERROR_COUNT];
+    /// The BM1397's one: its rate register. ESP-Miner reads 0x4C there
+    /// too and calls it the error count, but on the .46 it climbed by
+    /// about one per second at 20 nonces in eight minutes (2026-10-08),
+    /// which no error rate explains; whatever it counts is not read as
+    /// errors until it is understood.
+    pub const REGISTERS_RATE: [u8; 1] = [reg::BM1397_HASHRATE];
 
     /// The registers the driver polls per chip of this chain, in order.
     pub fn registers(&self) -> &'static [u8] {
@@ -351,13 +354,12 @@ mod tests {
 
     /// A BM1397 reports its rate instead of counting: the short window
     /// is the rate at once, the long one the minute figure, the invalid
-    /// marker changes nothing, and the two registers read are 0x04 and
-    /// the error counter.
+    /// marker changes nothing, and the only register read is 0x04.
     #[test]
     fn a_reported_rate_goes_straight_into_the_total() {
         let mut m: HashrateMonitor<1> = HashrateMonitor::new(0, 1, Some(reg::BM1397_HASHRATE));
         m.set_chip_count(1);
-        assert_eq!(m.registers(), &[0x04, 0x4C]);
+        assert_eq!(m.registers(), &[0x04]);
         assert!(m.on_register(0, 0x04, 192_260, 1_000));
         let c = m.chips()[0];
         assert!((c.total.ghs - 201.6).abs() < 0.01, "{}", c.total.ghs);

@@ -169,9 +169,10 @@ every nonce above the ticket mask (`below_ticket` 0), 16 of 16 shares
 accepted at difficulty 512, core rail 1396–1398 mV, board temperature
 33 → 54 °C in the first eight minutes (stock NerdNOS showed 32–48 °C).
 
-Still open: register 0x4C counted 335 in eight minutes against 20 nonces,
-so on the BM1397 it is not the error counter the BM1370 has (or it counts
-every core result); the API's `errorPercentage` means nothing on this
-board until that is understood. The GPIO12 pulse and the GPIO13 line did
+Register 0x4C counted 335 in eight minutes against 20 nonces, so on the
+BM1397 it is not the error counter the BM1370 has (or it counts every
+core result); the web UI showed it as a 35 % error rate. Since
+3c58ec8's successor the driver reads only 0x04 on this chip and the
+error figures stay at zero until 0x4C is understood. The GPIO12 pulse and the GPIO13 line did
 what the stock firmware's do; which one is the reset and which the buck
 enable is still only inferred.

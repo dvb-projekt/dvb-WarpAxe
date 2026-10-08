@@ -559,8 +559,9 @@ fn bm1397_brings_up_with_nine_byte_replies_midstate_jobs_and_no_rolling() {
         }
     }
     assert_eq!(seen, [true; 4]);
-    // The counter round on this chip is two reads: the rate register
-    // 0x04 and the error counter 0x4C, the replies nine bytes each. The
+    // The counter round on this chip is one read, the rate register
+    // 0x04 (0x4C is not read: see `REGISTERS_RATE`), the reply nine
+    // bytes. The
     // rate comes back in units of 2²⁰ H/s: 300 MHz × 672 = 201.6 GH/s is
     // 192 260; the short window is the rate, the long one the minute
     // figure, both as `hashrateMonitor` reports them.
@@ -571,7 +572,7 @@ fn bm1397_brings_up_with_nine_byte_replies_midstate_jobs_and_no_rolling() {
     b.run_ms(5);
     b.drv.request_counters(&mut b.uart).unwrap();
     b.run_ms(5);
-    assert_eq!(b.uart.sim.chips()[0].stats().reads, reads_before + 4);
+    assert_eq!(b.uart.sim.chips()[0].stats().reads, reads_before + 2);
     let rates: Vec<u32> = b
         .events
         .iter()
@@ -586,7 +587,7 @@ fn bm1397_brings_up_with_nine_byte_replies_midstate_jobs_and_no_rolling() {
         .collect();
     assert_eq!(rates, vec![192_260, 0x8000_0000 | 192_260]);
     let m = b.drv.monitor();
-    assert_eq!(m.registers(), &[0x04, 0x4C]);
+    assert_eq!(m.registers(), &[0x04]);
     let c = m.chips()[0];
     assert!((c.total.ghs - 201.6).abs() < 0.01, "{}", c.total.ghs);
     assert!((c.total.ghs_1m - 201.6).abs() < 0.01, "{}", c.total.ghs_1m);
