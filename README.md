@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <strong>Open-source Rust firmware for BM1370 and BM1373 Bitcoin miners</strong><br>
-  Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano<br>
+  <strong>Open-source Rust firmware for BM1370, BM1373 and BM1397 Bitcoin miners</strong><br>
+  Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano · NerdNOS<br>
   <a href="#supported-boards">profiles for 7 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
@@ -18,9 +18,10 @@
 
 ---
 
-dvb-WarpAxe is a from-scratch firmware for ESP32-S3 miners with BM1370
-and BM1373 ASICs, written in Rust. It replaces AxeOS (Bitaxe), NerdOS (the
-Nerd boards) and ForgeOS (BitForge Nano) on the device and speaks their
+dvb-WarpAxe is a from-scratch firmware for ESP32-S3 miners with BM1370,
+BM1373 and BM1397 ASICs, written in Rust. It replaces AxeOS (Bitaxe), NerdOS
+(the Nerd boards), ForgeOS (BitForge Nano) and the NerdNOS's NerdMiner-based
+firmware on the device and speaks their
 HTTP API, so dashboards, tuners and fleet tools that talk to a Bitaxe keep
 working — including
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool), the
@@ -48,7 +49,8 @@ miner.
 > **Status: early (v0.1.21).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
-> September), NerdAxe Gaia and BitForge Nano (since 29 September). Seven
+> September), NerdAxe Gaia and BitForge Nano (since 29 September); since
+> 8 October also a NerdNOS (BM1397), its clock set by hand. Seven
 > more boards have a profile; of these the Bitaxe Gamma Duo and Gamma
 > Turbo have run it at a user's, as has a NerdOCTAXE-γ v2.2 with the
 > 4-phase regulator — see [Supported boards](#supported-boards) before you
@@ -180,7 +182,9 @@ back at any time with `GET /api/v1/display/frame`.
 ## Features
 
 ### Mining
-- BM1370 and BM1373 chain driver: enumeration, baud switch, PLL solved
+- BM1370, BM1373 and BM1397 chain driver (the BM1397 does not roll the
+  version itself: four midstates per job, computed on the ESP32-S3):
+  enumeration, baud switch, PLL solved
   (not looked up) and ramped, work dispatch paced per board as its stock
   firmware does, nonce attribution, stale and duplicate filtering, per-chip
   silence watchdog.
@@ -206,7 +210,9 @@ back at any time with `GET /api/v1/display/frame`.
 - Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
   Rev 7, BitForge Nano), TPS53647/TPS53667 (NerdQAxe++, NerdOctaxe,
   NerdQX); the core current and the regulator's warning line in the API
-  where the regulator reports them.
+  where the regulator reports them. The NerdNOS has none to talk to: its
+  rail is fixed by resistors, read on the ADC, and switched with the
+  chip's run/stop line.
 - Never a core voltage below the regulator's clean range: the TPS546
   driver refuses anything under 0.25 V ÷ VOUT_SCALE_LOOP (TI's reference
   range), the API refuses it with 400 and publishes the floor as
@@ -217,7 +223,8 @@ back at any time with `GET /api/v1/display/frame`.
   firmware's 0.25 put them below. `vrProbe` shows what the regulator held
   at boot, before the firmware wrote it.
 - Sensors and fans: EMC2101, EMC2103, EMC2302 (two outputs), TMP1075,
-  INA260 (BitForge Nano), FXL6408 GPIO expander.
+  INA260 (BitForge Nano), FXL6408 GPIO expander, an NTC thermistor on the
+  ADC (NerdNOS).
 - Fan PID with ESP-Miner's gains; a second output linked to the chip fan
   by default, as on NerdOS (*Link the fans* off: it follows the regulator
   temperature instead, for a fan that cools only the regulator); minimum
@@ -371,7 +378,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, output fixed by resistors (1.4 V, no PMBus) | **runs** since 2026-10-08 (Oliver's, the first chip without version rolling: four host midstates per job): at 300 MHz the chip reports 178–199 GH/s in its register 0x04 and the first shares verified and were accepted; board temperature from a thermistor on the ADC, the core rail read on GPIO3, no power reading; offered on the first start when the thermistor divider answers on GPIO2, never taken on its own; the chip is powered through the carrier's own USB-C, the T-Display's port only reaches the logic; see `docs/03-NerdNOS-BM1397-against-the-references.md` |
+| NerdNOS (T-Display-S3 carrier) | 1× BM1397 | TPSM863257, fixed by resistors (about 1.4 V) | **runs** since 2026-10-08, at 250 MHz (300 MHz reached 69 °C with a case fan; the board has none of its own); the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; offered on the first start, never taken on its own; the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken
@@ -554,11 +561,15 @@ while the stock firmware kept reporting full hashrate.
 
 ## Provenance
 
-The BM1370/BM1373 have no public datasheet. What is known comes from
+The BM1370/BM1373/BM1397 have no public datasheet. What is known comes from
 reverse engineering, chiefly [ESP-Miner](https://github.com/bitaxeorg/ESP-Miner)
 (GPL-3.0) and, for the Nerd boards,
 [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
-(GPL-3.0). Every constant lifted from there says so in its doc comment;
+(GPL-3.0); for the BM1397 also ESP-Miner's Bitaxe Max driver, cgminer's
+`driver-gekko.c` (GPL-3.0) and the NerdNOS firmware,
+[WantClue/NerdMiner_v2](https://github.com/WantClue/NerdMiner_v2) branch
+`nerdnos` (MIT), compared step by step in
+[`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md). Every constant lifted from there says so in its doc comment;
 every test vector says where it came from. The Bitcoin whitepaper served by
 the firmware is Satoshi Nakamoto's `bitcoin.pdf` (SHA-256
 `b1674191…f553`).
