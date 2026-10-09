@@ -210,7 +210,25 @@ remaining levers are the ones a tuner has: one clock step down (690)
 or one voltage step up for this board, and the right re-init for a
 dead domain is a clock dip, not a chips off/on.
 
-### Test plan, second round
+### Round two: 14c16fa (dvb-WarpAxe #2, 2026-10-09 afternoon)
+
+**Passed.** The .45 with "NerdOS init" in the log: six power-ups
+(upload, two restarts, three chips off/on of 12 s), all 32 domains at
++2 min and at +10 min every time, 174 shares, 0 rejected, 66 °C steady.
+Against 2 of 6 with ESP-Miner's init in round one and 0 of 5 on the old
+power-down in the morning. The .41 (NerdQAxe++ Rev 6.1): upload,
+"NerdOS init", soak pass at 600 MHz (4.84 TH/s, 8 shares, 0 rejected,
+no dead domain). Both boards stay on 14c16fa.
+
+So the clock-delay trim 0x10 was the cause of the NerdOctaxe's dead
+domain 2 at 700 MHz, and 0x0C — the value the board shipped with — the
+fix. The power-down changes of the first commit are kept: they are the
+reference's order, and six chips off/on with the LDO cut came up whole.
+The warm-boot pause stays as written; it never fires on these boards
+(the rails are low for longer than it asks before the regulator comes
+up) and costs nothing where it would.
+
+### Test plan, second round (as run)
 
 1. The .45, the new image: the same six power-ups as before (OTA, two
    restarts, three chips off/on), domains at +2 min; `grep "NerdOS

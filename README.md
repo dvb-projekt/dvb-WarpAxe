@@ -187,7 +187,12 @@ back at any time with `GET /api/v1/display/frame`.
   enumeration, baud switch, PLL solved
   (not looked up) and ramped, work dispatch paced per board as its stock
   firmware does, nonce attribution, stale and duplicate filtering, per-chip
-  silence watchdog.
+  silence watchdog. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe)
+  is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
+  differ in one core-clock trim and two writes since ESP-Miner's August
+  2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left
+  one hash domain of a chip at 3 % in four power-ups out of six, NerdOS's
+  none in six ([`docs/04`](docs/04-Octaxe-Warm-Reboot-Latch.md)).
 - **Stratum V2** per pool: Noise handshake (secp256k1 + EllSwift,
   ChaCha20-Poly1305), extended channel, the pool's certificate checked
   against its authority key (Base58Check, as pools publish it). "Require
