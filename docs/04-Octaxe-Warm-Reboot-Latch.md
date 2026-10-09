@@ -193,6 +193,23 @@ computed number is a different nonce-space walk, not a reason for a
 domain at 3 %; left as is until the bench says the clock delay was not
 it.
 
+### The dip test (12:49–12:53Z, bbbed33, dvb-WarpAxe #2)
+
+Chip 8 at 700 MHz: domains `[426, 0, 389, 360]` GH/s. PATCH to 600 MHz:
+within 30 s `[323, 319, 315, 291]`, all 32 domains for two minutes.
+PATCH back to 700: chip 8 stayed whole, and about a minute later
+**chip 5's domain 2** went to zero and stayed there.
+
+So nothing is latched: a clock change brings a domain back without a
+power cycle, and a chip that is whole can lose its domain 2 a minute
+into running at 700 MHz. It is margin — clock delay or clock itself —
+on domain 2 at 700 MHz / 1210 mV, on more than one chip of this board,
+decided at and shortly after the ramp. The rails were never it. That
+fits the 0x0C candidate; if 0x0C does not change the count, the
+remaining levers are the ones a tuner has: one clock step down (690)
+or one voltage step up for this board, and the right re-init for a
+dead domain is a clock dip, not a chips off/on.
+
 ### Test plan, second round
 
 1. The .45, the new image: the same six power-ups as before (OTA, two
