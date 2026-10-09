@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-372%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-377%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.23-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.24-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.23).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.24).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -187,7 +187,7 @@ back at any time with `GET /api/v1/display/frame`.
   enumeration, baud switch, PLL solved
   (not looked up) and ramped, work dispatch paced per board as its stock
   firmware does, nonce attribution, stale and duplicate filtering, per-chip
-  silence watchdog. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe)
+  silence watchdog. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
   2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left

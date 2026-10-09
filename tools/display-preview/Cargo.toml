@@ -4,7 +4,7 @@
 #   cargo run --release -- OUT_DIR
 [package]
 name = "display-preview"
-version = "0.1.23" # = firmware/warpaxe; the screens print it
+version = "0.1.24" # = firmware/warpaxe; the screens print it
 edition = "2021"
 publish = false
 
