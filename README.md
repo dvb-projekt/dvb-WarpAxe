@@ -246,7 +246,13 @@ back at any time with `GET /api/v1/display/frame`.
   regulator that answers garbage while it powers up is reported as "no
   reading", never as a value a tuner could act on.
 - Switch the chips off and on again from the web UI or the API; the device
-  stays reachable.
+  stays reachable. On the Nerd carriers with an LDO for the chips' I/O
+  rails (NerdQAxe++, NerdOctaxe, NerdQX) "off" is the stock firmware's
+  shutdown — chain in reset, core rail off, half a second, LDO off, and
+  the chain's TX line parked low meanwhile — and "on" is its bring-up
+  order; a reboot that was not a power-on keeps the rails off for five
+  seconds before the LDO comes back, the pause a power cycle gives them
+  ([`docs/04-Octaxe-Warm-Reboot-Latch.md`](docs/04-Octaxe-Warm-Reboot-Latch.md)).
 
 ### Web UI and API
 - One UI for every board, series colour and chip grid on the type plate;
@@ -578,7 +584,10 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/01-Benefit-for-WarpTune.md`](docs/01-Benefit-for-WarpTune.md) — what
   this buys WarpTune, concretely;
 - [`docs/02-Demo-WarpTune-vs-Sim-2026-09-23.txt`](docs/02-Demo-WarpTune-vs-Sim-2026-09-23.txt)
-  — the first run of WarpTune against the emulator, unedited.
+  — the first run of WarpTune against the emulator, unedited;
+- [`docs/04-Octaxe-Warm-Reboot-Latch.md`](docs/04-Octaxe-Warm-Reboot-Latch.md)
+  — the NerdOctaxe's hash domain that only a power cycle cleared: NerdOS
+  against WarpAxe step by step, what changed, and the test plan.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;

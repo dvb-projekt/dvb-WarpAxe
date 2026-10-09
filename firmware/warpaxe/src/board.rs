@@ -33,6 +33,7 @@ use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
+use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, bm1397::BM1397, ChipProfile};
 
@@ -135,6 +136,11 @@ static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
+/// When the Nerd carriers' enable and LDO lines were first driven low
+/// this boot (`rail_off` at boot, or `start_nerd` for pins behind the
+/// expander): the bring-up counts its pause from here
+/// (`warm_boot::settle_ms`).
+static RAILS_LOW_SINCE: Mutex<Option<Instant>> = Mutex::new(None);
 /// The chip power-enable line of the Bitaxe Color boards, with the level
 /// that enables (ESP-Miner `asic_enable`).
 static ASIC_ENABLE: Mutex<Option<(Pin, bool)>> = Mutex::new(None);
@@ -256,6 +262,7 @@ fn rail_off(why: &str) {
                 if let Some(l) = ldo_enable {
                     Pin::Esp(l).output(false);
                 }
+                rails_low_now();
             }
         }
         Vr::Tps546Nerd {
@@ -284,9 +291,11 @@ fn rail_off(why: &str) {
 /// chain stopped and held in reset, the core rail off, the fans at full
 /// for whatever follows (ROM download mode runs nothing, and the fan
 /// controllers keep their last duty). NerdOS does the same in
-/// PowerManagementTask::restart ("shutdown asics and LDOs before reset");
-/// ESP-Miner restarts with the rail on. Returns once the board thread
-/// reports the rail off, or after about two seconds.
+/// PowerManagementTask::restart ("shutdown asics and LDOs before reset":
+/// core off, 500 ms, LDO off, 500 ms, `esp_restart`); ESP-Miner restarts
+/// with the rail on. Returns once the board thread reports the rail off
+/// (on the Nerd carriers that includes the LDO, `Regulator::off`), or
+/// after about two seconds, and NerdOS's half second after that.
 pub fn prepare_reset(why: &str) {
     log::warn!("board: {why}: chips off before the reset");
     FANS_FULL.store(true, Ordering::Relaxed);
@@ -307,6 +316,38 @@ pub fn prepare_reset(why: &str) {
     }
     asic_power(false);
     rail_off(why);
+    std::thread::sleep(Duration::from_millis(u64::from(
+        warm_boot::LDO_OFF_BEFORE_RESET_MS,
+    )));
+}
+
+/// The chips' I/O rails go away when they are switched off (the Nerd
+/// carriers: `Regulator::off` cuts the LDO), so the miner parks the
+/// chain's TX low meanwhile (`ChipUart::park`).
+pub fn parks_uart() -> bool {
+    matches!(
+        profile().vr,
+        Vr::Tps5364x {
+            ldo_enable: Some(_),
+            ..
+        }
+    )
+}
+
+/// Enable and LDO are low from now, if they were not already.
+fn rails_low_now() {
+    RAILS_LOW_SINCE
+        .lock()
+        .unwrap()
+        .get_or_insert_with(Instant::now);
+}
+
+/// How long enable and LDO have been low, ms; 0 if never driven.
+fn rails_low_for_ms() -> u32 {
+    RAILS_LOW_SINCE
+        .lock()
+        .unwrap()
+        .map_or(0, |t| t.elapsed().as_millis().min(u128::from(u32::MAX)) as u32)
 }
 
 /// Switch the chips off (core rail down) or back on; the board loop does
@@ -489,6 +530,9 @@ enum Regulator {
     Tps5364x {
         vr: Tps53647<SharedI2c>,
         enable: Pin,
+        /// The chips' I/O rails (NerdOS `LDO_EN_PIN`): off with the core
+        /// rail, on before it (`off`, `on`).
+        ldo: Option<Pin>,
         /// For the regulator-side TMP1075.
         bus: SharedI2c,
     },
@@ -652,25 +696,56 @@ impl Regulator {
             }
         }
     }
-    /// Core voltage back on at `volts` after [`off`](Self::off).
+    /// Core voltage back on at `volts` after [`off`](Self::off). On the
+    /// Nerd carriers in NerdOS's `initAsics` order: the LDO first, 100 ms,
+    /// then the regulator's enable and the voltage; the reset line stays
+    /// low until the miner's `reset_chain`.
     fn on(&mut self, volts: f32) -> Result<(), String> {
         match self {
             Regulator::Tps546(vr, _) => vr.set_vout(volts).map_err(|e| format!("{e:?}")),
-            Regulator::Tps5364x { vr, enable, .. } => {
+            Regulator::Tps5364x {
+                vr, enable, ldo, ..
+            } => {
+                if let Some(l) = ldo {
+                    l.set(true);
+                    std::thread::sleep(Duration::from_millis(u64::from(
+                        warm_boot::LDO_TO_CORE_ON_MS,
+                    )));
+                }
                 enable.set(true);
                 vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
             }
         }
     }
     /// Core voltage off: the TPS546 by command, the Nerd regulators by
-    /// their enable line (NerdOS `setVoltage(0)`).
+    /// their enable line (NerdOS `setVoltage(0)`). On the Nerd carriers
+    /// the chips' I/O rails go too, as in NerdOS's `shutdown`: the chain
+    /// into reset first (a reset line held high into a chip without I/O
+    /// power would feed it), the core off, 500 ms, the LDO off. Until
+    /// v0.1.23 the LDO stayed up here, and on the NerdOctaxe-γ a dead
+    /// hash domain survived every such off and on (2026-10-09).
     fn off(&mut self) {
         match self {
             Regulator::Tps546(vr, _) => {
                 let _ = vr.set_vout(0.0);
             }
-            Regulator::Tps5364x { enable, .. } => {
+            Regulator::Tps5364x { enable, ldo, .. } => {
+                if ldo.is_some() {
+                    if let Some(pin) = RESET.lock().unwrap().as_ref() {
+                        pin.set(false);
+                    }
+                }
                 enable.set(false);
+                if let Some(l) = ldo {
+                    std::thread::sleep(Duration::from_millis(u64::from(
+                        warm_boot::CORE_TO_LDO_OFF_MS,
+                    )));
+                    l.set(false);
+                    log::info!(
+                        "board: chips in reset, LDO off {} ms after the core (NerdOS shutdown order)",
+                        warm_boot::CORE_TO_LDO_OFF_MS
+                    );
+                }
             }
         }
     }
@@ -1073,6 +1148,7 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
     if let Some(l) = &ldo {
         l.output(false);
     }
+    rails_low_now();
     if let Some(x) = &expander {
         let reset = Pin::Exp(x.clone(), q13xx::ASIC_RESET);
         reset.output(false);
@@ -1103,11 +1179,25 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
         regulator.phases
     );
 
-    std::thread::sleep(Duration::from_millis(250));
+    // NerdOS's 250 ms with everything off; after a warm reboot the
+    // seconds a power cycle would have given the rails, counted from the
+    // boot's rail_off (warm_boot).
+    let power_on = crate::diag::reset_was_power_on();
+    let low_for = rails_low_for_ms();
+    let settle = warm_boot::settle_ms(power_on, low_for);
+    if settle > warm_boot::NERD_SETTLE_MS {
+        log::warn!(
+            "board: warm boot (reset reason {}): rails low for {low_for} ms, {settle} ms more before the LDO comes on",
+            crate::diag::reset_reason()
+        );
+    }
+    std::thread::sleep(Duration::from_millis(u64::from(settle)));
     if let Some(l) = &ldo {
         l.set(true);
     }
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(u64::from(
+        warm_boot::LDO_TO_CORE_ON_MS,
+    )));
 
     let mut vr = Tps53647::new(bus.clone(), regulator);
     let code = vr.device_code();
@@ -1148,6 +1238,7 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
     let regulator = Regulator::Tps5364x {
         vr,
         enable: en,
+        ldo,
         bus,
     };
     spawn_run(profile, Some(regulator), Some(thermal));

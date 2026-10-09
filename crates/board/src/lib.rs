@@ -29,6 +29,7 @@ pub mod ssd1306;
 pub mod tmp1075;
 pub mod tps53647;
 pub mod tps546;
+pub mod warm_boot;
 
 pub use i2c::I2c;
 pub use profile::{

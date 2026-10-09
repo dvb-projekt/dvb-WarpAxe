@@ -278,8 +278,20 @@ pub fn start(uart: ChipUart) {
 fn run(mut uart: ChipUart) {
     let epoch = Instant::now();
     let now_us = || epoch.elapsed().as_micros() as u64;
+    // TX driven low while the chips sit without their I/O rails
+    // (board::parks_uart), back on the UART before the next reset pulse.
+    let mut parked = false;
     loop {
         if board::chain_stopped() {
+            if !parked && board::parks_uart() {
+                match uart.park() {
+                    Ok(()) => {
+                        parked = true;
+                        log::info!("miner: TX parked low while the chips are off");
+                    }
+                    Err(e) => log::warn!("miner: parking TX failed: {e:?}"),
+                }
+            }
             let why = if board::overheat() {
                 "OVERHEAT"
             } else if board::shutdown() {
@@ -329,6 +341,13 @@ fn run(mut uart: ChipUart) {
             }
             _ => 10,
         };
+        if parked {
+            parked = false;
+            match uart.unpark() {
+                Ok(()) => log::info!("miner: TX back on the UART"),
+                Err(e) => log::error!("miner: TX back on the UART failed: {e:?}"),
+            }
+        }
         board::reset_chain(pulse, profile.reset_release_ms);
         if let Err(e) = Uart::set_baud(&mut uart, 115_200) {
             log::warn!("miner: uart back to 115200: {e:?}");

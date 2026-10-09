@@ -5,7 +5,7 @@
 use esp_idf_svc::hal::gpio::{AnyIOPin, Gpio17, Gpio18};
 use esp_idf_svc::hal::uart::{config::Config, UartDriver, UART1};
 use esp_idf_svc::hal::units::Hertz;
-use esp_idf_svc::sys::EspError;
+use esp_idf_svc::sys::{self, EspError};
 use warpaxe_chain::Uart;
 
 pub struct ChipUart {
@@ -32,7 +32,47 @@ impl ChipUart {
         )?;
         Ok(ChipUart { drv })
     }
+
+    /// TX off the UART and driven low, for as long as the chips sit
+    /// without their I/O rails (the Nerd carriers cut the LDO when the
+    /// chips are switched off). An idle UART keeps TX at 3.3 V, and a
+    /// chip whose I/O supply is gone gets that through the protection
+    /// diode of its RX pin: the rail the LDO was meant to take away
+    /// stays half up. A cold start has nothing driving the line; this
+    /// is the nearest the firmware gets to it. Whatever is still in the
+    /// TX FIFO goes out first.
+    pub fn park(&mut self) -> Result<(), EspError> {
+        self.drv.wait_tx_done(esp_idf_svc::hal::delay::BLOCK)?;
+        unsafe {
+            // Off the GPIO matrix (gpio_reset_pin leaves the pad as an
+            // input with its pull-up: not that either).
+            sys::gpio_reset_pin(TX_PIN);
+            sys::gpio_set_pull_mode(TX_PIN, sys::gpio_pull_mode_t_GPIO_FLOATING);
+            sys::gpio_set_level(TX_PIN, 0);
+            sys::gpio_set_direction(TX_PIN, sys::gpio_mode_t_GPIO_MODE_OUTPUT);
+        }
+        Ok(())
+    }
+
+    /// TX back on the UART after [`park`](Self::park); the line idles
+    /// high again. Done before the chain's reset pulse.
+    pub fn unpark(&mut self) -> Result<(), EspError> {
+        esp_idf_svc::sys::esp!(unsafe {
+            sys::uart_set_pin(
+                UART_NUM,
+                TX_PIN,
+                sys::UART_PIN_NO_CHANGE,
+                sys::UART_PIN_NO_CHANGE,
+                sys::UART_PIN_NO_CHANGE,
+            )
+        })
+    }
 }
+
+/// UART1 on GPIO17, as `new` takes them; the raw numbers for the pad
+/// calls behind `park`.
+const UART_NUM: sys::uart_port_t = 1;
+const TX_PIN: i32 = 17;
 
 impl Uart for ChipUart {
     type Error = EspError;

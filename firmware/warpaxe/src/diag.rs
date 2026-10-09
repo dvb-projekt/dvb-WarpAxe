@@ -41,6 +41,13 @@ pub fn reset_reason() -> &'static str {
     }
 }
 
+/// The chip came up from a power-on (the supply or the EN pin), so the
+/// board's rails were really down. A software, watchdog, USB or JTAG
+/// reset kept the 12 V input and everything fed from it.
+pub fn reset_was_power_on() -> bool {
+    unsafe { sys::esp_reset_reason() == sys::esp_reset_reason_t_ESP_RST_POWERON }
+}
+
 /// The last run crashed (or was reset by a watchdog).
 pub fn last_run_crashed() -> bool {
     matches!(
