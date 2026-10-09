@@ -724,6 +724,17 @@ impl Regulator {
     /// power would feed it), the core off, 500 ms, the LDO off. Until
     /// v0.1.23 the LDO stayed up here, and on the NerdOctaxe-γ a dead
     /// hash domain survived every such off and on (2026-10-09).
+    ///
+    /// The 500 ms block the board loop (and `on` 100 ms): the loop
+    /// samples once a second and counts its sensor-loss seconds per
+    /// sample, the power-fault monitor goes `disabled()` right after
+    /// this and judges by uptime seconds, and the board thread is on no
+    /// task watchdog, so a sample half a second late changes nothing.
+    /// `prepare_reset` waits up to 2 s for the rail to report off.
+    /// Locks: `RESET` only, held for the one `set`; nothing else is
+    /// locked here and nothing calls in while it is held (`prepare_reset`
+    /// takes `RESET` from the HTTP or update task, never nested with
+    /// anything the board thread holds).
     fn off(&mut self) {
         match self {
             Regulator::Tps546(vr, _) => {

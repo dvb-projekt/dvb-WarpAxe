@@ -247,10 +247,11 @@ back at any time with `GET /api/v1/display/frame`.
   reading", never as a value a tuner could act on.
 - Switch the chips off and on again from the web UI or the API; the device
   stays reachable. On the Nerd carriers with an LDO for the chips' I/O
-  rails (NerdQAxe++, NerdOctaxe, NerdQX) "off" is the stock firmware's
-  shutdown — chain in reset, core rail off, half a second, LDO off, and
-  the chain's TX line parked low meanwhile — and "on" is its bring-up
-  order; a reboot that was not a power-on keeps the rails off for five
+  rails (NerdQAxe++ Rev 6, NerdOctaxe, NerdQX) "off" — by hand, by an
+  overheat stop, or before a restart — is the stock firmware's
+  shutdown: chain in reset, core rail off, half a second, LDO off, and
+  the chain's TX line parked low meanwhile; "on" is its bring-up
+  order. A reboot that was not a power-on keeps the rails off for five
   seconds before the LDO comes back, the pause a power cycle gives them
   ([`docs/04-Octaxe-Warm-Reboot-Latch.md`](docs/04-Octaxe-Warm-Reboot-Latch.md)).
 

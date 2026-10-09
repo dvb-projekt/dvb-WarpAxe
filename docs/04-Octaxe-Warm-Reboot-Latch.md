@@ -81,8 +81,13 @@ them seconds with the 12 V input gone as well.
 5. **Proposal.** Done as the two items below, plus TX parked low. The
    Gaia is untouched: it runs `start_tps546_nerd` and `Vr::Tps546Nerd`,
    whose LDO stays up (cutting it breaks the chip's enumeration there);
-   the changes are confined to `Vr::Tps5364x` boards (NerdQAxe++ Rev 6,
-   NerdOctaxe-γ, Q1370, Q1373) and the Nerd bring-up path.
+   the changes are confined to `Vr::Tps5364x` boards and the Nerd
+   bring-up path. That is wider than the Octaxe: the **NerdQAxe++
+   Rev 6.1 (.41)**, the 24/7 soak device and the board in
+   `tested-on.txt`, carries the same regulator and LDO lines, so its
+   chips off/on, its overheat stop and resume, and every restart now cut
+   and restore the LDO too, and it gets the same five seconds after a
+   warm reboot. The Q1370 and Q1373 likewise, on paper (not run yet).
 
 ## What changes (branch `claude/octaxe-warmstart-latch-17b556`)
 
@@ -152,8 +157,11 @@ counters two minutes after `chainPhase` READY, every domain non-zero.
    `POST /api/v1/chips/on`), three times. Expect `miner: TX parked low
    while the chips are off`, `board: chips in reset, LDO off …`, and on
    the way back `miner: TX back on the UART` before the chain init.
-   Domains at +2 min. Also the regulator telemetry: `vout_mv` 0 while
-   off, back to 1210 after; no `REGULATOR FAULT`.
+   Domains at +2 min, and the first shares after READY (a TX that did
+   not come back on the UART would leave the chain silent; the
+   silent-chain watchdog would say so too). Also the regulator
+   telemetry: `vout_mv` 0 while off, back to 1210 after; no
+   `REGULATOR FAULT`.
 3. **If a domain is dead after step 1 or 2**: one more chips off/on with
    30 s off. If still dead: a power cycle, and the scope question (2)
    becomes the next step — EN, LDO EN and RST on the carrier during an
@@ -163,9 +171,13 @@ counters two minutes after `chainPhase` READY, every domain non-zero.
    NerdOS uses the same, so unlikely); the boot time (+ up to 5 s on a
    warm reboot, visible as the BOARD step on the display); an overheat
    stop and resume, if one happens, now cycles the LDO too.
-5. **The other Nerd carrier** on the bench (NerdQAxe++ Rev 6.1): one OTA
-   and one chips off/on, domains at +2 min. Its stock firmware cycles
-   the LDO at every boot, so the off/on order is nothing new for it.
+5. **The NerdQAxe++ Rev 6.1 (.41)**, which gets the same change: one
+   OTA (the warm-boot log line, domains at +2 min), one chips off/on
+   (the park/unpark lines, domains and the first shares after READY).
+   Its overheat stop now takes the same `off`/`on` as the manual path,
+   so step 2 on the .41 stands in for it: an overheat on the soak device
+   is not provoked on purpose. Its stock firmware cycles the LDO at
+   every boot, so the order is nothing new for the board.
 
 What a pass looks like: all 32 domains after each of the six re-inits
 in steps 1 and 2. What tells us the firmware cannot do it alone: a

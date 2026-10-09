@@ -55,7 +55,12 @@ impl ChipUart {
     }
 
     /// TX back on the UART after [`park`](Self::park); the line idles
-    /// high again. Done before the chain's reset pulse.
+    /// high again. Done before the chain's reset pulse. `uart_set_pin`
+    /// takes the IO MUX route for GPIO17 (U1TXD is the pad's own
+    /// function, `uart_try_set_iomux_pin`): the pad's function select
+    /// goes to the UART and `oen_sel` to 0, so the UART drives the
+    /// output enable itself and the GPIO enable bit `park` left set
+    /// does not matter — the same call, the same state as at boot.
     pub fn unpark(&mut self) -> Result<(), EspError> {
         esp_idf_svc::sys::esp!(unsafe {
             sys::uart_set_pin(
