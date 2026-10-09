@@ -592,10 +592,11 @@ reverse engineering, chiefly [ESP-Miner](https://github.com/bitaxeorg/ESP-Miner)
 `driver-gekko.c` (GPL-3.0), the NerdNOS hardware ([WantClue/NerdNOS](https://github.com/WantClue/NerdNOS), rev 1.3) and its firmware,
 [WantClue/NerdMiner_v2](https://github.com/WantClue/NerdMiner_v2) branch
 `nerdnos` (MIT), compared step by step in
-[`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md). Every constant lifted from there says so in its doc comment;
-every test vector says where it came from. The Bitcoin whitepaper the web UI
-links to (on warppool.org, next to the installer) is Satoshi Nakamoto's `bitcoin.pdf` (SHA-256
-`b1674191…f553`).
+[`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md). Every
+constant lifted from there says so in its doc comment; every test vector
+says where it came from. The Bitcoin whitepaper the web UI links to (on
+warppool.org, next to the installer) is Satoshi Nakamoto's `bitcoin.pdf`
+(SHA-256 `b1674191…f553`).
 
 The makers' wordmarks on the boot screen come from the makers' own
 firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
