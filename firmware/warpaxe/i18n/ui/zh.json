@@ -124,7 +124,7 @@
   "ev_ota": "固件更新",
   "demo_on": "正在设备上显示 20 秒",
   "whitepaper": "Bitcoin 白皮书",
-  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB，由本矿机提供",
+  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB，来自 warppool.org",
   "open_pdf": "打开",
   "stratumTLS": "加密主矿池连接 (TLS)",
   "fallbackStratumTLS": "加密备用矿池连接 (TLS)",

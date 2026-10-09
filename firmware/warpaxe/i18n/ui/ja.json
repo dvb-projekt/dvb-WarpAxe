@@ -124,7 +124,7 @@
   "ev_ota": "ファームウェア更新",
   "demo_on": "デバイスに 20 秒表示中",
   "whitepaper": "Bitcoin ホワイトペーパー",
-  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB, このマイナーから配信",
+  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB, warppool.org から",
   "open_pdf": "開く",
   "stratumTLS": "メインプールを暗号化 (TLS)",
   "fallbackStratumTLS": "フォールバックプールを暗号化 (TLS)",

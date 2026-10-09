@@ -124,7 +124,7 @@
   "ev_ota": "Aggiornamento firmware",
   "demo_on": "Mostrata sul dispositivo per 20 s",
   "whitepaper": "Whitepaper di Bitcoin",
-  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB, servito da questo miner",
+  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 KB, da warppool.org",
   "open_pdf": "Apri",
   "stratumTLS": "Cifra pool principale (TLS)",
   "fallbackStratumTLS": "Cifra pool di riserva (TLS)",

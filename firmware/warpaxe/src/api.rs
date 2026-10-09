@@ -19,7 +19,6 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
     Some(match name {
         "favicon.svg" => (include_bytes!("ui/assets/favicon.svg"), "image/svg+xml"),
         "wordmark.webp" => (include_bytes!("ui/assets/wordmark.webp"), "image/webp"),
-        "bitcoin.pdf" => (include_bytes!("ui/assets/bitcoin.pdf"), "application/pdf"),
         "inter.woff2" => (include_bytes!("ui/assets/inter.woff2"), "font/woff2"),
         "space-grotesk-700.woff2" => (
             include_bytes!("ui/assets/space-grotesk-700.woff2"),

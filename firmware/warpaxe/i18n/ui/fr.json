@@ -124,7 +124,7 @@
   "ev_ota": "Mise à jour du firmware",
   "demo_on": "Affiché sur l'appareil pendant 20 s",
   "whitepaper": "Livre blanc Bitcoin",
-  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 Ko, servi par ce mineur",
+  "wp_s": "Satoshi Nakamoto, 2008 · PDF, 184 Ko, depuis warppool.org",
   "open_pdf": "Ouvrir",
   "stratumTLS": "Chiffrer le pool principal (TLS)",
   "fallbackStratumTLS": "Chiffrer le pool de secours (TLS)",
