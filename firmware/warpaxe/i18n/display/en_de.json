@@ -48,5 +48,8 @@
  "UPTIME": "LAUFZEIT",
  "Candidates": "Kandidaten",
  "Best diff": "Beste Diff",
- "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · SHA-Einheit + CPU-Kern · experimentell"
+ "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · SHA-Einheit + CPU-Kern · experimentell",
+ "Effective": "Effektiv",
+ "Restart clock": "Neustart-Takt",
+ "Shutdown {h} °C": "Abschaltung {h} °C"
 }

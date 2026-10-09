@@ -1073,8 +1073,19 @@ fn device(c: &mut Canvas) {
         x0,
         r,
     );
-    let vr = b.vr_temp_c.map_or("–".into(), |t| format!("{t} °C"));
-    kv(c, l("Regulator", "Regler"), &vr, 62, gfx::FG, x0, r);
+    // A board without a regulator (the NerdNOS: a fixed rail, no
+    // sensors but the thermistor) shows what it has instead of dashes:
+    // the ESP32's own die, the effective rate, the Wi-Fi and the clock a
+    // restart begins at.
+    let novr = !b.has_vr;
+    if novr {
+        let die = crate::cpuminer::die_temp_c()
+            .map_or("–".into(), |t| format!("{} °C", num(f64::from(t), 1)));
+        kv(c, "ESP32", &die, 62, gfx::FG, x0, r);
+    } else {
+        let vr = b.vr_temp_c.map_or("–".into(), |t| format!("{t} °C"));
+        kv(c, l("Regulator", "Regler"), &vr, 62, gfx::FG, x0, r);
+    }
     // After an overheat step the actual clock stands next to the
     // configured one: "275/300 MHz" (a restart begins at 300 again).
     let clock = match &m.clock_step {
@@ -1090,15 +1101,13 @@ fn device(c: &mut Canvas) {
         .vout_mv
         .map(|v| p.core_mv_for_vout(v / 1000.0))
         .unwrap_or(0);
-    kv(
-        c,
-        l("Core", "Kern"),
-        &format!("{}/{} mV", cfg.core_voltage, meas),
-        98,
-        gfx::FG,
-        x0,
-        r,
-    );
+    // A fixed rail has no set point: only the reading.
+    let core = if novr {
+        format!("{meas} mV")
+    } else {
+        format!("{}/{} mV", cfg.core_voltage, meas)
+    };
+    kv(c, l("Core", "Kern"), &core, 98, gfx::FG, x0, r);
     kv(
         c,
         l("Uptime", "Laufzeit"),
@@ -1108,14 +1117,33 @@ fn device(c: &mut Canvas) {
         x0,
         r,
     );
-    let vin = b.vin_mv.map_or("–".into(), |v| {
-        format!("{} V", num(f64::from(v) / 1000.0, 2))
-    });
-    kv(c, l("Input", "Eingang"), &vin, 44, gfx::FG, r2, e);
-    let amps = b.iout_ma.map_or("–".into(), |v| {
-        format!("{} A", num(f64::from(v) / 1000.0, 2))
-    });
-    kv(c, l("Current", "Strom"), &amps, 62, gfx::FG, r2, e);
+    if novr {
+        // Delivered against small cores × clock, as the API's yieldPercent.
+        let exp = f64::from(board::chip().small_cores)
+            * f64::from(m.frequency_hz)
+            * f64::from(m.chips.max(1))
+            / 1e9;
+        let eff = if exp > 0.0 && m.hashrate_ghs > 0.0 {
+            format!("{} %", num((m.hashrate_ghs / exp * 100.0).min(999.0), 0))
+        } else {
+            "–".into()
+        };
+        kv(c, l("Effective", "Effektiv"), &eff, 44, gfx::FG, r2, e);
+        let n = net::state();
+        let (w, wc) = n.wifi_rssi.map_or(("–".into(), gfx::FG), |r| {
+            (format!("{r} dBm"), rssi_color(r))
+        });
+        kv(c, l("Wi-Fi", "WLAN"), &w, 62, wc, r2, e);
+    } else {
+        let vin = b.vin_mv.map_or("–".into(), |v| {
+            format!("{} V", num(f64::from(v) / 1000.0, 2))
+        });
+        kv(c, l("Input", "Eingang"), &vin, 44, gfx::FG, r2, e);
+        let amps = b.iout_ma.map_or("–".into(), |v| {
+            format!("{} A", num(f64::from(v) / 1000.0, 2))
+        });
+        kv(c, l("Current", "Strom"), &amps, 62, gfx::FG, r2, e);
+    }
     let pw = b.power_w.map_or("–".into(), |v| {
         format!(
             "{}{} W",
@@ -1135,19 +1163,33 @@ fn device(c: &mut Canvas) {
         }
     };
     let two = b.fan2_rpm.is_some();
-    kv(
-        c,
-        if two {
-            l("Fan M2", "Lüfter M2")
-        } else {
-            l("Fan", "Lüfter")
-        },
-        &fan(b.fan_rpm, b.fan_pct),
-        98,
-        gfx::FG,
-        r2,
-        e,
-    );
+    if !has_fan {
+        // No fan to drive: the clock a restart begins at (after an
+        // overheat step it differs from the running one).
+        kv(
+            c,
+            l("Restart clock", "Neustart-Takt"),
+            &format!("{} MHz", cfg.frequency),
+            98,
+            gfx::FG,
+            r2,
+            e,
+        );
+    } else {
+        kv(
+            c,
+            if two {
+                l("Fan M2", "Lüfter M2")
+            } else {
+                l("Fan", "Lüfter")
+            },
+            &fan(b.fan_rpm, b.fan_pct),
+            98,
+            gfx::FG,
+            r2,
+            e,
+        );
+    }
     if let (Some(rpm), Some(pct)) = (b.fan2_rpm, b.fan2_pct) {
         let v = fan(rpm, pct);
         let label = l("Fan M1", "Lüfter M1");
@@ -1161,7 +1203,9 @@ fn device(c: &mut Canvas) {
     }
     c.rect(12, 130, 298, 1, gfx::WHITE, 16);
     let (target, hot) = limits();
-    let line = if cfg.autofanspeed {
+    let line = if !has_fan {
+        l("Shutdown {h} °C", "Abschaltung {h} °C")
+    } else if cfg.autofanspeed {
         l(
             "Fans automatic · target {t} °C · shutdown {h} °C",
             "Lüfter automatisch · Ziel {t} °C · Abschaltung {h} °C",

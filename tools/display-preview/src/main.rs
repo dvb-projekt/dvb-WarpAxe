@@ -164,6 +164,7 @@ mod config {
         pub stratum_user: String,
         pub fallback_user: String,
         pub ssid: String,
+        pub frequency: u16,
     }
     pub fn get() -> Config {
         Config {
@@ -178,6 +179,11 @@ mod config {
             stratum_user: "bc1qexampleaddressxxxxxxxxxxxxxxxxxxxxxxxx.NerdQaxe++".into(),
             fallback_user: String::new(),
             ssid: "HomeNet".into(),
+            frequency: if crate::board::profile().name == "nerdnos" {
+                300
+            } else {
+                800
+            },
         }
     }
     pub fn best_diff() -> u64 {
@@ -203,6 +209,9 @@ mod cpuminer {
             best_diff: 0.0127,
         }
     }
+    pub fn die_temp_c() -> Option<f32> {
+        Some(56.4)
+    }
     pub fn cpu_mhz() -> u32 {
         240
     }
@@ -224,11 +233,30 @@ mod board {
         pub overheat_latched: bool,
         pub overheat_cause: Option<&'static str>,
         pub power_estimated: bool,
+        pub has_vr: bool,
     }
     pub fn gamma() -> bool {
         crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed)
     }
     pub fn state() -> BoardState {
+        if profile().name == "nerdnos" {
+            return BoardState {
+                temp_c: Some(73.5),
+                vr_temp_c: None,
+                vin_mv: None,
+                vout_mv: Some(1392.0),
+                iout_ma: None,
+                power_w: Some(8.0),
+                fan_pct: 0,
+                fan_rpm: 0,
+                fan2_pct: None,
+                fan2_rpm: None,
+                overheat_latched: false,
+                overheat_cause: None,
+                power_estimated: true,
+                has_vr: false,
+            };
+        }
         if gamma() {
             BoardState {
                 temp_c: Some(62.3),
@@ -244,6 +272,7 @@ mod board {
                 overheat_latched: false,
                 overheat_cause: None,
                 power_estimated: profile().name == "nerdnos",
+                has_vr: profile().name != "nerdnos",
             }
         } else {
             BoardState {
@@ -260,7 +289,17 @@ mod board {
                 overheat_latched: false,
                 overheat_cause: None,
                 power_estimated: profile().name == "nerdnos",
+                has_vr: profile().name != "nerdnos",
             }
+        }
+    }
+    pub struct Chip {
+        pub small_cores: u16,
+    }
+    pub fn chip() -> Chip {
+        let n = format!("{:?}", profile().asic);
+        Chip {
+            small_cores: if n.contains("1397") { 672 } else { 2040 },
         }
     }
     pub fn profile() -> &'static Profile {
@@ -294,14 +333,31 @@ mod miner {
         pub frequency_hz: u32,
         pub best_session_diff: u64,
         pub last_block: Option<(u64, u64)>,
+        pub clock_step: Option<u8>,
+        pub chips: u32,
     }
     pub fn state() -> MinerState {
         let g = crate::board::gamma();
+        let nos = crate::board::profile().name == "nerdnos";
         MinerState {
-            hashrate_ghs: if g { 1312.4 } else { 6524.8 },
-            frequency_hz: if g { 640_000_000 } else { 800_000_000 },
+            hashrate_ghs: if nos {
+                148.5
+            } else if g {
+                1312.4
+            } else {
+                6524.8
+            },
+            frequency_hz: if nos {
+                300_000_000
+            } else if g {
+                640_000_000
+            } else {
+                800_000_000
+            },
             best_session_diff: 42_900_000,
             last_block: None,
+            clock_step: None,
+            chips: crate::board::profile().asic_count.into(),
         }
     }
 }
