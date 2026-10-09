@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-372%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.22-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.23-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.22).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.23).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -257,7 +257,8 @@ back at any time with `GET /api/v1/display/frame`.
   its share of the expected rate and the 1 h / 3 h history (hashrate as a
   two-minute average, temperature in steps of at least 0.5 °C, so counting
   noise does not fill the chart), then temperature, fan/power and pool
-  instruments; live log. Optional (*Settings → Dashboard*, off by default):
+  instruments; the best difficulty since the start next to the all-time
+  best, which survives restarts; live log. Optional (*Settings → Dashboard*, off by default):
   the hash counters per chip and domain, a weak domain marked in colour,
   a total line on boards with several chips, and the error rate over the
   last minute. The BM1373 has eight hash
@@ -334,6 +335,9 @@ back at any time with `GET /api/v1/display/frame`.
   the last hour's hashrate, Bitcoin, device, pool and log pages,
   anti-aliased fonts (Space Grotesk, JetBrains Mono, Inter) pre-rendered at
   build time.
+  On a board without regulator or fan (NerdNOS) the device page shows
+  what it has instead: the ESP32-S3's temperature, the effective rate, the
+  Wi-Fi signal, the clock after a restart and the shutdown temperature.
 - Bitaxe OLED: large hashrate, rotating values, info slides, share blink.
 - Boot screen: the WarpAxe logo, and on the colour-display boards the
   maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
