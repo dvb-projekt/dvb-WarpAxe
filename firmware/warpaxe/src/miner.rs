@@ -371,7 +371,8 @@ fn run(mut uart: ChipUart) {
             s.difficulty = pool_diff;
         });
         log::info!(
-            "miner: chain start, target {start_mhz} MHz, difficulty {pool_diff}"
+            "miner: chain start, target {start_mhz} MHz, difficulty {pool_diff}, {} init",
+            board::chip().init_source
         );
 
         // serial -> (job, notify count when built, uptime s when built)

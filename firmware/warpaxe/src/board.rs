@@ -35,7 +35,12 @@ use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
 use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
-use warpaxe_core::chip::{bm1370::BM1370, bm1373::BM1373, bm1397::BM1397, ChipProfile};
+use warpaxe_core::chip::{
+    bm1370::{BM1370, BM1370_NERD},
+    bm1373::BM1373,
+    bm1397::BM1397,
+    ChipProfile,
+};
 
 use crate::config;
 
@@ -194,10 +199,17 @@ pub fn profile() -> &'static Profile {
         .unwrap_or(&warpaxe_board::T_DISPLAY_S3_DEVKIT)
 }
 
-/// The chip profile the board's chain is built from.
+/// The chip profile the board's chain is built from. A BM1370 on a Nerd
+/// carrier (the TPS5364x boards and the Rev 7 NerdQAxe++) gets NerdOS's
+/// init, the firmware those boards ship with; a Bitaxe board (and the
+/// NerdAxe Gamma, which ESP-Miner's TPS546 profile covers) gets
+/// ESP-Miner's. See `warpaxe_core::chip::bm1370`.
 pub fn chip() -> &'static ChipProfile {
     match profile().asic {
-        Asic::Bm1370 => &BM1370,
+        Asic::Bm1370 => match profile().vr {
+            Vr::Tps5364x { .. } | Vr::Tps546Nerd { .. } => &BM1370_NERD,
+            _ => &BM1370,
+        },
         Asic::Bm1373 => &BM1373,
         Asic::Bm1397 => &BM1397,
     }

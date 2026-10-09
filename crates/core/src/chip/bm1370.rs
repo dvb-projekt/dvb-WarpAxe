@@ -8,16 +8,35 @@
 //! are register writes whose purpose nobody has documented. They are
 //! kept because the chip is known to come up with them.
 //!
-//! Nothing in this file has been confirmed against hardware by this
-//! project yet. The first thing to check on a Gamma is the chip-id
-//! reply (`AA 55 13 70 00 00 00 00 00 00 10`, see `crc.rs`); the second
-//! is that this sequence, sent byte for byte, brings the chip up.
+//! Runs on the Bitaxe Gamma, the BitForge Nano, the NerdQAxe++ and the
+//! NerdOctaxe-γ since 2026-09.
+//!
+//! Two inits, one chip. ESP-Miner's `BM1370_init()` changed in 3a09ea0
+//! (2026-08-29, "Bitaxe Color: Naja Duo and Gamma Hex support", #1916):
+//! the core register 0x00 ("ClockDelayCtrlV2", written as `3C 80 00 80
+//! xx`) went from 0x0C ("from S21Pro dump") to 0x10, and two writes were
+//! added, `14 00 00 00 FF` before the ticket mask and `54 00 00 00 03`
+//! before the driver strength. Every BM1370 firmware before that, and
+//! NerdOS to this day (`components/bm1397/bm1370.cpp`, the firmware the
+//! Nerd boards ship with), has 0x0C and neither write. [`BM1370`] is the
+//! ESP-Miner init for the Bitaxe boards; [`BM1370_NERD`] is NerdOS's for
+//! the Nerd carriers, chosen by the board. Made after the NerdOctaxe-γ
+//! (.45) kept bringing up one hash domain of one chip at 3 % of its
+//! rate on 0x10 with every configuration register reading the same as
+//! on a healthy chip (2026-10-09, `docs/04-Octaxe-Warm-Reboot-Latch.md`).
 
 use super::{ChipProfile, Hcn, InitStep};
 use crate::pll::PllSpec;
 use crate::regs::{reg, FAST_UART_1M, FAST_UART_1M_BAUD};
 
 const D: InitStep = InitStep::Delay { ms: 10 };
+
+/// Core register 0x00, "ClockDelayCtrlV2": ESP-Miner since 3a09ea0
+/// (`BM1370_CLOCK_DELAY_CTRL_VALUE`).
+const CLOCK_DELAY_ESP_MINER: u8 = 0x10;
+/// The same register as NerdOS writes it, and ESP-Miner before 3a09ea0
+/// ("from S21Pro dump"; the S21 dump's 0x18 is commented out in both).
+const CLOCK_DELAY_NERDOS: u8 = 0x0C;
 
 /// `BM1370_init()` up to and including the address assignment and the
 /// chain-wide register setup.
@@ -53,7 +72,7 @@ const INIT_CHAIN: &[InitStep] = &[
     // Core Register Control, internal ClockDelayCtrlV2 (value 0x10)
     InitStep::WriteAll {
         reg: reg::CORE_REGISTER_CONTROL,
-        value: [0x80, 0x00, 0x80, 0x10],
+        value: [0x80, 0x00, 0x80, CLOCK_DELAY_ESP_MINER],
     },
     D,
     // "Present in the S21 XP init between core register control and analog mux."
@@ -104,10 +123,82 @@ const INIT_PER_CHIP: &[InitStep] = &[
     // Core Register Control, ClockDelayCtrlV2
     InitStep::WriteChip {
         reg: reg::CORE_REGISTER_CONTROL,
-        value: [0x80, 0x00, 0x80, 0x10],
+        value: [0x80, 0x00, 0x80, CLOCK_DELAY_ESP_MINER],
     },
     D,
     // Core Register Control
+    InitStep::WriteChip {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x82, 0xAA],
+    },
+    D,
+];
+
+/// NerdOS `BM1370::init` up to the per-chip loop: [`INIT_CHAIN`] with
+/// ClockDelayCtrl 0x0C and without the `14 …FF` and `54 …03` writes.
+/// NerdOS has no delays between its writes; ESP-Miner's 10 ms are kept
+/// (a pause hurts nothing, and the Bitaxe boards come up with them).
+/// NerdOS writes the version mask four times at the start and once more
+/// at the very end of its init; the extra ones are left out as noise.
+const INIT_CHAIN_NERD: &[InitStep] = &[
+    InitStep::VersionMask,
+    InitStep::VersionMask,
+    InitStep::VersionMask,
+    InitStep::ReadAll { reg: reg::CHIP_ID },
+    InitStep::CountChips,
+    InitStep::VersionMask,
+    InitStep::WriteAll {
+        reg: reg::SOFT_RESET_CONTROL,
+        value: [0x00, 0x07, 0x00, 0x00],
+    },
+    InitStep::WriteAll {
+        reg: reg::MISC_CONTROL,
+        value: [0xF0, 0x00, 0xC1, 0x00],
+    },
+    InitStep::ChainInactive,
+    InitStep::SetAddress,
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x8B, 0x00],
+    },
+    D,
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x80, CLOCK_DELAY_NERDOS],
+    },
+    D,
+    InitStep::TicketMask,
+    D,
+    InitStep::WriteAll {
+        reg: reg::IO_DRIVER_STRENGTH,
+        value: [0x00, 0x01, 0x11, 0x11],
+    },
+    InitStep::WriteAll {
+        reg: reg::PLL3_PARAMETER,
+        value: [0x5A, 0xA5, 0x5A, 0xA5],
+    },
+];
+
+/// NerdOS's per-chip block: [`INIT_PER_CHIP`] with ClockDelayCtrl 0x0C.
+const INIT_PER_CHIP_NERD: &[InitStep] = &[
+    InitStep::WriteChip {
+        reg: reg::SOFT_RESET_CONTROL,
+        value: [0x00, 0x07, 0x01, 0xF0],
+    },
+    InitStep::WriteChip {
+        reg: reg::MISC_CONTROL,
+        value: [0xF0, 0x00, 0xC1, 0x00],
+    },
+    InitStep::WriteChip {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x8B, 0x00],
+    },
+    D,
+    InitStep::WriteChip {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x80, CLOCK_DELAY_NERDOS],
+    },
+    D,
     InitStep::WriteChip {
         reg: reg::CORE_REGISTER_CONTROL,
         value: [0x80, 0x00, 0x82, 0xAA],
@@ -168,7 +259,17 @@ pub const BM1370: ChipProfile = ChipProfile {
     fast_uart_reg: reg::FAST_UART_CONFIGURATION,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
+    init_source: "ESP-Miner",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
     init_post: INIT_POST,
+};
+
+/// The BM1370 as NerdOS brings it up: the Nerd carriers' init (see the
+/// module notes). Everything but the init lists is [`BM1370`].
+pub const BM1370_NERD: ChipProfile = ChipProfile {
+    init_source: "NerdOS",
+    init_chain: INIT_CHAIN_NERD,
+    init_per_chip: INIT_PER_CHIP_NERD,
+    ..BM1370
 };

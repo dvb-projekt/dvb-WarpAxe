@@ -178,6 +178,10 @@ pub struct ChipProfile {
     /// `prefreq`, WantClue `prefreq1`, ESP-Miner `prefreq1`). `None` on
     /// the chips whose drivers write PLL0 alone.
     pub pll_prewrite: Option<(u8, [u8; 4])>,
+    /// Whose init sequence the three lists below transcribe: the
+    /// reference firmware of the boards the profile is chosen for
+    /// ("ESP-Miner", "NerdOS", …). Logged at chain start.
+    pub init_source: &'static str,
     /// Initialisation before and including chain enumeration and
     /// addressing; `SetAddress` expands per chip.
     pub init_chain: &'static [InitStep],
@@ -541,6 +545,74 @@ mod tests {
                 .unwrap_or_else(|| panic!("frame {want:02x?} not found after index {cursor}"));
             cursor += pos + 1;
         }
+    }
+
+    /// NerdOS `BM1370::init` (develop, `components/bm1397/bm1370.cpp`):
+    /// the same frames as ESP-Miner's except ClockDelayCtrl 0x0C, and no
+    /// `14 …FF` or `54 …03` write. Checked on the payloads of the whole
+    /// rendered sequence for one chip.
+    #[test]
+    fn bm1370_nerd_init_is_nerdos_frame_for_frame() {
+        let nerd: Vec<Vec<u8>> = render(&bm1370::BM1370_NERD, 1)
+            .filter(|r| !matches!(r, Rendered::Delay(_) | Rendered::CountChips))
+            .map(|r| r.payload().to_vec())
+            .collect();
+        // Its clock delay, chain-wide and per chip, is NerdOS's 0x0C.
+        let clock_delay: Vec<&Vec<u8>> = nerd
+            .iter()
+            .filter(|p| p.get(1) == Some(&reg::CORE_REGISTER_CONTROL) && p.get(4) == Some(&0x80))
+            .collect();
+        assert_eq!(
+            clock_delay,
+            vec![
+                &vec![0x00, 0x3C, 0x80, 0x00, 0x80, 0x0C],
+                &vec![0x00, 0x3C, 0x80, 0x00, 0x80, 0x0C],
+            ],
+            "chain-wide, then for chip 0"
+        );
+        // One ticket mask only (the profile's), no S21 XP literal.
+        let tickets: Vec<&Vec<u8>> = nerd
+            .iter()
+            .filter(|p| p.get(1) == Some(&reg::TICKET_MASK))
+            .collect();
+        assert_eq!(tickets, vec![&vec![0x00, 0x14, 0x00, 0x00, 0x00, 0xFF]]);
+        // The analog mux is written once, after the per-chip block, with 02.
+        let mux: Vec<&Vec<u8>> = nerd
+            .iter()
+            .filter(|p| p.get(1) == Some(&reg::ANALOG_MUX_CONTROL))
+            .collect();
+        assert_eq!(mux, vec![&vec![0x00, 0x54, 0x00, 0x00, 0x00, 0x02]]);
+        // Otherwise the same writes as the ESP-Miner init, in order.
+        let esp: Vec<Vec<u8>> = render(&bm1370::BM1370, 1)
+            .filter(|r| !matches!(r, Rendered::Delay(_) | Rendered::CountChips))
+            .map(|r| r.payload().to_vec())
+            .filter(|p| p != &[0x00, 0x54, 0x00, 0x00, 0x00, 0x03])
+            .map(|mut p| {
+                if p.get(1) == Some(&reg::CORE_REGISTER_CONTROL) && p.get(4) == Some(&0x80) {
+                    p[5] = 0x0C;
+                }
+                p
+            })
+            .collect();
+        // ESP-Miner's literal ticket line and the TicketMask step render
+        // the same bytes; the Nerd list has the step only.
+        let esp: Vec<Vec<u8>> = {
+            let mut seen_ticket = false;
+            esp.into_iter()
+                .filter(|p| {
+                    if p.get(1) == Some(&reg::TICKET_MASK) {
+                        let keep = seen_ticket;
+                        seen_ticket = true;
+                        return keep;
+                    }
+                    true
+                })
+                .collect()
+        };
+        assert_eq!(nerd, esp);
+        assert_eq!(bm1370::BM1370_NERD.init_source, "NerdOS");
+        assert_eq!(bm1370::BM1370_NERD.init_post, bm1370::BM1370.init_post);
+        assert_eq!(bm1370::BM1370_NERD.pll, bm1370::BM1370.pll);
     }
 
     /// Structure of the one-chip init, step by step, against `BM1370_init()`.

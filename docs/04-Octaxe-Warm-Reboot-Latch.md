@@ -135,7 +135,78 @@ Not done, and why:
 - A minimum off time for a manual chips off/on. WarpTune and the API
   choose the off time; the firmware does not add to it.
 
-## Test plan for the .45
+## The bench, and what it turned the search into (2026-10-09, afternoon)
+
+dvb-WarpAxe #2 ran bbbed33 on the .45: six power-ups (one OTA upload,
+two restarts, three chips off/on of 12 s with the new path), domains at
++2–2.5 min. Two of six came up with all 32 (the OTA and the first chips
+off/on); the others had chip 2 or chip 8, always **domain 2**, under
+50 GH/s. The morning's old path was 0 of 5, the power cycle 1 of 1.
+The park/unpark and LDO lines appeared as designed, the chain came back
+with 8 chips and 0 rejects every time. Two things changed the picture:
+
+- The warm-boot pause never fired: the regulator comes up ~11.5 s after
+  boot on this board, so enable and LDO had been low longer than the 5 s
+  already — before this branch too. The off time was never the
+  difference between warm and cold.
+- A register capture (0x00–0xFF on chips 1–4 and 8, chip 8's domain 2
+  dead) showed **every configuration register identical** across the
+  five chips; only status and counters differ. The dead domain's counter
+  (0x89) advanced at ~3 % of the others', not zero. So the domain is not
+  mis-configured and not stopped: it runs, barely. A clock or analog
+  margin at 700 MHz / 1210 mV in one domain, decided at bring-up.
+
+That moved the diff from the rails to the chip init. Against NerdOS
+(`components/bm1397/bm1370.cpp` + `asic.cpp`, develop) the WarpAxe
+BM1370 init — a transcription of ESP-Miner v2.15.2rc0-17 — is the same
+frame for frame, with the ramp (56.25 MHz, 6.25 MHz steps, 100 ms) and
+the PLL rule (fb 160–239, VCO-scale bit from 2400 MHz) the same too,
+except:
+
+| | WarpAxe = ESP-Miner since 3a09ea0 (2026-08-29) | NerdOS, and ESP-Miner before |
+|---|---|---|
+| Core register 0x00, "ClockDelayCtrlV2" (`3C 80 00 80 xx`), chain-wide and per chip | **0x10** | **0x0C** ("from S21Pro dump") |
+| `14 00 00 00 FF` before the ticket mask | sent | not sent |
+| `54 00 00 00 03` before the driver strength | sent | not sent |
+| 10 ms between the core writes | yes | none |
+| Register 0x10 | ESP-Miner's hash counting number (~0x12386 at 700 MHz, 8 chips) | a fixed 0x1eb5 |
+
+The first three came in with one ESP-Miner pull request, "Bitaxe Color:
+Naja Duo and Gamma Hex support" (#1916). The Octaxe ran its whole life
+under NerdOS on 0x0C. A per-core clock-delay trim is exactly what would
+leave one domain of a chip nearly stopped at 700 MHz with nothing to
+read back. NerdOS reads only the total counter (0x8C), so under NerdOS
+the same fault would show as the board running 3 % short, never as a
+domain.
+
+**Done (commit after bbbed33):** a second BM1370 profile,
+`BM1370_NERD` (`crates/core/src/chip/bm1370.rs`): ClockDelayCtrl 0x0C,
+without the two writes, the delays kept; everything else `BM1370`.
+`board::chip()` picks it for the Nerd carriers (`Vr::Tps5364x`, and the
+Rev 7 NerdQAxe++); the Bitaxe boards and the NerdAxe Gamma keep
+ESP-Miner's. A host test holds the variant to NerdOS's frames. The
+chain-start log line says which init ran (`… ESP-Miner init` /
+`… NerdOS init`). This changes the NerdQAxe++ (.41) as well.
+
+**Open:** register 0x10. NerdOS's fixed 0x1eb5 against ESP-Miner's
+computed number is a different nonce-space walk, not a reason for a
+domain at 3 %; left as is until the bench says the clock delay was not
+it.
+
+### Test plan, second round
+
+1. The .45, the new image: the same six power-ups as before (OTA, two
+   restarts, three chips off/on), domains at +2 min; `grep "NerdOS
+   init"` in the log once. Pass: 32 domains six times.
+2. Cheap test on a dead-domain state, before or after 1 (a device write,
+   Oliver's OK): clock 700 → 600 MHz by PATCH, 2 min, domains; back to
+   700, 2 min, domains. Comes back at 600 and dies at 700 = clock margin
+   at 700 on this chip (1210 mV too little for that domain, or the
+   trim); stays dead at 600 = decided at bring-up.
+3. The .41: one power-up with the new init, domains at +2 min, first
+   shares.
+
+## Test plan for the .45 (first round, as run)
 
 Flash only with Oliver's OK and a heads-up to Warppool #2; a committed
 image only; WarpTune's re-inits off (or its latch rule at "needs a power
