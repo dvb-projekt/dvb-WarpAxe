@@ -28,7 +28,8 @@ Sources:
   solomining.de answered on 2026-10-08 that the NerdNOS is not theirs, and
   that as long as WarpAxe is open source they have nothing against showing
   all the logos, without a request for each one. The NerdNOS artwork is
-  WantClue's; his consent is still open.
+  WantClue's, and he agreed on 2026-10-09 (Discord) that WarpAxe shows the
+  NerdNOS lettering on the boot screen.
 
 "NerdQAxe", "NerdOctaxe", "NerdAxe" and "NerdQX" are trade marks
 registered by solomining.de (Bolt Engineering GmbH) on behalf of OSMU.

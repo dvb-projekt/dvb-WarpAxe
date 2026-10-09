@@ -337,7 +337,7 @@ back at any time with `GET /api/v1/display/frame`.
 - Bitaxe OLED: large hashrate, rotating values, info slides, share blink.
 - Boot screen: the WarpAxe logo, and on the colour-display boards the
   maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
-  NerdAxe Gaia, Bitaxe Naja Duo and Gamma Hex), shown with the makers'
+  NerdAxe Gaia, NerdNOS, Bitaxe Naja Duo and Gamma Hex), shown with the makers'
   consent; the small-OLED Bitaxes show the model name instead.
 - Special screens for block found, overheat, chips off and firmware update;
   display language, time zone, screen timeout.
@@ -599,9 +599,10 @@ the firmware is Satoshi Nakamoto's `bitcoin.pdf` (SHA-256
 
 The makers' wordmarks on the boot screen come from the makers' own
 firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
-firmware themes, the Bitaxe wordmark is ESP-Miner's, unchanged. They are
-shown with the consent of solomining.de (trade mark holder for the Nerd
-names), shufps, Bitronics (BitMaker, maker of the Gaia) and skot
+firmware themes, the NerdNOS lettering from WantClue's NerdNOS firmware,
+the Bitaxe wordmark is ESP-Miner's, unchanged. They are shown with the
+consent of solomining.de (trade mark holder for the Nerd names), shufps,
+Bitronics (BitMaker, maker of the Gaia), WantClue (NerdNOS) and skot
 (Bitaxe). Sources and each consent are
 in [docs/brand/nerd](docs/brand/nerd/README.md) and
 [docs/brand/bitaxe](docs/brand/bitaxe/README.md).
