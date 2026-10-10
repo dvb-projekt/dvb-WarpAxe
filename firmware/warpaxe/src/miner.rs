@@ -372,7 +372,7 @@ fn run(mut uart: ChipUart) {
         });
         log::info!(
             "miner: chain start, target {start_mhz} MHz, difficulty {pool_diff}, {} init",
-            board::chip().init_source
+            board::chip_init_name()
         );
 
         // serial -> (job, notify count when built, uptime s when built)
@@ -391,6 +391,9 @@ fn run(mut uart: ChipUart) {
         let mut counting = false;
         let mut last_phase = Phase::Idle;
         let mut failed_at: Option<Instant> = None;
+        // Nonces since this chain start: a chain that never produced one
+        // under ESP-Miner's BM1373 init is not a hang, it never came up.
+        let mut nonces_since_start: u64 = 0;
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
@@ -420,6 +423,7 @@ fn run(mut uart: ChipUart) {
             for e in events {
                 match e {
                     Event::Nonce(f) => {
+                        nonces_since_start += 1;
                         core_seen(f.chip, f.core, f.small_core);
                         let Some((job, job_seq, job_t)) = jobs.get(&f.work.serial) else {
                             update(|s| s.unknown_job += 1);
@@ -517,6 +521,11 @@ fn run(mut uart: ChipUart) {
                             d.crc_failures
                         );
                         board::chain_ready();
+                        if board::chip().init_source == "ESP-Miner" && board::chip_init_fall_back() {
+                            log::warn!(
+                                "miner: ESP-Miner init: the chain did not come up, NerdOS init from the next start until reboot"
+                            );
+                        }
                         update(|s| {
                             s.init_failures += 1;
                             s.last_error = format!(
@@ -783,6 +792,16 @@ fn run(mut uart: ChipUart) {
                     log::warn!(
                         "miner: all {n} chips silent for 60 s at {mv} mV, restarting the chain"
                     );
+                    // Under ESP-Miner's BM1373 init a chain that answered
+                    // the id read but never hashed is the init, not a hang.
+                    if nonces_since_start == 0
+                        && board::chip().init_source == "ESP-Miner"
+                        && board::chip_init_fall_back()
+                    {
+                        log::warn!(
+                            "miner: ESP-Miner init: no nonce since the chain start, NerdOS init from the next start until reboot"
+                        );
+                    }
                     break;
                 }
             } else {

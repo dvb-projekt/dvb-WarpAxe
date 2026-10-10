@@ -195,6 +195,33 @@ things the step set does not have today:
   names the init that ran ("NerdOS init" / "ESP-Miner init", as on the
   BM1370), so every sample of the A/B can be attributed.
 
+## Step 2, the build (2026-10-10, on the branch, not flashed)
+
+Built after Oliver's OK (via dvb-WarpAxe #2), host gates green, ESP
+image built, nothing flashed:
+
+- `BM1373_ESP` in `crates/core/src/chip/bm1373.rs`: ESP-Miner's lists
+  step for step (the render test pins them item for item, delays and
+  the 3 MBaud switch included); everything else is `BM1373`.
+- `InitStep::SwitchBaud` renders as the 0x28 write plus
+  `Rendered::HostBaud`; the driver moves the host there, resets the
+  decoder, skips its own switch after the lists and writes the enabled
+  version mask after the ramp and the HCN (ESP-Miner's tail). NerdOS's
+  path is untouched (`baud_switch_after_ramp_ms = Some(500)` as before).
+- Simulator: one chip under `BM1373_ESP` comes up, moves to 3 MBaud
+  with nothing lost to a rate mismatch, lands the reference's register
+  values (0x28, 0x10, 0xA4, 0x18, 0x58, 0xA8) and hashes.
+- Setting `chipInit` (`nerdos` | `espminer`, default `nerdos`), PATCH
+  `/api/system`; read at every chain start (chips off/on or a restart
+  applies it); BM1373 only. `/api/system/info` reports `chipInit`
+  (`NerdOS`, `ESP-Miner`, `NerdOS (fallback from ESP-Miner)`), the
+  chain-start log line names the init.
+- Fallback: an init that fails (no chip answers) or a chain that
+  answers the id read but never produces a nonce before the 60 s
+  all-silent restart puts NerdOS's init back until the next boot
+  (setting `nerdos` again also clears it). A chain that hashed and then
+  hangs restarts with the same init, as before.
+
 ## Recommendation
 
 Do step 2, with Oliver's OK and one flash. The candidates 1–3 are the

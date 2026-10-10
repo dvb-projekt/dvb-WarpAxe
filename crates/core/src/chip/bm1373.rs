@@ -20,7 +20,7 @@
 
 use super::{ChipProfile, Hcn, InitStep};
 use crate::pll::PllSpec;
-use crate::regs::{reg, FAST_UART_1M, FAST_UART_1M_BAUD};
+use crate::regs::{reg, FAST_UART_1M, FAST_UART_1M_BAUD, FAST_UART_3M, FAST_UART_3M_BAUD};
 
 /// `BM1373::init()` up to the chain-wide register setup.
 const INIT_CHAIN: &[InitStep] = &[
@@ -141,10 +141,230 @@ pub const BM1373: ChipProfile = ChipProfile {
     init_post: INIT_POST,
 };
 
+/// ESP-Miner's `BM1373_init()` (bitaxeorg/ESP-Miner `master` a31e084,
+/// `components/asic/bm1373.c`, the init unchanged since 5c27713 of
+/// 2026-08-22; the firmware of the Bitaxe Naja Duo), step for step,
+/// comments from the C where it had them. Read 2026-10-10; the diff
+/// against NerdOS's is `docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`.
+/// ESP-Miner waits `BM1372_INIT_STEP_DELAY_MS` (10 ms) between its
+/// steps and 20 ms after the soft reset. The ticket mask is the
+/// profile's, as in the NerdOS list (256 on the Naja Duo; the Gaia's
+/// 4096 here). Never run on a chip under WarpAxe: the A/B candidate for
+/// the Gaia's error rate ([`BM1373_ESP`]).
+const D: InitStep = InitStep::Delay { ms: 10 };
+
+/// `BM1373_init()` up to the chain-wide IO driver strength.
+const INIT_CHAIN_ESP: &[InitStep] = &[
+    // "Discover the chain at reset baud before changing any ASIC
+    // configuration." No version mask first.
+    InitStep::ReadAll { reg: reg::CHIP_ID },
+    InitStep::CountChips,
+    InitStep::ChainInactive,
+    D,
+    InitStep::SetAddress,
+    D,
+    // "Match the stock BM1372 setup order: nonce overflow, ticket mask,
+    // IO, ring-oscillator pads, then UART and the staged core
+    // initialization." Core register 0x0D, nonce bin overflow ctrl:
+    // disable (0x04).
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x8D, 0x04],
+    },
+    InitStep::TicketMask,
+    InitStep::WriteAll {
+        reg: reg::IO_DRIVER_STRENGTH,
+        value: [0x00, 0x01, 0x11, 0x11],
+    },
+];
+
+/// The IO driver strength for the last chip of each voltage domain
+/// (`BM1372_IO_DRIVER_STRENGTH_DOMAIN_END`). ESP-Miner writes it to
+/// that chip alone; on the Gaia (one chip, one domain) and the Naja Duo
+/// (two chips in two domains) that is every chip, which is what the
+/// per-chip list reaches. A multi-chip single-domain board would need a
+/// domain-aware step.
+const INIT_PER_CHIP_ESP: &[InitStep] = &[InitStep::WriteChip {
+    reg: reg::IO_DRIVER_STRENGTH,
+    value: [0x00, 0x01, 0xF1, 0x11],
+}];
+
+/// From the ROSC pad disable to the analog mux: the UART switch, the
+/// "fast" soft reset and the staged core registers.
+const INIT_POST_ESP: &[InitStep] = &[
+    // ROSC pad disable (NerdOS calls it the PLL3 parameter), same word.
+    InitStep::WriteAll {
+        reg: reg::PLL3_PARAMETER,
+        value: [0x5A, 0xA5, 0x5A, 0xA5],
+    },
+    D,
+    // Auto work configuration 0, then the chips to 3 MBaud and the host
+    // after them ("Setting ASIC UART to 3000000 baud").
+    InitStep::WriteAll {
+        reg: reg::AUTO_WORK_CONFIGURATION,
+        value: [0x00, 0x00, 0x00, 0x00],
+    },
+    InitStep::SwitchBaud,
+    D,
+    // "fast" soft reset, then 20 ms
+    InitStep::WriteAll {
+        reg: reg::SOFT_RESET_CONTROL,
+        value: [0xF0, 0x07, 0x01, 0xF0],
+    },
+    InitStep::Delay { ms: 20 },
+    // Misc control ("RNO enable"): NerdOS's word, broadcast only.
+    InitStep::WriteAll {
+        reg: reg::MISC_CONTROL,
+        value: [0xFF, 0x00, 0xC1, 0x00],
+    },
+    D,
+    // Misc control add ("CRR disable")
+    InitStep::WriteAll {
+        reg: reg::MISC_CONTROL_ADD,
+        value: [0x00, 0x00, 0x00, 0x00],
+    },
+    D,
+    // Core register 0x0B, clock select ctrl: 0
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x8B, 0x00],
+    },
+    D,
+    // Core register 0x00, clock delay ctrl: 0x5A ("PWTH6_CCDLY2";
+    // NerdOS writes 0x0C here)
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x80, 0x5A],
+    },
+    D,
+    // Core register 0x02, core enable
+    InitStep::WriteAll {
+        reg: reg::CORE_REGISTER_CONTROL,
+        value: [0x80, 0x00, 0x82, 0xAA],
+    },
+    D,
+    // Analog mux control: the temperature diode
+    InitStep::WriteAll {
+        reg: reg::ANALOG_MUX_CONTROL,
+        value: [0x00, 0x00, 0x00, 0x02],
+    },
+    // …then `do_frequency_transition()` from 50 MHz (the first word on
+    // the grid is 56.25 MHz, where our ramp starts), the hash counting
+    // number and the enabled version mask: the driver's tail.
+];
+
+/// The BM1373 as ESP-Miner brings it up (see the notes on
+/// [`INIT_CHAIN_ESP`]). Everything but the init lists and the UART rate
+/// is [`BM1373`]. The list switches the UART itself
+/// ([`InitStep::SwitchBaud`], 3 MBaud); after the lists the driver only
+/// ramps, writes the hash counting number and enables version rolling.
+/// Chosen on the Gaia by the `chipInit` setting, never by default.
+pub const BM1373_ESP: ChipProfile = ChipProfile {
+    baud_switch_after_ramp_ms: None,
+    fast_uart: (FAST_UART_3M, FAST_UART_3M_BAUD),
+    init_source: "ESP-Miner",
+    init_chain: INIT_CHAIN_ESP,
+    init_per_chip: INIT_PER_CHIP_ESP,
+    init_post: INIT_POST_ESP,
+    ..BM1373
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::chip::{render, Rendered};
+
+    /// ESP-Miner `BM1373_init()` for one chip (the Gaia), item for item,
+    /// up to the analog mux; the ramp, 0x10 and the enabled mask are the
+    /// driver's. Delays as the C has them (`vTaskDelay` 10 ms, 20 ms
+    /// after the soft reset, none elsewhere).
+    #[test]
+    fn esp_init_renders_esp_miner_sequence_for_one_chip() {
+        use crate::frame::{Group, Op};
+        let all = |reg: u8, v: [u8; 4]| Rendered::write(Group::All, 0x00, reg, v);
+        let d = Rendered::Delay(10);
+        let want = vec![
+            Rendered::two(Group::All, Op::Read, 0x00, 0x00),
+            Rendered::CountChips,
+            Rendered::two(Group::All, Op::Inactive, 0x00, 0x00),
+            d,
+            Rendered::two(Group::Single, Op::SetAddress, 0x00, 0x00),
+            d,
+            all(0x3C, [0x80, 0x00, 0x8D, 0x04]),
+            all(0x14, crate::regs::ticket_mask(4096.0)),
+            all(0x58, [0x00, 0x01, 0x11, 0x11]),
+            // the domain-end strength, to chip 0 at command address 0
+            Rendered::write(Group::Single, 0x00, 0x58, [0x00, 0x01, 0xF1, 0x11]),
+            all(0x68, [0x5A, 0xA5, 0x5A, 0xA5]),
+            d,
+            all(0xC4, [0x00, 0x00, 0x00, 0x00]),
+            all(0x28, [0x80, 0x00, 0x00, 0x00]),
+            Rendered::HostBaud(3_000_000),
+            d,
+            all(0xA8, [0xF0, 0x07, 0x01, 0xF0]),
+            Rendered::Delay(20),
+            all(0x18, [0xFF, 0x00, 0xC1, 0x00]),
+            d,
+            all(0x19, [0x00, 0x00, 0x00, 0x00]),
+            d,
+            all(0x3C, [0x80, 0x00, 0x8B, 0x00]),
+            d,
+            all(0x3C, [0x80, 0x00, 0x80, 0x5A]),
+            d,
+            all(0x3C, [0x80, 0x00, 0x82, 0xAA]),
+            d,
+            all(0x54, [0x00, 0x00, 0x00, 0x02]),
+        ];
+        let got: Vec<Rendered> = render(&BM1373_ESP, 1).collect();
+        assert_eq!(got, want);
+        // No version-mask write in the lists at all: ESP-Miner enables
+        // rolling once, after the ramp (the driver's tail).
+        assert!(got
+            .iter()
+            .all(|r| r.payload().get(1) != Some(&reg::VERSION_ROLLING)));
+    }
+
+    /// The Naja Duo: two chips in two domains, so both get the domain-end
+    /// strength, at command addresses 0 and 4 (16 ÷ 4).
+    #[test]
+    fn esp_init_writes_the_domain_end_strength_to_each_chip() {
+        use crate::frame::Group;
+        let ends: Vec<Rendered> = render(&BM1373_ESP, 2)
+            .filter(|r| {
+                r.payload().get(1) == Some(&reg::IO_DRIVER_STRENGTH)
+                    && r.payload()[2..] == [0x00, 0x01, 0xF1, 0x11]
+            })
+            .collect();
+        assert_eq!(
+            ends,
+            vec![
+                Rendered::write(Group::Single, 0x00, 0x58, [0x00, 0x01, 0xF1, 0x11]),
+                Rendered::write(Group::Single, 0x04, 0x58, [0x00, 0x01, 0xF1, 0x11]),
+            ]
+        );
+    }
+
+    /// Only the init and the UART rate differ from the NerdOS profile.
+    #[test]
+    fn esp_profile_is_the_bm1373_with_another_init() {
+        assert_eq!(BM1373_ESP.init_source, "ESP-Miner");
+        assert_eq!(BM1373_ESP.fast_uart, ([0x80, 0x00, 0x00, 0x00], 3_000_000));
+        assert_eq!(BM1373_ESP.baud_switch_after_ramp_ms, None);
+        assert_eq!(BM1373_ESP.chip_id, BM1373.chip_id);
+        assert_eq!(BM1373_ESP.chip_id_alias, BM1373.chip_id_alias);
+        assert_eq!(BM1373_ESP.chip_id_reply_len, BM1373.chip_id_reply_len);
+        assert_eq!(BM1373_ESP.address_stride, BM1373.address_stride);
+        assert_eq!(
+            BM1373_ESP.command_address_shift,
+            BM1373.command_address_shift
+        );
+        assert_eq!(BM1373_ESP.hcn, BM1373.hcn);
+        assert_eq!(BM1373_ESP.pll, BM1373.pll);
+        assert_eq!(BM1373_ESP.count_window_ms, BM1373.count_window_ms);
+        assert_eq!(BM1373_ESP.job_interval_ms, BM1373.job_interval_ms);
+        assert_eq!(BM1373_ESP.default_difficulty, BM1373.default_difficulty);
+        assert_eq!(BM1373_ESP.fast_uart_reg, BM1373.fast_uart_reg);
+    }
 
     #[test]
     fn waits_a_full_second_for_chip_ids_and_switches_baud_last() {
@@ -160,7 +380,7 @@ mod tests {
         let enables = render(&BM1373, 1)
             .filter(|s| match s {
                 Rendered::Cmd { payload, .. } => payload[1] == 0xA4 && payload[2..6] == enable,
-                Rendered::Delay(_) | Rendered::CountChips => false,
+                _ => false,
             })
             .count();
         assert_eq!(enables, 0);

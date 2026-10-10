@@ -69,6 +69,14 @@ pub enum InitStep {
     /// [`ChipProfile::chip_id_reply_len`] bytes each) and derives the
     /// chain length. Yields nothing on the wire.
     CountChips,
+    /// Switch the UART in the middle of the list: write the profile's
+    /// fast-UART word ([`ChipProfile::fast_uart`]) to every chip, then
+    /// move the host to that rate (ESP-Miner's BM1373 init, which goes
+    /// to 3 MBaud between the IO-strength block and the soft reset).
+    /// Renders as the write followed by [`Rendered::HostBaud`]. A profile
+    /// with this step gets no second switch from the driver after the
+    /// lists, and the enabled version-rolling mask after the ramp.
+    SwitchBaud,
 }
 
 /// The hash counting number (register 0x10): how far each core rolls
@@ -305,6 +313,9 @@ pub enum Rendered {
     Delay(u16),
     /// Collect chip-id replies now.
     CountChips,
+    /// Move the host UART to this rate: the chips were just told it
+    /// (the write before this item). Nothing on the wire.
+    HostBaud(u32),
 }
 
 impl Rendered {
@@ -416,6 +427,20 @@ impl Render<'_> {
             }
             InitStep::Delay { ms } => Rendered::Delay(ms),
             InitStep::CountChips => Rendered::CountChips,
+            InitStep::SwitchBaud => {
+                // Two items: the write to the chips, then the host's move.
+                let (word, baud) = p.fast_uart;
+                let item = match self.sub {
+                    0 => Rendered::write(Group::All, 0x00, p.fast_uart_reg, word),
+                    1 => Rendered::HostBaud(baud),
+                    _ => {
+                        self.sub = 0;
+                        return None;
+                    }
+                };
+                self.sub += 1;
+                return Some(item);
+            }
         })
     }
 }
@@ -436,7 +461,7 @@ impl Iterator for Render<'_> {
             };
             if self.idx < list.len() {
                 let step = list[self.idx];
-                let expanding = matches!(step, InitStep::SetAddress);
+                let expanding = matches!(step, InitStep::SetAddress | InitStep::SwitchBaud);
                 match self.expand(step, chip_addr) {
                     Some(r) => {
                         if !expanding {

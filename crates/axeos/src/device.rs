@@ -221,7 +221,8 @@ impl Device {
                     self.chain.feed(&buf[..k]);
                 }
                 Rendered::Delay(ms) => self.chain.advance(u64::from(ms) * 1000),
-                Rendered::CountChips => {}
+                // The emulated chain has no host rate to move.
+                Rendered::CountChips | Rendered::HostBaud(_) => {}
             }
         }
         // Swallow the chip-id reply; the firmware has counted its chips.

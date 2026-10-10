@@ -37,7 +37,7 @@ use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
     bm1370::{BM1370, BM1370_NERD},
-    bm1373::BM1373,
+    bm1373::{BM1373, BM1373_ESP},
     bm1397::BM1397,
     ChipProfile,
 };
@@ -126,6 +126,10 @@ pub struct BoardState {
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
 static OVERHEAT: AtomicBool = AtomicBool::new(false);
+/// ESP-Miner's BM1373 init was asked for and the chain did not come up
+/// with it: NerdOS's init until the next boot (or until the setting
+/// goes back to `nerdos`, which clears this).
+static CHIP_INIT_FALLBACK: AtomicBool = AtomicBool::new(false);
 /// When the chips may run again after an overheat stop.
 static GUARD: Mutex<Guard> = Mutex::new(Guard::new());
 /// Chips switched off by hand (web UI / API), not by a limit.
@@ -210,9 +214,37 @@ pub fn chip() -> &'static ChipProfile {
             Vr::Tps5364x { .. } | Vr::Tps546Nerd { .. } => &BM1370_NERD,
             _ => &BM1370,
         },
-        Asic::Bm1373 => &BM1373,
+        // NerdOS's init (the Gaia's stock) unless the `chipInit` setting
+        // asks for ESP-Miner's and that one has not failed since boot.
+        Asic::Bm1373 => {
+            if config::get().chip_init != "espminer" {
+                CHIP_INIT_FALLBACK.store(false, Ordering::Relaxed);
+                &BM1373
+            } else if CHIP_INIT_FALLBACK.load(Ordering::Relaxed) {
+                &BM1373
+            } else {
+                &BM1373_ESP
+            }
+        }
         Asic::Bm1397 => &BM1397,
     }
+}
+
+/// The init the next chain start will use, for the API and the log:
+/// `NerdOS`, `ESP-Miner`, or `NerdOS (fallback from ESP-Miner)`.
+pub fn chip_init_name() -> &'static str {
+    let c = chip();
+    if c.init_source == "NerdOS" && CHIP_INIT_FALLBACK.load(Ordering::Relaxed) {
+        "NerdOS (fallback from ESP-Miner)"
+    } else {
+        c.init_source
+    }
+}
+
+/// ESP-Miner's init did not bring the chain up: NerdOS's from the next
+/// start on, until the next boot. True if this call made the change.
+pub fn chip_init_fall_back() -> bool {
+    !CHIP_INIT_FALLBACK.swap(true, Ordering::Relaxed)
 }
 
 /// True once a temperature limit was crossed, until the board has cooled

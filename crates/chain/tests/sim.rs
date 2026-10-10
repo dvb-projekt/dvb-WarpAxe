@@ -6,7 +6,7 @@ use std::convert::Infallible;
 
 use warpaxe_chain::{Chain, Config, Error, Event, InitError, Phase, Uart, Work};
 use warpaxe_core::chip::bm1370::BM1370;
-use warpaxe_core::chip::bm1373::BM1373;
+use warpaxe_core::chip::bm1373::{BM1373, BM1373_ESP};
 use warpaxe_core::chip::bm1397::BM1397;
 use warpaxe_core::chip::ChipProfile;
 use warpaxe_core::regs::reg;
@@ -476,6 +476,46 @@ fn bm1373_enumerates_with_short_replies_stride_16_and_attributes_nonces() {
         let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
         assert!(n > 50, "chip {i} yielded only {n} nonces in 10 s");
     }
+}
+
+/// The BM1373 as ESP-Miner drives it, end to end: no mask before the
+/// count, the UART moved to 3 MBaud in the middle of the list (the word
+/// leaves at 115200, the host follows, nothing is lost to a rate
+/// mismatch), no second switch after the lists, the hash counting
+/// number and the enabled mask after the ramp, then nonces. Driver and
+/// simulator read the same reference: consistency, not the chip.
+#[test]
+fn bm1373_esp_init_moves_to_3_mbaud_in_the_list_and_hashes() {
+    let config = Config {
+        expected_chips: 1,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373_ESP)
+    };
+    let mut b = Bench::with(&BM1373_ESP, 1, config);
+    b.run_until_ready(20_000);
+    assert_eq!(b.drv.chip_count(), 1);
+    assert_eq!(b.uart.host_baud, 3_000_000);
+    assert_eq!(b.uart.sim.chips()[0].baud(), 3_000_000);
+    assert_eq!(b.uart.lost_to_baud, 0, "no byte lost to a rate mismatch");
+    assert_eq!(b.uart.sim.totals().violations, 0);
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+    let chip = &b.uart.sim.chips()[0];
+    assert_eq!(chip.register(reg::FAST_UART_CONFIGURATION), 0x8000_0000);
+    assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0x0000_1EB5);
+    assert_eq!(chip.register(reg::VERSION_ROLLING), 0x9000_FFFF);
+    assert_eq!(chip.register(reg::MISC_CONTROL), 0xFF00_C100);
+    assert_eq!(chip.register(reg::IO_DRIVER_STRENGTH), 0x0001_F111);
+    assert_eq!(chip.register(reg::SOFT_RESET_CONTROL), 0xF007_01F0);
+
+    b.mine_ms(10_000);
+    let sim_nonces = u64::from(b.uart.sim.totals().nonces);
+    assert!(
+        sim_nonces > 50,
+        "the simulated chip hashed: {sim_nonces} nonces"
+    );
+    let yielded = b.count(|e| matches!(e, Event::Nonce(_))) as u64;
+    assert_eq!(yielded, sim_nonces);
+    assert_eq!(b.uart.lost_to_baud, 0);
 }
 
 /// The BM1397 path end to end against the simulator: the chip answers

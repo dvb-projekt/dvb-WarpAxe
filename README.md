@@ -597,7 +597,10 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
   — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
   ours) against ESP-Miner's, the candidates for the Gaia's error rate,
-  and the plan for an A/B.
+  and the plan for an A/B. The `chipInit` setting (`nerdos` | `espminer`,
+  default `nerdos`, BM1373 only) picks the init at the next chain start;
+  `/api/system/info` reports it as `chipInit`, and a chain that does not
+  come up with ESP-Miner's falls back to NerdOS's until the next boot.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
