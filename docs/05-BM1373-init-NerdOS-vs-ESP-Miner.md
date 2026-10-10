@@ -195,7 +195,82 @@ things the step set does not have today:
   names the init that ran ("NerdOS init" / "ESP-Miner init", as on the
   BM1370), so every sample of the A/B can be attributed.
 
-## Recommendation
+## Step 2, the build (2026-10-10, on the branch, not flashed)
+
+Built after Oliver's OK (via dvb-WarpAxe #2), host gates green, ESP
+image built, nothing flashed:
+
+- `BM1373_ESP` in `crates/core/src/chip/bm1373.rs`: ESP-Miner's lists
+  step for step (the render test pins them item for item, delays and
+  the 3 MBaud switch included); everything else is `BM1373`.
+- `InitStep::SwitchBaud` renders as the 0x28 write plus
+  `Rendered::HostBaud`; the driver moves the host there, resets the
+  decoder, skips its own switch after the lists and writes the enabled
+  version mask after the ramp and the HCN (ESP-Miner's tail). NerdOS's
+  path is untouched (`baud_switch_after_ramp_ms = Some(500)` as before).
+- Simulator: one chip under `BM1373_ESP` comes up, moves to 3 MBaud
+  with nothing lost to a rate mismatch, lands the reference's register
+  values (0x28, 0x10, 0xA4, 0x18, 0x58, 0xA8) and hashes.
+- Setting `chipInit` (`nerdos` | `espminer`, default `nerdos`), PATCH
+  `/api/system`; read at every chain start (chips off/on or a restart
+  applies it); BM1373 only. `/api/system/info` reports `chipInit`
+  (`NerdOS`, `ESP-Miner`, `NerdOS (fallback from ESP-Miner)`), the
+  chain-start log line names the init.
+- Fallback: an init that fails (no chip answers) or a chain that
+  answers the id read but never produces a nonce before the 60 s
+  all-silent restart puts NerdOS's init back until the next boot
+  (setting `nerdos` again also clears it). A chain that hashed and then
+  hangs restarts with the same init, as before.
+
+## Result of the A/B (2026-10-10, the Gaia on cd58c79)
+
+Run by dvb-WarpAxe #2 after Oliver's OK: the Gaia at 380 MHz / 960 mV,
+WarpTune in dry run, `asicDifficulty` 256, blocks NerdOS, ESP-Miner,
+NerdOS, ESP-Miner of 70 min each, the first 10 min of every block
+dropped. Before the first ESP-Miner block the log read "chain start …
+ESP-Miner init", the chip answered, the chain was ready after ~6.5 s,
+`chipInit` read `ESP-Miner`: **3 MBaud before the ramp works on the
+Gaia.** No fallback in any block. Valid rate = (Δ`nonces` −
+Δ`below_ticket`) × 256 × 2³² / Δt against 6860 × 380 MHz = 2607 GH/s.
+
+| Block | Init | Valid nonces / h | Valid rate | Of nominal | Chip error counter Ø |
+|---|---|---|---|---|---|
+| 1 | NerdOS | 8122 | 2516.6 GH/s | 96.5 % | 3.64 % |
+| 2 | ESP-Miner | 8257 | 2558.3 GH/s | 98.1 % | 3.64 % |
+| 3 | NerdOS | 8258 | 2558.9 GH/s | 98.2 % | 3.60 % |
+| 4 | ESP-Miner | 8064 | 2498.7 GH/s | 95.9 % | 3.63 % |
+
+`below_ticket` 0.00 % everywhere; core 30.9 A and chip 62.0 °C in every
+block. Means: NerdOS 97.35 %, ESP-Miner 97.0 %, a difference of −0.35
+points at ±1.1 % per block. **No measurable effect**, on the delivered
+rate or on the chip's own error counter: core 0x0D, core 0x0B, core
+0x00 at 0x5A, the domain-end IO strength and the 3 MBaud order change
+nothing about the ~3.6 % errors. The ~2.7 % gap to the nominal rate
+matches the error counter, as in the 24 h run. The raw log (one line
+per minute) is in the dvb-WarpAxe session's scratchpad, `gaia-ab/ab.jsonl`.
+
+What this settles: the error rate is not a matter of the init. What is
+left is the chip at this voltage and clock (the counter falls with
+voltage, and the regulator is at its limit), and, untested, the PLL
+word at 380 MHz. Test B was skipped: with no effect from the bigger
+change there is no reason to expect one from the smaller, and the
+08.10. chainwatch log already put 380 MHz below 350 MHz.
+
+## Recommendation (after the A/B)
+
+- **The Gaia's default stays NerdOS's init**, which is also the stock
+  firmware's. The Gaia runs it again with the 4096 ticket mask.
+- The `chipInit` switch and `BM1373_ESP` have done their job. Only
+  this document went to main (Oliver, 2026-10-10); the code path stays
+  on the branch `claude/bm1373-init-ab-handoff-ec3720` (cd58c79) for
+  reference, so main has no unused init.
+- In short: ESP-Miner's BM1373 init brings the Gaia up and hashes at
+  the same rate, but it does not move the BM1373's error counter; the
+  ~3.6 % at 380 MHz / 960 mV are the chip's at that point, not the
+  init's.
+
+## The plan before the A/B (kept for the record)
+
 
 Do step 2, with Oliver's OK and one flash. The candidates 1–3 are the
 same kind of core trim that fixed the Octaxe, the Naja Duo proves the
@@ -207,16 +282,24 @@ fallback is enough. Order:
   the chain does not come up or does not hash: **A′** with ESP-Miner's
   registers and our proven tail (1 Mbaud after the ramp, 500 ms), which
   isolates the registers from the UART order.
-- **Enough shares per block.** At ~2.6 TH/s and the pool's current
-  difficulty (~14 600) the Gaia makes ~150 shares an hour, ±8 % per
-  hour, and a 3–6 % effect drowns in that (the 24 h run needed 6187
-  shares for ±1.3 %). Two ways (dvb-WarpAxe #2, 10.10.): **(a)** a low
-  suggested difficulty on the Gaia for the test, e.g. 512 (~4000
-  shares/h, ±1.6 % per hour), a live setting that needs Oliver's OK and
-  Warppool #2's check that the pool accepts it (VarDiff floor); or
-  **(b)** ≥ 12 h per variant in longer blocks, e.g. 4 × 3 h alternating.
-  (a) is the recommendation. `errorPercentage1m` is only the quick early
-  hint, since core 0x0D may change what it counts.
+- **Enough samples per block, from the host's own count.** At ~2.6 TH/s
+  the pool side gives the Gaia ~150–280 shares an hour (±8 % per hour;
+  the 24 h run needed 6187 shares for ±1.3 %), and a lower pool
+  difficulty is out: the Gaia mines over Stratum V2, where
+  `suggest_difficulty` is not read, and over V1 the pool floors at 1024
+  with VarDiff pulling back to ~12 k (Warppool #2, 10.10.). So the
+  measure is the firmware's own re-hashed nonces at a low ticket mask:
+  `asicDifficulty = 256` (PATCH, both inits set it on the same path)
+  gives ~8500 nonces an hour, ±1.1 %. **Not** `hashRate`/`hashRate_10m`:
+  that figure credits every reported nonce, including the ones that fail
+  the re-hash. Use the cumulative counters in `/api/v1/state`:
+  valid = Δ`miner.nonces` − Δ`miner.below_ticket`, rate = valid × 256 ×
+  2³² / Δt, against small cores × clock. `below_ticket / nonces` per
+  init is the chip's error share as the host sees it. 256 is safe on
+  the BM1373: ~2.4 nonces a second, 11 bytes each, one sha256d per nonce
+  on the host; the Gamma runs 256 by default. `errorPercentage1m` is only
+  the quick early hint within one init, since core 0x0D may change what
+  the chip counts.
 - **B, the PLL word, only if A brings nothing.** The chainwatch log of
   08.10. has 350 MHz / 960 mV at 3.3 % (identical word) and 380 MHz /
   960 mV at 1.6 % (six samples only), which looks like clock and
@@ -224,9 +307,16 @@ fallback is enough. Order:
   (identical words in both solvers) against 380 MHz, all at 960 mV,
   pool-side rate per clock against expectation; if 350/400 are clearly
   below 380, offer NerdOS's solver for the BM1373.
-- Judge by pool-side rate and the counter together, with core current
-  and temperature logged (chainwatch logger in
-  `WarpForge-Firmware/messdaten-2026-10/` as the template).
+- **Blocks:** 1 h per init, alternating, twice each, at 380 MHz /
+  960 mV with WarpTune in dry run; the first 10 min after each switch
+  dropped (ramp, temperature). Every sample carries `chipInit` from
+  `/api/system/info` (it must read `ESP-Miner`, not the fallback),
+  clock, core voltage and current, chip temperature, fan. Before the
+  first block: after `chipInit = espminer` and chips off/on, the log
+  says "chain start … ESP-Miner init", the chain hashes and
+  `miner.nonces` climbs. Pool shares (`stratum.shares_accepted`) over
+  the whole run as the cross-check. Chainwatch logger in
+  `WarpForge-Firmware/messdaten-2026-10/` as the template.
 
 The Gaia's default stays NerdOS's init until the numbers say otherwise;
 that is Oliver's call after the A/B. The result goes to Bitronics and
