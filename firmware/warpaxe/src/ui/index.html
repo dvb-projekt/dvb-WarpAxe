@@ -534,7 +534,11 @@ function clockStepNote(i) {
    error counter; a domain well below its siblings shows first here. */
 /* One reading is a per-second snapshot: a domain can dip by a third for a
    moment while the chip moves work between domains. The card shows the
-   mean of the last six polls (30 s), so a colour means a lasting gap. */
+   mean of the last six polls (30 s), so a colour means a lasting gap:
+   yellow below 80 % of the chip's mean, red below half. Even 30-s means
+   of healthy domains spread by about ±10 %, so a 90 % line coloured one
+   of a NerdOctaxe's 32 domains most of the time; a dead domain sits near
+   0 and stays red. */
 let hcHist = [], hcSeen = null;
 function hcSmooth(i, m) {
   if (i !== hcSeen) {
@@ -575,7 +579,7 @@ function hcCard(i) {
     const all = a.domains || [], d = all.filter(v => v != null), mean = d.length ? d.reduce((x, y) => x + y, 0) / d.length : 0, top = Math.max(mean * 1.25, ...d, 1);
     const bars = all.map((v, j) => {
       if (v == null) return "";
-      const col = !mean ? "var(--dim)" : v < mean * .8 ? "var(--err)" : v < mean * .9 ? "var(--warn)" : "linear-gradient(90deg,#7B5CFF,#00E0FF)";
+      const col = !mean ? "var(--dim)" : v < mean * .5 ? "var(--err)" : v < mean * .8 ? "var(--warn)" : "linear-gradient(90deg,#7B5CFF,#00E0FF)";
       return `<div title="${t("hc_domain")} ${j + 1}: ${gh(v)}"><i><b style="width:${Math.min(100, v / top * 100).toFixed(1)}%;background:${col}"></b></i><span class="num">${gh(v)}</span></div>`;
     }).join("");
     return `<div class="hcrow"><span class="lbl">ASIC ${k}</span><b class="num" style="font-size:18px">${gh(a.total || 0)}</b><div class="hcdoms" style="--nd:${Math.min(d.length, 4) || 4}">${bars}</div><span class="num" style="text-align:right;white-space:nowrap">${nf(a.errorCount)} <span class="dim" style="font-size:12px">${t("hc_errors")}</span></span></div>`;
