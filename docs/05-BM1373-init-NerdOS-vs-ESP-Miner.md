@@ -189,8 +189,11 @@ things the step set does not have today:
   chips, two domains) is the same set; a real "last chip per domain"
   step is only needed for a multi-chip single-domain board.
 - The switch: an NVS key (`chipinit` = `nerdos` | `espminer`, default
-  `nerdos`), read in `chip()`; the fallback: a chain that stays silent
-  after the ESP-Miner init is re-inited with NerdOS's, logged and shown.
+  `nerdos`), read in `chip()` and acted on **only for the BM1373**; the
+  fallback: a chain that stays silent after the ESP-Miner init is
+  re-inited with NerdOS's, logged and shown. The log line at chain start
+  names the init that ran ("NerdOS init" / "ESP-Miner init", as on the
+  BM1370), so every sample of the A/B can be attributed.
 
 ## Recommendation
 
@@ -199,16 +202,28 @@ same kind of core trim that fixed the Octaxe, the Naja Duo proves the
 sequence on the same chip and MCU, and one image with a setting and a
 fallback is enough. Order:
 
-- **A: ESP-Miner's init as it is** (3 Mbaud before the ramp), 1 h on /
-  1 h off against NerdOS, twice each, at 380 MHz / 960 mV, WarpTune in
-  dry run. If the chain does not come up or does not hash: **A′** with
-  ESP-Miner's registers and our proven tail (1 Mbaud after the ramp,
-  500 ms), which isolates the registers from the UART order.
-- **B, separately and cheap:** the PLL word. One hour at 350 MHz and
-  one at 400 MHz (identical words in both solvers) against 380 MHz, all
-  at 960 mV, pool-side rate per clock against expectation. If the error
-  counter at 350/400 is clearly below the 380 reading, offer NerdOS's
-  solver for the BM1373.
+- **A: ESP-Miner's init as it is** (3 Mbaud before the ramp) against
+  NerdOS's, alternating, at 380 MHz / 960 mV, WarpTune in dry run. If
+  the chain does not come up or does not hash: **A′** with ESP-Miner's
+  registers and our proven tail (1 Mbaud after the ramp, 500 ms), which
+  isolates the registers from the UART order.
+- **Enough shares per block.** At ~2.6 TH/s and the pool's current
+  difficulty (~14 600) the Gaia makes ~150 shares an hour, ±8 % per
+  hour, and a 3–6 % effect drowns in that (the 24 h run needed 6187
+  shares for ±1.3 %). Two ways (dvb-WarpAxe #2, 10.10.): **(a)** a low
+  suggested difficulty on the Gaia for the test, e.g. 512 (~4000
+  shares/h, ±1.6 % per hour), a live setting that needs Oliver's OK and
+  Warppool #2's check that the pool accepts it (VarDiff floor); or
+  **(b)** ≥ 12 h per variant in longer blocks, e.g. 4 × 3 h alternating.
+  (a) is the recommendation. `errorPercentage1m` is only the quick early
+  hint, since core 0x0D may change what it counts.
+- **B, the PLL word, only if A brings nothing.** The chainwatch log of
+  08.10. has 350 MHz / 960 mV at 3.3 % (identical word) and 380 MHz /
+  960 mV at 1.6 % (six samples only), which looks like clock and
+  temperature rather than the word. If it comes to it: 350 and 400 MHz
+  (identical words in both solvers) against 380 MHz, all at 960 mV,
+  pool-side rate per clock against expectation; if 350/400 are clearly
+  below 380, offer NerdOS's solver for the BM1373.
 - Judge by pool-side rate and the counter together, with core current
   and temperature logged (chainwatch logger in
   `WarpForge-Firmware/messdaten-2026-10/` as the template).
