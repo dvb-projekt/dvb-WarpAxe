@@ -82,7 +82,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
 | Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
 
-Where the stock firmware is ahead: far more boards and years of use by a
+What the stock firmware offers in addition: far more boards and years of use by a
 large community; AxeOS has a scoreboard, themes, the BAP accessory port
 and Wi-Fi setup over Bluetooth; NerdOS has two-factor login for updates,
 dual-pool mining, InfluxDB/Grafana export and alerts. WarpAxe is early; if
