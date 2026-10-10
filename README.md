@@ -593,7 +593,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   — the first run of WarpTune against the emulator, unedited;
 - [`docs/04-Octaxe-Warm-Reboot-Latch.md`](docs/04-Octaxe-Warm-Reboot-Latch.md)
   — the NerdOctaxe's hash domain that only a power cycle cleared: NerdOS
-  against WarpAxe step by step, what changed, and the test plan.
+  against WarpAxe step by step, what changed, and the test plan;
+- [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
+  — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
+  ours) against ESP-Miner's, the candidates for the Gaia's error rate,
+  and the plan for an A/B.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
