@@ -599,8 +599,8 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   against WarpAxe step by step, what changed, and the test plan;
 - [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
   — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
-  ours) against ESP-Miner's, the candidates for the Gaia's error rate,
-  and the plan for an A/B.
+  ours) against ESP-Miner's, and an A/B on the NerdAxe Gaia: the same
+  rate and the same error count, so the Gaia keeps NerdOS's init.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
