@@ -58,7 +58,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-09-28, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-11, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -69,15 +69,19 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
+| An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
 | Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools — also AxeOS 2.15's —, hostname, clock and voltage, fans and temperature limits, display) |
+| Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
-| Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled) | total only | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
+| Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled; all eight on ESP-Miner's main branch) | total only | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
+| Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | yes |
+| Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
 | Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
