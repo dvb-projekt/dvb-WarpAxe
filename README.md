@@ -332,8 +332,11 @@ back at any time with `GET /api/v1/display/frame`.
   `yieldPercent` (the nonce-weighted 10-minute rate against small cores ×
   clock, on chips without an error counter such as the BM1397),
   `clockStep` (a step down after an overheat on a board without a fan to
-  drive), and `hasFan`, `hasVr` and `powerEstimated` (what the board has
-  to measure and drive).
+  drive), `hasFan`, `hasVr` and `powerEstimated` (what the board has
+  to measure and drive), and `ntpLastSync` (when SNTP last set the
+  clock; the Network tab shows it, and how far the miner's clock is from
+  the browser's, since TLS and an authenticated Stratum V2 pool wait for
+  the time).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device

@@ -1,6 +1,7 @@
 //! Wall-clock time by SNTP (optional, `useNTP`), and the Wi-Fi scan the
 //! settings page lists networks from.
 
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,6 +12,10 @@ use serde_json::json;
 use crate::config;
 
 static SNTP: Mutex<Option<EspSntp<'static>>> = Mutex::new(None);
+/// When SNTP last set the clock, seconds since 1970 (32 bits: the Xtensa
+/// has no 64-bit atomics, and u32 seconds last until 2106); 0 = not yet
+/// this boot.
+static LAST_SYNC: AtomicU32 = AtomicU32::new(0);
 
 /// Start SNTP with the configured server; it syncs once a network is up
 /// and keeps the clock set from then on.
@@ -24,7 +29,15 @@ pub fn start() {
     let server: &'static str = Box::leak(cfg.ntp_server.into_boxed_str());
     let mut conf = SntpConf::default();
     conf.servers[0] = server;
-    match EspSntp::new(&conf) {
+    // The callback runs on the SNTP task after every successful sync
+    // (about once an hour): the web UI shows whether and when the clock
+    // was last set, since TLS and an authenticated Stratum V2 pool wait
+    // for it.
+    match EspSntp::new_with_callback(&conf, |_| {
+        if let Some(s) = unix_now() {
+            LAST_SYNC.store(u32::try_from(s).unwrap_or(u32::MAX), Ordering::Relaxed);
+        }
+    }) {
         Ok(s) => {
             log::info!("clock: sntp via {server}");
             *SNTP.lock().unwrap() = Some(s);
@@ -38,6 +51,14 @@ pub fn start() {
 pub fn unix_now() -> Option<u64> {
     let s = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     (s > 1_704_067_200).then_some(s)
+}
+
+/// When SNTP last set the clock this boot, seconds since 1970.
+pub fn last_sync() -> Option<u64> {
+    match LAST_SYNC.load(Ordering::Relaxed) {
+        0 => None,
+        s => Some(u64::from(s)),
+    }
 }
 
 fn auth_name(m: sys::wifi_auth_mode_t) -> &'static str {

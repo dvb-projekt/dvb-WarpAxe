@@ -148,7 +148,7 @@ pub fn system_info() -> serde_json::Value {
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
         "sharesAccepted": st.shares_accepted, "sharesRejected": st.shares_rejected,
         "staleAfterCleanHist": st.stale_after_clean_hist, "sharesRejectedReasons": st.reject_reasons.iter().map(|(m, c)| json!({"message": m, "count": c})).collect::<Vec<_>>(),
-        "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
+        "uptimeSeconds": diag::uptime_s(), "unixTime": crate::clock::unix_now(), "ntpLastSync": crate::clock::last_sync(), "useNTP": u8::from(cfg.use_ntp), "ntpServer": cfg.ntp_server,
         "asicCount": m.chips, "smallCoreCount": board::chip().small_cores, "ASICModel": asic_model(),
         "chainPhase": m.phase, "frequencyActual": m.frequency_hz / 1_000_000, "clockStep": m.clock_step,
         // The ESP32-S3's own die temperature, on every board: how warm the

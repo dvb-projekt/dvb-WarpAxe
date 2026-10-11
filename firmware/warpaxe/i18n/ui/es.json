@@ -324,5 +324,9 @@
   "hc_yield": "rendimiento",
   "usbSubnet": "Dirección USB (192.168.x.1)",
   "usb_subnet_s": "Un segundo WarpAxe en el mismo ordenador necesita aquí otro número.",
-  "ota_aborted": "La última actualización no arrancó: el minero volvió a esta versión."
+  "ota_aborted": "La última actualización no arrancó: el minero volvió a esta versión.",
+  "ntp_ok": "Hora sincronizada mediante {s}, última sincronización hace {t}.",
+  "ntp_wait": "La hora aún no está sincronizada. Hasta entonces, el minero no se conecta a un pool Stratum V2 con autenticación ni por TLS.",
+  "ntp_off": "NTP está desactivado, así que la hora nunca se ajusta: Stratum V2 con autenticación y TLS no pueden conectarse.",
+  "ntp_skew": "El reloj del minero difiere en {d} del de este ordenador."
 }
