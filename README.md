@@ -119,7 +119,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-dashboard.png" alt="Dashboard: type plate with chip grid, hashrate, efficiency, shares, best difficulty, history, temperatures, fans, power, pool, hash counters per chip and domain" width="760"><br>
-  <em>Dashboard — chip grid and series colour, the hashrate with its share of the expected rate, efficiency, power, shares and best difficulty, the 1 h / 3 h history; below, temperature, fans and power, and the pool with the payout of a found block; at the bottom the hash counters per chip and domain (off by default, switched on in Settings).</em>
+  <em>Dashboard — chip grid and series colour, the hashrate with its share of the expected rate, efficiency, power, shares and best difficulty (since start and all-time), the 1 h / 3 h history; below, temperature, fans and power, and the pool with the payout of a found block; at the bottom the hash counters per chip and domain (off by default, switched on in Settings).</em>
 </p>
 
 <p align="center">
@@ -134,7 +134,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-network.png" alt="Network: Wi-Fi, hostname, time by NTP and time zone" width="760"><br>
-  <em>Network — Wi-Fi with a list of networks found, hostname, time by NTP and time zone.</em>
+  <em>Network — Wi-Fi with a list of networks found, hostname, USB address, time by NTP and time zone, and whether and when the clock was last synchronised.</em>
 </p>
 
 <p align="center">
