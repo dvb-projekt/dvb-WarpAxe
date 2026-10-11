@@ -328,5 +328,8 @@
   "ntp_ok": "Heure synchronisée via {s}, dernière synchronisation il y a {t}.",
   "ntp_wait": "L’heure n’est pas encore synchronisée. D’ici là, le mineur ne se connecte ni à un pool Stratum V2 avec authentification, ni en TLS.",
   "ntp_off": "NTP est désactivé, l’heure n’est donc jamais réglée : Stratum V2 avec authentification et TLS ne peuvent pas se connecter.",
-  "ntp_skew": "L’horloge du mineur diffère de {d} de celle de cet ordinateur."
+  "ntp_skew": "L’horloge du mineur diffère de {d} de celle de cet ordinateur.",
+  "clock_time": "Heure",
+  "ntp_dash_unset": "L’heure n’est pas réglée et la connexion au pool (TLS ou Stratum V2 avec authentification) l’attend.",
+  "ntp_dash_skew": "L’horloge du mineur est décalée de {d} : les certificats du pool et les heures du graphique et du journal peuvent être erronés."
 }

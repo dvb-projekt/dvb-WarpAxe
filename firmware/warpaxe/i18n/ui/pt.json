@@ -328,5 +328,8 @@
   "ntp_ok": "Hora sincronizada via {s}, última sincronização há {t}.",
   "ntp_wait": "A hora ainda não foi sincronizada. Até lá, o minerador não se conecta a um pool Stratum V2 com autenticação nem via TLS.",
   "ntp_off": "O NTP está desligado, então a hora nunca é acertada: Stratum V2 com autenticação e TLS não conseguem se conectar.",
-  "ntp_skew": "O relógio do minerador difere em {d} do relógio deste computador."
+  "ntp_skew": "O relógio do minerador difere em {d} do relógio deste computador.",
+  "clock_time": "Hora",
+  "ntp_dash_unset": "A hora não está acertada, e a conexão com o pool (TLS ou Stratum V2 com autenticação) está esperando por ela.",
+  "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos."
 }

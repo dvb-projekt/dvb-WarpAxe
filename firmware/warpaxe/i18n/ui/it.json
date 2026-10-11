@@ -328,5 +328,8 @@
   "ntp_ok": "Ora sincronizzata tramite {s}, ultima sincronizzazione {t} fa.",
   "ntp_wait": "L’ora non è ancora sincronizzata. Fino ad allora il miner non si collega a un pool Stratum V2 con autenticazione né tramite TLS.",
   "ntp_off": "NTP è disattivato, quindi l’ora non viene mai impostata: Stratum V2 con autenticazione e TLS non possono collegarsi.",
-  "ntp_skew": "L’orologio del miner differisce di {d} da quello di questo computer."
+  "ntp_skew": "L’orologio del miner differisce di {d} da quello di questo computer.",
+  "clock_time": "Ora",
+  "ntp_dash_unset": "L’ora non è impostata e la connessione al pool (TLS o Stratum V2 con autenticazione) la sta aspettando.",
+  "ntp_dash_skew": "L’orologio del miner è sfasato di {d}: i certificati del pool e gli orari nel grafico e nel log possono essere sbagliati."
 }
