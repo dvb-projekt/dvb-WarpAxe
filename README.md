@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-377%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.25-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.26-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.25).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.26).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,7 +58,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-11, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-12, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -82,6 +82,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | yes |
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
+| Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
 | Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
@@ -133,7 +134,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display, dashboard" width="760"><br>
-  <em>Settings — clock and voltage as the manufacturer's steps, fans (on the Nerd boards both linked to the chips by default), display, and the dashboard's hash-counter card (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
+  <em>Settings — clock and voltage as the manufacturer's steps, the power supply's rating, fans (on the Nerd boards both linked to the chips by default), display, and the dashboard's hash-counter card (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
 </p>
 
 <p align="center">
@@ -273,7 +274,11 @@ back at any time with `GET /api/v1/display/frame`.
   its share of the expected rate and the 1 h / 3 h history (hashrate as a
   two-minute average, temperature in steps of at least 0.5 °C, so counting
   noise does not fill the chart), then temperature, fan/power and pool
-  instruments; the best difficulty since the start next to the all-time
+  instruments — input voltage, core voltage and core current on rows of
+  their own, the input current only where the board measures it (on the
+  NerdAxe an estimate, marked ≈), so a Bitaxe's 40 A of core current does
+  not read as drawn from the power supply; a notice asks for the power
+  supply's rating (*Settings*, in watts) until it is set or dismissed; the best difficulty since the start next to the all-time
   best, which survives restarts; live log. Optional (*Settings → Dashboard*, off by default):
   the hash counters per chip and domain, a weak domain marked in colour,
   a total line on boards with several chips, and the error rate over the
@@ -602,7 +607,8 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   — the first run of WarpTune against the emulator, unedited;
 - [`docs/04-Octaxe-Warm-Reboot-Latch.md`](docs/04-Octaxe-Warm-Reboot-Latch.md)
   — the NerdOctaxe's hash domain that only a power cycle cleared: NerdOS
-  against WarpAxe step by step, what changed, and the test plan;
+  against WarpAxe step by step, the bench that found the cause (a
+  clock-delay trim, fixed in v0.1.24) and how it was tested;
 - [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
   — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
   ours) against ESP-Miner's, and an A/B on the NerdAxe Gaia: the same

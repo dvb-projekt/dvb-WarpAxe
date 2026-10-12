@@ -2,8 +2,10 @@
 
 Written 2026-10-09 for the .45 (`192.168.178.45`, NerdOctaxe-γ Rev 3.1,
 TPS53667 six-phase, eight BM1370 at 700 MHz / 1210 mV). Firmware v0.1.23;
-the changes below are the candidate for v0.1.24. Nothing here has run on
-the board yet; the test plan at the end is what decides.
+the changes below are the candidate for v0.1.24. **Result:** the cause
+was the BM1370's clock-delay trim (0x10 since ESP-Miner's August 2026
+change, 0x0C under NerdOS); with 0x0C all 32 domains came up in six
+power-ups out of six — see *Round two* below. Shipped in v0.1.24.
 
 ## What was seen
 
