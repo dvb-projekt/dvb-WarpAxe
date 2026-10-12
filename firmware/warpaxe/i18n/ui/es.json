@@ -48,8 +48,6 @@
   "vcore": "Voltaje del núcleo (ajustado / real)",
   "current": "Corriente",
   "clock": "Frecuencia",
-  "cur_in": "entrada",
-  "cur_out": "salida",
   "pool": "Pool",
   "server": "Servidor",
   "worker": "Worker",
@@ -331,5 +329,6 @@
   "ntp_skew": "El reloj del minero difiere en {d} del de este ordenador.",
   "clock_time": "Hora",
   "ntp_dash_unset": "La hora no está ajustada y la conexión al pool (TLS o Stratum V2 con autenticación) la está esperando.",
-  "ntp_dash_skew": "El reloj del minero tiene un desfase de {d}: los certificados del pool y las horas del gráfico y del log pueden ser incorrectos."
+  "ntp_dash_skew": "El reloj del minero tiene un desfase de {d}: los certificados del pool y las horas del gráfico y del log pueden ser incorrectos.",
+  "icore": "Corriente del núcleo"
 }

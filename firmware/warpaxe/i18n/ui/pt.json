@@ -48,8 +48,6 @@
   "vcore": "Tensão do núcleo (definida / real)",
   "current": "Corrente",
   "clock": "Clock",
-  "cur_in": "entrada",
-  "cur_out": "saída",
   "pool": "Pool",
   "server": "Servidor",
   "worker": "Worker",
@@ -331,5 +329,6 @@
   "ntp_skew": "O relógio do minerador difere em {d} do relógio deste computador.",
   "clock_time": "Hora",
   "ntp_dash_unset": "A hora não está acertada, e a conexão com o pool (TLS ou Stratum V2 com autenticação) está esperando por ela.",
-  "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos."
+  "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos.",
+  "icore": "Corrente do núcleo"
 }

@@ -48,8 +48,6 @@
   "vcore": "Tensione core (impostata / reale)",
   "current": "Corrente",
   "clock": "Frequenza",
-  "cur_in": "ingresso",
-  "cur_out": "uscita",
   "pool": "Pool",
   "server": "Server",
   "worker": "Worker",
@@ -331,5 +329,6 @@
   "ntp_skew": "L’orologio del miner differisce di {d} da quello di questo computer.",
   "clock_time": "Ora",
   "ntp_dash_unset": "L’ora non è impostata e la connessione al pool (TLS o Stratum V2 con autenticazione) la sta aspettando.",
-  "ntp_dash_skew": "L’orologio del miner è sfasato di {d}: i certificati del pool e gli orari nel grafico e nel log possono essere sbagliati."
+  "ntp_dash_skew": "L’orologio del miner è sfasato di {d}: i certificati del pool e gli orari nel grafico e nel log possono essere sbagliati.",
+  "icore": "Corrente core"
 }

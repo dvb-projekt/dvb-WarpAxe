@@ -48,8 +48,6 @@
   "vcore": "Tension cœur (consigne / réelle)",
   "current": "Courant",
   "clock": "Fréquence",
-  "cur_in": "entrée",
-  "cur_out": "sortie",
   "pool": "Pool",
   "server": "Serveur",
   "worker": "Worker",
@@ -331,5 +329,6 @@
   "ntp_skew": "L’horloge du mineur diffère de {d} de celle de cet ordinateur.",
   "clock_time": "Heure",
   "ntp_dash_unset": "L’heure n’est pas réglée et la connexion au pool (TLS ou Stratum V2 avec authentification) l’attend.",
-  "ntp_dash_skew": "L’horloge du mineur est décalée de {d} : les certificats du pool et les heures du graphique et du journal peuvent être erronés."
+  "ntp_dash_skew": "L’horloge du mineur est décalée de {d} : les certificats du pool et les heures du graphique et du journal peuvent être erronés.",
+  "icore": "Courant cœur"
 }
