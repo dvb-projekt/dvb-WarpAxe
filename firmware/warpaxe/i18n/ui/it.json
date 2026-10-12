@@ -330,5 +330,10 @@
   "clock_time": "Ora",
   "ntp_dash_unset": "L’ora non è impostata e la connessione al pool (TLS o Stratum V2 con autenticazione) la sta aspettando.",
   "ntp_dash_skew": "L’orologio del miner è sfasato di {d}: i certificati del pool e gli orari nel grafico e nel log possono essere sbagliati.",
-  "icore": "Corrente core"
+  "icore": "Corrente core",
+  "psuWatts": "Alimentatore (W)",
+  "psu_s": "Potenza nominale dell’alimentatore di questo miner. WarpTune resta sotto l’80 % di questo valore e, senza di esso, non cerca oltre l’impostazione di fabbrica. Vuoto = sconosciuto.",
+  "psu_label": "Alimentatore",
+  "psu_note": "Inserisci nelle impostazioni la potenza del tuo alimentatore, così WarpTune sa fin dove può spingersi.",
+  "psu_hide": "Nascondi"
 }

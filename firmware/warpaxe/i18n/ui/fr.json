@@ -330,5 +330,10 @@
   "clock_time": "Heure",
   "ntp_dash_unset": "L’heure n’est pas réglée et la connexion au pool (TLS ou Stratum V2 avec authentification) l’attend.",
   "ntp_dash_skew": "L’horloge du mineur est décalée de {d} : les certificats du pool et les heures du graphique et du journal peuvent être erronés.",
-  "icore": "Courant cœur"
+  "icore": "Courant cœur",
+  "psuWatts": "Alimentation (W)",
+  "psu_s": "Puissance nominale de l’alimentation de ce mineur. WarpTune reste sous 80 % de cette valeur et, sans elle, ne cherche pas au-delà du réglage d’usine. Vide = inconnue.",
+  "psu_label": "Alimentation",
+  "psu_note": "Indiquez la puissance de votre alimentation dans les réglages, pour que WarpTune sache jusqu’où il peut aller.",
+  "psu_hide": "Masquer"
 }

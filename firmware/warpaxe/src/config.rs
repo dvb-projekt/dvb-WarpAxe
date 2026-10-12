@@ -167,6 +167,11 @@ pub struct Config {
     /// leave the computer unable to reach either). Applied at boot.
     #[serde(rename = "usbSubnet")]
     pub usb_subnet: u8,
+    /// The rated output of the power supply that feeds this miner, whole
+    /// watts; 0 = unknown. Only reported: WarpTune keeps a miner below
+    /// 80 % of it and searches no higher than the stock point without it.
+    #[serde(rename = "psuWatts")]
+    pub psu_watts: u16,
 }
 
 impl Default for Config {
@@ -229,6 +234,7 @@ impl Default for Config {
             asic_count: 0,
             asic_difficulty: 0,
             usb_subnet: 7,
+            psu_watts: 0,
         }
     }
 }
@@ -523,6 +529,11 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     if let (Some(dst), Some(src)) = (cur.as_object_mut(), v.as_object()) {
         for (k, val) in src {
             if let Some(old) = dst.get(k) {
+                // null clears the power supply (it is optional): 0 = unknown.
+                if k == "psuWatts" && val.is_null() {
+                    dst.insert(k.clone(), serde_json::json!(0));
+                    continue;
+                }
                 // AxeOS sends its switches as 0/1; take a number for a
                 // boolean field instead of failing the whole PATCH.
                 let val = match (old, val.as_f64()) {

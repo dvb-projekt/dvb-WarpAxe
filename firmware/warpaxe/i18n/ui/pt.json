@@ -330,5 +330,10 @@
   "clock_time": "Hora",
   "ntp_dash_unset": "A hora não está acertada, e a conexão com o pool (TLS ou Stratum V2 com autenticação) está esperando por ela.",
   "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos.",
-  "icore": "Corrente do núcleo"
+  "icore": "Corrente do núcleo",
+  "psuWatts": "Fonte de alimentação (W)",
+  "psu_s": "Potência nominal da fonte que alimenta este minerador. O WarpTune mantém o minerador abaixo de 80 % dela e, sem esse dado, não busca acima do ponto de fábrica. Vazio = desconhecida.",
+  "psu_label": "Fonte de alimentação",
+  "psu_note": "Informe nas configurações a potência da sua fonte, para que o WarpTune saiba até onde pode ir.",
+  "psu_hide": "Ocultar"
 }

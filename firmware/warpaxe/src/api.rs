@@ -142,7 +142,7 @@ pub fn system_info() -> serde_json::Value {
         "vrProbe": b.vr_probe,
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
-        "hostname": cfg.hostname, "usbSubnet": cfg.usb_subnet,
+        "hostname": cfg.hostname, "usbSubnet": cfg.usb_subnet, "psuWatts": (cfg.psu_watts > 0).then_some(cfg.psu_watts),
         "wifiStatus": if n.wifi_connected { "Connected!" } else { "Not connected" },
         "wifiRSSI": n.wifi_rssi.unwrap_or(0),
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },
@@ -353,6 +353,8 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         // 10 ms: a BM1397 scans its nonce space in ~100 ms at 250 MHz, so
         // cadence experiments need the range below the old 100 ms floor.
         ("jobInterval", 10.0, 5000.0),
+        // Whole watts of the miner's power supply, for WarpTune.
+        ("psuWatts", 5.0, 3000.0),
     ] {
         // 0 = the default.
         if let Some(x) = num(k) {
