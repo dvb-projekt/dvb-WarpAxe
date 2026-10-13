@@ -332,7 +332,7 @@
   "ntp_dash_skew": "L’orologio del miner è sfasato di {d}: i certificati del pool e gli orari nel grafico e nel log possono essere sbagliati.",
   "icore": "Corrente core",
   "psuWatts": "Alimentatore (W)",
-  "psu_s": "Potenza nominale dell’alimentatore di questo miner. WarpTune resta sotto l’80 % di questo valore e, senza di esso, non cerca oltre l’impostazione di fabbrica. Vuoto = sconosciuto.",
+  "psu_s": "Potenza nominale dell’alimentatore di questo miner. WarpTune resta sotto l’80 % di questo valore e, senza di esso, non cerca oltre l’impostazione di fabbrica. Più miner sullo stesso alimentatore: suddividi la sua potenza nominale tra i miner in modo che la somma delle quote non la superi (ad es. 600 W → 240 + 150 + 100 W). WarpTune mantiene poi ogni miner sotto l’80 % della sua quota. Vuoto = sconosciuto.",
   "psu_label": "Alimentatore",
   "psu_note": "Inserisci nelle impostazioni la potenza del tuo alimentatore, così WarpTune sa fin dove può spingersi.",
   "psu_hide": "Nascondi"

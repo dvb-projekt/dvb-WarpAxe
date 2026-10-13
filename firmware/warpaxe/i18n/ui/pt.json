@@ -332,7 +332,7 @@
   "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos.",
   "icore": "Corrente do núcleo",
   "psuWatts": "Fonte de alimentação (W)",
-  "psu_s": "Potência nominal da fonte que alimenta este minerador. O WarpTune mantém o minerador abaixo de 80 % dela e, sem esse dado, não busca acima do ponto de fábrica. Vazio = desconhecida.",
+  "psu_s": "Potência nominal da fonte que alimenta este minerador. O WarpTune mantém o minerador abaixo de 80 % dela e, sem esse dado, não busca acima do ponto de fábrica. Vários mineradores na mesma fonte: divida a potência nominal dela entre eles de forma que a soma das partes não a ultrapasse (ex.: 600 W → 240 + 150 + 100 W). O WarpTune então mantém cada minerador abaixo de 80 % da sua parte. Vazio = desconhecida.",
   "psu_label": "Fonte de alimentação",
   "psu_note": "Informe nas configurações a potência da sua fonte, para que o WarpTune saiba até onde pode ir.",
   "psu_hide": "Ocultar"
