@@ -356,10 +356,9 @@ fn rails_low_now() {
 
 /// How long enable and LDO have been low, ms; 0 if never driven.
 fn rails_low_for_ms() -> u32 {
-    RAILS_LOW_SINCE
-        .lock()
-        .unwrap()
-        .map_or(0, |t| t.elapsed().as_millis().min(u128::from(u32::MAX)) as u32)
+    RAILS_LOW_SINCE.lock().unwrap().map_or(0, |t| {
+        t.elapsed().as_millis().min(u128::from(u32::MAX)) as u32
+    })
 }
 
 /// Switch the chips off (core rail down) or back on; the board loop does
@@ -2238,7 +2237,11 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                     Detection::Board(p, why) => {
                         log::warn!(
                             "board: {why}; {}; took {}",
-                            if p.asic_count == 0 { "hashing on the CPU" } else { "chips on" },
+                            if p.asic_count == 0 {
+                                "hashing on the CPU"
+                            } else {
+                                "chips on"
+                            },
                             imported.join(", ")
                         );
                         let mut cfg = config::get();

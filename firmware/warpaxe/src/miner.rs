@@ -182,8 +182,7 @@ const SCAN_STALE_S: u64 = 10;
 pub fn request_reg_scan(chip: u8, from: u8, to: u8) -> bool {
     let mut g = REG_SCAN.lock().unwrap();
     let now = diag::uptime_s();
-    if g
-        .as_ref()
+    if g.as_ref()
         .is_some_and(|s| !s.done && now.saturating_sub(s.uptime_s) < SCAN_STALE_S)
     {
         return false;

@@ -252,10 +252,13 @@ fn hotspot_credentials() -> (String, String) {
 /// seconds and feels the beacon wait.
 fn no_modem_sleep() {
     if !crate::board::profile().has_fan() && !crate::board::devkit() {
-        log::info!("wifi: modem sleep stays on (no fan to drive: the radio's heat reaches the chip)");
+        log::info!(
+            "wifi: modem sleep stays on (no fan to drive: the radio's heat reaches the chip)"
+        );
         return;
     }
-    let r = unsafe { esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE) };
+    let r =
+        unsafe { esp_idf_svc::sys::esp_wifi_set_ps(esp_idf_svc::sys::wifi_ps_type_t_WIFI_PS_NONE) };
     if r != 0 {
         log::warn!("wifi: power save off failed: {r}");
     }

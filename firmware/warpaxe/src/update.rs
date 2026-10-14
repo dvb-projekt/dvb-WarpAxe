@@ -220,7 +220,11 @@ fn check() {
                 "update: latest {} ({}{})",
                 r.tag,
                 if newer { "newer" } else { "installed or older" },
-                if r.tested_here { "" } else { ", not released for this board" }
+                if r.tested_here {
+                    ""
+                } else {
+                    ", not released for this board"
+                }
             );
             update(|s| {
                 s.available = newer && r.tested_here;
@@ -248,19 +252,28 @@ fn check() {
 fn tested_here(r: &Release) -> bool {
     let profile = crate::board::profile().name;
     let Some(url) = &r.tested_url else {
-        log::info!("update: {} carries no {TESTED_ASSET}: not offered on the {profile}", r.tag);
+        log::info!(
+            "update: {} carries no {TESTED_ASSET}: not offered on the {profile}",
+            r.tag
+        );
         return false;
     };
     match get(url, 4 * 1024, |_| {}) {
         Ok(b) => {
             let yes = names_profile(&String::from_utf8_lossy(&b), profile);
             if !yes {
-                log::info!("update: {} did not run on the {profile}: not offered", r.tag);
+                log::info!(
+                    "update: {} did not run on the {profile}: not offered",
+                    r.tag
+                );
             }
             yes
         }
         Err(e) => {
-            log::warn!("update: {} {TESTED_ASSET}: {e}: not offered on the {profile}", r.tag);
+            log::warn!(
+                "update: {} {TESTED_ASSET}: {e}: not offered on the {profile}",
+                r.tag
+            );
             false
         }
     }
@@ -536,7 +549,7 @@ static OTA_STATE: Mutex<&'static str> = Mutex::new("unknown");
 static RUNNING: Mutex<String> = Mutex::new(String::new());
 
 pub fn init_ota_state() {
-    use esp_idf_svc::sys as sys;
+    use esp_idf_svc::sys;
     let running = unsafe { sys::esp_ota_get_running_partition() };
     if !running.is_null() {
         let label = unsafe { core::ffi::CStr::from_ptr((*running).label.as_ptr()) };
@@ -547,7 +560,9 @@ pub fn init_ota_state() {
     } else {
         let part = unsafe { sys::esp_ota_get_running_partition() };
         let mut st: sys::esp_ota_img_states_t = 0;
-        if part.is_null() || unsafe { sys::esp_ota_get_state_partition(part, &mut st) } != sys::ESP_OK {
+        if part.is_null()
+            || unsafe { sys::esp_ota_get_state_partition(part, &mut st) } != sys::ESP_OK
+        {
             "unknown"
         } else {
             match st {

@@ -91,8 +91,10 @@ pub fn system_info() -> serde_json::Value {
     let profile = board::profile();
     #[allow(unused_mut)]
     // Delivered against small cores × clock (see yieldPercent below).
-    let expected_ghs =
-        f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9;
+    let expected_ghs = f64::from(board::chip().small_cores)
+        * f64::from(m.frequency_hz)
+        * f64::from(m.chips.max(1))
+        / 1e9;
     let yield_percent = (expected_ghs > 0.0 && m.hashrate_ghs > 0.0)
         .then(|| (f64::from(m.hashrate_ghs) / expected_ghs * 100.0).min(999.0));
     let mut v = json!({
@@ -658,8 +660,10 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             {
                 Ok(cfg) => {
                     crate::display::touch();
-                    let keys: Vec<String> =
-                        v.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default();
+                    let keys: Vec<String> = v
+                        .as_object()
+                        .map(|o| o.keys().cloned().collect())
+                        .unwrap_or_default();
                     // Who changed what, kept across reboots: a worker renamed
                     // in the web UI showed at the pool hours later (2026-10-08)
                     // and nobody could say where the change had come from.

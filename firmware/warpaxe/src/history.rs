@@ -74,11 +74,7 @@ pub fn json(span_s: u64) -> serde_json::Value {
         } else {
             // Two decimals of GH/s; the devkit (a few 1e-4 GH/s) would read
             // as 0.00 and draw a flat line, so it keeps seven.
-            let scale = if board::devkit() {
-                1e7
-            } else {
-                100.0
-            };
+            let scale = if board::devkit() { 1e7 } else { 100.0 };
             json!((v.iter().sum::<f32>() / v.len() as f32 * scale).round() / scale)
         }
     };
