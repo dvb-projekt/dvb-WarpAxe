@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-377%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.27-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.28-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.27).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.28).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,7 +58,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-13, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-14, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -79,6 +79,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
 | Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled; all eight on ESP-Miner's main branch) | total only | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
+| Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | yes (from v0.1.28) |
 | Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | yes |
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
@@ -298,6 +299,12 @@ back at any time with `GET /api/v1/display/frame`.
   miner at a time); this miner stores only the address list. Read-only: it
   never changes or restarts another miner. Add miners by address or by a
   search of the local /24.
+- Found by name: the miner announces itself over mDNS as
+  `<hostname>.local` (letters, digits and `-` of the hostname; a name
+  already taken gets `-2`) and as `_http._tcp` with AxeOS's `_axeos`
+  subtype and TXT items (board, family, asic, asic_count, fw_version), so
+  tools that discover Bitaxes that way find it; the router's DHCP sees
+  the same name.
 - Tabs in the stock order: Dashboard, Swarm, Network, Pool, Settings,
   System; the starfield background of dvb-WarpPool. The browser tab names
   the miner ("NerdAxe Gaia · WarpAxe"), so several open tabs tell their
@@ -348,7 +355,8 @@ back at any time with `GET /api/v1/display/frame`.
   the time), and `psuWatts` (the rated output of the miner's power supply,
   entered once in Settings, so WarpTune knows its 80 % limit without its
   own configuration; several miners on one supply each get their share of
-  its rating; null while unknown).
+  its rating; null while unknown), and `mdnsHostname` / `fullHostname`
+  (the name the miner announces over mDNS, as AxeOS reports it).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
   ten-digit password made at every start and shown only on the device
