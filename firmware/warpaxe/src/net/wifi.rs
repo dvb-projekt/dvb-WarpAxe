@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use esp_idf_svc::eventloop::EspSystemEventLoop;
 use esp_idf_svc::hal::modem::Modem;
 use esp_idf_svc::ipv4::{self, Ipv4Addr};
-use esp_idf_svc::netif::{EspNetif, NetifConfiguration, NetifStack};
+use esp_idf_svc::netif::{EspNetif, NetifConfiguration};
 use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use esp_idf_svc::wifi::{
     AccessPointConfiguration, AuthMethod, BlockingWifi, ClientConfiguration, Configuration,
@@ -32,10 +32,11 @@ pub fn start(
     nvs: EspDefaultNvsPartition,
     ssid: String,
     pass: String,
+    hostname: String,
 ) {
     std::thread::Builder::new()
         .stack_size(8192)
-        .spawn(move || run(modem, sysloop, nvs, ssid, pass))
+        .spawn(move || run(modem, sysloop, nvs, ssid, pass, hostname))
         .expect("wifi thread");
 }
 
@@ -45,7 +46,18 @@ fn run(
     nvs: EspDefaultNvsPartition,
     ssid: String,
     pass: String,
+    hostname: String,
 ) {
+    // The station asks the router's DHCP for an address under the
+    // miner's own name (esp-idf's default is "espressif").
+    let sta_netif_conf = NetifConfiguration {
+        ip_configuration: Some(ipv4::Configuration::Client(
+            ipv4::ClientConfiguration::DHCP(ipv4::DHCPClientSettings {
+                hostname: heapless::String::try_from(hostname.as_str()).ok(),
+            }),
+        )),
+        ..NetifConfiguration::wifi_default_client()
+    };
     // The hotspot on 192.168.4.1, handing out itself as DNS server:
     // esp-idf-svc's default router netif is 192.168.71.1 with 8.8.8.8 as
     // DNS, which a phone on the hotspot cannot reach, so it reports "no
@@ -65,7 +77,7 @@ fn run(
     let wifi = WifiDriver::new(modem, sysloop.clone(), Some(nvs)).and_then(|driver| {
         EspWifi::wrap_all(
             driver,
-            EspNetif::new(NetifStack::Sta)?,
+            EspNetif::new_with_conf(&sta_netif_conf)?,
             EspNetif::new_with_conf(&ap_netif_conf)?,
         )
     });

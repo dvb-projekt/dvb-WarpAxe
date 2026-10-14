@@ -288,7 +288,9 @@ fn main() {
         nvs.clone(),
         cfg.ssid.clone(),
         cfg.wifi_pass.clone(),
+        net::mdns::label(&cfg.hostname),
     );
+    net::mdns::start(cfg.hostname.clone());
 
     set_step("API");
     let _server = match api::start() {

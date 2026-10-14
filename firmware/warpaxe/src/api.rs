@@ -142,7 +142,7 @@ pub fn system_info() -> serde_json::Value {
         "vrProbe": b.vr_probe,
         "frequency": cfg.frequency,
         "ssid": cfg.ssid, "macAddr": mac_str(net::usb::base_mac()),
-        "hostname": cfg.hostname, "usbSubnet": cfg.usb_subnet, "psuWatts": (cfg.psu_watts > 0).then_some(cfg.psu_watts),
+        "hostname": cfg.hostname, "mdnsHostname": net::mdns::hostname(), "fullHostname": net::mdns::hostname().map(|h| format!("{h}.local")), "usbSubnet": cfg.usb_subnet, "psuWatts": (cfg.psu_watts > 0).then_some(cfg.psu_watts),
         "wifiStatus": if n.wifi_connected { "Connected!" } else { "Not connected" },
         "wifiRSSI": n.wifi_rssi.unwrap_or(0),
         "usbStatus": if n.usb_mounted { "Connected!" } else { "Not connected" },

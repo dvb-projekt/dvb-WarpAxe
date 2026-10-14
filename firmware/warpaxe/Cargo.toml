@@ -53,6 +53,9 @@ esp_idf_tools_install_dir = "global"
 esp_idf_sdkconfig_defaults = ["sdkconfig.defaults"]
 
 [[package.metadata.esp-idf-sys.extra_components]]
+remote_component = { name = "espressif/mdns", version = "1.8" }
+
+[[package.metadata.esp-idf-sys.extra_components]]
 component_dirs = "../components"
 bindings_header = "bindings.h"
 bindings_module = "tusb"
