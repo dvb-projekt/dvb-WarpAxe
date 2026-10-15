@@ -785,7 +785,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
     // Diagnostics on the chipless board: run the SHA peripheral bench
     // again (the peripheral worker does it between two batches, results
-    // in cpuMiner.bench of /api/system/info and in the log).
+    // in cpuMiner.bench of /api/system/info and in the log). Only in a
+    // build with the `shabench` feature (docs/06).
+    #[cfg(feature = "shabench")]
     server.fn_handler("/api/v1/cpuminer/bench", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         if !board::devkit() {

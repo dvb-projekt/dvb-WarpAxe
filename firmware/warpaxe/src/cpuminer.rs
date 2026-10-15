@@ -13,7 +13,7 @@
 //! released between them, so mbedTLS (the online update, a TLS pool)
 //! gets its turn. The peripheral loop writes the next block's words
 //! while the engine runs (docs/06-Devkit-S3-SHA-Peripheral.md has the
-//! measurements); about 350 kH/s on USB power at 240 MHz.
+//! measurements); about 340 kH/s on USB power at 240 MHz.
 //!
 //! A hash whose top sixteen bits are zero is a candidate: re-hashed in
 //! software when it came from the peripheral, scored with
@@ -206,7 +206,9 @@ pub struct Info {
     /// The ESP32-S3's CPU clock, MHz.
     #[serde(rename = "cpuMhz")]
     pub cpu_mhz: u32,
-    /// The SHA peripheral measured ([`Bench`]), once the worker has run it.
+    /// The SHA peripheral measured ([`Bench`]), once the worker has run it
+    /// (only in a build with the `shabench` feature).
+    #[cfg(feature = "shabench")]
     pub bench: Option<Bench>,
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
@@ -223,6 +225,7 @@ static INFO: Mutex<Option<Info>> = Mutex::new(None);
 /// one go, 3 that with a counted wait before the first BUSY read, 4 both
 /// together): cycles per nonce, kH/s from that, and nonces whose last
 /// digest word the software hash contradicted.
+#[cfg(feature = "shabench")]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bench {
@@ -253,19 +256,23 @@ pub struct Bench {
     pub v_khs: [f64; 5],
     pub v_bad: [u32; 5],
 }
+#[cfg(feature = "shabench")]
 static BENCH: Mutex<Option<Bench>> = Mutex::new(None);
 /// Set by the API: the peripheral worker runs the bench again between
 /// two batches.
+#[cfg(feature = "shabench")]
 static BENCH_REQUEST: AtomicBool = AtomicBool::new(false);
 
 /// Ask the peripheral worker for another bench run (POST
 /// /api/v1/cpuminer/bench). False when one is still pending.
+#[cfg(feature = "shabench")]
 pub fn request_bench() -> bool {
     !BENCH_REQUEST.swap(true, Ordering::Relaxed)
 }
 
 /// The bench on the calling thread, which the caller has raised to a
 /// priority above the workers: results logged and kept for [`info`].
+#[cfg(feature = "shabench")]
 fn run_bench(job: &CpuJob) {
     let header = job.job.header(job.job.version, 0);
     let mut head = [0u32; 16];
@@ -375,7 +382,10 @@ pub fn info() -> Info {
     i.die_temp_c = die_temp_c();
     i.best_diff = *BEST_DIFF.lock().unwrap();
     i.cpu_mhz = cpu_mhz();
-    i.bench = BENCH.lock().unwrap().clone();
+    #[cfg(feature = "shabench")]
+    {
+        i.bench = BENCH.lock().unwrap().clone();
+    }
     for k in 0..2 {
         i.cores[k] = Some(WORKER_CORE[k].load(Ordering::Relaxed)).filter(|c| *c != u32::MAX);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
@@ -430,7 +440,7 @@ pub fn nominal_hash_rate() -> f64 {
     if k > 0.0 {
         k * 1e3
     } else {
-        290e3
+        340e3
     }
 }
 
@@ -506,13 +516,15 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
         "cpu miner: worker {index} on core {core} priority {prio}: {khs:.1} kH/s alone ({batch} hashes in {dt} us)"
     );
     // The peripheral worker measures the engine once, still at the
-    // probe's priority.
+    // probe's priority (a `shabench` build; the release leaves it out).
+    #[cfg(feature = "shabench")]
     if index == 0 {
         run_bench(&probe);
     }
     unsafe { sys::vTaskPrioritySet(null, prio) };
     let mut last_yield = now_us();
     loop {
+        #[cfg(feature = "shabench")]
         if index == 0 && BENCH_REQUEST.swap(false, Ordering::Relaxed) {
             unsafe { sys::vTaskPrioritySet(null, 20) };
             run_bench(&probe);

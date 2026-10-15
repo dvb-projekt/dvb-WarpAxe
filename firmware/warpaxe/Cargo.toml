@@ -1,6 +1,6 @@
 [package]
 name = "warpaxe"
-version = "0.1.28"
+version = "0.1.29"
 edition = "2021"
 license = "GPL-3.0-or-later"
 authors = ["dvb-projekt <oliver-mai@gmx.de>"]
@@ -47,6 +47,12 @@ warpaxe-cpuminer = { path = "../../crates/cpuminer" }
 
 [build-dependencies]
 embuild = "0.33"
+
+[features]
+# The SHA peripheral bench of the T-Display-S3 (docs/06): measured once
+# after start and on POST /api/v1/cpuminer/bench. Off in releases:
+# `cargo build --release --features shabench` to measure.
+shabench = []
 
 [package.metadata.esp-idf-sys]
 esp_idf_tools_install_dir = "global"
