@@ -316,6 +316,52 @@ mod tests {
         }
     }
 
+    /// The firmware's pipelined order (cpuminer.rs `hw_batch`): the
+    /// `TEXT` register file keeps its words between blocks, so each
+    /// block only rewrites what the other one changed. Words 9..15 are
+    /// zeroed once per batch; the first block writes 0..9 and 15, the
+    /// second copies the digest into 0..8 and writes 8 and 15. Modelled
+    /// on a sixteen-word file across two nonces.
+    #[test]
+    fn pipelined_write_sets_leave_the_right_blocks() {
+        let h = pseudo_header(7);
+        let mid = midstate(&h);
+        let tw = hw_tail_words(&tail(&h));
+        let mut text = [0xffff_ffffu32; 16];
+        for w in text[9..15].iter_mut() {
+            *w = 0;
+        }
+        let block1 = |text: &mut [u32; 16], nonce: u32| {
+            text[..3].copy_from_slice(&tw);
+            text[3] = nonce;
+            text[4] = HW_PAD;
+            for w in text[5..9].iter_mut() {
+                *w = 0;
+            }
+            text[15] = HW_LEN_640;
+        };
+        let mut hw = Hw { state: IV };
+        block1(&mut text, 5);
+        for nonce in 5..8u32 {
+            assert_eq!(text, hw_block1(&tw, nonce));
+            hw.write_h(&hw_state(&mid));
+            hw.continue_(&text);
+            // While the engine runs: the second block's padding.
+            text[8] = HW_PAD2;
+            text[15] = HW_LEN_256;
+            let first = hw.read_h();
+            text[..8].copy_from_slice(&first);
+            assert_eq!(text, hw_block2(&first));
+            hw.start(&text);
+            // While the engine runs: the next nonce's first block.
+            block1(&mut text, nonce + 1);
+            let out = hw.read_h();
+            let mut hh = h;
+            hh[76..80].copy_from_slice(&nonce.to_le_bytes());
+            assert_eq!(hw_hash(&out), sha256d(&hh), "nonce {nonce}");
+        }
+    }
+
     #[test]
     fn candidate_reads_the_most_significant_bytes() {
         let mut hash = [0xffu8; 32];

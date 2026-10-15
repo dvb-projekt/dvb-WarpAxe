@@ -11,7 +11,9 @@
 //! 1, above only the idle task, and yield a tick every 200 ms so the
 //! idle task feeds its watchdog; the peripheral is taken per batch and
 //! released between them, so mbedTLS (the online update, a TLS pool)
-//! gets its turn. About 235 kH/s on USB power.
+//! gets its turn. The peripheral loop writes the next block's words
+//! while the engine runs (docs/06-Devkit-S3-SHA-Peripheral.md has the
+//! measurements); about 350 kH/s on USB power at 240 MHz.
 //!
 //! A hash whose top sixteen bits are zero is a candidate: re-hashed in
 //! software when it came from the peripheral, scored with
@@ -133,6 +135,13 @@ static HASHES_SW: AtomicU32 = AtomicU32::new(0);
 static CANDIDATES: AtomicU32 = AtomicU32::new(0);
 /// Peripheral hashes the software re-hash did not confirm.
 static HW_MISMATCH: AtomicU32 = AtomicU32::new(0);
+/// Batches whose first nonce failed the software spot check.
+static HW_SPOT_BAD: AtomicU32 = AtomicU32::new(0);
+/// The peripheral loop writes the next block's TEXT words while the
+/// engine runs (the bench showed the S3 latches TEXT at the trigger and
+/// leaves it alone). Off for good after a spot check failed: the loop
+/// then writes everything between the blocks, as it first shipped.
+static HW_PIPELINED: AtomicBool = AtomicBool::new(true);
 /// Best candidate difficulty since boot, with its decimals (the shared
 /// `best_session_diff` is an integer and reads 0 for this board's shares).
 static BEST_DIFF: Mutex<f64> = Mutex::new(0.0);
@@ -165,6 +174,14 @@ pub struct Info {
     /// Peripheral results the software re-hash rejected (should stay 0).
     #[serde(rename = "hwMismatch")]
     pub hw_mismatch: u32,
+    /// Batches whose first nonce the software spot check contradicted
+    /// (should stay 0; one turns the pipelining off).
+    #[serde(rename = "hwSpotBad")]
+    pub hw_spot_bad: u32,
+    /// Whether the peripheral loop still writes the next block while the
+    /// engine runs.
+    #[serde(rename = "hwPipelined")]
+    pub hw_pipelined: bool,
     /// Nonces of the current job handed out so far.
     #[serde(rename = "nonceProgress")]
     pub nonce_progress: u32,
@@ -201,10 +218,11 @@ static INFO: Mutex<Option<Info>> = Mutex::new(None);
 /// after a trigger from which TEXT[0, 3, 8, 15] may change without
 /// touching the digest, and whether a block leaves TEXT as written. D:
 /// the DMA path's latency for one and two blocks. V: the loop variants
-/// over 2048 nonces (0 shipped, 1 TEXT pipelined, 2 pipelined with
-/// counted waits, 3 both hashes by DMA, 4 first pipelined + second by
-/// DMA): cycles per nonce, kH/s from that, and nonces whose last digest
-/// word the software hash contradicted.
+/// over 2048 nonces (0 the loop as first shipped, 1 the next block's
+/// TEXT written while the engine runs, 2 that with the digest read in
+/// one go, 3 that with a counted wait before the first BUSY read, 4 both
+/// together): cycles per nonce, kH/s from that, and nonces whose last
+/// digest word the software hash contradicted.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Bench {
@@ -221,13 +239,16 @@ pub struct Bench {
     pub a_start_poll: u32,
     pub a_continue_delay: u32,
     pub a_start_delay: u32,
+    pub a_drained_poll: u32,
+    pub a_drained_delay: u32,
     pub b_text_safe: [u32; 4],
     pub b_text_kept: u32,
     pub d_dma_ok: u32,
     pub d_dma1_poll: u32,
     pub d_dma2_poll: u32,
     pub d_dma_right: u32,
-    pub v_text_delay: u32,
+    pub d_dma_text: u32,
+    pub v_counted_delay: u32,
     pub v_cycles: [u32; 5],
     pub v_khs: [f64; 5],
     pub v_bad: [u32; 5],
@@ -283,13 +304,16 @@ fn run_bench(job: &CpuJob) {
         a_start_poll: r.a_start_poll,
         a_continue_delay: r.a_continue_delay,
         a_start_delay: r.a_start_delay,
+        a_drained_poll: r.a_drained_poll,
+        a_drained_delay: r.a_drained_delay,
         b_text_safe: r.b_text_safe,
         b_text_kept: r.b_text_kept,
         d_dma_ok: r.d_dma_ok,
         d_dma1_poll: r.d_dma1_poll,
         d_dma2_poll: r.d_dma2_poll,
         d_dma_right: r.d_dma_right,
-        v_text_delay: r.v_text_delay,
+        d_dma_text: r.d_dma_text,
+        v_counted_delay: r.v_counted_delay,
         v_cycles: r.v_cycles,
         v_khs: [0.0; 5],
         v_bad: r.v_bad,
@@ -305,12 +329,13 @@ fn run_bench(job: &CpuJob) {
         b.t_store_then_load, b.t_store16_ram
     );
     log::info!(
-        "sha bench: busy CONTINUE {} polled / {} counted, START {} / {}; TEXT[0,3,8,15] safe after {:?}, kept {}",
-        b.a_continue_poll, b.a_continue_delay, b.a_start_poll, b.a_start_delay, b.b_text_safe, b.b_text_kept
+        "sha bench: busy CONTINUE {} polled / {} counted, START {} / {}, drained {} / {}; TEXT safe after {:?}, kept {}",
+        b.a_continue_poll, b.a_continue_delay, b.a_start_poll, b.a_start_delay, b.a_drained_poll, b.a_drained_delay,
+        b.b_text_safe, b.b_text_kept
     );
     log::info!(
-        "sha bench: dma ok {} right {}, one block {}, two blocks {}; variants (text delay {}): cycles {:?}",
-        b.d_dma_ok, b.d_dma_right, b.d_dma1_poll, b.d_dma2_poll, b.v_text_delay, b.v_cycles
+        "sha bench: dma ok {} right {} text {}, one block {}, two {}; variants (counted {}): cycles {:?}",
+        b.d_dma_ok, b.d_dma_right, b.d_dma_text, b.d_dma1_poll, b.d_dma2_poll, b.v_counted_delay, b.v_cycles
     );
     log::info!(
         "sha bench: variants kH/s {:.1} {:.1} {:.1} {:.1} {:.1}, bad {:?}",
@@ -340,6 +365,8 @@ pub fn info() -> Info {
     let mut i = INFO.lock().unwrap().clone().unwrap_or_default();
     i.candidates = CANDIDATES.load(Ordering::Relaxed);
     i.hw_mismatch = HW_MISMATCH.load(Ordering::Relaxed);
+    i.hw_spot_bad = HW_SPOT_BAD.load(Ordering::Relaxed);
+    i.hw_pipelined = HW_PIPELINED.load(Ordering::Relaxed);
     i.nonce_progress = JOB
         .lock()
         .unwrap()
@@ -571,42 +598,103 @@ unsafe fn wait_idle() {
     while reg_r(SHA_BUSY) != 0 {}
 }
 
+/// The midstate into the eight `H` registers.
+#[inline(always)]
+unsafe fn hw_write_h(job: &CpuJob) {
+    for (k, w) in job.hw_state.iter().enumerate() {
+        reg_w(SHA_H + 4 * k, *w);
+    }
+}
+
+/// The first hash's second block for `nonce` into `TEXT` (words 9..15
+/// are zero in both blocks and written once per batch).
+#[inline(always)]
+unsafe fn hw_write_block1(job: &CpuJob, nonce: u32) {
+    reg_w(SHA_TEXT, job.tail_words[0]);
+    reg_w(SHA_TEXT + 4, job.tail_words[1]);
+    reg_w(SHA_TEXT + 8, job.tail_words[2]);
+    reg_w(SHA_TEXT + 12, nonce);
+    reg_w(SHA_TEXT + 16, sha256::HW_PAD);
+    reg_w(SHA_TEXT + 20, 0);
+    reg_w(SHA_TEXT + 24, 0);
+    reg_w(SHA_TEXT + 28, 0);
+    reg_w(SHA_TEXT + 32, 0);
+    reg_w(SHA_TEXT + 60, sha256::HW_LEN_640);
+}
+
+/// The batch's start: mode, the constant zero words, and with the
+/// pipelining the first block already in place.
+#[inline(always)]
+unsafe fn hw_batch_setup(job: &CpuJob, nonce: u32, pipelined: bool) {
+    reg_w(SHA_MODE, SHA2_256);
+    for i in 9..15 {
+        reg_w(SHA_TEXT + 4 * i, 0);
+    }
+    if pipelined {
+        hw_write_block1(job, nonce);
+    }
+}
+
+// The engine takes about 130 cycles a block and latches TEXT at the
+// trigger; a store costs 6 cycles, a load 31 (the bench, 2026-10-15).
+// What the loop cannot hide is the eight H loads and the engine's own
+// time: with the next block's ten TEXT stores moved into the engine's
+// busy windows a nonce takes ~740 cycles instead of ~890.
 fn hw_batch(job: &CpuJob, start: u32, n: u32) {
     unsafe {
+        let pipelined = HW_PIPELINED.load(Ordering::Relaxed);
         esp_sha_acquire_hardware();
-        reg_w(SHA_MODE, SHA2_256);
-        // TEXT[9..15] are zero in both blocks and never touched by the
-        // engine: once per batch.
-        for i in 9..15 {
-            reg_w(SHA_TEXT + 4 * i, 0);
-        }
+        hw_batch_setup(job, start, pipelined);
         for i in 0..n {
             let nonce = start.wrapping_add(i);
             // First hash, second block, from the midstate.
-            for (k, w) in job.hw_state.iter().enumerate() {
-                reg_w(SHA_H + 4 * k, *w);
+            hw_write_h(job);
+            if pipelined {
+                reg_w(SHA_CONTINUE, 1);
+                // The second block's padding, while the engine runs.
+                reg_w(SHA_TEXT + 32, sha256::HW_PAD2);
+                reg_w(SHA_TEXT + 60, sha256::HW_LEN_256);
+            } else {
+                hw_write_block1(job, nonce);
+                reg_w(SHA_CONTINUE, 1);
             }
-            reg_w(SHA_TEXT, job.tail_words[0]);
-            reg_w(SHA_TEXT + 4, job.tail_words[1]);
-            reg_w(SHA_TEXT + 8, job.tail_words[2]);
-            reg_w(SHA_TEXT + 12, nonce);
-            reg_w(SHA_TEXT + 16, sha256::HW_PAD);
-            reg_w(SHA_TEXT + 20, 0);
-            reg_w(SHA_TEXT + 24, 0);
-            reg_w(SHA_TEXT + 28, 0);
-            reg_w(SHA_TEXT + 32, 0);
-            reg_w(SHA_TEXT + 60, sha256::HW_LEN_640);
-            reg_w(SHA_CONTINUE, 1);
             wait_idle();
             // Second hash: the digest, padded, as a fresh block.
             for k in 0..8 {
                 reg_w(SHA_TEXT + 4 * k, reg_r(SHA_H + 4 * k));
             }
-            reg_w(SHA_TEXT + 32, sha256::HW_PAD2);
-            reg_w(SHA_TEXT + 60, sha256::HW_LEN_256);
-            reg_w(SHA_START, 1);
+            if pipelined {
+                reg_w(SHA_START, 1);
+                // The next nonce's first block, while the engine runs
+                // (one past the batch on the last round; the next batch
+                // starts over anyway).
+                hw_write_block1(job, nonce.wrapping_add(1));
+            } else {
+                reg_w(SHA_TEXT + 32, sha256::HW_PAD2);
+                reg_w(SHA_TEXT + 60, sha256::HW_LEN_256);
+                reg_w(SHA_START, 1);
+            }
             wait_idle();
             let h7 = reg_r(SHA_H + 28);
+            // One nonce a batch against the software hash: a loop that
+            // went wrong would otherwise only show as fewer candidates.
+            if i == 0 {
+                let want = sha256::sha256d_tail(&job.midstate, &job.tail, nonce);
+                let want7 = u32::from_le_bytes([want[28], want[29], want[30], want[31]]);
+                if want7 != h7 {
+                    HW_SPOT_BAD.fetch_add(1, Ordering::Relaxed);
+                    if pipelined {
+                        HW_PIPELINED.store(false, Ordering::Relaxed);
+                        log::warn!(
+                            "cpu miner: peripheral spot check failed for nonce {nonce:08x} (H7 {h7:08x}, software {want7:08x}): pipelining off"
+                        );
+                    } else {
+                        log::warn!(
+                            "cpu miner: peripheral spot check failed for nonce {nonce:08x} (H7 {h7:08x}, software {want7:08x})"
+                        );
+                    }
+                }
+            }
             if sha256::hw_candidate(h7) {
                 let mut h = [0u32; 8];
                 for (k, w) in h.iter_mut().enumerate() {
@@ -616,10 +704,7 @@ fn hw_batch(job: &CpuJob, start: u32, n: u32) {
                 esp_sha_release_hardware();
                 found(job, nonce, hash, true);
                 esp_sha_acquire_hardware();
-                reg_w(SHA_MODE, SHA2_256);
-                for k in 9..15 {
-                    reg_w(SHA_TEXT + 4 * k, 0);
-                }
+                hw_batch_setup(job, nonce.wrapping_add(1), pipelined);
             }
         }
         esp_sha_release_hardware();

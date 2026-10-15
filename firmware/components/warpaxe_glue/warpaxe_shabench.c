@@ -201,6 +201,41 @@ static IRAM_ATTR uint32_t a_delay(const uint32_t hs[8], const uint32_t tw[3], ui
     return 0xffffffffu;
 }
 
+// CONTINUE after the bus has drained (MEMW), then poll: the engine's own
+// time plus one trigger and one read, without the backlog of the stores.
+static IRAM_ATTR uint32_t a_drained_poll(const uint32_t hs[8], const uint32_t tw[3])
+{
+    write_h(hs);
+    write_block1(tw, 0);
+    memw();
+    uint32_t t0 = ccount();
+    reg_w(SHA_CONTINUE_REG, 1);
+    wait_idle();
+    return ccount() - t0;
+}
+
+// The same as the smallest counted delay after which one read finds idle.
+static IRAM_ATTR uint32_t a_drained_delay(const uint32_t hs[8], const uint32_t tw[3])
+{
+    int hits = 0;
+    for (uint32_t d = 0; d < 1200; d += 2) {
+        write_h(hs);
+        write_block1(tw, 0);
+        memw();
+        uint32_t t0 = ccount();
+        reg_w(SHA_CONTINUE_REG, 1);
+        spin_until(t0, d);
+        uint32_t busy = reg_r(SHA_BUSY_REG);
+        wait_idle();
+        if (!busy) {
+            if (++hits == 3) return d - 4;
+        } else {
+            hits = 0;
+        }
+    }
+    return 0xffffffffu;
+}
+
 // ---- B: when the engine samples TEXT -----------------------------------
 
 // CONTINUE, a counted delay, then TEXT[k] overwritten: the smallest delay
@@ -308,9 +343,8 @@ typedef struct {
     const uint32_t *hs;   // midstate in H order
     const uint32_t *tw;   // tail words
     const uint32_t *head; // the header's first block, 16 words
-    uint32_t text_delay;  // cycles after a trigger before TEXT may change
-    uint32_t cont_delay;  // cycles a CONTINUE keeps the engine busy
-    uint32_t start_delay; // cycles a START keeps the engine busy
+    uint32_t cont_delay;  // cycles from a CONTINUE's issue before the first BUSY read
+    uint32_t start_delay; // the same for START
 } var_ctx_t;
 
 // V0: the loop as shipped (src/cpuminer.rs hw_batch), polling.
@@ -338,25 +372,43 @@ static IRAM_ATTR void v1_pipelined(const var_ctx_t *c, uint32_t *out, uint32_t n
     write_block1(c->tw, 0);
     for (uint32_t i = 0; i < n; i++) {
         write_h(c->hs);
-        uint32_t t0 = ccount();
         reg_w(SHA_CONTINUE_REG, 1);
-        spin_until(t0, c->text_delay);
         reg_w(SHA_TEXT(8), HW_PAD2);
         reg_w(SHA_TEXT(15), HW_LEN_256);
         wait_idle();
         for (int k = 0; k < 8; k++) reg_w(SHA_TEXT(k), reg_r(SHA_H(k)));
-        t0 = ccount();
         reg_w(SHA_START_REG, 1);
-        spin_until(t0, c->text_delay);
         write_block1(c->tw, i + 1);
         wait_idle();
         out[i] = reg_r(SHA_H(7));
     }
 }
 
-// V2: V1 with counted waits: one BUSY read at the earliest moment the
-// engine can be idle, instead of polling from the trigger on.
-static IRAM_ATTR void v2_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
+// V2: V1 with the digest read in one go (eight loads, then eight
+// stores) instead of load-store pairs.
+static IRAM_ATTR void v2_grouped(const var_ctx_t *c, uint32_t *out, uint32_t n)
+{
+    zero_text_9_14();
+    write_block1(c->tw, 0);
+    for (uint32_t i = 0; i < n; i++) {
+        write_h(c->hs);
+        reg_w(SHA_CONTINUE_REG, 1);
+        reg_w(SHA_TEXT(8), HW_PAD2);
+        reg_w(SHA_TEXT(15), HW_LEN_256);
+        wait_idle();
+        uint32_t h[8];
+        for (int k = 0; k < 8; k++) h[k] = reg_r(SHA_H(k));
+        for (int k = 0; k < 8; k++) reg_w(SHA_TEXT(k), h[k]);
+        reg_w(SHA_START_REG, 1);
+        write_block1(c->tw, i + 1);
+        wait_idle();
+        out[i] = reg_r(SHA_H(7));
+    }
+}
+
+// V3: V1 with a counted wait before the first BUSY read: the engine's
+// drained time, measured from the trigger's issue.
+static IRAM_ATTR void v3_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
 {
     zero_text_9_14();
     write_block1(c->tw, 0);
@@ -364,7 +416,6 @@ static IRAM_ATTR void v2_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
         write_h(c->hs);
         uint32_t t0 = ccount();
         reg_w(SHA_CONTINUE_REG, 1);
-        spin_until(t0, c->text_delay);
         reg_w(SHA_TEXT(8), HW_PAD2);
         reg_w(SHA_TEXT(15), HW_LEN_256);
         spin_until(t0, c->cont_delay);
@@ -372,7 +423,6 @@ static IRAM_ATTR void v2_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
         for (int k = 0; k < 8; k++) reg_w(SHA_TEXT(k), reg_r(SHA_H(k)));
         t0 = ccount();
         reg_w(SHA_START_REG, 1);
-        spin_until(t0, c->text_delay);
         write_block1(c->tw, i + 1);
         spin_until(t0, c->start_delay);
         wait_idle();
@@ -380,58 +430,26 @@ static IRAM_ATTR void v2_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
     }
 }
 
-// V3: both hashes through DMA: the first as two blocks from the header
-// (no midstate, no H restore), the second as one block from the digest.
-static IRAM_ATTR void v3_dma(const var_ctx_t *c, uint32_t *out, uint32_t n)
+// V4: V2 and V3 together.
+static IRAM_ATTR void v4_grouped_counted(const var_ctx_t *c, uint32_t *out, uint32_t n)
 {
-    uint32_t *b1 = s_buf;  // header block 0 + block 1: 32 words
-    uint32_t *b2 = s_buf2; // the second hash's block
-    for (int k = 0; k < 16; k++) b1[k] = c->head[k];
-    b1[16] = c->tw[0];
-    b1[17] = c->tw[1];
-    b1[18] = c->tw[2];
-    b1[20] = HW_PAD;
-    for (int k = 21; k < 31; k++) b1[k] = 0;
-    b1[31] = HW_LEN_640;
-    b2[8] = HW_PAD2;
-    for (int k = 9; k < 15; k++) b2[k] = 0;
-    b2[15] = HW_LEN_256;
-    for (uint32_t i = 0; i < n; i++) {
-        b1[19] = i;
-        dma_arm(b1, 2);
-        reg_w(SHA_BLOCK_NUM_REG, 2);
-        reg_w(SHA_DMA_START_REG, 1);
-        wait_idle();
-        for (int k = 0; k < 8; k++) b2[k] = reg_r(SHA_H(k));
-        dma_arm(b2, 1);
-        reg_w(SHA_BLOCK_NUM_REG, 1);
-        reg_w(SHA_DMA_START_REG, 1);
-        wait_idle();
-        out[i] = reg_r(SHA_H(7));
-    }
-}
-
-// V4: the first hash as V1 (midstate, pipelined TEXT), the second through
-// DMA from the digest words in RAM.
-static IRAM_ATTR void v4_mixed(const var_ctx_t *c, uint32_t *out, uint32_t n)
-{
-    uint32_t *b2 = s_buf2;
     zero_text_9_14();
     write_block1(c->tw, 0);
-    b2[8] = HW_PAD2;
-    for (int k = 9; k < 15; k++) b2[k] = 0;
-    b2[15] = HW_LEN_256;
-    reg_w(SHA_BLOCK_NUM_REG, 1);
     for (uint32_t i = 0; i < n; i++) {
         write_h(c->hs);
-        reg_w(SHA_CONTINUE_REG, 1);
-        wait_idle();
-        for (int k = 0; k < 8; k++) b2[k] = reg_r(SHA_H(k));
-        dma_arm(b2, 1);
         uint32_t t0 = ccount();
-        reg_w(SHA_DMA_START_REG, 1);
-        spin_until(t0, c->text_delay);
+        reg_w(SHA_CONTINUE_REG, 1);
+        reg_w(SHA_TEXT(8), HW_PAD2);
+        reg_w(SHA_TEXT(15), HW_LEN_256);
+        spin_until(t0, c->cont_delay);
+        wait_idle();
+        uint32_t h[8];
+        for (int k = 0; k < 8; k++) h[k] = reg_r(SHA_H(k));
+        for (int k = 0; k < 8; k++) reg_w(SHA_TEXT(k), h[k]);
+        t0 = ccount();
+        reg_w(SHA_START_REG, 1);
         write_block1(c->tw, i + 1);
+        spin_until(t0, c->start_delay);
         wait_idle();
         out[i] = reg_r(SHA_H(7));
     }
@@ -439,7 +457,7 @@ static IRAM_ATTR void v4_mixed(const var_ctx_t *c, uint32_t *out, uint32_t n)
 
 typedef void (*variant_fn)(const var_ctx_t *, uint32_t *, uint32_t);
 
-static const variant_fn s_variants[N_VAR] = {v0_shipped, v1_pipelined, v2_counted, v3_dma, v4_mixed};
+static const variant_fn s_variants[N_VAR] = {v0_shipped, v1_pipelined, v2_grouped, v3_counted, v4_grouped_counted};
 
 // ---- the run -------------------------------------------------------------
 
@@ -508,6 +526,15 @@ int wa_sha_bench(const uint32_t mid[8], const uint8_t tail[12], const uint32_t h
     portDISABLE_INTERRUPTS();
     out->a_start_delay = a_delay(hs, tw, SHA_START_REG);
     portENABLE_INTERRUPTS();
+    out->a_drained_poll = 0xffffffffu;
+    for (int r = 0; r < 8; r++) {
+        portDISABLE_INTERRUPTS();
+        out->a_drained_poll = min_of(out->a_drained_poll, a_drained_poll(hs, tw));
+        portENABLE_INTERRUPTS();
+    }
+    portDISABLE_INTERRUPTS();
+    out->a_drained_delay = a_drained_delay(hs, tw);
+    portENABLE_INTERRUPTS();
 
     // B: TEXT sampling.
     static const int words[4] = {0, 3, 8, 15};
@@ -544,6 +571,12 @@ int wa_sha_bench(const uint32_t mid[8], const uint8_t tail[12], const uint32_t h
             out->d_dma1_poll = min_of(out->d_dma1_poll, d_dma_poll(1));
             portENABLE_INTERRUPTS();
         }
+        // Does the DMA path go through TEXT? 1 when TEXT now holds the
+        // block the DMA fed (so TEXT cannot be prepared during a DMA hash).
+        out->d_dma_text = 1;
+        for (int k = 0; k < 16; k++) {
+            if (reg_r(SHA_TEXT(k)) != s_buf[k]) out->d_dma_text = 0;
+        }
         // The two-block DMA hash must equal the midstate path.
         dma_arm(s_buf, 2);
         reg_w(SHA_BLOCK_NUM_REG, 2);
@@ -555,28 +588,24 @@ int wa_sha_bench(const uint32_t mid[8], const uint8_t tail[12], const uint32_t h
         }
     }
 
-    // V: the variants, each timed over N_NONCE nonces, then checked.
-    uint32_t safe = 0;
+    // V: the variants, each timed over N_NONCE nonces, then checked. The
+    // pipelined ones are only tried when the engine does latch TEXT at
+    // the trigger (B found a delay for every word).
+    int latches = 1;
     for (int j = 0; j < 4; j++) {
-        if (out->b_text_safe[j] != 0xffffffffu && out->b_text_safe[j] > safe) safe = out->b_text_safe[j];
+        if (out->b_text_safe[j] == 0xffffffffu) latches = 0;
     }
+    uint32_t drained = out->a_drained_delay == 0xffffffffu ? 0 : out->a_drained_delay;
     var_ctx_t ctx = {
         .hs = hs,
         .tw = tw,
         .head = head,
-        .text_delay = safe + 8,
-        .cont_delay = out->a_continue_delay == 0xffffffffu ? 0 : out->a_continue_delay,
-        .start_delay = out->a_start_delay == 0xffffffffu ? 0 : out->a_start_delay,
+        .cont_delay = drained,
+        .start_delay = drained,
     };
-    out->v_text_delay = ctx.text_delay;
+    out->v_counted_delay = drained;
     for (int v = 0; v < N_VAR; v++) {
-        if ((v == 3 || v == 4) && !out->d_dma_ok) {
-            out->v_cycles[v] = 0;
-            out->v_bad[v] = 0xffffffffu;
-            continue;
-        }
-        // Pipelining is only tried when the engine does latch TEXT.
-        if ((v == 1 || v == 2 || v == 4) && safe == 0 && out->b_text_safe[0] == 0xffffffffu) {
+        if (v > 0 && !latches) {
             out->v_cycles[v] = 0;
             out->v_bad[v] = 0xffffffffu;
             continue;

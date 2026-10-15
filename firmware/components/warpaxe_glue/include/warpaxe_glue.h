@@ -59,6 +59,8 @@ typedef struct {
     uint32_t a_start_poll;         // START to the first idle poll
     uint32_t a_continue_delay;     // smallest counted delay, then idle in one read
     uint32_t a_start_delay;
+    uint32_t a_drained_poll;       // CONTINUE after a MEMW (no store backlog) to idle
+    uint32_t a_drained_delay;      // the same as the smallest counted delay
     /// B: TEXT sampling: delay after CONTINUE from which TEXT[k] may
     /// change without touching the digest, for k = 0, 3, 8, 15.
     uint32_t b_text_safe[4];
@@ -68,11 +70,13 @@ typedef struct {
     uint32_t d_dma1_poll;          // DMA_START over one block to idle
     uint32_t d_dma2_poll;          // over two blocks
     uint32_t d_dma_right;          // 1: the two-block hash equals the midstate path
+    uint32_t d_dma_text;           // 1: a DMA hash leaves its block in TEXT
     /// V: loop variants over 2048 nonces: cycles per nonce and nonces
     /// whose H[7] differed from the software hash. 0 = shipped loop,
-    /// 1 = TEXT pipelined, 2 = pipelined + counted waits, 3 = both
-    /// hashes by DMA, 4 = first hash pipelined + second by DMA.
-    uint32_t v_text_delay;         // cycles the pipelined variants wait before TEXT
+    /// 1 = the next block's TEXT written while the engine runs,
+    /// 2 = 1 with the digest read in one go, 3 = 1 with a counted wait
+    /// before the first BUSY read, 4 = 2 and 3 together.
+    uint32_t v_counted_delay;      // the counted wait of 3 and 4, cycles
     uint32_t v_cycles[5];
     uint32_t v_bad[5];
 } wa_sha_bench_t;
