@@ -1,0 +1,5 @@
+# ESP32-P4: 360 MHz is the one CPU clock ESP-IDF v5.3 offers for it. The
+# minimum chip revision stays at v0.1 (ESP-IDF's default), so the image
+# starts on any pre-series part (v1.x); a v3.x part needs ESP-IDF v5.4
+# or later and an image of its own.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_360=y

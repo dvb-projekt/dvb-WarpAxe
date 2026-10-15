@@ -1,0 +1,13 @@
+# tools/sha-bench: a small image that starts on any ESP32-S3 or ESP32-P4
+# board. 4 MB of flash in the image header (the chip may have more, the
+# bench needs 300 KB), no PSRAM, a single factory app. The console goes
+# to UART0 and, where the chip has one, the USB-Serial/JTAG port as well
+# (ESP-IDF's default), so the log shows up on whichever port the board
+# brings out. Per-target settings: sdkconfig.defaults.<target>.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="4MB"
+CONFIG_PARTITION_TABLE_SINGLE_APP=y
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+CONFIG_FREERTOS_HZ=1000
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y

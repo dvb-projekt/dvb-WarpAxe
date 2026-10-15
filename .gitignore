@@ -2,3 +2,6 @@ target/
 **/*.rs.bk
 Cargo.lock.orig
 .DS_Store
+
+# tools/sha-bench: one ESP-IDF build directory per target.
+tools/sha-bench/build-*/

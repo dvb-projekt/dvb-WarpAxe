@@ -1,20 +1,37 @@
-// The ESP32-S3's SHA peripheral as the hash loop and its bench see it
-// (soc/hwcrypto_reg.h): a message block goes into TEXT as sixteen words,
-// the digest state lives in H as eight. Private to the component: not
-// under include/, so bindgen never sees it.
+// The SHA peripheral of the ESP32-S3 and the ESP32-P4 as the hash loop
+// and its bench see it (soc/hwcrypto_reg.h of the target): a message
+// block goes into TEXT as sixteen words, the digest state lives in H as
+// eight. The two chips have the same engine (ESP-IDF's sha_ll.h: START,
+// CONTINUE, a writable digest, a DMA mode); the P4 only names the
+// registers differently. Private to the component: not under include/,
+// so bindgen never sees it.
 //
-// Register traffic goes through inline `s32i`/`l32i` so the compiler
-// neither reorders the accesses nor adds a MEMW of its own: a store is
-// posted (~6 cycles at 240 MHz), a load waits for the bus (~31), and
+// Register traffic goes through inline stores and loads (`s32i`/`l32i`
+// on the Xtensa, `sw`/`lw` on the RISC-V) so the compiler neither
+// reorders the accesses nor adds a barrier of its own. On the S3 a store
+// is posted (~6 cycles at 240 MHz), a load waits for the bus (~31), and
 // the engine takes ~140 cycles a block. It latches TEXT at the trigger
 // and leaves it alone, so the next block's words may go in while it
-// runs (the bench, warpaxe_shabench.c, 2026-10-15).
+// runs (the bench, warpaxe_shabench.c, 2026-10-15). The P4's numbers:
+// docs/06, once measured.
 #pragma once
 #include <stdint.h>
 #include "esp_cpu.h"
 #include "soc/hwcrypto_reg.h"
 
 #define WA_SHA2_256 2
+
+// The P4's names for the same registers (soc/sha_reg.h).
+#ifndef SHA_H_BASE
+#define SHA_H_BASE SHA_H_MEM
+#endif
+#ifndef SHA_TEXT_BASE
+#define SHA_TEXT_BASE SHA_M_MEM
+#endif
+#ifndef SHA_BLOCK_NUM_REG
+#define SHA_BLOCK_NUM_REG SHA_DMA_BLOCK_NUM_REG
+#endif
+
 #define WA_SHA_H(k) (SHA_H_BASE + 4 * (k))
 #define WA_SHA_TEXT(k) (SHA_TEXT_BASE + 4 * (k))
 
@@ -23,6 +40,8 @@
 #define WA_HW_LEN_640 0x80020000u
 #define WA_HW_PAD2 0x00000080u
 #define WA_HW_LEN_256 0x00010000u
+
+#if defined(__XTENSA__)
 
 static inline __attribute__((always_inline)) void wa_reg_w(uint32_t addr, uint32_t v)
 {
@@ -36,11 +55,37 @@ static inline __attribute__((always_inline)) uint32_t wa_reg_r(uint32_t addr)
     return v;
 }
 
+// Wait until the bus has taken every posted store.
 static inline __attribute__((always_inline)) void wa_memw(void)
 {
     __asm__ volatile("memw" ::: "memory");
 }
 
+#elif defined(__riscv)
+
+static inline __attribute__((always_inline)) void wa_reg_w(uint32_t addr, uint32_t v)
+{
+    __asm__ volatile("sw %0, 0(%1)" ::"r"(v), "r"(addr) : "memory");
+}
+
+static inline __attribute__((always_inline)) uint32_t wa_reg_r(uint32_t addr)
+{
+    uint32_t v;
+    __asm__ volatile("lw %0, 0(%1)" : "=r"(v) : "r"(addr) : "memory");
+    return v;
+}
+
+// The RISC-V's FENCE in the MEMW's place: every earlier access complete.
+static inline __attribute__((always_inline)) void wa_memw(void)
+{
+    __asm__ volatile("fence" ::: "memory");
+}
+
+#else
+#error "warpaxe_sha_regs.h: neither Xtensa nor RISC-V"
+#endif
+
+// The CPU's cycle counter (CCOUNT on the Xtensa, mcycle on the RISC-V).
 static inline __attribute__((always_inline)) uint32_t wa_ccount(void)
 {
     return esp_cpu_get_cycle_count();

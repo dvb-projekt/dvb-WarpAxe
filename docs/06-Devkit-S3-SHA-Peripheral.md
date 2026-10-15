@@ -34,6 +34,12 @@ runs 2048 nonces and every nonce's `H[7]` is checked against the software
 hash afterwards: a variant that corrupts a hash shows as `vBad`, never as
 a hashrate.
 
+The same bench as a program of its own, for boards without WarpAxe (first
+the ESP32-P4, whose SHA engine ESP-IDF describes like the S3's):
+`tools/sha-bench`, built with `idf.py` for `esp32s3` or `esp32p4` from the
+same source files. It hashes the Bitcoin genesis header and prints the
+table below plus one JSON line every 30 s.
+
 | Probe | What it does |
 |---|---|
 | T | CCOUNT around register sequences, best of eight with interrupts off: 16 TEXT stores with and without MEMW, 8 H stores, 8 H loads, one BUSY load, a store then a load, 16 DRAM stores for scale |

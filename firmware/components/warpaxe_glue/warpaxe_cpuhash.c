@@ -9,7 +9,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "esp_attr.h"
-#include "warpaxe_glue.h"
+#include "warpaxe_sha.h"
 #include "warpaxe_sha_regs.h"
 
 static DRAM_ATTR const uint32_t K[64] = {
@@ -61,6 +61,15 @@ static IRAM_ATTR void compress(uint32_t s[8], uint32_t W[64])
 static inline uint32_t be32(const uint8_t *p)
 {
     return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
+}
+
+void wa_sha256_midstate(const uint8_t block[64], uint32_t mid[8])
+{
+    uint32_t W[64];
+    for (int k = 0; k < 16; k++) W[k] = be32(block + 4 * k);
+    mid[0] = 0x6a09e667; mid[1] = 0xbb67ae85; mid[2] = 0x3c6ef372; mid[3] = 0xa54ff53a;
+    mid[4] = 0x510e527f; mid[5] = 0x9b05688c; mid[6] = 0x1f83d9ab; mid[7] = 0x5be0cd19;
+    compress(mid, W);
 }
 
 IRAM_ATTR uint32_t wa_sha256d_scan(const uint32_t mid[8], const uint8_t tail[12], uint32_t start,

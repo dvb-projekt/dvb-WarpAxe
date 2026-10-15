@@ -1,0 +1,5 @@
+# ESP32-S3 at 240 MHz, as the devkit runs (docs/06). The T-Display-S3
+# has only the native USB port, so the console is USB-Serial/JTAG.
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

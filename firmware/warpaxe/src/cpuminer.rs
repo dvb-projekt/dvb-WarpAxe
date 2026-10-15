@@ -223,8 +223,9 @@ static INFO: Mutex<Option<Info>> = Mutex::new(None);
 /// over 2048 nonces (0 the loop as first shipped, 1 the next block's
 /// TEXT written while the engine runs, 2 that with the digest read in
 /// one go, 3 that with a counted wait before the first BUSY read, 4 both
-/// together): cycles per nonce, kH/s from that, and nonces whose last
-/// digest word the software hash contradicted.
+/// together, 5 the firmware's own loop `wa_sha256d_hw_scan`): cycles per
+/// nonce, kH/s from that, and nonces whose last digest word the software
+/// hash contradicted.
 #[cfg(feature = "shabench")]
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -252,9 +253,9 @@ pub struct Bench {
     pub d_dma_right: u32,
     pub d_dma_text: u32,
     pub v_counted_delay: u32,
-    pub v_cycles: [u32; 5],
-    pub v_khs: [f64; 5],
-    pub v_bad: [u32; 5],
+    pub v_cycles: [u32; 6],
+    pub v_khs: [f64; 6],
+    pub v_bad: [u32; 6],
 }
 #[cfg(feature = "shabench")]
 static BENCH: Mutex<Option<Bench>> = Mutex::new(None);
@@ -322,10 +323,10 @@ fn run_bench(job: &CpuJob) {
         d_dma_text: r.d_dma_text,
         v_counted_delay: r.v_counted_delay,
         v_cycles: r.v_cycles,
-        v_khs: [0.0; 5],
+        v_khs: [0.0; 6],
         v_bad: r.v_bad,
     };
-    for k in 0..5 {
+    for k in 0..6 {
         if b.v_cycles[k] > 0 {
             b.v_khs[k] = f64::from(b.cpu_mhz) * 1e3 / f64::from(b.v_cycles[k]);
         }
@@ -345,12 +346,13 @@ fn run_bench(job: &CpuJob) {
         b.d_dma_ok, b.d_dma_right, b.d_dma_text, b.d_dma1_poll, b.d_dma2_poll, b.v_counted_delay, b.v_cycles
     );
     log::info!(
-        "sha bench: variants kH/s {:.1} {:.1} {:.1} {:.1} {:.1}, bad {:?}",
+        "sha bench: variants kH/s {:.1} {:.1} {:.1} {:.1} {:.1} {:.1}, bad {:?}",
         b.v_khs[0],
         b.v_khs[1],
         b.v_khs[2],
         b.v_khs[3],
         b.v_khs[4],
+        b.v_khs[5],
         b.v_bad
     );
     *BENCH.lock().unwrap() = Some(b);
