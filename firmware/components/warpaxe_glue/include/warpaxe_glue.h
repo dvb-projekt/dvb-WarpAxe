@@ -32,6 +32,57 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len);
 uint32_t wa_sha256d_scan(const uint32_t mid[8], const uint8_t tail[12], uint32_t start,
                          uint32_t n, uint8_t hash_out[32]);
 
+/// The first hash's state after its second block for `nonce`, as the
+/// eight words the S3's SHA peripheral holds in H (memory order).
+void wa_sha256_block1_h(const uint32_t mid[8], const uint8_t tail[12], uint32_t nonce,
+                        uint32_t h_out[8]);
+
+/// The double hash's last word for `nonce` as the peripheral's H[7]
+/// reads it (memory order): what the workers test for a candidate.
+uint32_t wa_sha256d_h7(const uint32_t mid[8], const uint8_t tail[12], uint32_t nonce);
+
+/// The SHA peripheral measured (warpaxe_shabench.c): cycles are CPU
+/// cycles at `cpu_mhz`; 0xffffffff means "not found" or "not run".
+typedef struct {
+    uint32_t cpu_mhz;
+    /// T: register access cost, best of eight, interrupts off.
+    uint32_t t_nothing;            // two CCOUNT reads back to back
+    uint32_t t_store16_text;       // sixteen stores to TEXT
+    uint32_t t_store16_text_memw;  // the same with a MEMW after each
+    uint32_t t_store8_h;           // eight stores to H
+    uint32_t t_load8_h;            // eight loads from H
+    uint32_t t_load_busy;          // one load of BUSY
+    uint32_t t_store_then_load;    // a store to TEXT, then a load of BUSY
+    uint32_t t_store16_ram;        // sixteen stores to DRAM, for scale
+    /// A: busy window after a trigger.
+    uint32_t a_continue_poll;      // CONTINUE to the first idle poll
+    uint32_t a_start_poll;         // START to the first idle poll
+    uint32_t a_continue_delay;     // smallest counted delay, then idle in one read
+    uint32_t a_start_delay;
+    /// B: TEXT sampling: delay after CONTINUE from which TEXT[k] may
+    /// change without touching the digest, for k = 0, 3, 8, 15.
+    uint32_t b_text_safe[4];
+    uint32_t b_text_kept;          // 1: a block leaves TEXT as written
+    /// D: the DMA path.
+    uint32_t d_dma_ok;             // 1: a GDMA channel was had
+    uint32_t d_dma1_poll;          // DMA_START over one block to idle
+    uint32_t d_dma2_poll;          // over two blocks
+    uint32_t d_dma_right;          // 1: the two-block hash equals the midstate path
+    /// V: loop variants over 2048 nonces: cycles per nonce and nonces
+    /// whose H[7] differed from the software hash. 0 = shipped loop,
+    /// 1 = TEXT pipelined, 2 = pipelined + counted waits, 3 = both
+    /// hashes by DMA, 4 = first hash pipelined + second by DMA.
+    uint32_t v_text_delay;         // cycles the pipelined variants wait before TEXT
+    uint32_t v_cycles[5];
+    uint32_t v_bad[5];
+} wa_sha_bench_t;
+
+/// Run the bench on the calling core, under the crypto lock. `head` is
+/// the header's first 64 bytes as little-endian words. Returns 0 when
+/// no memory was had.
+int wa_sha_bench(const uint32_t mid[8], const uint8_t tail[12], const uint32_t head[16],
+                 wa_sha_bench_t *out);
+
 /// Route stdout (and so ESP_LOG) to the CDC-ACM port. Non-blocking writes.
 esp_err_t wa_usb_console_to_cdc(void);
 

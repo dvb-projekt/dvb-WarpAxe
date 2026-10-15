@@ -98,3 +98,37 @@ IRAM_ATTR uint32_t wa_sha256d_scan(const uint32_t mid[8], const uint8_t tail[12]
     }
     return n;
 }
+
+// The peripheral's view of the first hash's state after its second
+// block: the native words byte-swapped (crates/cpuminer sha256.rs
+// hw_state).
+void wa_sha256_block1_h(const uint32_t mid[8], const uint8_t tail[12], uint32_t nonce,
+                        uint32_t h_out[8])
+{
+    uint32_t W[64];
+    uint32_t s[8];
+    W[0] = be32(tail); W[1] = be32(tail + 4); W[2] = be32(tail + 8);
+    W[3] = __builtin_bswap32(nonce);
+    W[4] = 0x80000000u;
+    for (int k = 5; k < 15; k++) W[k] = 0;
+    W[15] = 640;
+    memcpy(s, mid, sizeof(s));
+    compress(s, W);
+    for (int k = 0; k < 8; k++) h_out[k] = __builtin_bswap32(s[k]);
+}
+
+uint32_t wa_sha256d_h7(const uint32_t mid[8], const uint8_t tail[12], uint32_t nonce)
+{
+    uint32_t h[8];
+    wa_sha256_block1_h(mid, tail, nonce, h);
+    uint32_t W[64];
+    uint32_t s[8];
+    for (int k = 0; k < 8; k++) W[k] = __builtin_bswap32(h[k]);
+    W[8] = 0x80000000u;
+    for (int k = 9; k < 15; k++) W[k] = 0;
+    W[15] = 256;
+    s[0] = 0x6a09e667; s[1] = 0xbb67ae85; s[2] = 0x3c6ef372; s[3] = 0xa54ff53a;
+    s[4] = 0x510e527f; s[5] = 0x9b05688c; s[6] = 0x1f83d9ab; s[7] = 0x5be0cd19;
+    compress(s, W);
+    return __builtin_bswap32(s[7]);
+}

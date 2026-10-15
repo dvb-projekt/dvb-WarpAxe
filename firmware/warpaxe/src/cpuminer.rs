@@ -189,8 +189,140 @@ pub struct Info {
     /// The ESP32-S3's CPU clock, MHz.
     #[serde(rename = "cpuMhz")]
     pub cpu_mhz: u32,
+    /// The SHA peripheral measured ([`Bench`]), once the worker has run it.
+    pub bench: Option<Bench>,
 }
 static INFO: Mutex<Option<Info>> = Mutex::new(None);
+
+/// What `wa_sha_bench` (components/warpaxe_glue/warpaxe_shabench.c)
+/// measured: CPU cycles at `cpu_mhz`, `u32::MAX` for "not found" or
+/// "not run". T: register access costs. A: how long a trigger keeps the
+/// engine busy, polled and as the smallest counted delay. B: the delay
+/// after a trigger from which TEXT[0, 3, 8, 15] may change without
+/// touching the digest, and whether a block leaves TEXT as written. D:
+/// the DMA path's latency for one and two blocks. V: the loop variants
+/// over 2048 nonces (0 shipped, 1 TEXT pipelined, 2 pipelined with
+/// counted waits, 3 both hashes by DMA, 4 first pipelined + second by
+/// DMA): cycles per nonce, kH/s from that, and nonces whose last digest
+/// word the software hash contradicted.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Bench {
+    pub cpu_mhz: u32,
+    pub t_nothing: u32,
+    pub t_store16_text: u32,
+    pub t_store16_text_memw: u32,
+    pub t_store8_h: u32,
+    pub t_load8_h: u32,
+    pub t_load_busy: u32,
+    pub t_store_then_load: u32,
+    pub t_store16_ram: u32,
+    pub a_continue_poll: u32,
+    pub a_start_poll: u32,
+    pub a_continue_delay: u32,
+    pub a_start_delay: u32,
+    pub b_text_safe: [u32; 4],
+    pub b_text_kept: u32,
+    pub d_dma_ok: u32,
+    pub d_dma1_poll: u32,
+    pub d_dma2_poll: u32,
+    pub d_dma_right: u32,
+    pub v_text_delay: u32,
+    pub v_cycles: [u32; 5],
+    pub v_khs: [f64; 5],
+    pub v_bad: [u32; 5],
+}
+static BENCH: Mutex<Option<Bench>> = Mutex::new(None);
+/// Set by the API: the peripheral worker runs the bench again between
+/// two batches.
+static BENCH_REQUEST: AtomicBool = AtomicBool::new(false);
+
+/// Ask the peripheral worker for another bench run (POST
+/// /api/v1/cpuminer/bench). False when one is still pending.
+pub fn request_bench() -> bool {
+    !BENCH_REQUEST.swap(true, Ordering::Relaxed)
+}
+
+/// The bench on the calling thread, which the caller has raised to a
+/// priority above the workers: results logged and kept for [`info`].
+fn run_bench(job: &CpuJob) {
+    let header = job.job.header(job.job.version, 0);
+    let mut head = [0u32; 16];
+    for (k, w) in head.iter_mut().enumerate() {
+        *w = u32::from_le_bytes([
+            header[4 * k],
+            header[4 * k + 1],
+            header[4 * k + 2],
+            header[4 * k + 3],
+        ]);
+    }
+    let mut r: sys::tusb::wa_sha_bench_t = unsafe { core::mem::zeroed() };
+    let ok = unsafe {
+        sys::tusb::wa_sha_bench(
+            job.midstate.as_ptr(),
+            job.tail.as_ptr(),
+            head.as_ptr(),
+            &mut r,
+        )
+    };
+    if ok == 0 {
+        log::warn!("sha bench: no memory for the result buffer");
+        return;
+    }
+    let mut b = Bench {
+        cpu_mhz: r.cpu_mhz,
+        t_nothing: r.t_nothing,
+        t_store16_text: r.t_store16_text,
+        t_store16_text_memw: r.t_store16_text_memw,
+        t_store8_h: r.t_store8_h,
+        t_load8_h: r.t_load8_h,
+        t_load_busy: r.t_load_busy,
+        t_store_then_load: r.t_store_then_load,
+        t_store16_ram: r.t_store16_ram,
+        a_continue_poll: r.a_continue_poll,
+        a_start_poll: r.a_start_poll,
+        a_continue_delay: r.a_continue_delay,
+        a_start_delay: r.a_start_delay,
+        b_text_safe: r.b_text_safe,
+        b_text_kept: r.b_text_kept,
+        d_dma_ok: r.d_dma_ok,
+        d_dma1_poll: r.d_dma1_poll,
+        d_dma2_poll: r.d_dma2_poll,
+        d_dma_right: r.d_dma_right,
+        v_text_delay: r.v_text_delay,
+        v_cycles: r.v_cycles,
+        v_khs: [0.0; 5],
+        v_bad: r.v_bad,
+    };
+    for k in 0..5 {
+        if b.v_cycles[k] > 0 {
+            b.v_khs[k] = f64::from(b.cpu_mhz) * 1e3 / f64::from(b.v_cycles[k]);
+        }
+    }
+    log::info!(
+        "sha bench: {} MHz; cycles: ccount {}, TEXT x16 {} (memw {}), H x8 store {} load {}, BUSY {}, store+load {}, RAM x16 {}",
+        b.cpu_mhz, b.t_nothing, b.t_store16_text, b.t_store16_text_memw, b.t_store8_h, b.t_load8_h, b.t_load_busy,
+        b.t_store_then_load, b.t_store16_ram
+    );
+    log::info!(
+        "sha bench: busy CONTINUE {} polled / {} counted, START {} / {}; TEXT[0,3,8,15] safe after {:?}, kept {}",
+        b.a_continue_poll, b.a_continue_delay, b.a_start_poll, b.a_start_delay, b.b_text_safe, b.b_text_kept
+    );
+    log::info!(
+        "sha bench: dma ok {} right {}, one block {}, two blocks {}; variants (text delay {}): cycles {:?}",
+        b.d_dma_ok, b.d_dma_right, b.d_dma1_poll, b.d_dma2_poll, b.v_text_delay, b.v_cycles
+    );
+    log::info!(
+        "sha bench: variants kH/s {:.1} {:.1} {:.1} {:.1} {:.1}, bad {:?}",
+        b.v_khs[0],
+        b.v_khs[1],
+        b.v_khs[2],
+        b.v_khs[3],
+        b.v_khs[4],
+        b.v_bad
+    );
+    *BENCH.lock().unwrap() = Some(b);
+}
 /// The CPU clock the devkit runs at; set once in [`start`].
 const CPU_MHZ_WANTED: i32 = 240;
 static CPU_MHZ: AtomicU32 = AtomicU32::new(0);
@@ -216,6 +348,7 @@ pub fn info() -> Info {
     i.die_temp_c = die_temp_c();
     i.best_diff = *BEST_DIFF.lock().unwrap();
     i.cpu_mhz = cpu_mhz();
+    i.bench = BENCH.lock().unwrap().clone();
     for k in 0..2 {
         i.cores[k] = Some(WORKER_CORE[k].load(Ordering::Relaxed)).filter(|c| *c != u32::MAX);
         i.probe_khs[k] = f64::from(PROBE_KHS10[k].load(Ordering::Relaxed)) / 10.0;
@@ -340,14 +473,24 @@ fn worker(index: usize, scan: fn(&CpuJob, u32, u32), batch: u32, counter: &Atomi
     let t0 = now_us();
     scan(&probe, 0, batch);
     let dt = (now_us() - t0).max(1);
-    unsafe { sys::vTaskPrioritySet(null, prio) };
     let khs = f64::from(batch) / dt as f64 * 1e3;
     PROBE_KHS10[index].store((khs * 10.0) as u32, Ordering::Relaxed);
     log::info!(
         "cpu miner: worker {index} on core {core} priority {prio}: {khs:.1} kH/s alone ({batch} hashes in {dt} us)"
     );
+    // The peripheral worker measures the engine once, still at the
+    // probe's priority.
+    if index == 0 {
+        run_bench(&probe);
+    }
+    unsafe { sys::vTaskPrioritySet(null, prio) };
     let mut last_yield = now_us();
     loop {
+        if index == 0 && BENCH_REQUEST.swap(false, Ordering::Relaxed) {
+            unsafe { sys::vTaskPrioritySet(null, 20) };
+            run_bench(&probe);
+            unsafe { sys::vTaskPrioritySet(null, prio) };
+        }
         let job = JOB.lock().unwrap().clone();
         let Some(job) = job else {
             std::thread::sleep(Duration::from_millis(50));
