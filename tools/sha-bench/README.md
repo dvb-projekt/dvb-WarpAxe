@@ -20,20 +20,28 @@ and the firmware's production loop (variant 5).
 
 ## Build
 
-ESP-IDF v5.3.3 at `~/.espressif/esp-idf/v5.3.3` (or exported as
-`IDF_PATH`), with the `riscv32-esp-elf` toolchain installed for the P4
-(`idf_tools.py install --targets esp32p4 riscv32-esp-elf`).
+A plain ESP-IDF project: any ESP-IDF 5.3 install with the target's
+toolchain does (for the P4 that is `riscv32-esp-elf`, which
+`install.sh esp32p4` brings along). With ESP-IDF exported:
 
 ```bash
-tools/sha-bench/build.sh esp32p4
-tools/sha-bench/build.sh esp32s3
+cd tools/sha-bench
+idf.py set-target esp32p4      # or esp32s3
+idf.py build
+idf.py -p PORT flash monitor   # or: esptool.py --chip esp32p4 -p PORT write_flash @build/flash_args
 ```
 
-Each target builds in `build-<target>/` with its own sdkconfig
-(`sdkconfig.defaults` plus `sdkconfig.defaults.<target>`) and ends with
-`build-<target>/sha-bench-<target>.bin`, one image for offset 0, and its
-SHA-256 beside it. Flashing and reading the output: `README-mutatrum.md`
-(the P4 instructions as they go out).
+`build.sh <target>` does the same with one build directory per target,
+`build-<target>/`, each with its own sdkconfig (`sdkconfig.defaults`
+plus `sdkconfig.defaults.<target>`), and merges the result into
+`build-<target>/sha-bench-<target>.bin`, one image for offset 0, with
+its SHA-256 beside it. Without ESP-IDF on the PATH it falls back to the
+v5.3.3 that esp-idf-sys installs for the firmware under `~/.espressif`.
+Flashing and reading the output: `README-mutatrum.md` (the P4
+instructions as they go out). Built and tested with ESP-IDF v5.3.3 only
+(2026-10-15); a newer ESP-IDF may name the P4's clock and revision
+options differently, which `sdkconfig.defaults.esp32p4` then only warns
+about.
 
 ESP32-P4 revisions: ESP-IDF v5.3.3 supports v0.x and v1.x (the Waveshare
 ESP32-P4-ETH is v1.3). A v3.x part needs ESP-IDF v5.4 or later and an
