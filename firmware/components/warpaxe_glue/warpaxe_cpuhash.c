@@ -1,12 +1,16 @@
-// The software hash of the T-Display-S3 without chips (src/cpuminer.rs):
-// double SHA-256 of a block header from its midstate, nonce after nonce, in C
-// so GCC's -O2 and IRAM_ATTR do what they do for NerdMiner's nerd_sha256d. The
-// Rust loop managed 11 kH/s on the Xtensa (a rolled 64-round loop, ~60
-// instructions a round); this one unrolls eight rounds per iteration.
+// The two hash loops of the T-Display-S3 without chips (src/cpuminer.rs):
+// double SHA-256 of a block header from its midstate, nonce after nonce,
+// once on the S3's SHA peripheral (wa_sha256d_hw_scan) and once in
+// software (wa_sha256d_scan), both in C so GCC's -O2 and IRAM_ATTR do what
+// they do for NerdMiner's nerd_sha256d. The Rust software loop managed
+// 11 kH/s on the Xtensa (a rolled 64-round loop, ~60 instructions a
+// round); this one unrolls eight rounds per iteration. The Rust
+// peripheral loop did 308 kH/s against this one's 324.
 #include <stdint.h>
 #include <string.h>
 #include "esp_attr.h"
 #include "warpaxe_glue.h"
+#include "warpaxe_sha_regs.h"
 
 static DRAM_ATTR const uint32_t K[64] = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -131,4 +135,52 @@ uint32_t wa_sha256d_h7(const uint32_t mid[8], const uint8_t tail[12], uint32_t n
     s[4] = 0x510e527f; s[5] = 0x9b05688c; s[6] = 0x1f83d9ab; s[7] = 0x5be0cd19;
     compress(s, W);
     return __builtin_bswap32(s[7]);
+}
+
+// The peripheral loop: two blocks a nonce, the first from the midstate
+// (H restored, CONTINUE), the second from the digest (START). With
+// `pipelined` the next block's TEXT words go in while the engine runs:
+// the second block's padding right after CONTINUE, the next nonce's
+// first block right after START (one past the range on the last round;
+// the next call starts over). The caller holds the crypto lock. Returns
+// the index of the first nonce whose H[7] has its upper half zero, with
+// the eight H words in `h_out`, or `n` when none has; `first_h7` is the
+// first nonce's H[7] for the caller's software spot check.
+IRAM_ATTR uint32_t wa_sha256d_hw_scan(const uint32_t hs[8], const uint32_t tw[3], uint32_t start,
+                                      uint32_t n, int pipelined, uint32_t *first_h7,
+                                      uint32_t h_out[8])
+{
+    wa_reg_w(SHA_MODE_REG, WA_SHA2_256);
+    wa_sha_zero_text_9_14();
+    if (pipelined) wa_sha_write_block1(tw, start);
+    for (uint32_t i = 0; i < n; i++) {
+        uint32_t nonce = start + i;
+        wa_sha_write_h(hs);
+        if (pipelined) {
+            wa_reg_w(SHA_CONTINUE_REG, 1);
+            wa_reg_w(WA_SHA_TEXT(8), WA_HW_PAD2);
+            wa_reg_w(WA_SHA_TEXT(15), WA_HW_LEN_256);
+        } else {
+            wa_sha_write_block1(tw, nonce);
+            wa_reg_w(SHA_CONTINUE_REG, 1);
+        }
+        wa_sha_wait_idle();
+        for (int k = 0; k < 8; k++) wa_reg_w(WA_SHA_TEXT(k), wa_reg_r(WA_SHA_H(k)));
+        if (pipelined) {
+            wa_reg_w(SHA_START_REG, 1);
+            wa_sha_write_block1(tw, nonce + 1);
+        } else {
+            wa_reg_w(WA_SHA_TEXT(8), WA_HW_PAD2);
+            wa_reg_w(WA_SHA_TEXT(15), WA_HW_LEN_256);
+            wa_reg_w(SHA_START_REG, 1);
+        }
+        wa_sha_wait_idle();
+        uint32_t h7 = wa_reg_r(WA_SHA_H(7));
+        if (i == 0) *first_h7 = h7;
+        if ((h7 >> 16) == 0) {
+            for (int k = 0; k < 8; k++) h_out[k] = wa_reg_r(WA_SHA_H(k));
+            return i;
+        }
+    }
+    return n;
 }

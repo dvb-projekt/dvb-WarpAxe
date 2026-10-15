@@ -32,6 +32,15 @@ esp_err_t wa_usb_send(void *buffer, uint16_t len);
 uint32_t wa_sha256d_scan(const uint32_t mid[8], const uint8_t tail[12], uint32_t start,
                          uint32_t n, uint8_t hash_out[32]);
 
+/// The peripheral loop (warpaxe_cpuhash.c): the S3's SHA engine over the
+/// nonces `start..start+n`, `hs` the midstate in H order, `tw` the tail
+/// words, the caller holding the crypto lock. With `pipelined` the next
+/// block's words go into TEXT while the engine runs. Returns the index
+/// of the first candidate (upper half of H[7] zero) with its eight H
+/// words in `h_out`, or `n`; `first_h7` is the first nonce's H[7].
+uint32_t wa_sha256d_hw_scan(const uint32_t hs[8], const uint32_t tw[3], uint32_t start,
+                            uint32_t n, int pipelined, uint32_t *first_h7, uint32_t h_out[8]);
+
 /// The first hash's state after its second block for `nonce`, as the
 /// eight words the S3's SHA peripheral holds in H (memory order).
 void wa_sha256_block1_h(const uint32_t mid[8], const uint8_t tail[12], uint32_t nonce,

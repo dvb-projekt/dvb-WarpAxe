@@ -566,149 +566,73 @@ fn sw_batch(job: &CpuJob, start: u32, n: u32) {
     }
 }
 
-// The S3's SHA peripheral (soc/hwcrypto_reg.h): a message block goes
-// into TEXT as sixteen words, the digest state lives in H as eight.
-const SHA_BASE: usize = 0x6003_B000;
-const SHA_MODE: usize = SHA_BASE;
-const SHA_START: usize = SHA_BASE + 0x10;
-const SHA_CONTINUE: usize = SHA_BASE + 0x14;
-const SHA_BUSY: usize = SHA_BASE + 0x18;
-const SHA_H: usize = SHA_BASE + 0x40;
-const SHA_TEXT: usize = SHA_BASE + 0x80;
-const SHA2_256: u32 = 2;
-
 extern "C" {
     // mbedTLS port (sha/sha_dma.h): the crypto lock plus the block's clock.
     fn esp_sha_acquire_hardware();
     fn esp_sha_release_hardware();
 }
 
-#[inline(always)]
-unsafe fn reg_w(addr: usize, v: u32) {
-    core::ptr::write_volatile(addr as *mut u32, v);
-}
-
-#[inline(always)]
-unsafe fn reg_r(addr: usize) -> u32 {
-    core::ptr::read_volatile(addr as *const u32)
-}
-
-#[inline(always)]
-unsafe fn wait_idle() {
-    while reg_r(SHA_BUSY) != 0 {}
-}
-
-/// The midstate into the eight `H` registers.
-#[inline(always)]
-unsafe fn hw_write_h(job: &CpuJob) {
-    for (k, w) in job.hw_state.iter().enumerate() {
-        reg_w(SHA_H + 4 * k, *w);
-    }
-}
-
-/// The first hash's second block for `nonce` into `TEXT` (words 9..15
-/// are zero in both blocks and written once per batch).
-#[inline(always)]
-unsafe fn hw_write_block1(job: &CpuJob, nonce: u32) {
-    reg_w(SHA_TEXT, job.tail_words[0]);
-    reg_w(SHA_TEXT + 4, job.tail_words[1]);
-    reg_w(SHA_TEXT + 8, job.tail_words[2]);
-    reg_w(SHA_TEXT + 12, nonce);
-    reg_w(SHA_TEXT + 16, sha256::HW_PAD);
-    reg_w(SHA_TEXT + 20, 0);
-    reg_w(SHA_TEXT + 24, 0);
-    reg_w(SHA_TEXT + 28, 0);
-    reg_w(SHA_TEXT + 32, 0);
-    reg_w(SHA_TEXT + 60, sha256::HW_LEN_640);
-}
-
-/// The batch's start: mode, the constant zero words, and with the
-/// pipelining the first block already in place.
-#[inline(always)]
-unsafe fn hw_batch_setup(job: &CpuJob, nonce: u32, pipelined: bool) {
-    reg_w(SHA_MODE, SHA2_256);
-    for i in 9..15 {
-        reg_w(SHA_TEXT + 4 * i, 0);
-    }
-    if pipelined {
-        hw_write_block1(job, nonce);
-    }
-}
-
-// The engine takes about 130 cycles a block and latches TEXT at the
-// trigger; a store costs 6 cycles, a load 31 (the bench, 2026-10-15).
-// What the loop cannot hide is the eight H loads and the engine's own
-// time: with the next block's ten TEXT stores moved into the engine's
-// busy windows a nonce takes ~740 cycles instead of ~890.
+// The S3's SHA peripheral driven from C
+// (components/warpaxe_glue/warpaxe_cpuhash.c, wa_sha256d_hw_scan): two
+// blocks a nonce, the first from the midstate, and with HW_PIPELINED
+// the next block's words written while the engine runs. The engine
+// takes ~140 cycles a block and latches TEXT at the trigger; a store
+// costs ~6 cycles, a load ~31 (the bench, 2026-10-15). What the loop
+// cannot hide is the eight H loads and the engine's own time: ~740
+// cycles a nonce instead of ~890. `esp_sha_acquire_hardware` holds for
+// the batch; a candidate lets it go while the software re-hashes.
 fn hw_batch(job: &CpuJob, start: u32, n: u32) {
-    unsafe {
-        let pipelined = HW_PIPELINED.load(Ordering::Relaxed);
-        esp_sha_acquire_hardware();
-        hw_batch_setup(job, start, pipelined);
-        for i in 0..n {
-            let nonce = start.wrapping_add(i);
-            // First hash, second block, from the midstate.
-            hw_write_h(job);
-            if pipelined {
-                reg_w(SHA_CONTINUE, 1);
-                // The second block's padding, while the engine runs.
-                reg_w(SHA_TEXT + 32, sha256::HW_PAD2);
-                reg_w(SHA_TEXT + 60, sha256::HW_LEN_256);
-            } else {
-                hw_write_block1(job, nonce);
-                reg_w(SHA_CONTINUE, 1);
-            }
-            wait_idle();
-            // Second hash: the digest, padded, as a fresh block.
-            for k in 0..8 {
-                reg_w(SHA_TEXT + 4 * k, reg_r(SHA_H + 4 * k));
-            }
-            if pipelined {
-                reg_w(SHA_START, 1);
-                // The next nonce's first block, while the engine runs
-                // (one past the batch on the last round; the next batch
-                // starts over anyway).
-                hw_write_block1(job, nonce.wrapping_add(1));
-            } else {
-                reg_w(SHA_TEXT + 32, sha256::HW_PAD2);
-                reg_w(SHA_TEXT + 60, sha256::HW_LEN_256);
-                reg_w(SHA_START, 1);
-            }
-            wait_idle();
-            let h7 = reg_r(SHA_H + 28);
-            // One nonce a batch against the software hash: a loop that
-            // went wrong would otherwise only show as fewer candidates.
-            if i == 0 {
-                let want = sha256::sha256d_tail(&job.midstate, &job.tail, nonce);
-                let want7 = u32::from_le_bytes([want[28], want[29], want[30], want[31]]);
-                if want7 != h7 {
-                    HW_SPOT_BAD.fetch_add(1, Ordering::Relaxed);
-                    if pipelined {
-                        HW_PIPELINED.store(false, Ordering::Relaxed);
-                        log::warn!(
-                            "cpu miner: peripheral spot check failed for nonce {nonce:08x} (H7 {h7:08x}, software {want7:08x}): pipelining off"
-                        );
-                    } else {
-                        log::warn!(
-                            "cpu miner: peripheral spot check failed for nonce {nonce:08x} (H7 {h7:08x}, software {want7:08x})"
-                        );
-                    }
+    let pipelined = HW_PIPELINED.load(Ordering::Relaxed);
+    unsafe { esp_sha_acquire_hardware() };
+    let mut done = 0u32;
+    let mut first = true;
+    while done < n {
+        let left = n - done;
+        let nonce0 = start.wrapping_add(done);
+        let mut h = [0u32; 8];
+        let mut first_h7 = 0u32;
+        let at = unsafe {
+            sys::tusb::wa_sha256d_hw_scan(
+                job.hw_state.as_ptr(),
+                job.tail_words.as_ptr(),
+                nonce0,
+                left,
+                i32::from(pipelined),
+                &mut first_h7,
+                h.as_mut_ptr(),
+            )
+        };
+        // One nonce a batch against the software hash: a loop that went
+        // wrong would otherwise only show as fewer candidates.
+        if first {
+            first = false;
+            let want = sha256::sha256d_tail(&job.midstate, &job.tail, nonce0);
+            let want7 = u32::from_le_bytes([want[28], want[29], want[30], want[31]]);
+            if want7 != first_h7 {
+                HW_SPOT_BAD.fetch_add(1, Ordering::Relaxed);
+                if pipelined {
+                    HW_PIPELINED.store(false, Ordering::Relaxed);
+                    log::warn!(
+                        "cpu miner: peripheral spot check failed for nonce {nonce0:08x} (H7 {first_h7:08x}, software {want7:08x}): pipelining off"
+                    );
+                } else {
+                    log::warn!(
+                        "cpu miner: peripheral spot check failed for nonce {nonce0:08x} (H7 {first_h7:08x}, software {want7:08x})"
+                    );
                 }
-            }
-            if sha256::hw_candidate(h7) {
-                let mut h = [0u32; 8];
-                for (k, w) in h.iter_mut().enumerate() {
-                    *w = reg_r(SHA_H + 4 * k);
-                }
-                let hash = sha256::hw_hash(&h);
-                esp_sha_release_hardware();
-                found(job, nonce, hash, true);
-                esp_sha_acquire_hardware();
-                hw_batch_setup(job, nonce.wrapping_add(1), pipelined);
             }
         }
-        esp_sha_release_hardware();
+        if at < left {
+            let hash = sha256::hw_hash(&h);
+            unsafe { esp_sha_release_hardware() };
+            found(job, nonce0.wrapping_add(at), hash, true);
+            unsafe { esp_sha_acquire_hardware() };
+            done += at + 1;
+        } else {
+            done = n;
+        }
     }
+    unsafe { esp_sha_release_hardware() };
 }
 
 /// A candidate from either worker: verify, score, count, submit.

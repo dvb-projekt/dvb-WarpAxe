@@ -8,8 +8,7 @@
 // last digest word is checked against the software hash afterwards, so a
 // variant that corrupts a hash shows up as `v_bad`, never as a hashrate.
 //
-// Register traffic goes through inline `s32i`/`l32i` so the compiler
-// neither reorders nor adds MEMW on its own; the MEMW variant is measured
+// Register access as in warpaxe_sha_regs.h; the MEMW variant is measured
 // separately (t_store16_text_memw).
 #include <stdint.h>
 #include <string.h>
@@ -26,83 +25,36 @@
 #include "hal/dma_types.h"
 #include "esp_private/gdma.h"
 #include "warpaxe_glue.h"
+#include "warpaxe_sha_regs.h"
 
 // mbedTLS port (sha/sha_dma.h): the crypto lock plus the block's clock.
 void esp_sha_acquire_hardware(void);
 void esp_sha_release_hardware(void);
 
-#define SHA2_256 2
-#define SHA_H(k) (SHA_H_BASE + 4 * (k))
-#define SHA_TEXT(k) (SHA_TEXT_BASE + 4 * (k))
-
-// Padding words as the loop writes them (crates/cpuminer sha256.rs).
-#define HW_PAD 0x00000080u
-#define HW_LEN_640 0x80020000u
-#define HW_PAD2 0x00000080u
-#define HW_LEN_256 0x00010000u
+#define SHA2_256 WA_SHA2_256
+#define SHA_H(k) WA_SHA_H(k)
+#define SHA_TEXT(k) WA_SHA_TEXT(k)
+#define HW_PAD WA_HW_PAD
+#define HW_LEN_640 WA_HW_LEN_640
+#define HW_PAD2 WA_HW_PAD2
+#define HW_LEN_256 WA_HW_LEN_256
+#define reg_w wa_reg_w
+#define reg_r wa_reg_r
+#define memw wa_memw
+#define ccount wa_ccount
+#define wait_idle wa_sha_wait_idle
+#define write_h wa_sha_write_h
+#define write_block1 wa_sha_write_block1
+#define zero_text_9_14 wa_sha_zero_text_9_14
 
 #define N_VAR 5
 #define N_NONCE 2048
-
-static inline __attribute__((always_inline)) void reg_w(uint32_t addr, uint32_t v)
-{
-    __asm__ volatile("s32i %0, %1, 0" ::"r"(v), "r"(addr) : "memory");
-}
-
-static inline __attribute__((always_inline)) uint32_t reg_r(uint32_t addr)
-{
-    uint32_t v;
-    __asm__ volatile("l32i %0, %1, 0" : "=r"(v) : "r"(addr) : "memory");
-    return v;
-}
-
-static inline __attribute__((always_inline)) void memw(void)
-{
-    __asm__ volatile("memw" ::: "memory");
-}
-
-static inline __attribute__((always_inline)) uint32_t ccount(void)
-{
-    return esp_cpu_get_cycle_count();
-}
-
-static inline __attribute__((always_inline)) void wait_idle(void)
-{
-    while (reg_r(SHA_BUSY_REG)) {
-    }
-}
 
 // Spin until `cycles` CPU cycles have passed since `t0`.
 static inline __attribute__((always_inline)) void spin_until(uint32_t t0, uint32_t cycles)
 {
     while (ccount() - t0 < cycles) {
     }
-}
-
-static inline __attribute__((always_inline)) void write_h(const uint32_t hs[8])
-{
-    for (int k = 0; k < 8; k++) reg_w(SHA_H(k), hs[k]);
-}
-
-// The first hash's second block for `nonce` into TEXT (words 9..14 are
-// zero in both blocks and written once per run).
-static inline __attribute__((always_inline)) void write_block1(const uint32_t tw[3], uint32_t nonce)
-{
-    reg_w(SHA_TEXT(0), tw[0]);
-    reg_w(SHA_TEXT(1), tw[1]);
-    reg_w(SHA_TEXT(2), tw[2]);
-    reg_w(SHA_TEXT(3), nonce);
-    reg_w(SHA_TEXT(4), HW_PAD);
-    reg_w(SHA_TEXT(5), 0);
-    reg_w(SHA_TEXT(6), 0);
-    reg_w(SHA_TEXT(7), 0);
-    reg_w(SHA_TEXT(8), 0);
-    reg_w(SHA_TEXT(15), HW_LEN_640);
-}
-
-static inline __attribute__((always_inline)) void zero_text_9_14(void)
-{
-    for (int k = 9; k < 15; k++) reg_w(SHA_TEXT(k), 0);
 }
 
 // ---- T: what a register access costs ---------------------------------
