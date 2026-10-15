@@ -11,7 +11,8 @@ Result in one line: a nonce cost ~890 cycles, of which the engine itself
 takes ~280 and the register traffic the rest; writing the next block's
 words while the engine runs brings it to ~740 (325 kH/s at the probe in
 C, 0 wrong hashes in 2048), and that is close to the floor this engine
-has. The DMA path, counted waits and grouped loads do not help.
+has. At the devkit: 292 → 340 kH/s over 30 minutes (+16 %). The DMA
+path, counted waits and grouped loads do not help.
 
 ## The loop before
 
@@ -116,22 +117,24 @@ unchanged.
 Before (v0.1.28 72b20dd, 26 h up, 2026-10-15 09:3x CEST): `khs10m` 292.3,
 peripheral 262–266, software 28.7–29.7, `hwMismatch` 0, die 58.6 °C.
 
-After (951c619, from 09:46 CEST): see the table.
+After: 951c619 from 09:46 CEST (sampled 09:47–10:19), 50f6a11 from
+10:21 CEST (sampled 10:22–10:53), one line a minute from
+`/api/system/info`.
 
-| | Before (72b20dd, Rust loop as shipped) | After (951c619, pipelined, Rust loop) |
-|---|---|---|
-| `khs10m` (10-minute window) | 292.3 | **329.5–331.7** from minute 12 on (+13 %) |
-| peripheral worker in service | 262–266 | 300–308 |
-| software worker in service | 28.7–29.7 | 29.2–30.5 |
-| probe (alone, priority 20) | 269.5 / 33.6 | 308.3 / 33.6 |
-| µs a hash in the batches | 3.88 / 33 | 3.20–3.45 / 32–35 |
-| `busyPct` | 100 / 99 | 99–100 / 96–100 |
-| `hwMismatch` | 0 | 0 |
-| `hwSpotBad` | — | 0 (pipelining stayed on) |
-| shares in 32 min | — | 11 accepted, 0 rejected |
-| die temperature | 58.6 °C | 58.6–59.6 °C |
-| internal heap | 58.1 KB | 55.3–57.1 KB, stable |
-| Wi-Fi | −65 dBm | −57…−68 dBm |
+| | Before (72b20dd, Rust loop as shipped) | 951c619 (pipelined, Rust loop) | 50f6a11 (pipelined, C loop) |
+|---|---|---|---|
+| `khs10m` (10-minute window) | 292.3 | **329.5–331.7** from minute 12 on (+13 %) | **337.0–339.8** from minute 12 on (+16 %) |
+| peripheral worker in service | 262–266 | 300–308 | 294–315, mostly 308–312 |
+| software worker in service | 28.7–29.7 | 29.2–30.5 | 28.3–30.7 |
+| probe (alone, priority 20) | 269.5 / 33.6 | 308.3 / 33.6 | 313.4 / 30.5 |
+| µs a hash in the batches | 3.88 / 33 | 3.20–3.45 / 32–35 | 3.14–3.46 / 30–36 |
+| `busyPct` | 100 / 99 | 99–100 / 96–100 | 98–100 / 98–100 |
+| `hwMismatch` | 0 | 0 | 0 |
+| `hwSpotBad` | — | 0 (pipelining stayed on) | 0 |
+| shares in 32 min | — | 11 accepted, 0 rejected | 36 accepted, 0 rejected |
+| die temperature | 58.6 °C | 58.6–59.6 °C | 58.6 °C throughout |
+| internal heap | 58.1 KB | 55.3–57.1 KB, stable | 52.5–56.6 KB, stable |
+| Wi-Fi | −65 dBm | −57…−68 dBm | −63…−64 dBm |
 
 Minute by minute (UTC, 2026-10-15): `khs10m` 301 → 322 → 330 as the
 window filled, then 329.5–331.7 for the remaining 20 minutes; one minute
