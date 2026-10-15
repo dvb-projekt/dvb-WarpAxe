@@ -783,6 +783,20 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         board::set_shutdown(false);
         reply_json(req, 200, &json!({"shutdown": false}))
     })?;
+    // Diagnostics on the chipless board: run the SHA peripheral bench
+    // again (the peripheral worker does it between two batches, results
+    // in cpuMiner.bench of /api/system/info and in the log).
+    server.fn_handler("/api/v1/cpuminer/bench", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        if !board::devkit() {
+            return reply_json(req, 404, &json!({"error": "this board has chips"}));
+        }
+        if crate::cpuminer::request_bench() {
+            reply_json(req, 202, &json!({"status": "bench requested"}))
+        } else {
+            reply_json(req, 409, &json!({"error": "a bench is still pending"}))
+        }
+    })?;
     server.fn_handler("/api/v1/bestdiff/reset", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         config::reset_best_diff();

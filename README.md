@@ -455,7 +455,8 @@ don't flash them unless you can recover the stock firmware over USB.
 The LilyGO T-Display-S3, the board NerdMiner runs on, has no mining chip.
 WarpAxe hashes on the ESP32-S3 itself there: the chip's SHA unit on one
 core with a precomputed midstate, as NerdMiner v2 does (`src/mining.cpp`),
-and a software loop on the other, together about 290 kH/s on USB power.
+and a software loop on the other, together about 340 kH/s on USB power
+(`docs/06-Devkit-S3-SHA-Peripheral.md` has the measurements).
 That is a lottery ticket, not a miner: at today's network difficulty the
 expected time to a block is far longer than the age of the universe.
 It is marked experimental. It takes online updates like every other
