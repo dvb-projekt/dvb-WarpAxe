@@ -38,7 +38,14 @@ The same bench as a program of its own, for boards without WarpAxe (first
 the ESP32-P4, whose SHA engine ESP-IDF describes like the S3's):
 `tools/sha-bench`, built with `idf.py` for `esp32s3` or `esp32p4` from the
 same source files. It hashes the Bitcoin genesis header and prints the
-table below plus one JSON line every 30 s.
+table below plus one JSON line every 30 s. Cross-checked on the devkit
+on 2026-10-15 (`tools/sha-bench/logs/devkit-t-display-s3-2026-10-15.log`,
+four runs, no Wi-Fi, no display worker): the same numbers as below to
+within a few cycles (16 TEXT stores 103, 8 H loads 264, engine alone
+165/140, DMA 399/525, TEXT latched at the trigger, variant 1 745 cycles
+= 322 kH/s, the firmware's loop 752 = 319 kH/s, every hash right, the
+genesis nonce found); only the MEMW probe reads higher there (333 against
+277–289) and variants 3 and 4 a little slower (766 and 805).
 
 | Probe | What it does |
 |---|---|
