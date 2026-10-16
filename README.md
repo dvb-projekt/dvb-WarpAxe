@@ -487,6 +487,11 @@ published: a release lists the boards it was tested on in
 
 ## Install
 
+New to WarpAxe? The **[user manual](https://docs.warppool.org/warpaxe-guide.html)**
+(PDF, in English, German, French and Spanish) walks through the install, the
+first start, every page of the web UI, the display, updates and the way back,
+step by step.
+
 **First install** needs a USB cable once; after that the miner sets itself
 up and updates itself:
 
