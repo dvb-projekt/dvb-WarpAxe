@@ -2,8 +2,8 @@
 //! Do not edit; English and German are inline in screens.rs.
 
 static ES: &[(&str, &str)] = &[
-    ("BLOCK FOUND", "BLOQUE HALLADO"),
-    ("BLOCK HEIGHT", "ALTURA BLOQUE"),
+    ("BLOCK FOUND", "BLOQUE ENCONTRADO"),
+    ("BLOCK HEIGHT", "ALTURA DE BLOQUE"),
     ("Best diff", "Mejor dif."),
     (
         "Best diff (session / all-time)",
@@ -70,7 +70,7 @@ static ES: &[(&str, &str)] = &[
         "Preparing flash · do not power off",
         "Preparando memoria flash · no apagar",
     ),
-    ("Press a key to close", "Pulsa una tecla para cerrar"),
+    ("Press a key to close", "Pulsa un botón para cerrar"),
     ("REGULATOR FAULT", "FALLO REGULADOR"),
     ("Regulator", "Regulador"),
     (
@@ -82,7 +82,7 @@ static ES: &[(&str, &str)] = &[
     ("THEN OPEN", "LUEGO ABRE"),
     ("UPTIME", "T. ACTIVO"),
     ("Uptime", "En marcha"),
-    ("WI-FI SETUP", "CONEXIÓN WI-FI"),
+    ("WI-FI SETUP", "CONFIGURAR WI-FI"),
     ("blocks", "bloques"),
     ("months", "meses"),
     ("not connected", "no conectado"),
@@ -114,7 +114,7 @@ static FR: &[(&str, &str)] = &[
     ("Device", "Appareil"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Appareil joignable · rallumer via l'UI web",
+        "Appareil joignable · rallumer via l'interface web",
     ),
     ("EFFICIENCY", "EFFICACITÉ"),
     (
@@ -129,7 +129,7 @@ static FR: &[(&str, &str)] = &[
     ("Fan M2", "Ventil. M2"),
     (
         "Fans 100 % · clear it in the web UI under System",
-        "Ventil. 100 % · débloquer dans l'UI web > Système",
+        "Ventil. 100 % · débloquer dans l'interface web > Système",
     ),
     (
         "Fans 100 % · starts again once cooled",
@@ -174,7 +174,7 @@ static FR: &[(&str, &str)] = &[
     ("THEN OPEN", "PUIS OUVRIR"),
     ("UPTIME", "UPTIME"),
     ("Uptime", "Uptime"),
-    ("WI-FI SETUP", "RÉGLAGE WI-FI"),
+    ("WI-FI SETUP", "CONFIGURATION WI-FI"),
     ("blocks", "blocs"),
     ("months", "mois"),
     ("not connected", "non branché"),
