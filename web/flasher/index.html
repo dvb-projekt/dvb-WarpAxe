@@ -3,7 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>WarpAxe Flasher</title>
+<title>WarpAxe — open-source firmware for Bitaxe and Nerd miners</title>
+<meta name="description" content="One firmware image for Bitaxe, NerdAxe, NerdQAxe++, NerdOctaxe and BitForge Nano: signed updates with rollback, an AxeOS-compatible API, and a browser installer that backs up your stock firmware first.">
+<meta property="og:title" content="WarpAxe — open-source firmware for Bitaxe and Nerd miners">
+<meta property="og:description" content="Signed updates with rollback, an AxeOS-compatible API, one image for all boards. Install from the browser, with a full backup first.">
+<meta property="og:image" content="https://warppool.org/warpaxe/og.jpg">
+<meta property="og:url" content="https://warppool.org/warpaxe/">
 <link rel="icon" href="favicon.svg">
 <style>
 :root{--void:#05060B;--deep:#0F1226;--warp:#7B5CFF;--plasma:#00E0FF;--fg:#E8EEF7;--mute:#9CA8BD;--ok:#50E3A4;--warn:#F5B942;--err:#FF5A5A;--line:rgba(255,255,255,.08);--card:rgba(15,18,38,.78);color-scheme:dark}
@@ -39,10 +44,35 @@ code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;backgrou
 .bk{display:flex;gap:10px;align-items:flex-start;cursor:pointer}
 .bk input{margin-top:4px;width:17px;height:17px;accent-color:var(--warp);flex:none}
 .btn.alt{background:transparent;border:1px solid var(--warp)}
+.top{max-width:1000px;margin:0 auto;padding:24px 20px 0}
+.lp{max-width:1000px;margin:0 auto;padding:24px 20px 8px;display:flex;flex-direction:column;gap:22px}
+.hero{display:grid;grid-template-columns:1fr minmax(0,300px);gap:32px;align-items:center}
+.hero h1{font-size:clamp(28px,4.6vw,40px);line-height:1.15;text-wrap:balance}
+.hero h1 em{font-style:normal;color:var(--plasma)}
+.hero .sub{color:var(--mute);font-size:16px;margin:14px 0 0;max-width:56ch}
+.hero .sub strong{color:var(--warn);font-weight:600}
+.cta{display:flex;gap:10px;flex-wrap:wrap;margin-top:20px}
+a.btn{text-decoration:none}
+.btn.ghost{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.14);color:var(--fg)}
+.badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
+.badge{font-size:12px;overflow-wrap:anywhere;color:var(--mute);border:1px solid var(--line);border-radius:99px;padding:3px 10px}
+figure{margin:0;text-align:center}
+figure img{width:100%;max-width:300px;height:auto;filter:drop-shadow(0 0 40px rgba(123,92,255,.28))}
+figcaption{color:var(--mute);font-size:13px;margin-top:6px}
+.feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr));gap:14px}
+.feat .card{gap:6px}
+.feat h3{margin:0;font:600 16px "Space Grotesk",Inter,sans-serif}
+.feat .ico{font-size:22px;line-height:1}
+.feat p{color:var(--mute);font-size:14px}
+.honest{border-left:4px solid var(--warn)}
+.honest strong{color:var(--fg)}
+.links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+.sep{border:0;border-top:1px solid var(--line);margin:8px 0 0}
+@media (max-width:700px){.hero{grid-template-columns:1fr}.hero figure{order:-1}figure img{max-width:200px}}
 </style>
 </head>
 <body>
-<main>
+<div class="top">
   <header>
     <img src="wordmark.webp" alt="WarpAxe">
     <div class="grow"></div>
@@ -57,7 +87,46 @@ code{font-family:"JetBrains Mono",ui-monospace,monospace;font-size:13px;backgrou
       <option value="zh">中文</option>
     </select>
   </header>
+</div>
 
+<div class="lp">
+  <div class="hero">
+    <div>
+      <h1 data-t="lp_h"></h1>
+      <p class="sub" data-t="lp_sub"></p>
+      <div class="cta">
+        <a class="btn" href="#install" data-t="lp_go"></a>
+        <a class="btn ghost" id="lpman" href="https://docs.warppool.org/warpaxe-guide.html" data-t="lp_man"></a>
+        <a class="btn ghost" href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe" data-t="lp_src"></a>
+      </div>
+      <div class="badges">
+        <span class="badge">Bitaxe · NerdAxe · NerdQAxe++ · NerdOctaxe · BitForge Nano</span>
+        <span class="badge">Stratum V2</span>
+        <span class="badge" data-t="lp_b_lang"></span>
+        <span class="badge">GPL-3.0</span>
+      </div>
+    </div>
+    <figure>
+      <img src="gaia.webp" width="560" height="700" data-ta="lp_img_alt">
+      <figcaption data-t="lp_img_cap"></figcaption>
+    </figure>
+  </div>
+
+  <div class="feat">
+    <div class="card"><div class="ico">🧩</div><h3 data-t="lp_c1h"></h3><p data-t="lp_c1p"></p></div>
+    <div class="card"><div class="ico">🔏</div><h3 data-t="lp_c2h"></h3><p data-t="lp_c2p"></p></div>
+    <div class="card"><div class="ico">🔌</div><h3 data-t="lp_c3h"></h3><p data-t="lp_c3p"></p></div>
+    <div class="card"><div class="ico">💾</div><h3 data-t="lp_c4h"></h3><p data-t="lp_c4p"></p></div>
+    <div class="card"><div class="ico">📟</div><h3 data-t="lp_c5h"></h3><p data-t="lp_c5p"></p></div>
+    <div class="card"><div class="ico">🌡️</div><h3 data-t="lp_c6h"></h3><p data-t="lp_c6p"></p></div>
+  </div>
+
+  <div class="card honest"><p data-t="lp_honest"></p></div>
+  <p class="links"><span data-t="lp_tune"></span></p>
+  <hr class="sep">
+</div>
+
+<main id="install">
   <h1 data-t="title"></h1>
   <p class="mute" data-t="intro"></p>
   <p data-t="manual"></p>
@@ -120,6 +189,29 @@ import { ESPLoader, Transport } from "./esptool/bundle.js";
 import { md5hex } from "./md5.js";
 const T = {
   en: {
+    lp_h: "One open-source firmware for <em>Bitaxe and Nerd miners</em>",
+    lp_sub: "WarpAxe is written in Rust. It brings signed updates that fall back when they fail, and an AxeOS-compatible API, so your tools keep working. Install it from this page over USB, with a full backup of your stock firmware first. <strong>It is early: use it with care.</strong>",
+    lp_go: "Install ↓",
+    lp_man: "Manual (PDF)",
+    lp_src: "Source code",
+    lp_b_lang: "Web UI in 8 languages",
+    lp_img_alt: "A NerdAxe Gaia in a stand, its display showing WarpAxe: hashrate with a one-hour graph, chip temperature, power and efficiency",
+    lp_img_cap: "My NerdAxe Gaia on WarpAxe: 2.41 TH/s at 28.1 W.",
+    lp_c1h: "One image for every board",
+    lp_c1p: "WarpAxe finds the board on its first start, from the factory settings and a read-only probe. A Bitaxe Gamma starts mining at once; a Nerd board asks once which one it is.",
+    lp_c2h: "Signed updates, with a way back",
+    lp_c2p: "One click in the web UI installs the next release. The miner checks its signature before it flashes, and if the new version does not start, it goes back to the previous one.",
+    lp_c3h: "Works with your tools",
+    lp_c3p: "An AxeOS-compatible API: WarpTune and the tools you use with AxeOS keep working. Wi-Fi, pools, clock, voltage and fan settings are taken over on the first start, and the miner is found as <code>&lt;name&gt;.local</code>.",
+    lp_c4h: "Full backup first",
+    lp_c4p: "Before anything is written, this page saves the miner's whole flash to a file. “Restore a backup” further down puts it back exactly as it was.",
+    lp_c5h: "Cockpit on the display",
+    lp_c5p: "On a colour display: hashrate with a one-hour graph, chip temperature, power, efficiency and addresses at a glance. The Gamma's small screen shows the essentials.",
+    lp_c6h: "Careful with the hardware",
+    lp_c6p: "Overheating or a regulator fault switches the core voltage off. After cooling, the miner starts again by itself; the third stop within an hour stays off. Implausible sensor readings never reach the control loops.",
+    lp_honest: "<strong>The honest part:</strong> AxeOS and NerdOS run on far more boards, have years of use by a large community behind them, and offer things WarpAxe does not, such as Wi-Fi setup over Bluetooth, dual-pool mining or alerts. If you need those, stay with your stock firmware. If you try WarpAxe, keep the backup.",
+    lp_tune: "Want less power at the same hashrate? <a href=\"https://warppool.org/warptune/\">WarpTune</a> finds the lowest error-free core voltage for each miner, on WarpAxe as on AxeOS and NerdOS.",
+    manual_url: "https://docs.warppool.org/warpaxe-guide.html",
     title: "Install WarpAxe",
     intro: "WarpAxe is open-source firmware for BM1370, BM1373 and BM1397 miners with Stratum V2, signed online updates and an AxeOS-compatible API. This page installs it over USB from your browser; after that, updates come from the miner's own web UI.",
     warn_h: "Before you start",
@@ -176,6 +268,29 @@ const T = {
     st_rserr: "Restore stopped: {e}. Start it again — the download mode always answers; if the miner stays dark, take it off power completely first (power supply and USB cable).",
   },
   de: {
+    lp_h: "Eine Open-Source-Firmware für <em>Bitaxe- und Nerd-Miner</em>",
+    lp_sub: "WarpAxe ist in Rust geschrieben. Sie bringt signierte Updates, die bei einem Fehlstart zurückfallen, und eine AxeOS-kompatible API, damit deine Tools weiterlaufen. Installiert wird sie auf dieser Seite über USB, vorher mit einer kompletten Sicherung deiner Original-Firmware. <strong>Sie ist noch früh: mit Bedacht einsetzen.</strong>",
+    lp_go: "Installieren ↓",
+    lp_man: "Handbuch (PDF)",
+    lp_src: "Quellcode",
+    lp_b_lang: "Weboberfläche in 8 Sprachen",
+    lp_img_alt: "Eine NerdAxe Gaia im Ständer, das Display zeigt WarpAxe: Hashrate mit Ein-Stunden-Verlauf, Chiptemperatur, Leistung und Effizienz",
+    lp_img_cap: "Meine NerdAxe Gaia mit WarpAxe: 2,41 TH/s bei 28,1 W.",
+    lp_c1h: "Ein Image für alle Boards",
+    lp_c1p: "WarpAxe erkennt das Board beim ersten Start, aus den Werkseinstellungen und einer reinen Lese-Abfrage. Ein Bitaxe Gamma fängt sofort an zu minen; ein Nerd-Board fragt einmal, welches es ist.",
+    lp_c2h: "Signierte Updates mit Rückweg",
+    lp_c2p: "Ein Klick in der Weboberfläche installiert das nächste Release. Der Miner prüft vor dem Flashen die Signatur, und startet die neue Version nicht, kehrt er zur vorigen zurück.",
+    lp_c3h: "Passt zu deinen Tools",
+    lp_c3p: "Eine AxeOS-kompatible API: WarpTune und die Tools, die du mit AxeOS nutzt, laufen weiter. WLAN, Pools, Takt, Spannung und Lüfter werden beim ersten Start übernommen, und der Miner ist als <code>&lt;name&gt;.local</code> erreichbar.",
+    lp_c4h: "Erst die komplette Sicherung",
+    lp_c4p: "Bevor etwas geschrieben wird, speichert diese Seite den gesamten Flash des Miners in eine Datei. „Sicherung zurückspielen“ weiter unten stellt ihn genau so wieder her.",
+    lp_c5h: "Cockpit auf dem Display",
+    lp_c5p: "Auf einem Farbdisplay: Hashrate mit Ein-Stunden-Verlauf, Chiptemperatur, Leistung, Effizienz und Adressen auf einen Blick. Das kleine Display des Gamma zeigt das Wichtigste.",
+    lp_c6h: "Schont die Hardware",
+    lp_c6p: "Bei Überhitzung oder einem Reglerfehler schaltet sie die Kernspannung ab. Nach dem Abkühlen startet der Miner von selbst wieder; der dritte Stopp innerhalb einer Stunde bleibt aus. Unplausible Sensorwerte erreichen die Regelung gar nicht erst.",
+    lp_honest: "<strong>Ehrlich gesagt:</strong> AxeOS und NerdOS laufen auf weit mehr Boards, haben Jahre im Einsatz bei einer großen Community hinter sich und bieten Dinge, die WarpAxe nicht hat, etwa WLAN-Einrichtung per Bluetooth, Dual-Pool-Mining oder Alarme. Brauchst du das, bleib bei deiner Original-Firmware. Probierst du WarpAxe aus, heb die Sicherung auf.",
+    lp_tune: "Weniger Strom bei gleicher Hashrate? <a href=\"https://warppool.org/de/warptune/\">WarpTune</a> findet für jeden Miner die niedrigste fehlerfreie Kernspannung, auf WarpAxe genauso wie auf AxeOS und NerdOS.",
+    manual_url: "https://docs.warppool.org/warpaxe-guide.de.html",
     title: "WarpAxe installieren",
     intro: "WarpAxe ist eine Open-Source-Firmware für BM1370-, BM1373- und BM1397-Miner mit Stratum V2, signierten Online-Updates und AxeOS-kompatibler API. Diese Seite installiert sie über USB aus dem Browser; danach kommen Updates über die Weboberfläche des Miners.",
     warn_h: "Bevor du anfängst",
@@ -232,6 +347,29 @@ const T = {
     st_rserr: "Zurückspielen abgebrochen: {e}. Starte es noch einmal – der Download-Modus antwortet immer; bleibt der Miner dunkel, nimm ihn vorher ganz vom Strom (Netzteil und USB-Kabel).",
   },
   es: {
+    lp_h: "Un firmware de código abierto para <em>mineros Bitaxe y Nerd</em>",
+    lp_sub: "WarpAxe está escrito en Rust. Trae actualizaciones firmadas que vuelven a la versión anterior si fallan y una API compatible con AxeOS, para que tus herramientas sigan funcionando. Se instala desde esta página por USB, haciendo antes una copia de seguridad completa de tu firmware original. <strong>Está en una fase temprana: úsalo con cuidado.</strong>",
+    lp_go: "Instalar ↓",
+    lp_man: "Manual (PDF)",
+    lp_src: "Código fuente",
+    lp_b_lang: "Interfaz web en 8 idiomas",
+    lp_img_alt: "Un NerdAxe Gaia en un soporte; su pantalla muestra WarpAxe: hashrate con gráfico de una hora, temperatura del chip, potencia y eficiencia",
+    lp_img_cap: "Mi NerdAxe Gaia con WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_c1h: "Una imagen para todas las placas",
+    lp_c1p: "WarpAxe detecta la placa en el primer arranque, a partir de la configuración de fábrica y de una consulta de solo lectura. Un Bitaxe Gamma empieza a minar enseguida; una placa Nerd pregunta una sola vez cuál es.",
+    lp_c2h: "Actualizaciones firmadas, con vuelta atrás",
+    lp_c2p: "Un clic en la interfaz web instala la siguiente versión. El minero comprueba la firma antes de flashearla y, si la nueva versión no arranca, vuelve a la anterior.",
+    lp_c3h: "Funciona con tus herramientas",
+    lp_c3p: "Una API compatible con AxeOS: WarpTune y las herramientas que usas con AxeOS siguen funcionando. Los ajustes de Wi-Fi, pools, frecuencia, voltaje y ventilador se adoptan en el primer arranque, y el minero se encuentra en la red como <code>&lt;nombre&gt;.local</code>.",
+    lp_c4h: "Primero, una copia completa",
+    lp_c4p: "Antes de escribir nada, esta página guarda toda la flash del minero en un archivo. «Restaurar una copia», más abajo, la deja exactamente como estaba.",
+    lp_c5h: "Panel en la pantalla",
+    lp_c5p: "En una pantalla en color: hashrate con gráfico de una hora, temperatura del chip, potencia, eficiencia y direcciones de un vistazo. La pantalla pequeña del Gamma muestra lo esencial.",
+    lp_c6h: "Cuida el hardware",
+    lp_c6p: "El sobrecalentamiento o un fallo del regulador cortan el voltaje del núcleo. Al enfriarse, el minero vuelve a arrancar solo; si se detiene por tercera vez en una hora, se queda apagado. Las lecturas de sensores inverosímiles nunca llegan a los lazos de control.",
+    lp_honest: "<strong>Siendo sinceros:</strong> AxeOS y NerdOS funcionan en muchas más placas, tienen detrás años de uso por parte de una gran comunidad y ofrecen cosas que WarpAxe no tiene, como configurar el Wi-Fi por Bluetooth, minar en dos pools a la vez o alertas. Si necesitas eso, quédate con tu firmware original. Si pruebas WarpAxe, guarda la copia de seguridad.",
+    lp_tune: "¿Quieres menos consumo con el mismo hashrate? <a href=\"https://warppool.org/warptune/\">WarpTune</a> (en inglés) encuentra para cada minero el voltaje de núcleo más bajo sin errores, tanto en WarpAxe como en AxeOS y NerdOS.",
+    manual_url: "https://docs.warppool.org/warpaxe-guide.es.html",
     title: "Instalar WarpAxe",
     intro: "WarpAxe es un firmware de código abierto para mineros con BM1370, BM1373 y BM1397, con Stratum V2, actualizaciones en línea firmadas y una API compatible con AxeOS. Esta página lo instala por USB desde tu navegador; después, las actualizaciones se hacen desde la propia interfaz web del minero.",
     warn_h: "Antes de empezar",
@@ -288,6 +426,29 @@ const T = {
     st_rserr: "Restauración detenida: {e}. Vuelve a empezar: el modo de descarga siempre responde; si el minero sigue apagado, desconéctalo antes por completo de la corriente (fuente de alimentación y cable USB).",
   },
   fr: {
+    lp_h: "Un seul firmware open source pour <em>les mineurs Bitaxe et Nerd</em>",
+    lp_sub: "WarpAxe est écrit en Rust. Il apporte des mises à jour signées qui reviennent à la version précédente en cas d’échec, et une API compatible AxeOS : vos outils continuent de fonctionner. Il s’installe depuis cette page en USB, après une sauvegarde complète de votre firmware d’origine. <strong>Il n’en est qu’à ses débuts : à utiliser avec prudence.</strong>",
+    lp_go: "Installer ↓",
+    lp_man: "Manuel (PDF)",
+    lp_src: "Code source",
+    lp_b_lang: "Interface web en 8 langues",
+    lp_img_alt: "Un NerdAxe Gaia sur un support ; son écran affiche WarpAxe : hashrate avec courbe sur une heure, température de la puce, puissance et efficacité",
+    lp_img_cap: "Mon NerdAxe Gaia sous WarpAxe : 2,41 TH/s pour 28,1 W.",
+    lp_c1h: "Une seule image pour toutes les cartes",
+    lp_c1p: "WarpAxe reconnaît la carte au premier démarrage, d’après les réglages d’usine et une détection en lecture seule. Un Bitaxe Gamma commence à miner aussitôt ; une carte Nerd demande une seule fois de quelle carte il s’agit.",
+    lp_c2h: "Mises à jour signées, avec retour arrière",
+    lp_c2p: "Un clic dans l’interface web installe la version suivante. Le mineur vérifie sa signature avant de flasher et, si la nouvelle version ne démarre pas, il revient à la précédente.",
+    lp_c3h: "Compatible avec vos outils",
+    lp_c3p: "Une API compatible AxeOS : WarpTune et les outils que vous utilisez avec AxeOS continuent de fonctionner. Les réglages Wi-Fi, pools, fréquence, tension et ventilateur sont repris au premier démarrage, et le mineur est accessible à l’adresse <code>&lt;nom&gt;.local</code>.",
+    lp_c4h: "D’abord une sauvegarde complète",
+    lp_c4p: "Avant toute écriture, cette page enregistre toute la flash du mineur dans un fichier. « Restaurer une sauvegarde », plus bas, remet le mineur exactement dans l’état où il était.",
+    lp_c5h: "Tableau de bord à l’écran",
+    lp_c5p: "Sur un écran couleur : hashrate avec courbe sur une heure, température de la puce, puissance, efficacité et adresses d’un coup d’œil. Le petit écran du Gamma affiche l’essentiel.",
+    lp_c6h: "Prend soin du matériel",
+    lp_c6p: "Une surchauffe ou un défaut du régulateur coupe la tension de cœur. Une fois refroidi, le mineur redémarre de lui-même ; au troisième arrêt en une heure, il reste éteint. Les mesures aberrantes des capteurs n’atteignent jamais les boucles de régulation.",
+    lp_honest: "<strong>Pour être honnête :</strong> AxeOS et NerdOS tournent sur bien plus de cartes, ont derrière eux des années d’utilisation par une grande communauté et offrent des fonctions que WarpAxe n’a pas, comme la configuration du Wi-Fi par Bluetooth, le minage sur deux pools ou les alertes. Si vous en avez besoin, restez sur votre firmware d’origine. Si vous essayez WarpAxe, conservez la sauvegarde.",
+    lp_tune: "Envie de consommer moins pour le même hashrate ? <a href=\"https://warppool.org/warptune/\">WarpTune</a> (en anglais) trouve pour chaque mineur la tension de cœur la plus basse sans erreur, sous WarpAxe comme sous AxeOS et NerdOS.",
+    manual_url: "https://docs.warppool.org/warpaxe-guide.fr.html",
     title: "Installer WarpAxe",
     intro: "WarpAxe est un firmware open source pour les mineurs équipés de puces BM1370, BM1373 et BM1397, avec Stratum V2, des mises à jour en ligne signées et une API compatible AxeOS. Cette page l’installe en USB depuis votre navigateur ; ensuite, les mises à jour se font directement depuis l’interface web du mineur.",
     warn_h: "Avant de commencer",
@@ -344,6 +505,28 @@ const T = {
     st_rserr: "Restauration interrompue : {e}. Relancez-la — le mode téléchargement répond toujours ; si le mineur reste éteint, coupez-le d’abord complètement de l’alimentation (bloc d’alimentation et câble USB).",
   },
   it: {
+    lp_h: "Un unico firmware open source per <em>miner Bitaxe e Nerd</em>",
+    lp_sub: "WarpAxe è scritto in Rust. Offre aggiornamenti firmati che, se non vanno a buon fine, tornano alla versione precedente, e un'API compatibile con AxeOS, così i tuoi strumenti continuano a funzionare. Installalo da questa pagina via USB, dopo aver salvato un backup completo del firmware originale. <strong>È ancora in fase iniziale: usalo con cautela.</strong>",
+    lp_go: "Installa ↓",
+    lp_man: "Manuale (PDF, in inglese)",
+    lp_src: "Codice sorgente",
+    lp_b_lang: "Interfaccia web in 8 lingue",
+    lp_img_alt: "Un NerdAxe Gaia su un supporto; il display mostra WarpAxe: hashrate con grafico dell'ultima ora, temperatura del chip, potenza ed efficienza",
+    lp_img_cap: "Il mio NerdAxe Gaia con WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_c1h: "Un'unica immagine per tutte le schede",
+    lp_c1p: "Al primo avvio WarpAxe riconosce la scheda, dalle impostazioni di fabbrica e da un rilevamento in sola lettura. Un Bitaxe Gamma inizia subito a minare; una scheda Nerd chiede una sola volta di quale scheda si tratta.",
+    lp_c2h: "Aggiornamenti firmati, con una via di ritorno",
+    lp_c2p: "Un clic nell'interfaccia web installa la versione successiva. Il miner verifica la firma prima di flashare e, se la nuova versione non si avvia, torna a quella precedente.",
+    lp_c3h: "Funziona con i tuoi strumenti",
+    lp_c3p: "Un'API compatibile con AxeOS: WarpTune e gli strumenti che usi con AxeOS continuano a funzionare. Al primo avvio vengono riprese le impostazioni di Wi-Fi, pool, frequenza, tensione e ventola, e il miner si trova in rete come <code>&lt;nome&gt;.local</code>.",
+    lp_c4h: "Prima un backup completo",
+    lp_c4p: "Prima di scrivere qualsiasi cosa, questa pagina salva l'intera flash del miner in un file. Con “Ripristina un backup”, qui sotto, il miner torna esattamente com'era.",
+    lp_c5h: "Cruscotto sul display",
+    lp_c5p: "Su un display a colori: hashrate con grafico dell'ultima ora, temperatura del chip, potenza, efficienza e indirizzi a colpo d'occhio. Il piccolo schermo del Gamma mostra l'essenziale.",
+    lp_c6h: "Rispetta l'hardware",
+    lp_c6p: "In caso di surriscaldamento o di guasto del regolatore, la tensione del core viene spenta. Una volta raffreddato, il miner riparte da solo; al terzo arresto entro un'ora resta spento. Le letture non plausibili dei sensori non arrivano mai agli anelli di regolazione.",
+    lp_honest: "<strong>Per onestà:</strong> AxeOS e NerdOS girano su molte più schede, hanno alle spalle anni di utilizzo da parte di una grande community e offrono cose che WarpAxe non ha, come la configurazione del Wi-Fi via Bluetooth, il mining su due pool o gli avvisi. Se ti servono, resta sul firmware originale. Se provi WarpAxe, conserva il backup.",
+    lp_tune: "Vuoi consumare meno a parità di hashrate? <a href=\"https://warppool.org/warptune/\">WarpTune</a> (in inglese) trova per ogni miner la tensione del core più bassa senza errori, su WarpAxe come su AxeOS e NerdOS.",
     title: "Installa WarpAxe",
     intro: "WarpAxe è un firmware open source per miner con BM1370, BM1373 e BM1397, con Stratum V2, aggiornamenti online firmati e un'API compatibile con AxeOS. Questa pagina lo installa via USB dal tuo browser; dopo, gli aggiornamenti si fanno direttamente dall'interfaccia web del miner.",
     warn_h: "Prima di iniziare",
@@ -400,6 +583,28 @@ const T = {
     st_rserr: "Ripristino interrotto: {e}. Riprova: la modalità download risponde sempre; se il miner resta spento, prima scollegalo completamente dall'alimentazione (alimentatore e cavo USB).",
   },
   pt: {
+    lp_h: "Um firmware de código aberto para <em>mineradores Bitaxe e Nerd</em>",
+    lp_sub: "O WarpAxe é escrito em Rust. Ele traz atualizações assinadas que voltam para a versão anterior se falharem e uma API compatível com o AxeOS, para que suas ferramentas continuem funcionando. A instalação é feita por esta página via USB, depois de um backup completo do firmware original. <strong>Ainda está em fase inicial: use com cuidado.</strong>",
+    lp_go: "Instalar ↓",
+    lp_man: "Manual (PDF, em inglês)",
+    lp_src: "Código-fonte",
+    lp_b_lang: "Interface web em 8 idiomas",
+    lp_img_alt: "Um NerdAxe Gaia num suporte; o display mostra o WarpAxe: hashrate com gráfico de uma hora, temperatura do chip, potência e eficiência",
+    lp_img_cap: "Meu NerdAxe Gaia com o WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_c1h: "Uma imagem para todas as placas",
+    lp_c1p: "O WarpAxe identifica a placa na primeira inicialização, a partir das configurações de fábrica e de uma verificação somente leitura. Um Bitaxe Gamma começa a minerar na hora; uma placa Nerd pergunta uma vez qual é a placa.",
+    lp_c2h: "Atualizações assinadas, com caminho de volta",
+    lp_c2p: "Um clique na interface web instala a próxima versão. O minerador verifica a assinatura antes de gravar e, se a nova versão não iniciar, volta para a anterior.",
+    lp_c3h: "Funciona com suas ferramentas",
+    lp_c3p: "Uma API compatível com o AxeOS: o WarpTune e as ferramentas que você usa com o AxeOS continuam funcionando. Na primeira inicialização, o WarpAxe assume as configurações de Wi-Fi, pools, frequência, tensão e ventoinha, e o minerador aparece na rede como <code>&lt;nome&gt;.local</code>.",
+    lp_c4h: "Primeiro, um backup completo",
+    lp_c4p: "Antes de gravar qualquer coisa, esta página salva toda a flash do minerador em um arquivo. “Restaurar um backup”, mais abaixo, deixa tudo exatamente como estava.",
+    lp_c5h: "Painel no display",
+    lp_c5p: "Num display colorido: hashrate com gráfico de uma hora, temperatura do chip, potência, eficiência e endereços de relance. O display pequeno do Gamma mostra o essencial.",
+    lp_c6h: "Cuidadoso com o hardware",
+    lp_c6p: "Superaquecimento ou falha do regulador desligam a tensão do núcleo. Depois de esfriar, o minerador volta a ligar sozinho; na terceira parada dentro de uma hora, ele fica desligado. Leituras implausíveis dos sensores nunca chegam às malhas de controle.",
+    lp_honest: "<strong>Para ser honesto:</strong> o AxeOS e o NerdOS rodam em muito mais placas, contam com anos de uso por uma grande comunidade e oferecem coisas que o WarpAxe não tem, como configuração do Wi-Fi por Bluetooth, mineração em dois pools ou alertas. Se você precisa disso, fique com o firmware original. Se for testar o WarpAxe, guarde o backup.",
+    lp_tune: "Quer consumir menos com a mesma hashrate? O <a href=\"https://warppool.org/warptune/\">WarpTune</a> (em inglês) encontra para cada minerador a menor tensão de núcleo sem erros, tanto no WarpAxe quanto no AxeOS e no NerdOS.",
     title: "Instalar o WarpAxe",
     intro: "O WarpAxe é um firmware open source para mineradores BM1370, BM1373 e BM1397 com Stratum V2, atualizações online assinadas e uma API compatível com o AxeOS. Esta página instala o firmware via USB direto do navegador; depois disso, as atualizações vêm da própria interface web do minerador.",
     warn_h: "Antes de começar",
@@ -456,6 +661,28 @@ const T = {
     st_rserr: "Restauração interrompida: {e}. Comece de novo — o modo download sempre responde; se o minerador continuar apagado, antes desligue-o totalmente da energia (fonte e cabo USB).",
   },
   ja: {
+    lp_h: "<em>Bitaxe と Nerd 系マイナー</em>に対応した、ひとつのオープンソースファームウェア",
+    lp_sub: "WarpAxe は Rust で書かれています。失敗したら前のバージョンに戻る署名付きアップデートと、AxeOS 互換の API を備えているので、今使っているツールはそのまま動きます。このページから USB 経由でインストールでき、その前に純正ファームウェアを丸ごとバックアップします。<strong>まだ初期段階です。慎重にお使いください。</strong>",
+    lp_go: "インストール ↓",
+    lp_man: "マニュアル（PDF・英語）",
+    lp_src: "ソースコード",
+    lp_b_lang: "Web UI は 8 言語対応",
+    lp_img_alt: "スタンドに立てた NerdAxe Gaia。画面に WarpAxe が表示されている：1 時間グラフ付きのハッシュレート、チップ温度、消費電力、効率",
+    lp_img_cap: "WarpAxe で動く私の NerdAxe Gaia：28.1 W で 2.41 TH/s。",
+    lp_c1h: "1 つのイメージで全ボードに対応",
+    lp_c1p: "WarpAxe は初回起動時に、工場出荷時の設定と読み取り専用の検出でボードを判別します。Bitaxe Gamma はすぐにマイニングを始め、Nerd 系ボードはどのボードかを一度だけ尋ねます。",
+    lp_c2h: "署名付きアップデートとロールバック",
+    lp_c2p: "Web UI からワンクリックで次のリリースをインストールできます。マイナーは書き込む前に署名を検証し、新しいバージョンが起動しなければ前のバージョンに戻ります。",
+    lp_c3h: "今のツールがそのまま使える",
+    lp_c3p: "AxeOS 互換の API なので、WarpTune や AxeOS で使っているツールはそのまま動きます。Wi-Fi、プール、クロック、電圧、ファンの設定は初回起動時に引き継がれ、マイナーは <code>&lt;名前&gt;.local</code> で見つかります。",
+    lp_c4h: "まず丸ごとバックアップ",
+    lp_c4p: "何かを書き込む前に、このページはマイナーのフラッシュ全体をファイルに保存します。このページの下にある「バックアップを復元」で、元の状態にそのまま戻せます。",
+    lp_c5h: "画面にコックピット表示",
+    lp_c5p: "カラー画面では、1 時間グラフ付きのハッシュレート、チップ温度、消費電力、効率、アドレスがひと目でわかります。Gamma の小さな画面には要点を表示します。",
+    lp_c6h: "ハードウェアを守る",
+    lp_c6p: "過熱やレギュレーターの異常を検知するとコア電圧を切ります。冷えるとマイナーは自動で再開しますが、1 時間以内に 3 回目の停止が起きた場合はオフのままになります。あり得ないセンサー値は制御ループに渡しません。",
+    lp_honest: "<strong>正直に言うと：</strong>AxeOS と NerdOS ははるかに多くのボードで動き、大きなコミュニティで何年も使われてきました。Bluetooth での Wi-Fi 設定、2 つのプールでのマイニング、アラートなど、WarpAxe にない機能もあります。それらが必要なら純正ファームウェアのままにしてください。WarpAxe を試すなら、バックアップは残しておいてください。",
+    lp_tune: "同じハッシュレートのまま消費電力を下げたいですか？<a href=\"https://warppool.org/warptune/\">WarpTune</a>（英語）がマイナーごとにエラーの出ない最低のコア電圧を見つけます。WarpAxe でも AxeOS や NerdOS でも使えます。",
     title: "WarpAxe をインストール",
     intro: "WarpAxe は BM1370・BM1373・BM1397 搭載マイナー向けのオープンソースファームウェアです。Stratum V2、署名付きオンライン更新、AxeOS 互換の API に対応しています。このページではブラウザから USB 経由でインストールします。以降の更新はマイナー自身の Web UI から行えます。",
     warn_h: "始める前に",
@@ -512,6 +739,28 @@ const T = {
     st_rserr: "復元を中断しました：{e}。もう一度やり直してください。ダウンロードモードは必ず応答します。マイナーの画面が消えたままの場合は、先に電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
   },
   zh: {
+    lp_h: "同一款开源固件，适用于 <em>Bitaxe 和 Nerd 矿机</em>",
+    lp_sub: "WarpAxe 用 Rust 编写。它提供失败时会自动回退的签名更新，以及兼容 AxeOS 的 API，让你现有的工具照常可用。可在本页面通过 USB 安装，安装前会先完整备份原厂固件。<strong>它仍处于早期阶段，请谨慎使用。</strong>",
+    lp_go: "安装 ↓",
+    lp_man: "用户手册（PDF，英文）",
+    lp_src: "源代码",
+    lp_b_lang: "Web 界面支持 8 种语言",
+    lp_img_alt: "支架上的 NerdAxe Gaia，屏幕显示 WarpAxe：带一小时曲线的算力、芯片温度、功耗和能效",
+    lp_img_cap: "我的 NerdAxe Gaia 运行 WarpAxe：2.41 TH/s，功耗 28.1 W。",
+    lp_c1h: "一个镜像，通用所有板子",
+    lp_c1p: "WarpAxe 在首次启动时根据出厂设置和只读探测识别板子。Bitaxe Gamma 会立即开始挖矿；Nerd 系列板子会询问一次具体型号。",
+    lp_c2h: "签名更新，留有退路",
+    lp_c2p: "在 Web 界面点一下即可安装下一个版本。矿机在刷写前先校验签名；如果新版本无法启动，会退回上一个版本。",
+    lp_c3h: "兼容你的工具",
+    lp_c3p: "与 AxeOS 兼容的 API：WarpTune 以及你在 AxeOS 上使用的工具都能继续使用。Wi-Fi、矿池、频率、电压和风扇设置会在首次启动时沿用，矿机可通过 <code>&lt;名称&gt;.local</code> 找到。",
+    lp_c4h: "先做完整备份",
+    lp_c4p: "在写入任何内容之前，本页面会把矿机的整个闪存保存到一个文件里。用下方的“恢复备份”即可原样还原。",
+    lp_c5h: "显示屏上的仪表盘",
+    lp_c5p: "彩色显示屏上一眼可见：带一小时曲线的算力、芯片温度、功耗、能效和地址。Gamma 的小屏幕则显示最核心的信息。",
+    lp_c6h: "爱护硬件",
+    lp_c6p: "过热或稳压器故障时会切断核心电压。冷却后矿机自动重新启动；一小时内第三次停机则保持关闭。不可信的传感器读数绝不会进入控制回路。",
+    lp_honest: "<strong>坦白说：</strong>AxeOS 和 NerdOS 支持的板子多得多，背后有庞大社区多年的实际使用，还提供 WarpAxe 没有的功能，例如通过蓝牙配置 Wi-Fi、双矿池挖矿或告警。如果你需要这些，请继续使用原厂固件。如果你要试用 WarpAxe，请保管好备份。",
+    lp_tune: "想在算力不变的情况下省电？<a href=\"https://warppool.org/warptune/\">WarpTune</a>（英文）会为每台矿机找到无错误的最低核心电压，在 WarpAxe、AxeOS 和 NerdOS 上都适用。",
     title: "安装 WarpAxe",
     intro: "WarpAxe 是面向 BM1370、BM1373 和 BM1397 矿机的开源固件，支持 Stratum V2、带签名的在线更新和兼容 AxeOS 的 API。本页面通过浏览器经 USB 安装固件；之后的更新直接在矿机自带的 Web 界面里完成。",
     warn_h: "开始之前",
@@ -573,6 +822,8 @@ function apply(lang) {
   const t = T[lang] || T.en;
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach(el => { el.innerHTML = t[el.dataset.t] ?? T.en[el.dataset.t]; });
+  document.querySelectorAll("[data-ta]").forEach(el => { el.alt = t[el.dataset.ta] ?? T.en[el.dataset.ta]; });
+  document.getElementById("lpman").href = t.manual_url ?? T.en.manual_url;
   document.getElementById("ver").textContent = version ? t.ver.replace("{v}", version) : "";
 }
 const sel = document.getElementById("lang");
