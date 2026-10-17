@@ -13,7 +13,7 @@
  "Regulator": "Régulateur",
  "Clock": "Fréquence",
  "Core": "Cœur",
- "Uptime": "Uptime",
+ "Uptime": "Actif depuis",
  "Input": "Entrée",
  "Current": "Courant",
  "Power": "Puissance",
@@ -51,5 +51,7 @@
  "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · moteur SHA + cœur CPU · expérimental",
  "Effective": "Rendement",
  "Restart clock": "Redémarrage",
- "Shutdown {h} °C": "Arrêt {h} °C"
+ "Shutdown {h} °C": "Arrêt {h} °C",
+ "Block": "Bloc",
+ "Log": "Journal"
 }

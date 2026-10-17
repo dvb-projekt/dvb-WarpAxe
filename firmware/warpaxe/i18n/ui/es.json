@@ -314,7 +314,7 @@
   "hc_note": "Se leen cada segundo de los contadores de los propios chips, como hace AxeOS (hashrateMonitor en la API).",
   "hc_wait": "Los contadores arrancan unos segundos después de los chips.",
   "vr_phases": "fases",
-  "vr_domains": "dominios de tensión",
+  "vr_domains": "dominios de voltaje",
   "hc_total": "Total",
   "tuning_clk": "Frecuencia",
   "overheat_s_novr": "Chip por encima: se detiene hasta que baje 10 °C",

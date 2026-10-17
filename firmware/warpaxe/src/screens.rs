@@ -439,7 +439,7 @@ impl Ui {
             c.rect(0, 52, W, 72, gfx::VOID, (a * 170.0) as u8);
             let title = l("BLOCK FOUND", "BLOCK GEFUNDEN");
             fade_text(c, &TITLE, W / 2, 86, title_col, title, a);
-            let sub = format!("Block {}", num(height as f64, 0));
+            let sub = format!("{} {}", l("Block", "Block"), num(height as f64, 0));
             fade_text(c, &VAL12, W / 2, 106, gfx::FG, &sub, a);
             let hint = l("Press a key to close", "Taste drücken zum Schließen");
             fade_text(c, &LABEL11, W / 2, 120, gfx::MUTE, hint, a * 0.8);
@@ -1349,7 +1349,7 @@ fn pool(c: &mut Canvas) {
 }
 
 fn log_page(c: &mut Canvas) {
-    page_head(c, "Log", 4);
+    page_head(c, l("Log", "Log"), 4);
     let count = unsafe { esp_idf_svc::sys::tusb::wa_log_count() } as usize;
     let first = count.saturating_sub(11);
     for (row, i) in (first..count).enumerate() {
