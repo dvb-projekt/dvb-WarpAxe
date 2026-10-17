@@ -183,12 +183,14 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
   </section>
 
   <p class="mute" data-t="foot"></p>
+  <p class="mute" data-t="foot_discord"></p>
 </main>
 <script type="module">
 import { ESPLoader, Transport } from "./esptool/bundle.js";
 import { md5hex } from "./md5.js";
 const T = {
   en: {
+    foot_discord: "Questions or feedback? Join us on <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a>: ask in #warpaxe.",
     lp_h: "One open-source firmware for <em>Bitaxe and Nerd miners</em>",
     lp_sub: "WarpAxe is written in Rust. It brings signed updates that fall back when they fail, and an AxeOS-compatible API, so your tools keep working. Install it from this page over USB, with a full backup of your stock firmware first. <strong>It is early: use it with care.</strong>",
     lp_go: "Install ↓",
@@ -268,6 +270,7 @@ const T = {
     st_rserr: "Restore stopped: {e}. Start it again — the download mode always answers; if the miner stays dark, take it off power completely first (power supply and USB cable).",
   },
   de: {
+    foot_discord: "Fragen oder Rückmeldungen? Komm in unseren <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a>, am besten in #warpaxe.",
     lp_h: "Eine Open-Source-Firmware für <em>Bitaxe- und Nerd-Miner</em>",
     lp_sub: "WarpAxe ist in Rust geschrieben. Sie bringt signierte Updates, die bei einem Fehlstart zurückfallen, und eine AxeOS-kompatible API, damit deine Tools weiterlaufen. Installiert wird sie auf dieser Seite über USB, vorher mit einer kompletten Sicherung deiner Original-Firmware. <strong>Sie ist noch früh: mit Bedacht einsetzen.</strong>",
     lp_go: "Installieren ↓",
@@ -347,6 +350,7 @@ const T = {
     st_rserr: "Zurückspielen abgebrochen: {e}. Starte es noch einmal – der Download-Modus antwortet immer; bleibt der Miner dunkel, nimm ihn vorher ganz vom Strom (Netzteil und USB-Kabel).",
   },
   es: {
+    foot_discord: "¿Preguntas o comentarios? Únete a nuestro <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a> y pregunta en #warpaxe.",
     lp_h: "Un firmware de código abierto para <em>mineros Bitaxe y Nerd</em>",
     lp_sub: "WarpAxe está escrito en Rust. Trae actualizaciones firmadas que vuelven a la versión anterior si fallan y una API compatible con AxeOS, para que tus herramientas sigan funcionando. Se instala desde esta página por USB, haciendo antes una copia de seguridad completa de tu firmware original. <strong>Está en una fase temprana: úsalo con cuidado.</strong>",
     lp_go: "Instalar ↓",
@@ -426,6 +430,7 @@ const T = {
     st_rserr: "Restauración detenida: {e}. Vuelve a empezar: el modo de descarga siempre responde; si el minero sigue apagado, desconéctalo antes por completo de la corriente (fuente de alimentación y cable USB).",
   },
   fr: {
+    foot_discord: "Des questions ou des retours ? Rejoignez-nous sur <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a>, dans le salon #warpaxe.",
     lp_h: "Un seul firmware open source pour <em>les mineurs Bitaxe et Nerd</em>",
     lp_sub: "WarpAxe est écrit en Rust. Il apporte des mises à jour signées qui reviennent à la version précédente en cas d’échec, et une API compatible AxeOS : vos outils continuent de fonctionner. Il s’installe depuis cette page en USB, après une sauvegarde complète de votre firmware d’origine. <strong>Il n’en est qu’à ses débuts : à utiliser avec prudence.</strong>",
     lp_go: "Installer ↓",
@@ -505,6 +510,7 @@ const T = {
     st_rserr: "Restauration interrompue : {e}. Relancez-la — le mode téléchargement répond toujours ; si le mineur reste éteint, coupez-le d’abord complètement de l’alimentation (bloc d’alimentation et câble USB).",
   },
   it: {
+    foot_discord: "Domande o feedback? Unisciti al nostro <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a> e scrivici nel canale #warpaxe.",
     lp_h: "Un unico firmware open source per <em>miner Bitaxe e Nerd</em>",
     lp_sub: "WarpAxe è scritto in Rust. Offre aggiornamenti firmati che, se non vanno a buon fine, tornano alla versione precedente, e un'API compatibile con AxeOS, così i tuoi strumenti continuano a funzionare. Installalo da questa pagina via USB, dopo aver salvato un backup completo del firmware originale. <strong>È ancora in fase iniziale: usalo con cautela.</strong>",
     lp_go: "Installa ↓",
@@ -583,6 +589,7 @@ const T = {
     st_rserr: "Ripristino interrotto: {e}. Riprova: la modalità download risponde sempre; se il miner resta spento, prima scollegalo completamente dall'alimentazione (alimentatore e cavo USB).",
   },
   pt: {
+    foot_discord: "Dúvidas ou sugestões? Entre no nosso <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a> e fale com a gente no canal #warpaxe.",
     lp_h: "Um firmware de código aberto para <em>mineradores Bitaxe e Nerd</em>",
     lp_sub: "O WarpAxe é escrito em Rust. Ele traz atualizações assinadas que voltam para a versão anterior se falharem e uma API compatível com o AxeOS, para que suas ferramentas continuem funcionando. A instalação é feita por esta página via USB, depois de um backup completo do firmware original. <strong>Ainda está em fase inicial: use com cuidado.</strong>",
     lp_go: "Instalar ↓",
@@ -661,6 +668,7 @@ const T = {
     st_rserr: "Restauração interrompida: {e}. Comece de novo — o modo download sempre responde; se o minerador continuar apagado, antes desligue-o totalmente da energia (fonte e cabo USB).",
   },
   ja: {
+    foot_discord: "質問やフィードバックは <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a> へどうぞ。#warpaxe チャンネルでお気軽に。",
     lp_h: "<em>Bitaxe と Nerd 系マイナー</em>に対応した、ひとつのオープンソースファームウェア",
     lp_sub: "WarpAxe は Rust で書かれています。失敗したら前のバージョンに戻る署名付きアップデートと、AxeOS 互換の API を備えているので、今使っているツールはそのまま動きます。このページから USB 経由でインストールでき、その前に純正ファームウェアを丸ごとバックアップします。<strong>まだ初期段階です。慎重にお使いください。</strong>",
     lp_go: "インストール ↓",
@@ -739,6 +747,7 @@ const T = {
     st_rserr: "復元を中断しました：{e}。もう一度やり直してください。ダウンロードモードは必ず応答します。マイナーの画面が消えたままの場合は、先に電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
   },
   zh: {
+    foot_discord: "有问题或反馈？欢迎加入我们的 <a href=\"https://discord.gg/SZ6yTtkt3G\">Discord</a>，在 #warpaxe 频道提问。",
     lp_h: "同一款开源固件，适用于 <em>Bitaxe 和 Nerd 矿机</em>",
     lp_sub: "WarpAxe 用 Rust 编写。它提供失败时会自动回退的签名更新，以及兼容 AxeOS 的 API，让你现有的工具照常可用。可在本页面通过 USB 安装，安装前会先完整备份原厂固件。<strong>它仍处于早期阶段，请谨慎使用。</strong>",
     lp_go: "安装 ↓",
