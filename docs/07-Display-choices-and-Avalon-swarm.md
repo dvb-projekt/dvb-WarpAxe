@@ -119,7 +119,7 @@ against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
 
 ## Image size
 
-v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,004,928 bytes
+v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,004,944 bytes
 (+104.6 KB; the OTA slot is 3,145,728, so 140.8 KB remain). The growth
 is the new web-UI strings in eight languages (about 32 KB of HTML), the
 display tables and their validation, the Avalon client with its JSON
