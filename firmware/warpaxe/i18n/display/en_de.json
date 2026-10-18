@@ -53,5 +53,12 @@
  "Restart clock": "Neustart-Takt",
  "Shutdown {h} °C": "Abschaltung {h} °C",
  "Block": "Block",
- "Log": "Log"
+ "Log": "Log",
+ "REGULATOR": "REGLER",
+ "FAN": "LÜFTER",
+ "BEST DIFF": "BESTE DIFF",
+ "BLOCK": "BLOCK",
+ "POOL DIFF": "POOL-DIFF",
+ "INPUT": "EINGANG",
+ "d/h:min": "T/h:min"
 }

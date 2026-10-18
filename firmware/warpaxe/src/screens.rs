@@ -2,10 +2,15 @@
 //!
 //! LCD (Nerd boards, 320×170): the cockpit, and four more pages a press of
 //! the page key (GPIO14) steps through: Bitcoin, device, pool, log. The
-//! boot key (GPIO0) goes back to the cockpit; a minute without a key press
-//! does too. OLED (Bitaxe, 128×32): the hashrate large on the left, a
-//! rotating value on the right, and three full-width info slides per
+//! boot key (GPIO0) goes back to the start page; a minute without a key
+//! press does too. OLED (Bitaxe, 128×32): the hashrate large on the left,
+//! a rotating value on the right, and three full-width info slides per
 //! round; the boot key steps on.
+//!
+//! Which pages the key steps through (and which is the start page), what
+//! the cockpit's places show and which OLED slides rotate come from the
+//! config, by the names in `warpaxe_displaycfg`; the layouts themselves
+//! are fixed here. The factory settings are the screens of v0.1.30.
 //!
 //! Special screens cover every page while their state lasts: firmware
 //! update, block found (animated; a key press dismisses it), overheat,
@@ -17,6 +22,7 @@ use crate::display::{self, Display, Lcd, Oled};
 use crate::gfx::fonts::*;
 use crate::gfx::{self, mix, Align, Canvas};
 use crate::{board, clock, config, diag, history, market, miner, net, stratum};
+use warpaxe_displaycfg as dcfg;
 
 const W: i32 = display::WIDTH as i32;
 const H: i32 = display::HEIGHT as i32;
@@ -24,8 +30,6 @@ const H: i32 = display::HEIGHT as i32;
 const HOME_AFTER_S: u64 = 60;
 /// A found block stays on screen this long unless a key dismisses it.
 const BLOCK_SHOW_S: u64 = 600;
-const PAGES: usize = 5;
-const OLED_STEP: Duration = Duration::from_secs(4);
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum Event {
@@ -46,6 +50,8 @@ struct Star {
 }
 
 pub struct Ui {
+    /// Index into the configured page list (`pages`); `usize::MAX`
+    /// until the first frame, which puts it on the start page.
     page: usize,
     last_key_s: u64,
     base: Vec<u8>,
@@ -66,6 +72,25 @@ pub enum Key {
     Next,
     /// GPIO0 (boot key).
     Home,
+}
+
+/// The LCD pages as the key steps through them, and the start page's
+/// index among them, from the config.
+fn pages() -> (Vec<&'static str>, usize) {
+    let cfg = config::get();
+    let p = dcfg::pages(&cfg.display_pages);
+    let start = dcfg::start_index(&p, &cfg.display_start_page);
+    (p, start)
+}
+
+/// The OLED slides that rotate, and how long each stays, from the config.
+fn oled_rotation() -> (Vec<&'static str>, Duration) {
+    let cfg = config::get();
+    let step = u64::from(dcfg::oled_interval_s(cfg.oled_interval));
+    (
+        dcfg::oled_slides(&cfg.oled_slides),
+        Duration::from_secs(step),
+    )
 }
 
 /// The display language; Japanese and Chinese fall back to English (the
@@ -149,6 +174,14 @@ fn num(v: f64, d: usize) -> String {
 
 /// 42.9M, 4.29G, 132.76T style.
 fn si(v: f64) -> String {
+    let (n, u) = si_parts(v);
+    format!("{n}{u}")
+}
+
+/// The number and the prefix of [`si`] apart: ("42.9", "M"), for a
+/// value face that has digits only (VAL16) with the letter in the unit
+/// face beside it.
+fn si_parts(v: f64) -> (String, &'static str) {
     let units = ["", "K", "M", "G", "T", "P", "E"];
     let mut v = v.max(0.0);
     let mut i = 0;
@@ -156,14 +189,26 @@ fn si(v: f64) -> String {
         v /= 1000.0;
         i += 1;
     }
-    let d = if v >= 100.0 {
-        1
-    } else if v >= 10.0 {
-        1
+    let d = if v >= 10.0 { 1 } else { 2 };
+    (num(v, if i == 0 { 0 } else { d }), units[i])
+}
+
+/// J/TH from the board's power and the ten-minute rate; `None` without
+/// a power reading or before the first estimate.
+fn eff_jth(m: &miner::MinerState, b: &board::BoardState) -> Option<f64> {
+    let w = b.power_w?;
+    (m.hashrate_ghs > 1.0).then(|| f64::from(w) / (m.hashrate_ghs / 1000.0))
+}
+
+/// Up to a day "h:mm" with the unit "h", from a day on "d/hh:mm" with
+/// the unit "d/h:min": VAL16 has digits, "/" and ":" only.
+fn uptime_parts(s: u64) -> (String, &'static str) {
+    let (d, h, m) = (s / 86_400, s / 3600 % 24, s / 60 % 60);
+    if d > 0 {
+        (format!("{d}/{h:02}:{m:02}"), l("d/h:min", "T/h:min"))
     } else {
-        2
-    };
-    format!("{}{}", num(v, if i == 0 { 0 } else { d }), units[i])
+        (format!("{h}:{m:02}"), "h")
+    }
 }
 
 fn uptime(s: u64) -> String {
@@ -252,7 +297,7 @@ fn family_color() -> u16 {
 impl Ui {
     pub fn new() -> Self {
         Ui {
-            page: 0,
+            page: usize::MAX,
             last_key_s: 0,
             base: Vec::new(),
             event: None,
@@ -283,10 +328,18 @@ impl Ui {
             return;
         }
         match k {
-            Key::Next => self.page = (self.page + 1) % PAGES,
+            Key::Next => {
+                let (p, home) = pages();
+                self.page = if self.page >= p.len() {
+                    home
+                } else {
+                    (self.page + 1) % p.len()
+                };
+            }
             Key::Home => {
-                self.page = 0;
-                self.oled_i = (self.oled_i + 1) % OLED_SLIDES;
+                self.page = pages().1;
+                let (slides, _) = oled_rotation();
+                self.oled_i = (self.oled_i + 1) % slides.len();
                 self.oled_t = Instant::now();
             }
         }
@@ -340,8 +393,9 @@ impl Ui {
             self.event = ev;
             self.event_t0 = Instant::now();
         }
-        if self.page != 0 && diag::uptime_s().saturating_sub(self.last_key_s) > HOME_AFTER_S {
-            self.page = 0;
+        let (_, home) = pages();
+        if self.page != home && diag::uptime_s().saturating_sub(self.last_key_s) > HOME_AFTER_S {
+            self.page = home;
         }
         match d {
             Display::Lcd(l) => self.lcd(l),
@@ -374,12 +428,18 @@ impl Ui {
             None => {
                 l.blit(&self.base);
                 let mut c = l.canvas();
-                match self.page {
-                    0 => cockpit(&mut c),
-                    1 => bitcoin(&mut c),
-                    2 => device(&mut c),
-                    3 => pool(&mut c),
-                    _ => log_page(&mut c),
+                // The list may have shrunk under a PATCH: back to the start page.
+                let (p, home) = pages();
+                if self.page >= p.len() {
+                    self.page = home.min(p.len() - 1);
+                }
+                let (pos, n) = (self.page, p.len());
+                match p[pos] {
+                    "bitcoin" => bitcoin(&mut c, pos, n),
+                    "device" => device(&mut c, pos, n),
+                    "pool" => pool(&mut c, pos, n),
+                    "log" => log_page(&mut c, pos, n),
+                    _ => cockpit(&mut c, pos, n),
                 }
                 Duration::from_millis(500)
             }
@@ -486,9 +546,13 @@ impl Ui {
                 Duration::from_millis(100)
             }
             None => {
-                if self.oled_t.elapsed() >= OLED_STEP {
-                    self.oled_i = (self.oled_i + 1) % OLED_SLIDES;
+                let (slides, step) = oled_rotation();
+                if self.oled_t.elapsed() >= step {
+                    self.oled_i = (self.oled_i + 1) % slides.len();
                     self.oled_t = Instant::now();
+                }
+                if self.oled_i >= slides.len() {
+                    self.oled_i = 0;
                 }
                 let acc = stratum::state().shares_accepted;
                 if acc != self.last_acc {
@@ -497,7 +561,7 @@ impl Ui {
                 } else if self.blink > 0 {
                     self.blink -= 1;
                 }
-                oled_slide(o, self.oled_i);
+                oled_slide(o, slides[self.oled_i]);
                 if self.blink > 0 {
                     for y in 0..3 {
                         for x in 125..128 {
@@ -603,7 +667,7 @@ fn badge(c: &mut Canvas) {
     c.sprite(9, 2, 66, 20, BADGE);
 }
 
-fn page_head(c: &mut Canvas, title: &str, n: usize) {
+fn page_head(c: &mut Canvas, title: &str, pos: usize, total: usize) {
     badge(c);
     c.text(
         &LABEL12,
@@ -616,18 +680,24 @@ fn page_head(c: &mut Canvas, title: &str, n: usize) {
     if let Some(t) = clock_text() {
         c.text(&MONO11, 252, 18, gfx::MUTE, &t, Align::Right);
     }
-    dots(c, 264, 11, n);
+    dots(c, 305, 11, pos, total);
     c.rect(12, 25, 298, 1, gfx::WHITE, 16);
 }
 
-fn dots(c: &mut Canvas, x: i32, y: i32, n: usize) {
-    for i in 0..PAGES {
-        let (col, a) = if i == n {
+/// One dot per active page, the current one lit, the last ending at
+/// `x_end`; none when there is only one page.
+fn dots(c: &mut Canvas, x_end: i32, y: i32, pos: usize, total: usize) {
+    if total < 2 {
+        return;
+    }
+    let x0 = x_end - 5 - (total as i32 - 1) * 9;
+    for i in 0..total {
+        let (col, a) = if i == pos {
             (gfx::PLASMA, 255)
         } else {
             (gfx::WHITE, 40)
         };
-        c.rect(x + i as i32 * 9, y, 5, 5, col, a);
+        c.rect(x0 + i as i32 * 9, y, 5, 5, col, a);
     }
 }
 
@@ -666,7 +736,8 @@ fn lock_icon(c: &mut Canvas, x: i32, y: i32, col: u16) {
     c.rect(x, y - 5, 7, 6, col, 255);
 }
 
-fn cockpit(c: &mut Canvas) {
+fn cockpit(c: &mut Canvas, pos: usize, total: usize) {
+    let cfg = config::get();
     let m = miner::state();
     let st = stratum::state();
     let b = board::state();
@@ -684,16 +755,74 @@ fn cockpit(c: &mut Canvas) {
     if let Some(t) = clock_text() {
         c.text(&MONO11, 262, 16, gfx::MUTE, &t, Align::Right);
     }
-    let hash_lbl = "HASHRATE";
-    c.text(&LABEL11, 12, 34, gfx::DIM, hash_lbl, Align::Left);
-    let (v, unit) = hashrate(m.hashrate_ghs);
-    let w = c.text(&HERO, 11, 70, gfx::FG, &v, Align::Left);
-    c.text(&UNIT13, 16 + w, 70, gfx::MUTE, unit, Align::Left);
 
-    // Last hour, 10 s samples.
-    let mut hist = history::recent_ghs(360);
-    // Samples before the first estimate (right after boot) are zero:
-    // start the line at the first real one.
+    // The large number, and under it its last hour (10 s samples): the
+    // curve shows the same quantity as the number above it, where the
+    // history has it (power and efficiency are sampled with the rate).
+    let est = if b.power_estimated { "~" } else { "" };
+    let (label, value, unit, hist): (&str, String, &str, Vec<f32>) =
+        match dcfg::big(&cfg.cockpit_big) {
+            "power" => (
+                l("POWER", "LEISTUNG"),
+                b.power_w.map_or("–".into(), |w| num(f64::from(w), 1)),
+                "W",
+                history::recent_power_w(360),
+            ),
+            "efficiency" => (
+                l("EFFICIENCY", "EFFIZIENZ"),
+                eff_jth(&m, &b).map_or("–".into(), |e| num(e, 1)),
+                "J/TH",
+                history::recent_eff_jth(360),
+            ),
+            _ => {
+                let (v, u) = hashrate(m.hashrate_ghs);
+                ("HASHRATE", v, u, history::recent_ghs(360))
+            }
+        };
+    c.text(&LABEL11, 12, 34, gfx::DIM, label, Align::Left);
+    let mut x = 11;
+    // HERO has digits only: the estimate's tilde in the unit face.
+    if !est.is_empty() && value != "–" {
+        x += c.text(&UNIT13, x, 70, gfx::MUTE, "~", Align::Left) + 1;
+    }
+    let w = c.text(&HERO, x, 70, gfx::FG, &value, Align::Left);
+    c.text(&UNIT13, x + 5 + w, 70, gfx::MUTE, unit, Align::Left);
+    sparkline(c, hist);
+
+    // Right column: three places from the config.
+    let rx = 222;
+    c.rect(rx - 8, 8, 1, 124, gfx::WHITE, 12);
+    dots(c, 311, 10, pos, total);
+    let live = Live {
+        m: &m,
+        st: &st,
+        b: &b,
+        n: &n,
+        cfg: &cfg,
+    };
+    for (i, id) in dcfg::slots(&cfg.cockpit_slots, board::devkit())
+        .iter()
+        .enumerate()
+    {
+        slot(c, id, [28, 66, 100][i], &live);
+    }
+    footer(c, dcfg::footer(&cfg.cockpit_footer), &live);
+}
+
+/// The state the cockpit's places and footer draw from.
+struct Live<'a> {
+    m: &'a miner::MinerState,
+    st: &'a stratum::StratumState,
+    b: &'a board::BoardState,
+    n: &'a net::NetState,
+    cfg: &'a config::Config,
+}
+
+/// The last hour of `hist` under the large number, as a filled line
+/// between the lowest and highest sample; nothing before two samples.
+fn sparkline(c: &mut Canvas, mut hist: Vec<f32>) {
+    // Samples before the first reading (right after boot) are zero or
+    // NaN: start the line at the first real one.
     if let Some(first) = hist.iter().position(|v| v.is_finite() && *v > 0.0) {
         hist.drain(..first);
     }
@@ -716,7 +845,7 @@ fn cockpit(c: &mut Canvas) {
             .enumerate()
             .map(|(i, v)| {
                 let x = x0 as f32 + i as f32 * gw as f32 / (hist.len() - 1).max(1) as f32;
-                let v = if v.is_finite() { *v } else { lo };
+                let v = if v.is_finite() && *v > 0.0 { *v } else { lo };
                 (x, (y0 + gh) as f32 - (v - lo) / (hi - lo) * gh as f32)
             })
             .collect();
@@ -740,133 +869,284 @@ fn cockpit(c: &mut Canvas) {
         }
     }
     c.text(&LABEL11, x0 + gw, y0 - 3, gfx::DIM, "1 h", Align::Right);
+}
 
-    // Right column.
+/// One place of the cockpit's right column at `y`: a label, the value
+/// in the digit face and its unit beside it; the temperatures with a
+/// bar against their limit. What the board does not have is a dash.
+fn slot(c: &mut Canvas, id: &str, y: i32, v: &Live) {
     let rx = 222;
-    c.rect(rx - 8, 8, 1, 124, gfx::WHITE, 12);
-    dots(c, 270, 10, 0);
-    let big = |c: &mut Canvas, label: &str, val: &str, unit: &str, y: i32, col: u16| {
-        c.text(&LABEL11, rx, y, gfx::DIM, label, Align::Left);
-        let w = c.text(&VAL16, rx, y + 17, col, val, Align::Left);
-        c.text(&LABEL11, rx + w + 3, y + 17, gfx::MUTE, unit, Align::Left);
-    };
-    let t = b.temp_c;
-    big(
-        c,
-        "CHIP",
-        &t.map_or("–".into(), |t| num(f64::from(t), 1)),
-        "°C",
-        28,
-        t.map_or(gfx::FG, temp_color),
-    );
-    c.rect(rx, 50, 88, 3, gfx::WHITE, 20);
-    if let Some(t) = t {
-        let (_, hot) = limits();
-        let f = ((t - 30.0) / (hot - 30.0)).clamp(0.0, 1.0);
-        c.rect(rx, 50, (88.0 * f) as i32, 3, temp_color(t), 255);
-    }
-    // The devkit has neither a regulator to read power from nor a rate
-    // that makes J/TH mean anything (Oliver, 2026-10-05).
-    if board::devkit() {
-        {
-            // Accepted shares per hour since boot (the yield; at difficulty
-            // 0.005 and 230 kH/s about 39 are due) after the first five
-            // minutes, and the uptime (Oliver, 2026-10-05).
-            let up = diag::uptime_s();
-            let per_h = if up >= 300 {
-                num(st.shares_accepted as f64 * 3600.0 / up as f64, 1)
-            } else {
-                "–".into()
-            };
-            big(c, "SHARES/H", &per_h, "", 66, gfx::FG);
-            // VAL16 has digits and "/%" only: hours:minutes, days in front.
-            let (d, h, m) = (up / 86_400, up / 3600 % 24, up / 60 % 60);
-            let (val, unit) = if d > 0 {
-                (format!("{d}/{h:02}:{m:02}"), l("d/h:min", "T/h:min"))
-            } else {
-                (format!("{h}:{m:02}"), "h")
-            };
-            big(c, l("UPTIME", "LAUFZEIT"), &val, unit, 100, gfx::FG);
+    let (m, st, b, cfg) = (v.m, v.st, v.b, v.cfg);
+    let dash = || "–".to_string();
+    let est = if b.power_estimated { "~" } else { "" };
+    let (label, value, unit, col): (&str, String, String, u16) = match id {
+        "vr" => {
+            let t = b.vr_temp_c;
+            let hot = board::profile().vr_max_c;
+            (
+                l("REGULATOR", "REGLER"),
+                t.map_or_else(dash, |t| t.to_string()),
+                "°C".into(),
+                t.map_or(gfx::FG, |t| {
+                    if t as f32 >= hot - 5.0 {
+                        gfx::ERR
+                    } else {
+                        gfx::FG
+                    }
+                }),
+            )
         }
-    } else {
-        let pw = b.power_w.unwrap_or(0.0);
-        // An estimate (no power reading on the board) is marked with a
-        // tilde in front of the value, as on the device page, so the labels
-        // keep their translations in every display language.
-        let (lbl_p, lbl_e) = (l("POWER", "LEISTUNG"), l("EFFICIENCY", "EFFIZIENZ"));
-        let est = if b.power_estimated { "~" } else { "" };
-        big(
-            c,
-            lbl_p,
-            &format!("{est}{}", num(f64::from(pw), 1)),
-            "W",
-            66,
+        "power" => (
+            l("POWER", "LEISTUNG"),
+            b.power_w
+                .map_or_else(dash, |w| format!("{est}{}", num(f64::from(w), 1))),
+            "W".into(),
             gfx::FG,
-        );
-        let eff = if m.hashrate_ghs > 1.0 {
-            f64::from(pw) / (m.hashrate_ghs / 1000.0)
-        } else {
-            0.0
-        };
-        big(
-            c,
-            lbl_e,
-            &if eff > 0.0 {
-                format!("{est}{}", num(eff, 1))
+        ),
+        "efficiency" => (
+            l("EFFICIENCY", "EFFIZIENZ"),
+            eff_jth(m, b).map_or_else(dash, |e| format!("{est}{}", num(e, 1))),
+            "J/TH".into(),
+            gfx::FG,
+        ),
+        "fan" => (
+            l("FAN", "LÜFTER"),
+            if board::profile().has_fan() {
+                num(f64::from(b.fan_rpm), 0)
             } else {
-                "–".into()
+                dash()
             },
-            "J/TH",
-            100,
+            "rpm".into(),
             gfx::FG,
-        );
-    }
-
-    // Status bar.
-    c.rect(3, 144, W - 3, 26, gfx::BLACK, 90);
-    let up = st.authorized;
-    c.disc(
-        12.0,
-        157.0,
-        3.0,
-        if up {
-            if st.using_fallback {
-                gfx::WARN
+        ),
+        "fanpct" => (
+            l("FAN", "LÜFTER"),
+            if board::profile().has_fan() {
+                b.fan_pct.to_string()
             } else {
-                gfx::OK
-            }
-        } else {
-            gfx::ERR
-        },
-        255,
-    );
-    let host = st.pool.split(':').next().unwrap_or("").to_string();
-    let w = c.text(&MONO11, 20, 160, gfx::MUTE, &host, Align::Left);
-    let mut left_end = 20 + w;
-    if st.tls || st.sv2 {
-        lock_icon(c, 24 + w, 161, gfx::OK);
-        left_end += 11;
-    }
-    let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_else(|| "–".into());
-    let ip_x = 310 - MONO11.width(&ip);
-    c.text(&MONO11, 310, 160, gfx::DIM, &ip, Align::Right);
-    // Shares centred in the gap between pool and IP, if they fit.
-    let shares = format!("{}/{}", st.shares_accepted, st.shares_rejected);
-    if MONO11.width(&shares) + 16 <= ip_x - left_end {
-        c.text(
-            &MONO11,
-            (left_end + ip_x) / 2,
-            160,
+                dash()
+            },
+            "%".into(),
             gfx::FG,
-            &shares,
-            Align::Center,
-        );
+        ),
+        // Accepted in the value face, the rejected count after the slash
+        // beside it.
+        "shares" => (
+            "SHARES",
+            num(st.shares_accepted as f64, 0),
+            format!("/{}", st.shares_rejected),
+            gfx::FG,
+        ),
+        "bestdiff" => {
+            let (n, u) = if board::devkit() {
+                (num(config::best_diff_f(), 3), "")
+            } else {
+                si_parts(config::best_diff() as f64)
+            };
+            (l("BEST DIFF", "BESTE DIFF"), n, u.into(), gfx::FG)
+        }
+        "height" => {
+            let h = st.block_height;
+            (
+                l("BLOCK", "BLOCK"),
+                if h > 0 { num(h as f64, 0) } else { dash() },
+                String::new(),
+                gfx::BTC,
+            )
+        }
+        // Only with the price line on (the miner asks mempool.space then).
+        "price" => {
+            let price = if cfg.btc_price {
+                market::get().and_then(|mk| mk.price)
+            } else {
+                None
+            };
+            let (n, u) = price.map_or_else(
+                || (dash(), String::new()),
+                |(cur, p)| {
+                    let sym = match cur.as_str() {
+                        "EUR" => "€".to_string(),
+                        "USD" => "$".to_string(),
+                        other => other.to_string(),
+                    };
+                    (num(p, 0), sym)
+                },
+            );
+            ("BTC", n, u, gfx::FG)
+        }
+        "pooldiff" => {
+            let d = st.difficulty;
+            let (n, u) = if d <= 0.0 {
+                (dash(), "")
+            } else if d < 1.0 {
+                (num(d, 3), "")
+            } else {
+                si_parts(d)
+            };
+            (l("POOL DIFF", "POOL-DIFF"), n, u.into(), gfx::FG)
+        }
+        "uptime" => {
+            let (n, u) = uptime_parts(diag::uptime_s());
+            (l("UPTIME", "LAUFZEIT"), n, u.into(), gfx::FG)
+        }
+        "vin" => (
+            l("INPUT", "EINGANG"),
+            b.vin_mv
+                .map_or_else(dash, |mv| num(f64::from(mv) / 1000.0, 2)),
+            "V".into(),
+            gfx::FG,
+        ),
+        // Accepted shares per hour since boot (the chipless board's
+        // yield) after the first five minutes.
+        "sharesph" => {
+            let up = diag::uptime_s();
+            (
+                "SHARES/H",
+                if up >= 300 {
+                    num(st.shares_accepted as f64 * 3600.0 / up as f64, 1)
+                } else {
+                    dash()
+                },
+                String::new(),
+                gfx::FG,
+            )
+        }
+        _ => {
+            let t = b.temp_c;
+            (
+                "CHIP",
+                t.map_or_else(dash, |t| num(f64::from(t), 1)),
+                "°C".into(),
+                t.map_or(gfx::FG, temp_color),
+            )
+        }
+    };
+    // A long translation of the label steps down a size.
+    let room = 310 - rx;
+    let lf: &gfx::font::Font = [&LABEL11, &LABEL10, &MONO9]
+        .into_iter()
+        .find(|f| f.width(label) <= room)
+        .unwrap_or(&MONO9);
+    c.text(lf, rx, y, gfx::DIM, label, Align::Left);
+    // 88 px for value and unit: a six-figure share count loses its
+    // thousands separators first, then the unit steps down a size,
+    // then it goes.
+    let mut value = value;
+    if VAL16.width(&value) + 3 + LABEL11.width(&unit) > room && id == "shares" {
+        value = value.replace([',', '.', ' '], "");
+    }
+    let w = c.text(&VAL16, rx, y + 17, col, &value, Align::Left);
+    let uf: &gfx::font::Font = if w + 3 + LABEL11.width(&unit) <= room {
+        &LABEL11
+    } else {
+        &MONO9
+    };
+    if w + 3 + uf.width(&unit) <= room {
+        c.text(uf, rx + w + 3, y + 17, gfx::MUTE, &unit, Align::Left);
+    }
+    // The temperatures' bar: from 30 °C to the limit.
+    let bar = match id {
+        "vr" => b
+            .vr_temp_c
+            .map(|t| (t as f32, board::profile().vr_max_c, col)),
+        "chip" => b.temp_c.map(|t| (t, limits().1, temp_color(t))),
+        _ => None,
+    };
+    if matches!(id, "vr" | "chip") {
+        c.rect(rx, y + 22, 88, 3, gfx::WHITE, 20);
+    }
+    if let Some((t, hot, col)) = bar {
+        let f = ((t - 30.0) / (hot - 30.0)).clamp(0.0, 1.0);
+        c.rect(rx, y + 22, (88.0 * f) as i32, 3, col, 255);
     }
 }
 
-fn bitcoin(c: &mut Canvas) {
+/// The status bar along the bottom: two or three of pool, shares, IP,
+/// uptime and worker, by `kind` (`warpaxe_displaycfg::FOOTERS`).
+fn footer(c: &mut Canvas, kind: &str, v: &Live) {
+    let (st, n, cfg) = (v.st, v.n, v.cfg);
+    c.rect(3, 144, W - 3, 26, gfx::BLACK, 90);
+    let (left, mid, right) = match kind {
+        "pool-ip" => ("pool", None, "ip"),
+        "shares-uptime" => ("shares", None, "uptime"),
+        "pool-uptime" => ("pool", None, "uptime"),
+        "ip-uptime" => ("ip", None, "uptime"),
+        "worker-ip" => ("worker", None, "ip"),
+        _ => ("pool", Some("shares"), "ip"),
+    };
+    let ip = n
+        .wifi_ip
+        .clone()
+        .or(n.usb_ip.clone())
+        .unwrap_or_else(|| "–".into());
+    let user = if st.using_fallback {
+        &cfg.fallback_user
+    } else {
+        &cfg.stratum_user
+    };
+    let text = |item: &str| -> (String, u16) {
+        match item {
+            "shares" => (
+                format!("{}/{}", st.shares_accepted, st.shares_rejected),
+                gfx::FG,
+            ),
+            "uptime" => (uptime(diag::uptime_s()), gfx::MUTE),
+            "worker" => (short_worker(user), gfx::MUTE),
+            _ => (ip.clone(), gfx::DIM),
+        }
+    };
+    // Left: the pool with its state dot and lock, or a plain text.
+    let left_end = if left == "pool" {
+        let up = st.authorized;
+        c.disc(
+            12.0,
+            157.0,
+            3.0,
+            if up {
+                if st.using_fallback {
+                    gfx::WARN
+                } else {
+                    gfx::OK
+                }
+            } else {
+                gfx::ERR
+            },
+            255,
+        );
+        let host = st.pool.split(':').next().unwrap_or("").to_string();
+        let w = c.text(&MONO11, 20, 160, gfx::MUTE, &host, Align::Left);
+        let mut end = 20 + w;
+        if st.tls || st.sv2 {
+            lock_icon(c, 24 + w, 161, gfx::OK);
+            end += 11;
+        }
+        end
+    } else {
+        let (s, col) = text(left);
+        12 + c.text(&MONO11, 12, 160, col, &s, Align::Left)
+    };
+    let (rs, rcol) = text(right);
+    let right_x = 310 - MONO11.width(&rs);
+    c.text(&MONO11, 310, 160, rcol, &rs, Align::Right);
+    // The middle item centred in the gap, if it fits.
+    if let Some(mid) = mid {
+        let (ms, mcol) = text(mid);
+        if MONO11.width(&ms) + 16 <= right_x - left_end {
+            c.text(
+                &MONO11,
+                (left_end + right_x) / 2,
+                160,
+                mcol,
+                &ms,
+                Align::Center,
+            );
+        }
+    }
+}
+
+fn bitcoin(c: &mut Canvas, pos: usize, total: usize) {
     let st = stratum::state();
-    page_head(c, "Bitcoin", 1);
+    page_head(c, "Bitcoin", pos, total);
     c.text(
         &LABEL11,
         12,
@@ -959,12 +1239,12 @@ fn bitcoin(c: &mut Canvas) {
     }
 }
 
-fn device(c: &mut Canvas) {
+fn device(c: &mut Canvas, pos: usize, total: usize) {
     let b = board::state();
     let m = miner::state();
     let cfg = config::get();
     let p = board::profile();
-    page_head(c, l("Device", "Gerät"), 2);
+    page_head(c, l("Device", "Gerät"), pos, total);
     let (x0, r, r2, e) = (12, 156, 170, 308);
     // The devkit: no regulator, rail, fan or chip voltage to show; the
     // ESP and its two hash workers instead.
@@ -1234,12 +1514,12 @@ fn device(c: &mut Canvas) {
     );
 }
 
-fn pool(c: &mut Canvas) {
+fn pool(c: &mut Canvas, pos: usize, total: usize) {
     let st = stratum::state();
     let m = miner::state();
     let n = net::state();
     let cfg = config::get();
-    page_head(c, "Pool", 3);
+    page_head(c, "Pool", pos, total);
     let w = c.text(&VAL12, 12, 46, gfx::FG, &st.pool, Align::Left);
     let mut x = 16 + w;
     if st.tls || st.sv2 {
@@ -1348,8 +1628,8 @@ fn pool(c: &mut Canvas) {
     }
 }
 
-fn log_page(c: &mut Canvas) {
-    page_head(c, l("Log", "Log"), 4);
+fn log_page(c: &mut Canvas, pos: usize, total: usize) {
+    page_head(c, l("Log", "Log"), pos, total);
     let count = unsafe { esp_idf_svc::sys::tusb::wa_log_count() } as usize;
     let first = count.saturating_sub(11);
     for (row, i) in (first..count).enumerate() {
@@ -1609,8 +1889,6 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
 
 // ------------------------------------------------------------------ OLED
 
-const OLED_SLIDES: usize = 9;
-
 fn oled_text(o: &mut Oled, x: i32, y: i32, s: &str) {
     o.text(x.max(0) as usize, y.max(0) as usize, 1, s);
 }
@@ -1620,12 +1898,13 @@ fn oled_center(o: &mut Oled, y: i32, s: &str) {
     oled_text(o, (128 - w) / 2, y, s);
 }
 
-fn oled_slide(o: &mut Oled, i: usize) {
+/// One slide by its name (`warpaxe_displaycfg::OLED_SLIDES`).
+fn oled_slide(o: &mut Oled, name: &str) {
     let m = miner::state();
     let st = stratum::state();
     let b = board::state();
     let n = net::state();
-    if i == 8 {
+    if name == "logo" {
         // The wordmark, with model and version as on the splash.
         o.bitmap(SPLASH_OLED);
         let line = format!(
@@ -1637,13 +1916,13 @@ fn oled_slide(o: &mut Oled, i: usize) {
         oled_center(o, 23, &line);
         return;
     }
-    if i >= 5 {
-        let (a, b2) = match i {
-            5 => (
+    if matches!(name, "pool" | "block" | "wifi") {
+        let (a, b2) = match name {
+            "pool" => (
                 st.pool.split(':').next().unwrap_or("").to_uppercase(),
                 n.wifi_ip.or(n.usb_ip).unwrap_or_default(),
             ),
-            6 => (
+            "block" => (
                 format!("BLOCK {}", st.block_height),
                 format!("DIFF {}", si(st.network_difficulty).replace(',', ".")),
             ),
@@ -1683,10 +1962,9 @@ fn oled_slide(o: &mut Oled, i: usize) {
         o.pixel(79, y, true);
     }
     let pw = b.power_w.unwrap_or(0.0);
-    let (label, val) = match i {
-        0 => ("TEMP", b.temp_c.map_or("-".into(), |t| format!("{t:.0}C"))),
-        1 => ("POWER", format!("{pw:.1}W")),
-        2 => (
+    let (label, val) = match name {
+        "power" => ("POWER", format!("{pw:.1}W")),
+        "efficiency" => (
             "J/TH",
             if ths > 0.01 {
                 format!("{:.1}", f64::from(pw) / ths)
@@ -1694,8 +1972,9 @@ fn oled_slide(o: &mut Oled, i: usize) {
                 "-".into()
             },
         ),
-        3 => ("SHARES", format!("{}", st.shares_accepted)),
-        _ => ("BEST", si(m.best_session_diff as f64).replace(',', ".")),
+        "shares" => ("SHARES", format!("{}", st.shares_accepted)),
+        "best" => ("BEST", si(m.best_session_diff as f64).replace(',', ".")),
+        _ => ("TEMP", b.temp_c.map_or("-".into(), |t| format!("{t:.0}C"))),
     };
     oled_text(o, 84, 5, label);
     oled_text(o, 84, 18, &val);

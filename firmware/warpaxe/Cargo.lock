@@ -1725,12 +1725,21 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "warpaxe-avalon",
  "warpaxe-board",
  "warpaxe-chain",
  "warpaxe-core",
  "warpaxe-cpuminer",
+ "warpaxe-displaycfg",
  "warpaxe-stratum",
  "warpaxe-sv2",
+]
+
+[[package]]
+name = "warpaxe-avalon"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
@@ -1758,6 +1767,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "warpaxe-displaycfg"
+version = "0.1.0"
 
 [[package]]
 name = "warpaxe-stratum"

@@ -150,7 +150,7 @@ pub fn fetch(host: &str, port: u16, timeout: Duration) -> Result<Raw, Error> {
         .map_err(|e| Error::Connect(e.to_string()))?
         .next()
         .ok_or_else(|| Error::Connect("no address".into()))?;
-    let mut ask = |command: &str| -> Result<Value, Error> {
+    let ask = |command: &str| -> Result<Value, Error> {
         let mut s = TcpStream::connect_timeout(&addr, timeout)
             .map_err(|e| Error::Connect(e.to_string()))?;
         let _ = s.set_nodelay(true);

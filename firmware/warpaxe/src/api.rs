@@ -11,7 +11,8 @@ use esp_idf_svc::io::{EspIOError, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{board, config, diag, display, miner, net, stratum};
+use crate::{board, config, diag, display, miner, net, stratum, swarm};
+use warpaxe_displaycfg as dcfg;
 
 /// The web UI's files: fonts (OFL, Latin subsets), the wordmark and the
 /// icon, all in the firmware so the page looks the same offline.
@@ -182,6 +183,14 @@ pub fn system_info() -> serde_json::Value {
         "coinbaseOutputs": st.coinbase_outputs.iter().map(|(v, a)| json!({"value": v, "address": a})).collect::<Vec<_>>(),
         "coinbaseValueTotalSatoshis": st.coinbase_total_sat, "coinbaseValueUserSatoshis": st.coinbase_user_sat,
         "blockFound": m.blocks_found, "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "showHashCounters": cfg.show_hash_counters, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
+        // The display's choosable parts, as they take effect (the
+        // config's empty lists resolved to the board's defaults), and
+        // what kind of display the board has, so the web UI shows the
+        // LCD or the OLED settings.
+        "displayKind": display_kind(profile),
+        "displayPages": dcfg::pages(&cfg.display_pages), "displayStartPage": dcfg::pages(&cfg.display_pages)[dcfg::start_index(&dcfg::pages(&cfg.display_pages), &cfg.display_start_page)],
+        "cockpitBig": dcfg::big(&cfg.cockpit_big), "cockpitSlots": dcfg::slots(&cfg.cockpit_slots, board::devkit()), "cockpitFooter": dcfg::footer(&cfg.cockpit_footer),
+        "oledSlides": dcfg::oled_slides(&cfg.oled_slides), "oledInterval": dcfg::oled_interval_s(cfg.oled_interval),
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "gitHash": env!("WARPAXE_GIT"), "runningPartition": crate::update::running_partition(), "otaState": crate::update::ota_state(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": u8::from(cfg.autofanspeed),
@@ -191,6 +200,16 @@ pub fn system_info() -> serde_json::Value {
         v["cpuMiner"] = json!(crate::cpuminer::info());
     }
     v
+}
+
+/// "lcd", "oled" or "none": which display settings apply to this board.
+fn display_kind(p: &warpaxe_board::Profile) -> &'static str {
+    use warpaxe_board::profile::Display;
+    match p.display {
+        Display::St7789I80 => "lcd",
+        Display::Ssd1306 { .. } => "oled",
+        Display::None => "none",
+    }
 }
 
 /// NerdOS's `fans` array on the two-channel Nerd boards, the place a
@@ -326,7 +345,57 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
             ));
         }
     }
-    expert_refuse(v)
+    expert_refuse(v).or_else(|| display_refuse(v))
+}
+
+/// The display's choosable parts: every name must be in the tables of
+/// `warpaxe_displaycfg`, the start page on the (new) page list.
+fn display_refuse(v: &serde_json::Value) -> Option<String> {
+    let list = |k: &str| -> Option<Result<Vec<String>, String>> {
+        let x = v.get(k)?;
+        Some(
+            serde_json::from_value::<Vec<String>>(x.clone())
+                .map_err(|_| format!("{k}: a list of names")),
+        )
+    };
+    let text = |k: &str| -> Option<Result<String, String>> {
+        let x = v.get(k)?;
+        Some(x.as_str().map(str::to_string).ok_or(format!("{k}: a name")))
+    };
+    let checks: [Option<Result<(), String>>; 6] = [
+        list("displayPages").map(|r| r.and_then(|l| dcfg::check_pages(&l))),
+        text("displayStartPage").map(|r| {
+            r.and_then(|s| {
+                let pages = match list("displayPages") {
+                    Some(Ok(l)) => l,
+                    Some(Err(e)) => return Err(e),
+                    None => config::get().display_pages,
+                };
+                let pages = if pages.is_empty() {
+                    dcfg::PAGES.iter().map(|p| p.to_string()).collect()
+                } else {
+                    pages
+                };
+                dcfg::check_start_page(&s, &pages)
+            })
+        }),
+        text("cockpitBig").map(|r| r.and_then(|s| dcfg::check_big(&s))),
+        list("cockpitSlots").map(|r| r.and_then(|l| dcfg::check_slots(&l))),
+        text("cockpitFooter").map(|r| r.and_then(|s| dcfg::check_footer(&s))),
+        list("oledSlides").map(|r| r.and_then(|l| dcfg::check_oled_slides(&l))),
+    ];
+    for c in checks.into_iter().flatten() {
+        if let Err(why) = c {
+            return Some(why);
+        }
+    }
+    if let Some(x) = v.get("oledInterval") {
+        let n = x.as_i64().unwrap_or(-1);
+        if let Err(why) = dcfg::check_oled_interval(n) {
+            return Some(why);
+        }
+    }
+    None
 }
 
 /// Expert fields outside what the controllers can use sensibly.
@@ -911,6 +980,24 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                 &json!({"error": "expected {\"members\": [addresses]}"}),
             ),
         }
+    })?;
+    // An Avalon on the swarm list, read over the cgminer API for the
+    // browser (see `swarm.rs`): ?host=<ip>. 200 with the AxeOS-like
+    // document, 202 while the first read is under way, 403 for a host
+    // not on the list as cgminer:<host>, 502 when the Avalon did not
+    // answer.
+    server.fn_handler("/api/v1/swarm/cgminer", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let uri = req.uri().to_string();
+        let host = uri
+            .split_once('?')
+            .map(|(_, q)| q)
+            .unwrap_or("")
+            .split('&')
+            .find_map(|kv| kv.strip_prefix("host="))
+            .unwrap_or("");
+        let (status, body) = swarm::lookup(host);
+        reply_json(req, status, &body)
     })?;
     server.fn_handler("/api/v1/update", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);

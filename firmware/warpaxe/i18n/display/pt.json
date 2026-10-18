@@ -53,5 +53,12 @@
  "Restart clock": "Clock inicial",
  "Shutdown {h} °C": "Desliga em {h} °C",
  "Block": "Bloco",
- "Log": "Log"
+ "Log": "Log",
+ "REGULATOR": "REGULADOR",
+ "FAN": "VENTOINHA",
+ "BEST DIFF": "MELHOR DIF.",
+ "BLOCK": "BLOCO",
+ "POOL DIFF": "DIF. DO POOL",
+ "INPUT": "ENTRADA",
+ "d/h:min": "d/h:min"
 }

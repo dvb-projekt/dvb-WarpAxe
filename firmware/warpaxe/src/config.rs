@@ -172,6 +172,30 @@ pub struct Config {
     /// 80 % of it and searches no higher than the stock point without it.
     #[serde(rename = "psuWatts")]
     pub psu_watts: u16,
+    /// The LCD pages the page key steps through, in order; names from
+    /// `warpaxe_displaycfg::PAGES`. An empty list = all of them.
+    #[serde(rename = "displayPages")]
+    pub display_pages: Vec<String>,
+    /// The page shown at boot and after a minute without a key press.
+    #[serde(rename = "displayStartPage")]
+    pub display_start_page: String,
+    /// The cockpit's large number: hashrate, efficiency or power.
+    #[serde(rename = "cockpitBig")]
+    pub cockpit_big: String,
+    /// The three places of the cockpit's right column
+    /// (`warpaxe_displaycfg::SLOTS`); an empty list = the board's default.
+    #[serde(rename = "cockpitSlots")]
+    pub cockpit_slots: Vec<String>,
+    /// The cockpit's footer line (`warpaxe_displaycfg::FOOTERS`).
+    #[serde(rename = "cockpitFooter")]
+    pub cockpit_footer: String,
+    /// The OLED slides that rotate, in order
+    /// (`warpaxe_displaycfg::OLED_SLIDES`); an empty list = all of them.
+    #[serde(rename = "oledSlides")]
+    pub oled_slides: Vec<String>,
+    /// Seconds an OLED slide stays, 1–60.
+    #[serde(rename = "oledInterval")]
+    pub oled_interval: u8,
 }
 
 impl Default for Config {
@@ -235,6 +259,21 @@ impl Default for Config {
             asic_difficulty: 0,
             usb_subnet: 7,
             psu_watts: 0,
+            // The screens of v0.1.30, spelt out: a device updated from
+            // there shows no difference.
+            display_pages: warpaxe_displaycfg::PAGES
+                .iter()
+                .map(|p| p.to_string())
+                .collect(),
+            display_start_page: "cockpit".into(),
+            cockpit_big: warpaxe_displaycfg::DEFAULT_BIG.into(),
+            cockpit_slots: Vec::new(),
+            cockpit_footer: warpaxe_displaycfg::DEFAULT_FOOTER.into(),
+            oled_slides: warpaxe_displaycfg::OLED_SLIDES
+                .iter()
+                .map(|p| p.to_string())
+                .collect(),
+            oled_interval: warpaxe_displaycfg::DEFAULT_OLED_INTERVAL_S,
         }
     }
 }
@@ -386,8 +425,11 @@ pub const SWARM_MAX: usize = 32;
 const SWARM_MAX_BYTES: usize = 1536;
 
 /// The other miners the web UI's swarm page shows: addresses only, the
-/// browser asks each of them for its state. Its own NVS key, so the
-/// config document stays small.
+/// browser asks each of them for its state. A member stored as
+/// `cgminer:<host>` is an Avalon (or another cgminer): the browser
+/// cannot open its socket, so this miner reads it for the page
+/// (`GET /api/v1/swarm/cgminer?host=`, read-only). Its own NVS key, so
+/// the config document stays small.
 pub fn swarm() -> Vec<String> {
     let mut buf = [0u8; SWARM_MAX_BYTES + 64];
     NVS.lock()
@@ -398,20 +440,48 @@ pub fn swarm() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Store the swarm list; addresses are IPv4 or host names, deduplicated.
+/// The prefix that marks a swarm member as a cgminer (Avalon) host.
+pub const CGMINER_PREFIX: &str = "cgminer:";
+
+/// The host of a swarm member stored as `cgminer:<host>`; `None` for
+/// an HTTP member.
+pub fn cgminer_host(member: &str) -> Option<&str> {
+    member.strip_prefix(CGMINER_PREFIX)
+}
+
+/// Whether `host` is on the stored list as a cgminer member: the only
+/// hosts the cgminer endpoint will ever open a socket to.
+pub fn swarm_has_cgminer(host: &str) -> bool {
+    swarm()
+        .iter()
+        .any(|m| cgminer_host(m).is_some_and(|h| h.eq_ignore_ascii_case(host)))
+}
+
+/// Store the swarm list; addresses are IPv4 or host names (with an
+/// optional port for HTTP members), deduplicated. A `cgminer:` prefix
+/// (any case) marks an Avalon; its host takes no port, the cgminer port
+/// is fixed.
 pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
     let mut clean: Vec<String> = Vec::new();
     for m in members {
         let m = m.trim().trim_start_matches("http://").trim_end_matches('/');
-        let ok = !m.is_empty()
-            && m.len() <= 64
-            && m.chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+        let (prefix, addr) = match m.get(..CGMINER_PREFIX.len()) {
+            Some(p) if p.eq_ignore_ascii_case(CGMINER_PREFIX) => {
+                (CGMINER_PREFIX, m[CGMINER_PREFIX.len()..].trim())
+            }
+            _ => ("", m),
+        };
+        let ok = !addr.is_empty()
+            && addr.len() <= 64
+            && addr.chars().all(|c| {
+                c.is_ascii_alphanumeric() || c == '.' || c == '-' || (c == ':' && prefix.is_empty())
+            });
         if !ok {
             return Err(format!("not an address: {m:?}"));
         }
-        if !clean.iter().any(|c| c.eq_ignore_ascii_case(m)) {
-            clean.push(m.to_string());
+        let m = format!("{prefix}{addr}");
+        if !clean.iter().any(|c| c.eq_ignore_ascii_case(&m)) {
+            clean.push(m);
         }
     }
     if clean.len() > SWARM_MAX {

@@ -98,16 +98,34 @@ pub fn json(span_s: u64) -> serde_json::Value {
 /// The last `n` samples of the short-window hashrate, GH/s, oldest first
 /// (the display's sparkline).
 pub fn recent_ghs(n: usize) -> Vec<f32> {
+    recent(n, |s| s.hashrate_now_ghs)
+}
+
+/// The last `n` power readings, W, oldest first; NaN where the board
+/// had none (the cockpit's sparkline when its large number is the power).
+pub fn recent_power_w(n: usize) -> Vec<f32> {
+    recent(n, |s| s.power_w)
+}
+
+/// The last `n` samples of the efficiency, J/TH, from each sample's
+/// power and ten-minute hashrate; NaN where either is missing (the
+/// cockpit's sparkline when its large number is the efficiency).
+pub fn recent_eff_jth(n: usize) -> Vec<f32> {
+    recent(n, |s| {
+        if s.hashrate_10m_ghs > 1.0 {
+            s.power_w / (s.hashrate_10m_ghs / 1000.0)
+        } else {
+            f32::NAN
+        }
+    })
+}
+
+fn recent(n: usize, f: fn(&Sample) -> f32) -> Vec<f32> {
     SAMPLES
         .lock()
         .unwrap()
         .as_ref()
-        .map(|q| {
-            q.iter()
-                .skip(q.len().saturating_sub(n))
-                .map(|s| s.hashrate_now_ghs)
-                .collect()
-        })
+        .map(|q| q.iter().skip(q.len().saturating_sub(n)).map(f).collect())
         .unwrap_or_default()
 }
 

@@ -25,6 +25,7 @@ mod net;
 mod ntc;
 mod screens;
 mod stratum;
+mod swarm;
 mod uart;
 mod update;
 

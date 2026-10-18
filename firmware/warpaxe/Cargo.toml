@@ -44,6 +44,12 @@ warpaxe-sv2 = { path = "../../crates/sv2" }
 # The T-Display-S3 without chips (src/cpuminer.rs): the ESP32-S3 hashes
 # by itself, on its SHA engine and its second core.
 warpaxe-cpuminer = { path = "../../crates/cpuminer" }
+# The display's choosable pages, cockpit places and OLED slides: names,
+# defaults and the checks a PATCH has to pass.
+warpaxe-displaycfg = { path = "../../crates/displaycfg" }
+# The swarm page's Avalon: a read-only cgminer client and its
+# translation into an AxeOS-like document.
+warpaxe-avalon = { path = "../../crates/avalon" }
 
 [build-dependencies]
 embuild = "0.33"

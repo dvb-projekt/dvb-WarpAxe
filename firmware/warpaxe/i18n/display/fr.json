@@ -53,5 +53,12 @@
  "Restart clock": "Redémarrage",
  "Shutdown {h} °C": "Arrêt {h} °C",
  "Block": "Bloc",
- "Log": "Journal"
+ "Log": "Journal",
+ "REGULATOR": "RÉGULATEUR",
+ "FAN": "VENTIL.",
+ "BEST DIFF": "MEILLEURE DIF.",
+ "BLOCK": "BLOC",
+ "POOL DIFF": "DIFF. DU POOL",
+ "INPUT": "ENTRÉE",
+ "d/h:min": "j/h:min"
 }

@@ -2,6 +2,8 @@
 //! Do not edit; English and German are inline in screens.rs.
 
 static ES: &[(&str, &str)] = &[
+    ("BEST DIFF", "MEJOR DIF."),
+    ("BLOCK", "BLOQUE"),
     ("BLOCK FOUND", "BLOQUE ENCONTRADO"),
     ("BLOCK HEIGHT", "ALTURA DE BLOQUE"),
     ("Best diff", "Mejor dif."),
@@ -32,6 +34,7 @@ static ES: &[(&str, &str)] = &[
     ),
     ("Effective", "Rendimiento"),
     ("FALLBACK", "RESPALDO"),
+    ("FAN", "VENTILADOR"),
     ("FIRMWARE UPDATE", "ACTUALIZACIÓN"),
     ("Fan", "Ventilador"),
     ("Fan M1", "Vent. M1"),
@@ -57,6 +60,7 @@ static ES: &[(&str, &str)] = &[
         "Vent. fijo {p} % · apagado {h} °C",
     ),
     ("Fees", "Comisiones"),
+    ("INPUT", "ENTRADA"),
     ("Input", "Entrada"),
     ("Join {n}", "Conéctate a {n}"),
     ("Log", "Log"),
@@ -64,6 +68,7 @@ static ES: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate de red"),
     ("OVERHEAT", "SOBRECALENTADO"),
     ("PASSWORD", "CONTRASEÑA"),
+    ("POOL DIFF", "DIF. DEL POOL"),
     ("POWER", "POTENCIA"),
     ("Password · 10 digits", "Contraseña · 10 dígitos"),
     ("Pool difficulty", "Dificultad del pool"),
@@ -73,6 +78,7 @@ static ES: &[(&str, &str)] = &[
         "Preparando memoria flash · no apagar",
     ),
     ("Press a key to close", "Pulsa un botón para cerrar"),
+    ("REGULATOR", "REGULADOR"),
     ("REGULATOR FAULT", "FALLO REGULADOR"),
     ("Regulator", "Regulador"),
     (
@@ -86,6 +92,7 @@ static ES: &[(&str, &str)] = &[
     ("Uptime", "En marcha"),
     ("WI-FI SETUP", "CONFIGURAR WI-FI"),
     ("blocks", "bloques"),
+    ("d/h:min", "d/h:min"),
     ("months", "meses"),
     ("not connected", "no conectado"),
     (
@@ -96,6 +103,8 @@ static ES: &[(&str, &str)] = &[
 ];
 
 static FR: &[(&str, &str)] = &[
+    ("BEST DIFF", "MEILLEURE DIF."),
+    ("BLOCK", "BLOC"),
     ("BLOCK FOUND", "BLOC TROUVÉ"),
     ("BLOCK HEIGHT", "HAUTEUR DE BLOC"),
     ("Best diff", "Meilleure diff."),
@@ -126,6 +135,7 @@ static FR: &[(&str, &str)] = &[
     ),
     ("Effective", "Rendement"),
     ("FALLBACK", "SECOURS"),
+    ("FAN", "VENTIL."),
     ("FIRMWARE UPDATE", "MAJ FIRMWARE"),
     ("Fan", "Ventil."),
     ("Fan M1", "Ventil. M1"),
@@ -151,6 +161,7 @@ static FR: &[(&str, &str)] = &[
         "Ventilateurs fixes à {p} % · arrêt {h} °C",
     ),
     ("Fees", "Frais"),
+    ("INPUT", "ENTRÉE"),
     ("Input", "Entrée"),
     ("Join {n}", "Rejoindre {n}"),
     ("Log", "Journal"),
@@ -158,6 +169,7 @@ static FR: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate réseau"),
     ("OVERHEAT", "SURCHAUFFE"),
     ("PASSWORD", "MOT DE PASSE"),
+    ("POOL DIFF", "DIFF. DU POOL"),
     ("POWER", "PUISSANCE"),
     ("Password · 10 digits", "Mot de passe · 10 chiffres"),
     ("Pool difficulty", "Difficulté du pool"),
@@ -167,6 +179,7 @@ static FR: &[(&str, &str)] = &[
         "Préparation mémoire · ne pas éteindre",
     ),
     ("Press a key to close", "Appuyez sur une touche pour fermer"),
+    ("REGULATOR", "RÉGULATEUR"),
     ("REGULATOR FAULT", "DÉFAUT RÉGULATEUR"),
     ("Regulator", "Régulateur"),
     (
@@ -180,6 +193,7 @@ static FR: &[(&str, &str)] = &[
     ("Uptime", "Actif depuis"),
     ("WI-FI SETUP", "CONFIGURATION WI-FI"),
     ("blocks", "blocs"),
+    ("d/h:min", "j/h:min"),
     ("months", "mois"),
     ("not connected", "non branché"),
     (
@@ -190,6 +204,8 @@ static FR: &[(&str, &str)] = &[
 ];
 
 static IT: &[(&str, &str)] = &[
+    ("BEST DIFF", "MIGLIOR DIFF."),
+    ("BLOCK", "BLOCCO"),
     ("BLOCK FOUND", "BLOCCO TROVATO"),
     ("BLOCK HEIGHT", "ALTEZZA BLOCCO"),
     ("Best diff", "Miglior diff."),
@@ -220,6 +236,7 @@ static IT: &[(&str, &str)] = &[
     ),
     ("Effective", "Effettivo"),
     ("FALLBACK", "RISERVA"),
+    ("FAN", "VENTOLA"),
     ("FIRMWARE UPDATE", "AGGIORNAMENTO FW"),
     ("Fan", "Ventola"),
     ("Fan M1", "Ventola M1"),
@@ -245,6 +262,7 @@ static IT: &[(&str, &str)] = &[
         "Ventole fisse {p} % · spegnimento {h} °C",
     ),
     ("Fees", "Fee"),
+    ("INPUT", "INGRESSO"),
     ("Input", "Ingresso"),
     ("Join {n}", "Collegati a {n}"),
     ("Log", "Log"),
@@ -252,6 +270,7 @@ static IT: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate di rete"),
     ("OVERHEAT", "SURRISCALDATO"),
     ("PASSWORD", "PASSWORD"),
+    ("POOL DIFF", "DIFF. POOL"),
     ("POWER", "POTENZA"),
     ("Password · 10 digits", "Password · 10 cifre"),
     ("Pool difficulty", "Difficoltà del pool"),
@@ -261,6 +280,7 @@ static IT: &[(&str, &str)] = &[
         "Preparazione flash · non spegnere",
     ),
     ("Press a key to close", "Premi un tasto per chiudere"),
+    ("REGULATOR", "REGOLATORE"),
     ("REGULATOR FAULT", "GUASTO REGOLATORE"),
     ("Regulator", "Regolatore"),
     (
@@ -274,6 +294,7 @@ static IT: &[(&str, &str)] = &[
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "IMPOSTA WI-FI"),
     ("blocks", "blocchi"),
+    ("d/h:min", "g/h:min"),
     ("months", "mesi"),
     ("not connected", "non collegata"),
     (
@@ -284,6 +305,8 @@ static IT: &[(&str, &str)] = &[
 ];
 
 static PT: &[(&str, &str)] = &[
+    ("BEST DIFF", "MELHOR DIF."),
+    ("BLOCK", "BLOCO"),
     ("BLOCK FOUND", "BLOCO MINERADO"),
     ("BLOCK HEIGHT", "ALTURA DO BLOCO"),
     ("Best diff", "Melhor dif."),
@@ -314,6 +337,7 @@ static PT: &[(&str, &str)] = &[
     ),
     ("Effective", "Efetivo"),
     ("FALLBACK", "RESERVA"),
+    ("FAN", "VENTOINHA"),
     ("FIRMWARE UPDATE", "ATUALIZANDO FW"),
     ("Fan", "Ventoinha"),
     ("Fan M1", "Vent. M1"),
@@ -339,6 +363,7 @@ static PT: &[(&str, &str)] = &[
         "Ventoinhas fixas {p} % · desliga em {h} °C",
     ),
     ("Fees", "Taxas"),
+    ("INPUT", "ENTRADA"),
     ("Input", "Entrada"),
     ("Join {n}", "Conecte a {n}"),
     ("Log", "Log"),
@@ -346,6 +371,7 @@ static PT: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate da rede"),
     ("OVERHEAT", "SUPERAQUECIDO"),
     ("PASSWORD", "SENHA"),
+    ("POOL DIFF", "DIF. DO POOL"),
     ("POWER", "POTÊNCIA"),
     ("Password · 10 digits", "Senha · 10 dígitos"),
     ("Pool difficulty", "Dificuldade do pool"),
@@ -355,6 +381,7 @@ static PT: &[(&str, &str)] = &[
         "Preparando a memória · não desligue",
     ),
     ("Press a key to close", "Pressione uma tecla para fechar"),
+    ("REGULATOR", "REGULADOR"),
     ("REGULATOR FAULT", "FALHA DO REGULADOR"),
     ("Regulator", "Regulador"),
     (
@@ -368,6 +395,7 @@ static PT: &[(&str, &str)] = &[
     ("Uptime", "Tempo ativo"),
     ("WI-FI SETUP", "CONEXÃO WI-FI"),
     ("blocks", "blocos"),
+    ("d/h:min", "d/h:min"),
     ("months", "meses"),
     ("not connected", "não conectada"),
     (

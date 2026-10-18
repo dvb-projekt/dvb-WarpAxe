@@ -19,6 +19,13 @@ static HOTSPOT: AtomicBool = AtomicBool::new(false);
 static FRAME: std::sync::Mutex<Vec<u8>> = std::sync::Mutex::new(Vec::new());
 static UPTIME: AtomicU64 = AtomicU64::new(11_535);
 
+/// PREVIEW_STRESS=1: the longest values each place can show (12 d 23 h,
+/// six-figure shares and rpm, a 999.99 M difficulty), to see nothing
+/// runs into its neighbour.
+fn stress() -> bool {
+    std::env::var("PREVIEW_STRESS").is_ok()
+}
+
 mod display {
     pub const WIDTH: usize = 320;
     pub const HEIGHT: usize = 170;
@@ -121,18 +128,29 @@ mod clock {
 }
 
 mod history {
-    pub fn recent_ghs(n: usize) -> Vec<f32> {
-        let base = if crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed) {
-            1310.0
-        } else {
-            6520.0
-        };
+    fn curve(n: usize, base: f32) -> Vec<f32> {
         (0..n.min(360))
             .map(|i| {
                 let t = i as f32;
                 base * (1.0 + 0.012 * (t / 17.0).sin() + 0.006 * (t / 5.3).cos())
             })
             .collect()
+    }
+    pub fn recent_ghs(n: usize) -> Vec<f32> {
+        curve(
+            n,
+            if crate::GAMMA.load(std::sync::atomic::Ordering::Relaxed) {
+                1310.0
+            } else {
+                6520.0
+            },
+        )
+    }
+    pub fn recent_power_w(n: usize) -> Vec<f32> {
+        curve(n, 109.5)
+    }
+    pub fn recent_eff_jth(n: usize) -> Vec<f32> {
+        curve(n, 16.8)
     }
 }
 
@@ -144,7 +162,10 @@ mod market {
     }
     pub fn get() -> Option<Market> {
         Some(Market {
-            price: Some(("EUR".into(), 74_245.0)),
+            price: Some((
+                "EUR".into(),
+                if crate::stress() { 999_999.0 } else { 74_245.0 },
+            )),
             fees: Some((2.0, 1.0, 1.0)),
         })
     }
@@ -165,10 +186,40 @@ mod config {
         pub fallback_user: String,
         pub ssid: String,
         pub frequency: u16,
+        pub btc_price: bool,
+        pub display_pages: Vec<String>,
+        pub display_start_page: String,
+        pub cockpit_big: String,
+        pub cockpit_slots: Vec<String>,
+        pub cockpit_footer: String,
+        pub oled_slides: Vec<String>,
+        pub oled_interval: u8,
+    }
+    /// A comma-separated list from the environment, empty when unset.
+    fn list(var: &str) -> Vec<String> {
+        std::env::var(var)
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
     }
     pub fn get() -> Config {
         Config {
             display_language: std::env::var("PREVIEW_LANG").unwrap_or_else(|_| "en".into()),
+            // The display's choosable parts, as the API would set them:
+            // PREVIEW_PAGES=cockpit,pool PREVIEW_START=pool PREVIEW_BIG=power
+            // PREVIEW_SLOTS=vr,fan,uptime PREVIEW_FOOTER=shares-uptime
+            // PREVIEW_OLED=temp,logo
+            btc_price: std::env::var("PREVIEW_PRICE").is_ok(),
+            display_pages: list("PREVIEW_PAGES"),
+            display_start_page: std::env::var("PREVIEW_START").unwrap_or_default(),
+            cockpit_big: std::env::var("PREVIEW_BIG").unwrap_or_default(),
+            cockpit_slots: list("PREVIEW_SLOTS"),
+            cockpit_footer: std::env::var("PREVIEW_FOOTER").unwrap_or_default(),
+            oled_slides: list("PREVIEW_OLED"),
+            oled_interval: 4,
             pid_target_temp: 58,
             overheat_temp: 70,
             flipscreen: false,
@@ -187,7 +238,11 @@ mod config {
         }
     }
     pub fn best_diff() -> u64 {
-        11_200_000
+        if crate::stress() {
+            999_990_000
+        } else {
+            11_200_000
+        }
     }
     pub fn best_diff_f() -> f64 {
         0.0381
@@ -281,9 +336,9 @@ mod board {
                 vin_mv: Some(12050.0),
                 vout_mv: Some(1238.0),
                 iout_ma: Some(9140.0),
-                power_w: Some(109.5),
+                power_w: Some(if crate::stress() { 1099.5 } else { 109.5 }),
                 fan_pct: 59,
-                fan_rpm: 1831,
+                fan_rpm: if crate::stress() { 65_535 } else { 1831 },
                 fan2_pct: Some(25),
                 fan2_rpm: Some(0),
                 overheat_latched: false,
@@ -413,10 +468,14 @@ mod stratum {
             tls: crate::board::gamma(),
             using_fallback: false,
             authorized: true,
-            shares_accepted: 1234,
-            shares_rejected: 0,
-            difficulty: 21_780.0,
-            block_height: 968_857,
+            shares_accepted: if crate::stress() { 999_999 } else { 1234 },
+            shares_rejected: if crate::stress() { 999 } else { 0 },
+            difficulty: if crate::stress() {
+                999_990_000.0
+            } else {
+                21_780.0
+            },
+            block_height: if crate::stress() { 9_999_999 } else { 968_857 },
             network_difficulty: 132.76e12,
             scriptsig: "dvbprojekt-WarpPool".into(),
             sv2: !crate::board::gamma(),
@@ -437,12 +496,23 @@ fn main() {
     let mut d = display::Display::Lcd(display::Lcd {
         fb: vec![0; 320 * 170 * 2],
     });
+    if stress() {
+        UPTIME.store(12 * 86_400 + 23 * 3600 + 59 * 60, Ordering::Relaxed);
+    }
     let mut ui = screens::Ui::new();
-    let names = ["cockpit", "bitcoin", "device", "pool", "log"];
-    for (i, n) in names.iter().enumerate() {
+    // The configured pages (PREVIEW_PAGES), the start page first.
+    let names = warpaxe_displaycfg::pages(&config::get().display_pages);
+    let start = warpaxe_displaycfg::start_index(&names, &config::get().display_start_page);
+    for k in 0..names.len() {
+        let i = (start + k) % names.len();
         ui.frame(&mut d);
-        save(&dir, &format!("lcd-{i}-{n}"));
+        save(&dir, &format!("lcd-{i}-{}", names[i]));
         ui.key(screens::Key::Next);
+    }
+    // PREVIEW_COCKPIT_ONLY=1: the cockpit alone (the combination runs).
+    if std::env::var("PREVIEW_COCKPIT_ONLY").is_ok() {
+        println!("frames in {dir}");
+        return;
     }
     for ev in ["overheat", "off", "ota"] {
         *display::DEMO.lock().unwrap() = Some((ev.into(), u64::MAX));
@@ -471,9 +541,10 @@ fn main() {
     GAMMA.store(true, Ordering::Relaxed);
     let mut o = display::Display::Oled(display::Oled { fb: [0; 512] });
     let mut ui = screens::Ui::new();
-    for i in 0..9 {
+    let slides = warpaxe_displaycfg::oled_slides(&config::get().oled_slides);
+    for (i, name) in slides.iter().enumerate() {
         ui.frame(&mut o);
-        save(&dir, &format!("oled-{i}"));
+        save(&dir, &format!("oled-{i}-{name}"));
         ui.key(screens::Key::Home);
     }
     *display::DEMO.lock().unwrap() = Some(("overheat".into(), u64::MAX));
