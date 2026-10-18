@@ -1,0 +1,21 @@
+[package]
+name = "warpaxe-avalon"
+description = "A read-only client for the cgminer API an Avalon speaks on TCP 4028: the three read commands, a bounded reply reader, the MM summary parser and the translation into an AxeOS-like /api/system/info document, so a swarm page can show an Avalon as one more card. Host-tested with replies recorded from an Avalon Q."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "warpaxe-avalon"
+path = "src/main.rs"
+
+[dependencies]
+serde_json = "1"
+
+[dev-dependencies]
+warpaxe-cgminer = { path = "../cgminer" }
+warpaxe-sim = { path = "../sim" }

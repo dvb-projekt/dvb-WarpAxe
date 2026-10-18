@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/chain", "crates/board", "crates/stratum", "crates/sv2", "crates/sim", "crates/simuart", "crates/axeos", "crates/cgminer", "crates/cpuminer"]
+members = ["crates/core", "crates/chain", "crates/board", "crates/stratum", "crates/sv2", "crates/sim", "crates/simuart", "crates/axeos", "crates/cgminer", "crates/cpuminer", "crates/displaycfg", "crates/avalon"]
 # crates/scenarios is detached on purpose (path dep on dvb-WarpPool); see its Cargo.toml.
 exclude = ["crates/scenarios", "firmware/proof-usb"]
 # firmware/* are Xtensa targets on ESP-IDF; each has its own [workspace].

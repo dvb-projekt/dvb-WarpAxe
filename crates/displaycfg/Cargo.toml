@@ -1,0 +1,12 @@
+[package]
+name = "warpaxe-displaycfg"
+description = "What the device display may show where: the names of the LCD pages, the cockpit's places and the OLED slides, their defaults, and the checks a PATCH has to pass. No I/O; the firmware draws from it, the web UI reads the same names over the API."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

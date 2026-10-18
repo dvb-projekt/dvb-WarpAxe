@@ -829,6 +829,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "warpaxe-avalon"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "warpaxe-cgminer",
+ "warpaxe-sim",
+]
+
+[[package]]
 name = "warpaxe-axeos"
 version = "0.1.0"
 dependencies = [
@@ -879,6 +888,10 @@ dependencies = [
  "sha2",
  "warpaxe-stratum",
 ]
+
+[[package]]
+name = "warpaxe-displaycfg"
+version = "0.1.0"
 
 [[package]]
 name = "warpaxe-sim"
