@@ -37,6 +37,16 @@ pub const COMMANDS: [&str; 3] = ["summary", "estats", "pools"];
 /// Longest reply taken; the Avalon Q's `estats` is 3.6 KB, `pools` with
 /// two pools 1.8 KB. Beyond this the reply is refused, not truncated.
 pub const MAX_REPLY: usize = 16 * 1024;
+/// Deepest nesting a reply may have. cgminer's documents are three or
+/// four levels deep; serde_json would take 128, and each level costs
+/// the parsing thread hundreds of bytes of stack (127 levels of `[`
+/// measured at 45 KB, of `{"a":` at 74 KB), far more than the firmware's
+/// reader thread has. A device behind a swarm address that answers with
+/// something deeper is not a cgminer.
+pub const MAX_DEPTH: usize = 8;
+/// A whole reply must arrive within this: a device that trickles a byte
+/// every second would otherwise hold the reader for as long as it likes.
+pub const READ_BUDGET: Duration = Duration::from_secs(3);
 
 /// Why a read failed; the text goes to the swarm card as "not reachable"
 /// with the reason in the API reply.
@@ -48,6 +58,8 @@ pub enum Error {
     Read(String),
     /// More than [`MAX_REPLY`] bytes without the terminating NUL.
     TooLong,
+    /// Brackets nested deeper than [`MAX_DEPTH`].
+    TooDeep,
     /// Not a JSON document (a truncated reply, or not a cgminer at all).
     NotJson(String),
     /// A JSON document without the section the command should carry.
@@ -60,6 +72,7 @@ impl std::fmt::Display for Error {
             Error::Connect(e) => write!(f, "connect: {e}"),
             Error::Read(e) => write!(f, "read: {e}"),
             Error::TooLong => write!(f, "reply longer than {MAX_REPLY} bytes"),
+            Error::TooDeep => write!(f, "reply nested deeper than {MAX_DEPTH} levels"),
             Error::NotJson(e) => write!(f, "not a cgminer reply: {e}"),
             Error::Shape(what) => write!(f, "reply without {what}"),
         }
@@ -67,11 +80,19 @@ impl std::fmt::Display for Error {
 }
 
 /// Read one reply: everything up to the NUL byte that ends it, or to
-/// EOF (the server closes after the reply), at most `max` bytes.
-pub fn read_reply<R: Read>(r: &mut R, max: usize) -> Result<Vec<u8>, Error> {
+/// EOF (the server closes after the reply), at most `max` bytes and
+/// within `budget` from the first call.
+pub fn read_reply<R: Read>(r: &mut R, max: usize, budget: Duration) -> Result<Vec<u8>, Error> {
     let mut out = Vec::with_capacity(1024);
     let mut buf = [0u8; 512];
+    let t0 = std::time::Instant::now();
     loop {
+        if t0.elapsed() > budget {
+            return Err(Error::Read(format!(
+                "reply not complete after {} ms",
+                budget.as_millis()
+            )));
+        }
         let n = match r.read(&mut buf) {
             Ok(0) => break,
             Ok(n) => n,
@@ -101,15 +122,92 @@ pub fn read_reply<R: Read>(r: &mut R, max: usize) -> Result<Vec<u8>, Error> {
     Ok(out)
 }
 
+/// The deepest bracket nesting in `bytes`, strings skipped (a `[` inside
+/// a quoted value does not count), stopping early once `limit` is passed.
+pub fn nesting_depth(bytes: &[u8], limit: usize) -> usize {
+    let (mut depth, mut deepest, mut in_str, mut esc) = (0usize, 0usize, false, false);
+    for &b in bytes {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if b == b'\\' {
+                esc = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match b {
+            b'"' => in_str = true,
+            b'[' | b'{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+                if deepest > limit {
+                    return deepest;
+                }
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    deepest
+}
+
 /// The reply bytes as JSON. cgminer ends the document with a NUL and
-/// some builds add a newline; both are dropped.
+/// some builds add a newline; both are dropped. Nesting beyond
+/// [`MAX_DEPTH`] is refused before the parser sees it.
 pub fn parse_reply(bytes: &[u8]) -> Result<Value, Error> {
     let end = bytes
         .iter()
         .rposition(|&b| b != 0 && !b.is_ascii_whitespace())
         .map_or(0, |i| i + 1);
-    let text = std::str::from_utf8(&bytes[..end]).map_err(|e| Error::NotJson(e.to_string()))?;
+    let bytes = &bytes[..end];
+    if nesting_depth(bytes, MAX_DEPTH) > MAX_DEPTH {
+        return Err(Error::TooDeep);
+    }
+    let text = std::str::from_utf8(bytes).map_err(|e| Error::NotJson(e.to_string()))?;
     serde_json::from_str(text).map_err(|e| Error::NotJson(e.to_string()))
+}
+
+/// The prefix that marks a swarm member as a cgminer (Avalon) host.
+pub const MEMBER_PREFIX: &str = "cgminer:";
+
+/// A swarm member as typed or sent, normalised for the stored list:
+/// `http://` and a trailing `/` dropped, the `cgminer:` prefix (any
+/// case) lower-cased. An HTTP member is an IPv4 address or host name,
+/// optionally with a port; a cgminer member is an IPv4 literal only, so
+/// the socket the firmware opens for it cannot be steered by a name
+/// that resolves elsewhere later.
+pub fn normalize_member(raw: &str) -> Result<String, String> {
+    let m = raw
+        .trim()
+        .trim_start_matches("http://")
+        .trim_end_matches('/');
+    let (prefix, addr) = match m.get(..MEMBER_PREFIX.len()) {
+        Some(p) if p.eq_ignore_ascii_case(MEMBER_PREFIX) => {
+            (MEMBER_PREFIX, m[MEMBER_PREFIX.len()..].trim())
+        }
+        _ => ("", m),
+    };
+    if addr.is_empty() || addr.len() > 64 {
+        return Err(format!("not an address: {m:?}"));
+    }
+    if prefix.is_empty() {
+        let ok = addr
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+        if !ok {
+            return Err(format!("not an address: {m:?}"));
+        }
+    } else if addr.parse::<std::net::Ipv4Addr>().is_err() {
+        return Err(format!("cgminer members take an IPv4 address: {addr:?}"));
+    }
+    Ok(format!("{prefix}{addr}"))
+}
+
+/// The host of a member stored as `cgminer:<host>`; `None` for an HTTP member.
+pub fn member_host(member: &str) -> Option<&str> {
+    member.strip_prefix(MEMBER_PREFIX)
 }
 
 /// Send one of [`COMMANDS`] over an open stream and read the reply.
@@ -129,7 +227,7 @@ pub fn query(stream: &mut TcpStream, command: &str, timeout: Duration) -> Result
     stream
         .write_all(req.as_bytes())
         .map_err(|e| Error::Read(e.to_string()))?;
-    let bytes = read_reply(stream, MAX_REPLY)?;
+    let bytes = read_reply(stream, MAX_REPLY, READ_BUDGET)?;
     parse_reply(&bytes)
 }
 
@@ -249,14 +347,23 @@ fn num(v: &str) -> Option<f64> {
     v.trim().trim_end_matches('%').parse().ok()
 }
 
-/// Every string value of the `STATS` objects, token by token.
+/// The string values of the first `STATS` object, token by token: the
+/// first MM module (`MM ID0:Summary`, `HBinfo`). An Avalon with several
+/// modules would carry `MM ID1…` beside it; those are left out rather
+/// than overwrite the first one's values.
 pub fn parse_estats(estats: &Value) -> Mm {
     let mut mm = Mm::default();
     let Some(stats) = estats.get("STATS").and_then(Value::as_array) else {
         return mm;
     };
-    for obj in stats.iter().filter_map(Value::as_object) {
-        for text in obj.values().filter_map(Value::as_str) {
+    for obj in stats.iter().filter_map(Value::as_object).take(1) {
+        for (k, text) in obj.iter() {
+            let Some(text) = text.as_str() else {
+                continue;
+            };
+            if k.starts_with("MM ID") && !k.starts_with("MM ID0") {
+                continue;
+            }
             for (key, value) in mm_tokens(text) {
                 match key {
                     "Ver" => mm.version = value.to_string(),
@@ -531,17 +638,98 @@ mod tests {
         assert_eq!(v["chainPhase"], "POWER");
     }
 
+    /// A device that hands out one byte per read, slowly.
+    struct Trickle(u64);
+    impl Read for Trickle {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            std::thread::sleep(Duration::from_millis(self.0));
+            buf[0] = b'[';
+            Ok(1)
+        }
+    }
+
+    #[test]
+    fn a_trickling_device_is_dropped_after_the_budget() {
+        let t0 = std::time::Instant::now();
+        let r = read_reply(&mut Trickle(20), 1024, Duration::from_millis(200));
+        assert!(
+            matches!(r, Err(Error::Read(ref w)) if w.contains("200 ms")),
+            "{r:?}"
+        );
+        assert!(t0.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn nesting_beyond_the_limit_is_refused_before_parsing() {
+        let deep_arrays = "[".repeat(200);
+        assert_eq!(parse_reply(deep_arrays.as_bytes()), Err(Error::TooDeep));
+        let deep_objects = "{\"a\":".repeat(127);
+        assert_eq!(parse_reply(deep_objects.as_bytes()), Err(Error::TooDeep));
+        // Brackets inside strings do not count; the real replies are 3–4 deep.
+        assert_eq!(nesting_depth(br#"{"s":"[[[[[[[[[[[[[[[[[[["}"#, 8), 1);
+        assert_eq!(nesting_depth(b"{\"s\":\"a\\\"[[[[[[[[[[[\\\"[[\"}", 8), 1);
+        let estats = std::fs::read(format!(
+            "{}/fixtures/avalonq-estats.json",
+            env!("CARGO_MANIFEST_DIR")
+        ))
+        .unwrap();
+        assert_eq!(nesting_depth(&estats, 8), 3);
+        assert!(parse_reply(&estats).is_ok());
+    }
+
+    #[test]
+    fn members_are_normalised_and_cgminer_ones_are_ipv4_only() {
+        assert_eq!(
+            normalize_member(" http://192.168.178.42/ ").unwrap(),
+            "192.168.178.42"
+        );
+        assert_eq!(
+            normalize_member("miner.local:8080").unwrap(),
+            "miner.local:8080"
+        );
+        assert_eq!(
+            normalize_member("CGMiner:192.168.178.43").unwrap(),
+            "cgminer:192.168.178.43"
+        );
+        assert_eq!(
+            normalize_member("cgminer: 192.168.178.43").unwrap(),
+            "cgminer:192.168.178.43"
+        );
+        assert!(normalize_member("cgminer:avalon.local").is_err());
+        assert!(normalize_member("cgminer:192.168.178.43:4028").is_err());
+        assert!(normalize_member("cgminer:").is_err());
+        assert!(normalize_member("").is_err());
+        assert!(normalize_member("bad host").is_err());
+        assert!(normalize_member(&"a".repeat(65)).is_err());
+        assert_eq!(member_host("cgminer:1.2.3.4"), Some("1.2.3.4"));
+        assert_eq!(member_host("1.2.3.4"), None);
+    }
+
+    #[test]
+    fn only_the_first_mm_module_is_read() {
+        let v = json!({"STATS": [{"MM ID0:Summary": "TAvg[65] WORKMODE[0]", "MM ID1:Summary": "TAvg[90] WORKMODE[2]"}, {"MM ID0:Summary": "TAvg[99]"}]});
+        let mm = parse_estats(&v);
+        assert_eq!(mm.temp_avg_c, Some(65.0));
+        assert_eq!(mm.work_mode, Some(0));
+    }
+
     #[test]
     fn reader_stops_at_nul_bounds_the_length_and_rejects_fragments() {
         let mut ok: &[u8] = b"{\"a\":1}\0garbage after the nul";
-        assert_eq!(read_reply(&mut ok, 64).unwrap(), b"{\"a\":1}");
+        assert_eq!(
+            read_reply(&mut ok, 64, Duration::from_secs(1)).unwrap(),
+            b"{\"a\":1}"
+        );
         let mut eof: &[u8] = b"{\"a\":1}\n";
         assert_eq!(
-            parse_reply(&read_reply(&mut eof, 64).unwrap()).unwrap(),
+            parse_reply(&read_reply(&mut eof, 64, Duration::from_secs(1)).unwrap()).unwrap(),
             json!({"a": 1})
         );
         let long = vec![b'x'; 2000];
-        assert_eq!(read_reply(&mut long.as_slice(), 1024), Err(Error::TooLong));
+        assert_eq!(
+            read_reply(&mut long.as_slice(), 1024, Duration::from_secs(1)),
+            Err(Error::TooLong)
+        );
         let text = std::fs::read_to_string(format!(
             "{}/fixtures/avalonq-estats.json",
             env!("CARGO_MANIFEST_DIR")

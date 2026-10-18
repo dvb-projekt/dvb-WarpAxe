@@ -257,9 +257,115 @@ pub fn check_oled_interval(value: i64) -> Result<(), String> {
     }
 }
 
+/// The display fields of a `PATCH /api/system` body, checked together:
+/// every list a list of names, every name in its table, the start page
+/// on the page list the PATCH leaves behind (`current_pages` is the
+/// stored list, used when the PATCH does not send one). `Some(why)` for
+/// the 400 reply, `None` when the body passes (fields it does not carry
+/// are not checked).
+pub fn check_patch(v: &serde_json::Value, current_pages: &[String]) -> Option<String> {
+    let list = |k: &str| -> Option<Result<Vec<String>, String>> {
+        let x = v.get(k)?;
+        Some(
+            serde_json::from_value::<Vec<String>>(x.clone())
+                .map_err(|_| format!("{k}: a list of names")),
+        )
+    };
+    let text = |k: &str| -> Option<Result<String, String>> {
+        let x = v.get(k)?;
+        Some(x.as_str().map(str::to_string).ok_or(format!("{k}: a name")))
+    };
+    let checks: [Option<Result<(), String>>; 6] = [
+        list("displayPages").map(|r| r.and_then(|l| check_pages(&l))),
+        text("displayStartPage").map(|r| {
+            r.and_then(|s| {
+                let pages = match list("displayPages") {
+                    Some(Ok(l)) => l,
+                    Some(Err(e)) => return Err(e),
+                    None => current_pages.to_vec(),
+                };
+                let pages = if pages.is_empty() {
+                    PAGES.iter().map(|p| p.to_string()).collect()
+                } else {
+                    pages
+                };
+                check_start_page(&s, &pages)
+            })
+        }),
+        text("cockpitBig").map(|r| r.and_then(|s| check_big(&s))),
+        list("cockpitSlots").map(|r| r.and_then(|l| check_slots(&l))),
+        text("cockpitFooter").map(|r| r.and_then(|s| check_footer(&s))),
+        list("oledSlides").map(|r| r.and_then(|l| check_oled_slides(&l))),
+    ];
+    for c in checks.into_iter().flatten() {
+        if let Err(why) = c {
+            return Some(why);
+        }
+    }
+    if let Some(x) = v.get("oledInterval") {
+        if let Err(why) = check_oled_interval(x.as_i64().unwrap_or(-1)) {
+            return Some(why);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn a_patch_is_checked_as_a_whole() {
+        let cur = s(&["cockpit", "pool"]);
+        assert_eq!(check_patch(&json!({"frequency": 600}), &cur), None);
+        assert_eq!(
+            check_patch(
+                &json!({"displayPages": ["pool", "log"], "displayStartPage": "log"}),
+                &cur
+            ),
+            None
+        );
+        assert!(check_patch(
+            &json!({"displayPages": ["pool", "log"], "displayStartPage": "cockpit"}),
+            &cur
+        )
+        .unwrap()
+        .contains("displayStartPage"));
+        assert_eq!(
+            check_patch(&json!({"displayStartPage": "pool"}), &cur),
+            None
+        );
+        assert!(check_patch(&json!({"displayStartPage": "log"}), &cur).is_some());
+        assert_eq!(check_patch(&json!({"displayStartPage": "log"}), &[]), None);
+        assert!(check_patch(&json!({"displayPages": "cockpit"}), &cur)
+            .unwrap()
+            .contains("a list of names"));
+        assert!(check_patch(&json!({"displayPages": []}), &cur)
+            .unwrap()
+            .contains("at least one"));
+        assert!(check_patch(&json!({"cockpitBig": 3}), &cur)
+            .unwrap()
+            .contains("a name"));
+        assert!(
+            check_patch(&json!({"cockpitSlots": ["chip", "clock", "power"]}), &cur)
+                .unwrap()
+                .contains("clock")
+        );
+        assert_eq!(check_patch(&json!({"cockpitSlots": []}), &cur), None);
+        assert!(check_patch(&json!({"cockpitFooter": "pool"}), &cur).is_some());
+        assert!(check_patch(&json!({"oledSlides": ["logo", "logo"]}), &cur)
+            .unwrap()
+            .contains("twice"));
+        assert!(check_patch(&json!({"oledInterval": 0}), &cur)
+            .unwrap()
+            .contains("oledInterval"));
+        assert!(check_patch(&json!({"oledInterval": "4"}), &cur).is_some());
+        assert_eq!(
+            check_patch(&json!({"oledInterval": 60, "oledSlides": ["temp"]}), &cur),
+            None
+        );
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

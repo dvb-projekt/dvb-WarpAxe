@@ -75,17 +75,15 @@ pub enum Key {
 }
 
 /// The LCD pages as the key steps through them, and the start page's
-/// index among them, from the config.
-fn pages() -> (Vec<&'static str>, usize) {
-    let cfg = config::get();
+/// index among them, from a config read by the caller (once per frame).
+fn pages_of(cfg: &config::Config) -> (Vec<&'static str>, usize) {
     let p = dcfg::pages(&cfg.display_pages);
     let start = dcfg::start_index(&p, &cfg.display_start_page);
     (p, start)
 }
 
-/// The OLED slides that rotate, and how long each stays, from the config.
-fn oled_rotation() -> (Vec<&'static str>, Duration) {
-    let cfg = config::get();
+/// The OLED slides that rotate, and how long each stays.
+fn oled_rotation_of(cfg: &config::Config) -> (Vec<&'static str>, Duration) {
     let step = u64::from(dcfg::oled_interval_s(cfg.oled_interval));
     (
         dcfg::oled_slides(&cfg.oled_slides),
@@ -316,9 +314,10 @@ impl Ui {
             *display::DEMO.lock().unwrap() = None;
             return;
         }
+        let cfg = config::get();
         match k {
             Key::Next => {
-                let (p, home) = pages();
+                let (p, home) = pages_of(&cfg);
                 self.page = if self.page >= p.len() {
                     home
                 } else {
@@ -326,8 +325,8 @@ impl Ui {
                 };
             }
             Key::Home => {
-                self.page = pages().1;
-                let (slides, _) = oled_rotation();
+                self.page = pages_of(&cfg).1;
+                let (slides, _) = oled_rotation_of(&cfg);
                 self.oled_i = (self.oled_i + 1) % slides.len();
                 self.oled_t = Instant::now();
             }
@@ -382,20 +381,22 @@ impl Ui {
             self.event = ev;
             self.event_t0 = Instant::now();
         }
-        let (_, home) = pages();
+        // The config once per frame; the pages and the OLED rotation come
+        // from this copy.
+        let cfg = config::get();
+        let (_, home) = pages_of(&cfg);
         if self.page != home && diag::uptime_s().saturating_sub(self.last_key_s) > HOME_AFTER_S {
             self.page = home;
         }
         match d {
-            Display::Lcd(l) => self.lcd(l),
-            Display::Oled(o) => self.oled(o),
+            Display::Lcd(l) => self.lcd(l, &cfg),
+            Display::Oled(o) => self.oled(o, &cfg),
         }
     }
 
     // ---------------------------------------------------------------- LCD
 
-    fn lcd(&mut self, l: &mut Lcd) -> Duration {
-        let cfg = config::get();
+    fn lcd(&mut self, l: &mut Lcd, cfg: &config::Config) -> Duration {
         l.orient(
             cfg.flipscreen ^ crate::board::profile().display_flip,
             cfg.invertscreen,
@@ -418,7 +419,7 @@ impl Ui {
                 l.blit(&self.base);
                 let mut c = l.canvas();
                 // The list may have shrunk under a PATCH: back to the start page.
-                let (p, home) = pages();
+                let (p, home) = pages_of(cfg);
                 if self.page >= p.len() {
                     self.page = home.min(p.len() - 1);
                 }
@@ -521,8 +522,7 @@ impl Ui {
 
     // --------------------------------------------------------------- OLED
 
-    fn oled(&mut self, o: &mut Oled) -> Duration {
-        let cfg = config::get();
+    fn oled(&mut self, o: &mut Oled, cfg: &config::Config) -> Duration {
         o.orient(
             cfg.flipscreen ^ crate::board::profile().display_flip,
             cfg.invertscreen,
@@ -535,7 +535,7 @@ impl Ui {
                 Duration::from_millis(100)
             }
             None => {
-                let (slides, step) = oled_rotation();
+                let (slides, step) = oled_rotation_of(cfg);
                 if self.oled_t.elapsed() >= step {
                     self.oled_i = (self.oled_i + 1) % slides.len();
                     self.oled_t = Instant::now();
@@ -748,26 +748,32 @@ fn cockpit(c: &mut Canvas, pos: usize, total: usize) {
     // The large number, and under it its last hour (10 s samples): the
     // curve shows the same quantity as the number above it, where the
     // history has it (power and efficiency are sampled with the rate).
-    let est = if b.power_estimated { "~" } else { "" };
-    let (label, value, unit, hist): (&str, String, &str, Vec<f32>) =
-        match dcfg::big(&cfg.cockpit_big) {
-            "power" => (
-                l("POWER", "LEISTUNG"),
-                b.power_w.map_or("–".into(), |w| num(f64::from(w), 1)),
-                "W",
-                history::recent_power_w(360),
-            ),
-            "efficiency" => (
-                l("EFFICIENCY", "EFFIZIENZ"),
-                eff_jth(&m, &b).map_or("–".into(), |e| num(e, 1)),
-                "J/TH",
-                history::recent_eff_jth(360),
-            ),
-            _ => {
-                let (v, u) = hashrate(m.hashrate_ghs);
-                ("HASHRATE", v, u, history::recent_ghs(360))
-            }
-        };
+    // An estimated power (no reading on the board) is marked with a tilde,
+    // on the power and the efficiency; the hashrate is measured.
+    let big = dcfg::big(&cfg.cockpit_big);
+    let est = if b.power_estimated && big != "hashrate" {
+        "~"
+    } else {
+        ""
+    };
+    let (label, value, unit, hist): (&str, String, &str, Vec<f32>) = match big {
+        "power" => (
+            l("POWER", "LEISTUNG"),
+            b.power_w.map_or("–".into(), |w| num(f64::from(w), 1)),
+            "W",
+            history::recent_power_w(360),
+        ),
+        "efficiency" => (
+            l("EFFICIENCY", "EFFIZIENZ"),
+            eff_jth(&m, &b).map_or("–".into(), |e| num(e, 1)),
+            "J/TH",
+            history::recent_eff_jth(360),
+        ),
+        _ => {
+            let (v, u) = hashrate(m.hashrate_ghs);
+            ("HASHRATE", v, u, history::recent_ghs(360))
+        }
+    };
     c.text(&LABEL11, 12, 34, gfx::DIM, label, Align::Left);
     let mut x = 11;
     // HERO has digits only: the estimate's tilde in the unit face.

@@ -246,7 +246,7 @@
   "hs_banner": "Escolha sua rede abaixo, digite a senha se ela for nova e toque em Salvar. O minerador então reinicia e se conecta a ela, e este ponto de acesso desaparece.",
   "hs_restarting": "Salvo. O minerador reinicia e se conecta a {n}; este ponto de acesso será fechado. Volte a conectar seu celular ao Wi-Fi de casa.",
   "nav_swarm": "Swarm",
-  "sw_hint": "Outros mineradores na sua rede. Seu navegador consulta cada um diretamente (AxeOS, NerdOS e WarpAxe respondem); este minerador só guarda a lista.",
+  "sw_hint": "Outros mineradores na sua rede. Seu navegador consulta cada um diretamente (AxeOS, NerdOS e WarpAxe respondem); um Avalon é lido por este minerador pela API cgminer. Este minerador só guarda a lista.",
   "sw_eff": "Eficiência",
   "sw_shares": "Shares",
   "sw_best": "Melhor dif.",

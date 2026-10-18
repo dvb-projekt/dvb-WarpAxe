@@ -348,54 +348,9 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
     expert_refuse(v).or_else(|| display_refuse(v))
 }
 
-/// The display's choosable parts: every name must be in the tables of
-/// `warpaxe_displaycfg`, the start page on the (new) page list.
+/// The display's choosable parts, checked by `warpaxe_displaycfg` (host-tested).
 fn display_refuse(v: &serde_json::Value) -> Option<String> {
-    let list = |k: &str| -> Option<Result<Vec<String>, String>> {
-        let x = v.get(k)?;
-        Some(
-            serde_json::from_value::<Vec<String>>(x.clone())
-                .map_err(|_| format!("{k}: a list of names")),
-        )
-    };
-    let text = |k: &str| -> Option<Result<String, String>> {
-        let x = v.get(k)?;
-        Some(x.as_str().map(str::to_string).ok_or(format!("{k}: a name")))
-    };
-    let checks: [Option<Result<(), String>>; 6] = [
-        list("displayPages").map(|r| r.and_then(|l| dcfg::check_pages(&l))),
-        text("displayStartPage").map(|r| {
-            r.and_then(|s| {
-                let pages = match list("displayPages") {
-                    Some(Ok(l)) => l,
-                    Some(Err(e)) => return Err(e),
-                    None => config::get().display_pages,
-                };
-                let pages = if pages.is_empty() {
-                    dcfg::PAGES.iter().map(|p| p.to_string()).collect()
-                } else {
-                    pages
-                };
-                dcfg::check_start_page(&s, &pages)
-            })
-        }),
-        text("cockpitBig").map(|r| r.and_then(|s| dcfg::check_big(&s))),
-        list("cockpitSlots").map(|r| r.and_then(|l| dcfg::check_slots(&l))),
-        text("cockpitFooter").map(|r| r.and_then(|s| dcfg::check_footer(&s))),
-        list("oledSlides").map(|r| r.and_then(|l| dcfg::check_oled_slides(&l))),
-    ];
-    for c in checks.into_iter().flatten() {
-        if let Err(why) = c {
-            return Some(why);
-        }
-    }
-    if let Some(x) = v.get("oledInterval") {
-        let n = x.as_i64().unwrap_or(-1);
-        if let Err(why) = dcfg::check_oled_interval(n) {
-            return Some(why);
-        }
-    }
-    None
+    dcfg::check_patch(v, &config::get().display_pages)
 }
 
 /// Expert fields outside what the controllers can use sensibly.
@@ -543,15 +498,26 @@ fn reply_json(
     status: u16,
     v: &serde_json::Value,
 ) -> Result<(), EspIOError> {
+    reply_json_cors(req, status, v, true)
+}
+
+/// `reply_json` with the choice of the CORS header: every API route
+/// carries `Access-Control-Allow-Origin: *` (the swarm page of another
+/// miner reads this one), except where the reply was fetched from a
+/// third device for this page only.
+fn reply_json_cors(
+    req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+    status: u16,
+    v: &serde_json::Value,
+    cors: bool,
+) -> Result<(), EspIOError> {
     let body = v.to_string();
-    let mut r = req.into_response(
-        status,
-        None,
-        &[
-            ("Content-Type", "application/json"),
-            ("Access-Control-Allow-Origin", "*"),
-        ],
-    )?;
+    let json = ("Content-Type", "application/json");
+    let mut r = if cors {
+        req.into_response(status, None, &[json, ("Access-Control-Allow-Origin", "*")])?
+    } else {
+        req.into_response(status, None, &[json])?
+    };
     r.write_all(body.as_bytes())?;
     Ok(())
 }
@@ -983,9 +949,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
     // An Avalon on the swarm list, read over the cgminer API for the
     // browser (see `swarm.rs`): ?host=<ip>. 200 with the AxeOS-like
-    // document, 202 while the first read is under way, 403 for a host
-    // not on the list as cgminer:<host>, 502 when the Avalon did not
-    // answer.
+    // document, 202 while a read is under way (the page asks again, the
+    // HTTP task never waits), 403 for a host not on the list as
+    // cgminer:<host>, 502 when the Avalon did not answer.
     server.fn_handler("/api/v1/swarm/cgminer", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let uri = req.uri().to_string();
@@ -996,8 +962,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             .split('&')
             .find_map(|kv| kv.strip_prefix("host="))
             .unwrap_or("");
+        // No CORS header: the Avalon's data is for this miner's own page.
         let (status, body) = swarm::lookup(host);
-        reply_json(req, status, &body)
+        reply_json_cors(req, status, &body, false)
     })?;
     server.fn_handler("/api/v1/update", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);

@@ -246,7 +246,7 @@
   "hs_banner": "Scegli la tua rete qui sotto, inserisci la password se è nuova e premi Salva. Il miner si riavvia e si connette alla rete, e questo hotspot scompare.",
   "hs_restarting": "Salvato. Il miner si riavvia e si connette a {n}; questo hotspot si chiude. Ricollega il telefono al Wi-Fi di casa.",
   "nav_swarm": "Swarm",
-  "sw_hint": "Gli altri miner della tua rete. Il tuo browser interroga direttamente ciascuno di essi (AxeOS, NerdOS e WarpAxe rispondono tutti); questo miner salva solo l’elenco.",
+  "sw_hint": "Gli altri miner della tua rete. Il tuo browser interroga direttamente ciascuno di essi (AxeOS, NerdOS e WarpAxe rispondono tutti); un Avalon viene letto da questo miner tramite l’API cgminer. Questo miner salva solo l’elenco.",
   "sw_eff": "Efficienza",
   "sw_shares": "Shares",
   "sw_best": "Miglior diff",

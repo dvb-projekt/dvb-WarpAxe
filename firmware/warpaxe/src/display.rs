@@ -423,9 +423,13 @@ fn snapshot(frame: &[u8]) {
     }
 }
 
-/// The next frame the display sends, waiting up to two seconds (the
-/// display may be asleep: then none).
+/// The next frame the display sends, waiting up to two seconds. None at
+/// once while the display is asleep: nothing is drawn then, and the
+/// wait would hold the HTTP task for the whole two seconds.
 pub fn capture() -> Option<Vec<u8>> {
+    if asleep() {
+        return None;
+    }
     *SNAP.lock().unwrap() = None;
     SNAP_WANTED.store(true, std::sync::atomic::Ordering::Relaxed);
     for _ in 0..40 {

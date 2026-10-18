@@ -17,8 +17,10 @@
 //!   cached too, so an Avalon that is off is tried every [`CACHE_S`]
 //!   seconds, not on every poll.
 //!
-//! The handler waits up to [`WAIT_MS`] for a fresh answer and otherwise
-//! says `202 pending`; the page asks again a moment later.
+//! The handler never waits: without a fresh entry it starts a read and
+//! says `202 pending`, and the page asks again after about 700 ms. The
+//! HTTP server has one task; a second spent here would hold
+//! `/api/system/info`, WarpTune, WarpPool and every save with it.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -29,9 +31,8 @@ use crate::config;
 
 /// How long an answer (or a failure) is served from the cache.
 const CACHE_S: u64 = 10;
-/// How long a request waits for a read that is under way.
-const WAIT_MS: u64 = 1500;
-/// Connect and per-reply read timeout towards the Avalon.
+/// Connect and per-read timeout towards the Avalon; a whole reply has
+/// `warpaxe_avalon::READ_BUDGET` on top.
 const TIMEOUT: Duration = Duration::from_millis(2500);
 /// Hosts remembered at most; the list itself allows 32 members.
 const CACHE_MAX: usize = 8;
@@ -64,13 +65,6 @@ pub fn lookup(host: &str) -> (u16, Value) {
         return r;
     }
     start_read(&host);
-    let until = Instant::now() + Duration::from_millis(WAIT_MS);
-    while Instant::now() < until {
-        std::thread::sleep(Duration::from_millis(100));
-        if let Some(r) = cached(&host) {
-            return r;
-        }
-    }
     (202, json!({"pending": true, "host": host}))
 }
 
@@ -110,11 +104,13 @@ fn start_read(host: &str) {
     }
     let h = host.to_string();
     // Internal RAM for the stack (the default): sockets and a few KB of
-    // JSON, no flash. If no thread can be had right now the request says
-    // so and the page tries again later.
+    // JSON, no flash. The normal path takes about 4 KB; the parser is
+    // kept off deep documents (`warpaxe_avalon::MAX_DEPTH`), and 16 KB
+    // leaves room for the eight levels it may see. If no thread can be
+    // had right now the request says so and the page tries again later.
     let spawned = std::thread::Builder::new()
         .name("cgminer".into())
-        .stack_size(8 * 1024)
+        .stack_size(16 * 1024)
         .spawn(move || {
             let t0 = Instant::now();
             let result = warpaxe_avalon::fetch(&h, warpaxe_avalon::PORT, TIMEOUT)

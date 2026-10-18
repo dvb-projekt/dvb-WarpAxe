@@ -33,6 +33,10 @@ Decisions:
   rate). The history already samples power beside the rate, so no new
   storage was needed, and a power figure above a hashrate curve would
   have read as one thing when it is two.
+- **The efficiency curve leaves out samples below a tenth of the
+  expected rate** (a chain start, a stop): a few watts over a near-zero
+  rate would be one spike that flattens the hour. The estimate's tilde
+  stands before the power and the efficiency only, never the hashrate.
 - **A value the board lacks is a dash, never 0**: no regulator
   temperature or input voltage on the NerdNOS, no fan on the chipless
   board, no power or J/TH there either. The web UI hides those choices
@@ -44,6 +48,12 @@ Decisions:
   thousands separators go first when six figures and the rejected count
   would not fit, then the unit steps down a size, then it goes). The
   uptime is the one place drawn in the text face, as `12 d 23 h`.
+- **The live view in the settings** reads `/api/v1/display/frame` every
+  3 s while the page is open (the HTTP server has one task; a frame costs
+  it up to half a second and 108 KB, beside the dashboard's 5-s poll) and
+  backs off to 10 s after a miss; the firmware answers at once with 503
+  while the display is asleep instead of waiting two seconds for a frame
+  that never comes.
 - **The dots top right show the active pages only**, and none when
   there is one page. The special screens (overheat, chips off, update,
   block found, Wi-Fi setup) cover every page as before and cannot be
@@ -67,25 +77,33 @@ port 4028, one JSON command in, one JSON document with a NUL at the end
 out. A browser cannot open that socket, so the miner does it.
 
 - A member stored as `cgminer:<host>` (the web UI's "Avalon (cgminer
-  API)" kind when adding) is read through
-  `GET /api/v1/swarm/cgminer?host=<host>`. Plain members stay on the
-  HTTP path; old lists keep working.
+  API)" kind when adding, or a typed `cgminer:` prefix) is read through
+  `GET /api/v1/swarm/cgminer?host=<host>`. The host is an IPv4 literal
+  only (no name that could resolve elsewhere later). Plain members stay
+  on the HTTP path; old lists keep working.
 - The firmware sends `summary`, `estats` and `pools` and nothing else:
   `crates/avalon` has no code path for a write, and `query()` refuses
   any other command name. The endpoint opens a socket only towards a
   host that is on the stored list with the prefix (403 otherwise).
-- The read runs on a short-lived thread of its own (8 KB, internal RAM;
-  sockets and a few KB of JSON, no flash), one at a time, with a 2.5 s
-  connect/read timeout and a 16 KB bound on each reply. The HTTP task
-  waits up to 1.5 s and otherwise answers `202 pending`; the page asks
-  again. Answers and failures are cached for 10 s, so several open
-  browsers cost the Avalon no more than one.
+- The read runs on a short-lived thread of its own (16 KB, internal
+  RAM; sockets and a few KB of JSON, no flash), one at a time, with a
+  2.5 s connect/read timeout, a 3 s budget for a whole reply (a device
+  that trickles bytes is dropped), a 16 KB bound on each reply and a
+  nesting limit of 8 levels checked before the parser runs (serde_json
+  would take 128, and 127 levels cost 45–74 KB of stack; real replies
+  are 3–4 deep). The HTTP task never waits: without a fresh entry it
+  starts the read and answers `202 pending`, and the page asks again
+  after 700 ms. Answers and failures are cached for 10 s, so several
+  open browsers cost the Avalon no more than one. The reply carries no
+  CORS header: it is for this miner's own page.
 - The reply is an AxeOS-like document so the card code reads it as it
   reads the others, plus the Avalon's own fields: `workMode` (Eco /
   Standard / Super), `tempMax`, `tempTarget`, `fanRpms`, `chipTemps`
   (160 values on the Q), `modePowerCapW`, `dna`, `firmware`,
   `systemStatus`, and `cgminer` as the marker. What the Avalon does not
-  have is `null`: `vrTemp`, `coreVoltage`, `overheat_temp`.
+  have is `null`: `vrTemp`, `coreVoltage`, `overheat_temp`. Only the
+  first MM module (`MM ID0`) is read; an Avalon with several would need
+  more than one card.
 
 Field meanings, checked on the Avalon Q (MM 25052801, cgminer 4.11.1,
 API 3.7) on 2026-10-18 and against WarpTune's Avalon client:
@@ -119,8 +137,8 @@ against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
 
 ## Image size
 
-v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,004,944 bytes
-(+104.6 KB; the OTA slot is 3,145,728, so 140.8 KB remain). The growth
+v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes
+(+105.1 KB; the OTA slot is 3,145,728, so 134.5 KB remain). The growth
 is the new web-UI strings in eight languages (about 32 KB of HTML), the
 display tables and their validation, the Avalon client with its JSON
 translation, and the cockpit's places.

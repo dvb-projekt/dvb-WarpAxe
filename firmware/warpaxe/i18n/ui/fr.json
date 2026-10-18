@@ -246,7 +246,7 @@
   "hs_banner": "Choisissez votre réseau ci-dessous, saisissez son mot de passe s'il est nouveau, puis appuyez sur Enregistrer. Le mineur redémarre alors et le rejoint, et ce point d'accès disparaît.",
   "hs_restarting": "Enregistré. Le mineur redémarre et rejoint {n} ; ce point d'accès se ferme. Reconnectez votre téléphone au Wi-Fi de votre domicile.",
   "nav_swarm": "Swarm",
-  "sw_hint": "Les autres mineurs de votre réseau. Votre navigateur interroge directement chacun d’eux (AxeOS, NerdOS et WarpAxe répondent tous) ; ce mineur ne fait que conserver la liste.",
+  "sw_hint": "Les autres mineurs de votre réseau. Votre navigateur interroge directement chacun d’eux (AxeOS, NerdOS et WarpAxe répondent tous) ; un Avalon est lu par ce mineur via l’API cgminer. Ce mineur ne fait que conserver la liste.",
   "sw_eff": "Efficacité",
   "sw_shares": "Shares",
   "sw_best": "Meill. diff.",

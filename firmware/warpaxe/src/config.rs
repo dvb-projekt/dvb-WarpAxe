@@ -440,13 +440,10 @@ pub fn swarm() -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The prefix that marks a swarm member as a cgminer (Avalon) host.
-pub const CGMINER_PREFIX: &str = "cgminer:";
-
 /// The host of a swarm member stored as `cgminer:<host>`; `None` for
 /// an HTTP member.
 pub fn cgminer_host(member: &str) -> Option<&str> {
-    member.strip_prefix(CGMINER_PREFIX)
+    warpaxe_avalon::member_host(member)
 }
 
 /// Whether `host` is on the stored list as a cgminer member: the only
@@ -459,27 +456,12 @@ pub fn swarm_has_cgminer(host: &str) -> bool {
 
 /// Store the swarm list; addresses are IPv4 or host names (with an
 /// optional port for HTTP members), deduplicated. A `cgminer:` prefix
-/// (any case) marks an Avalon; its host takes no port, the cgminer port
-/// is fixed.
+/// (any case) marks an Avalon, whose host is an IPv4 literal
+/// (`warpaxe_avalon::normalize_member`, host-tested).
 pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
     let mut clean: Vec<String> = Vec::new();
     for m in members {
-        let m = m.trim().trim_start_matches("http://").trim_end_matches('/');
-        let (prefix, addr) = match m.get(..CGMINER_PREFIX.len()) {
-            Some(p) if p.eq_ignore_ascii_case(CGMINER_PREFIX) => {
-                (CGMINER_PREFIX, m[CGMINER_PREFIX.len()..].trim())
-            }
-            _ => ("", m),
-        };
-        let ok = !addr.is_empty()
-            && addr.len() <= 64
-            && addr.chars().all(|c| {
-                c.is_ascii_alphanumeric() || c == '.' || c == '-' || (c == ':' && prefix.is_empty())
-            });
-        if !ok {
-            return Err(format!("not an address: {m:?}"));
-        }
-        let m = format!("{prefix}{addr}");
+        let m = warpaxe_avalon::normalize_member(m)?;
         if !clean.iter().any(|c| c.eq_ignore_ascii_case(&m)) {
             clean.push(m);
         }

@@ -110,14 +110,28 @@ pub fn recent_power_w(n: usize) -> Vec<f32> {
 /// The last `n` samples of the efficiency, J/TH, from each sample's
 /// power and ten-minute hashrate; NaN where either is missing (the
 /// cockpit's sparkline when its large number is the efficiency).
+/// Samples with less than a tenth of the expected rate (the minutes
+/// after a chain start, a stop) are left out: a few watts over a near
+/// zero rate would be a spike that flattens the rest of the hour.
 pub fn recent_eff_jth(n: usize) -> Vec<f32> {
-    recent(n, |s| {
+    let m = miner::state();
+    let expected = f64::from(board::chip().small_cores)
+        * f64::from(m.frequency_hz)
+        * f64::from(m.chips.max(1))
+        / 1e9;
+    let floor = (expected as f32 * 0.1).max(1.0);
+    let v: Vec<f32> = recent(n, |s| {
         if s.hashrate_10m_ghs > 1.0 {
             s.power_w / (s.hashrate_10m_ghs / 1000.0)
         } else {
             f32::NAN
         }
-    })
+    });
+    let rates = recent(n, |s| s.hashrate_10m_ghs);
+    v.into_iter()
+        .zip(rates)
+        .map(|(e, r)| if r >= floor { e } else { f32::NAN })
+        .collect()
 }
 
 fn recent(n: usize, f: fn(&Sample) -> f32) -> Vec<f32> {
