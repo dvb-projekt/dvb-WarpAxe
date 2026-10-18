@@ -29,6 +29,10 @@ CONFIG_TINYUSB_MODE_DMA=y
 # More NCM transfer blocks in flight: one per direction loses ACKs under load.
 CONFIG_LWIP_DHCPS=y
 CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
+# 16 instead of the default 10: the HTTP server holds up to five, the
+# pool one, mDNS two; the swarm page's search for an Avalon opens four
+# at a time on top (swarm.rs), and a scan must not starve the rest.
+CONFIG_LWIP_MAX_SOCKETS=16
 # A panic writes a core dump to flash and reboots; the next boot shows it.
 CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y

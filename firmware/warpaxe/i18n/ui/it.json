@@ -396,5 +396,7 @@
   "sw_cg_s": "Un Avalon comunica tramite l’API cgminer sulla porta 4028, che il browser non può raggiungere. Questo miner legge al posto della pagina il riepilogo, le statistiche e i pool dell’Avalon — in sola lettura, al massimo una volta ogni 10 s — e li inoltra alla pagina.",
   "sw_reading": "lettura…",
   "sw_via": "tramite questo miner",
-  "sw_fan": "Ventola"
+  "sw_fan": "Ventola",
+  "sw_kind_avalon": "Avalon · cgminer",
+  "sw_scan_skipped": "Non è stato possibile verificare la presenza di un Avalon su {n} indirizzi: il miner non aveva connessioni libere. Ripeti la ricerca."
 }

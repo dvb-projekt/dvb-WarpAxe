@@ -85,7 +85,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
-| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API** (read by the miner, read-only) |
+| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
 | Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
@@ -301,12 +301,17 @@ back at any time with `GET /api/v1/display/frame`.
   miner at a time); this miner stores only the address list. Read-only: it
   never changes or restarts another miner. Add miners by address or by a
   search of the local /24. An **Avalon** (cgminer API on TCP 4028, which
-  a browser cannot open) is added as "Avalon (cgminer API)": the miner
-  reads its `summary`, `estats` and `pools` for the page — those three
+  a browser cannot open) is found by that search as well: the miner walks
+  its own /24 for port 4028, four connections at a time with a hard 20-s
+  budget, asks a host that answers for its `version` and nothing else,
+  and the hit shows as "Avalon · cgminer" beside the others; adding it
+  (or typing it as "Avalon (cgminer API)") stores `cgminer:<ip>`. For
+  the card the miner reads its `summary`, `estats` and `pools` — those
   reads and nothing else, one at a time, cached for 10 s, only for hosts
-  on the list — and shows it as a card with its work mode (Eco / Standard
-  / Super), chip temperatures, fans, power, shares and best share
-  (`GET /api/v1/swarm/cgminer?host=`; [`docs/07`](docs/07-Display-choices-and-Avalon-swarm.md)).
+  on the list — and shows its work mode (Eco / Standard / Super), chip
+  temperatures, fans, power, shares and best share
+  (`GET /api/v1/swarm/cgminer?host=`, `POST`/`GET /api/v1/swarm/cgminer/scan`;
+  [`docs/07`](docs/07-Display-choices-and-Avalon-swarm.md)).
 - Found by name: the miner announces itself over mDNS as
   `<hostname>.local` (letters, digits and `-` of the hostname; a name
   already taken gets `-2`) and as `_http._tcp` with AxeOS's `_axeos`
@@ -324,8 +329,9 @@ back at any time with `GET /api/v1/display/frame`.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
   off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
-  list (`/api/v1/swarm`) and an Avalon read for it
-  (`/api/v1/swarm/cgminer?host=`), the last crash's core dump
+  list (`/api/v1/swarm`), an Avalon read for it
+  (`/api/v1/swarm/cgminer?host=`) and the search for one
+  (`/api/v1/swarm/cgminer/scan`), the last crash's core dump
   (`GET /api/v1/coredump`, an ELF for `espcoredump.py`; `DELETE` erases it),
   and for diagnosis a read-only chip register scan
   (`/api/v1/chip/regs?chip=0&from=0x80&to=0xbf`) and the nonces per core

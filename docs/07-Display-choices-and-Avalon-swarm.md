@@ -81,10 +81,11 @@ out. A browser cannot open that socket, so the miner does it.
   `GET /api/v1/swarm/cgminer?host=<host>`. The host is an IPv4 literal
   only (no name that could resolve elsewhere later). Plain members stay
   on the HTTP path; old lists keep working.
-- The firmware sends `summary`, `estats` and `pools` and nothing else:
+- The firmware sends `summary`, `estats` and `pools` for a card, and
+  `version` once per host in the network search, and nothing else:
   `crates/avalon` has no code path for a write, and `query()` refuses
-  any other command name. The endpoint opens a socket only towards a
-  host that is on the stored list with the prefix (403 otherwise).
+  any other command name. The card endpoint opens a socket only towards
+  a host that is on the stored list with the prefix (403 otherwise).
 - The read runs on a short-lived thread of its own (16 KB, internal
   RAM; sockets and a few KB of JSON, no flash), one at a time, with a
   2.5 s connect/read timeout, a 3 s budget for a whole reply (a device
@@ -104,6 +105,31 @@ out. A browser cannot open that socket, so the miner does it.
   have is `null`: `vrTemp`, `coreVoltage`, `overheat_temp`. Only the
   first MM module (`MM ID0`) is read; an Avalon with several would need
   more than one card.
+
+### The network search
+
+"Search network" on the swarm page runs two walks of the same /24 at
+once: the browser's (every address, `/api/system/info`, as before) and
+the miner's for port 4028 (`POST /api/v1/swarm/cgminer/scan` starts it,
+`GET` says where it stands; neither waits on the HTTP task). The miner's
+walk takes the subnet from its own Wi-Fi address and nothing the browser
+names (400 without one: the USB link has nothing to find), runs one
+search at a time on a coordinator thread (8 KB) with four workers
+(6 KB each; lwIP has 16 sockets since this change, `sdkconfig.defaults`,
+the HTTP server holds up to five, the pool one, mDNS two), 400 ms per
+host and a hard budget of 20 s for the whole run; a host that accepts
+the connection is asked for `version` only, with the same 16 KB and
+eight-level bounds as the other reads, and counts as a cgminer when the
+reply carries `VERSION[0].CGMiner` or `.API` (`PROD` names the product,
+"Avalon Q"). A host for which no socket was free is tried three times,
+then counted as skipped; the page says how many were skipped. A finished
+search answers a second click within 30 s. From a Mac the same walk
+(`cargo run -p warpaxe-avalon -- --scan <own ip>`) found the .43 and
+nothing else in 10 s on 2026-10-18.
+
+Hits join the browser's list with an "Avalon · cgminer" badge; adding
+one stores `cgminer:<ip>`, and a member already on the list is not shown
+again.
 
 Field meanings, checked on the Avalon Q (MM 25052801, cgminer 4.11.1,
 API 3.7) on 2026-10-18 and against WarpTune's Avalon client:

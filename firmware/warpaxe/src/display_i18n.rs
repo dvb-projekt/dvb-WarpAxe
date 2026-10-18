@@ -92,6 +92,7 @@ static ES: &[(&str, &str)] = &[
     ("Uptime", "En marcha"),
     ("WI-FI SETUP", "CONFIGURAR WI-FI"),
     ("blocks", "bloques"),
+    ("d", "d"),
     ("months", "meses"),
     ("not connected", "no conectado"),
     (
@@ -188,10 +189,11 @@ static FR: &[(&str, &str)] = &[
     ("Restart clock", "Redémarrage"),
     ("Shutdown {h} °C", "Arrêt {h} °C"),
     ("THEN OPEN", "PUIS OUVRIR"),
-    ("UPTIME", "UPTIME"),
+    ("UPTIME", "ACTIF DEPUIS"),
     ("Uptime", "Actif depuis"),
     ("WI-FI SETUP", "CONFIGURATION WI-FI"),
     ("blocks", "blocs"),
+    ("d", "j"),
     ("months", "mois"),
     ("not connected", "non branché"),
     (
@@ -292,6 +294,7 @@ static IT: &[(&str, &str)] = &[
     ("Uptime", "Uptime"),
     ("WI-FI SETUP", "IMPOSTA WI-FI"),
     ("blocks", "blocchi"),
+    ("d", "g"),
     ("months", "mesi"),
     ("not connected", "non collegata"),
     (
@@ -392,6 +395,7 @@ static PT: &[(&str, &str)] = &[
     ("Uptime", "Tempo ativo"),
     ("WI-FI SETUP", "CONEXÃO WI-FI"),
     ("blocks", "blocos"),
+    ("d", "d"),
     ("months", "meses"),
     ("not connected", "não conectada"),
     (

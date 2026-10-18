@@ -45,7 +45,7 @@
  "REGULATOR FAULT": "DÉFAUT RÉGULATEUR",
  "Regulator fault · core voltage off": "Défaut régulateur · tension cœur coupée",
  "Fans 100 % · tries again after a minute": "Ventil. 100 % · réessaie dans une minute",
- "UPTIME": "UPTIME",
+ "UPTIME": "ACTIF DEPUIS",
  "Candidates": "Candidats",
  "Best diff": "Meilleure diff.",
  "ESP32-S3R8 · SHA engine + CPU core · experimental": "ESP32-S3R8 · moteur SHA + cœur CPU · expérimental",
@@ -59,5 +59,6 @@
  "BEST DIFF": "MEILL. DIFF.",
  "BLOCK": "BLOC",
  "POOL DIFF": "DIFF. POOL",
- "INPUT": "ENTRÉE"
+ "INPUT": "ENTRÉE",
+ "d": "j"
 }

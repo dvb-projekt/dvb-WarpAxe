@@ -396,5 +396,7 @@
   "sw_cg_s": "Avalon 通过 4028 端口提供 cgminer API，浏览器无法直接访问该端口。本机为此页面读取它的 summary、stats 和 pools（只读，最多每 10 秒一次）并转发。",
   "sw_reading": "正在读取…",
   "sw_via": "通过本机",
-  "sw_fan": "风扇"
+  "sw_fan": "风扇",
+  "sw_kind_avalon": "Avalon · cgminer",
+  "sw_scan_skipped": "有 {n} 个地址未能检查是否为 Avalon：矿机没有空闲连接。请重新搜索。"
 }

@@ -7,10 +7,16 @@
 //! answer on as an AxeOS-like `/api/system/info` document, which is what
 //! the page's cards already read.
 //!
-//! What this crate sends is exactly [`COMMANDS`]: `summary`, `estats` and
-//! `pools`, all reads. There is no code path for `ascset`, `setpool` or
-//! any other write, and none should ever be added here: the firmware
+//! What this crate sends is exactly [`COMMANDS`]: `summary`, `estats`,
+//! `pools` and, to tell a cgminer from anything else on port 4028,
+//! `version`, all reads. There is no code path for `ascset`, `setpool`
+//! or any other write, and none should ever be added here: the firmware
 //! holds an Avalon's address, not the right to change it.
+//!
+//! The [`scan`] walks the miner's own /24 for port 4028 with a few
+//! connections at a time, a short timeout per host and a hard budget for
+//! the whole run, and asks a host that accepts the connection for its
+//! `version` only.
 //!
 //! The replies are bounded ([`MAX_REPLY`]) and parsed defensively: the
 //! `estats` of an Avalon Q is one long `Key[Value]` token string
@@ -25,15 +31,17 @@
 #![recursion_limit = "256"]
 
 use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{Ipv4Addr, TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
 use serde_json::{json, Value};
 
 /// The cgminer API port.
 pub const PORT: u16 = 4028;
-/// The only commands this crate sends, in the order they are asked.
-pub const COMMANDS: [&str; 3] = ["summary", "estats", "pools"];
+/// The only commands this crate sends: the three a card is built from
+/// (asked in this order) and `version`, which the network search sends
+/// once to a host that answers on port 4028.
+pub const COMMANDS: [&str; 4] = ["summary", "estats", "pools", "version"];
 /// Longest reply taken; the Avalon Q's `estats` is 3.6 KB, `pools` with
 /// two pools 1.8 KB. Beyond this the reply is refused, not truncated.
 pub const MAX_REPLY: usize = 16 * 1024;
@@ -208,6 +216,215 @@ pub fn normalize_member(raw: &str) -> Result<String, String> {
 /// The host of a member stored as `cgminer:<host>`; `None` for an HTTP member.
 pub fn member_host(member: &str) -> Option<&str> {
     member.strip_prefix(MEMBER_PREFIX)
+}
+
+/// A cgminer found by the network search, from its `version` reply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Found {
+    /// Its address.
+    pub host: Ipv4Addr,
+    /// `PROD` ("Avalon Q"), or the model, or "cgminer" when it names none.
+    pub product: String,
+    /// `MODEL` ("Q").
+    pub model: String,
+    /// The MM firmware (`LVERSION`), "25052801_14a19a2".
+    pub firmware: String,
+    /// `CGMiner` ("4.11.1") and `API` ("3.7") as "cgminer 4.11.1 · API 3.7".
+    pub api: String,
+}
+
+/// What a `version` reply says about the device, if it is a cgminer's:
+/// a `VERSION` array whose first object names `CGMiner` or `API`.
+pub fn identify(host: Ipv4Addr, version: &Value) -> Option<Found> {
+    let v = version.get("VERSION")?.as_array()?.first()?.as_object()?;
+    let s = |k: &str| {
+        v.get(k)
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .trim()
+            .to_string()
+    };
+    let (cg, api) = (s("CGMiner"), s("API"));
+    if cg.is_empty() && api.is_empty() {
+        return None;
+    }
+    let model = s("MODEL");
+    let product = match s("PROD") {
+        p if !p.is_empty() => p,
+        _ if !model.is_empty() => format!("Avalon {model}"),
+        _ => "cgminer".into(),
+    };
+    Some(Found {
+        host,
+        product,
+        model,
+        firmware: s("LVERSION"),
+        api: match (cg.is_empty(), api.is_empty()) {
+            (false, false) => format!("cgminer {cg} · API {api}"),
+            (false, true) => format!("cgminer {cg}"),
+            _ => format!("API {api}"),
+        },
+    })
+}
+
+/// The hosts of `own`'s /24, without the network and broadcast addresses
+/// and without `own` itself: what the search walks.
+pub fn subnet_hosts(own: Ipv4Addr) -> Vec<Ipv4Addr> {
+    let [a, b, c, d] = own.octets();
+    (1..=254u8)
+        .filter(|&x| x != d)
+        .map(|x| Ipv4Addr::new(a, b, c, x))
+        .collect()
+}
+
+/// One host of the search: connect within `timeout`, ask `version`,
+/// read the bounded reply. `Ok(Some)` is a cgminer, `Ok(None)` a port
+/// that answered with something else, `Err` nothing reachable there
+/// (or no socket free on this side: `Error::Read` with the OS text).
+pub fn probe(host: Ipv4Addr, port: u16, timeout: Duration) -> Result<Option<Found>, Error> {
+    let addr = std::net::SocketAddr::from((host, port));
+    let mut s = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
+        // No socket left on this side is not "nothing there".
+        if e.raw_os_error() == Some(24) || e.raw_os_error() == Some(23) {
+            Error::Read(e.to_string())
+        } else {
+            Error::Connect(e.to_string())
+        }
+    })?;
+    let _ = s.set_nodelay(true);
+    match query(&mut s, "version", timeout) {
+        Ok(v) => Ok(identify(host, &v)),
+        Err(Error::NotJson(_)) | Err(Error::TooDeep) | Err(Error::TooLong) => Ok(None),
+        Err(e) => Err(e),
+    }
+}
+
+/// How far a search has come; shared with whoever started it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct Progress {
+    /// Hosts tried so far.
+    pub done: usize,
+    /// Hosts to try in all.
+    pub total: usize,
+    /// Hosts not tried: the budget ran out, or no socket was free three
+    /// times in a row for one of them.
+    pub skipped: usize,
+    /// The cgminers found.
+    pub found: Vec<Found>,
+    /// The search has ended (all hosts, or the budget).
+    pub finished: bool,
+}
+
+/// Walk `hosts` with `parallel` workers, each trying one host at a time
+/// through `probe_one`, until all are done or `budget` has passed since
+/// the start (a worker in the middle of a host finishes that host). A
+/// host whose probe says "no socket free" is tried again after a pause,
+/// three times, then counted as skipped. `progress` is updated as it
+/// goes and `finished` is set at the end.
+pub fn scan_with<F>(
+    hosts: Vec<Ipv4Addr>,
+    parallel: usize,
+    budget: Duration,
+    progress: &std::sync::Arc<std::sync::Mutex<Progress>>,
+    probe_one: F,
+) where
+    F: Fn(Ipv4Addr) -> Result<Option<Found>, Error> + Send + Sync + 'static,
+{
+    use std::sync::{Arc, Mutex};
+    let total = hosts.len();
+    progress.lock().unwrap().total = total;
+    let queue = Arc::new(Mutex::new(hosts));
+    let probe_one = Arc::new(probe_one);
+    let deadline = std::time::Instant::now() + budget;
+    let mut workers = Vec::new();
+    for _ in 0..parallel.max(1) {
+        let (queue, progress, probe_one) = (
+            Arc::clone(&queue),
+            Arc::clone(progress),
+            Arc::clone(&probe_one),
+        );
+        // Small stacks: a connect, a 500-byte reply and its parse.
+        let w = std::thread::Builder::new()
+            .name("cgscan".into())
+            .stack_size(6 * 1024)
+            .spawn(move || loop {
+                if std::time::Instant::now() >= deadline {
+                    return;
+                }
+                let Some(host) = queue.lock().unwrap().pop() else {
+                    return;
+                };
+                let mut outcome = None;
+                for attempt in 0..3 {
+                    match probe_one(host) {
+                        Err(Error::Read(e)) if e.contains("files") || e.contains("Too many") => {
+                            // No socket free right now: let one go and try again.
+                            if attempt < 2 {
+                                std::thread::sleep(Duration::from_millis(300));
+                            }
+                        }
+                        other => {
+                            outcome = Some(other);
+                            break;
+                        }
+                    }
+                }
+                let mut p = progress.lock().unwrap();
+                match outcome {
+                    Some(Ok(Some(f))) => {
+                        p.done += 1;
+                        p.found.push(f);
+                    }
+                    Some(_) => p.done += 1,
+                    None => p.skipped += 1,
+                }
+            });
+        match w {
+            Ok(h) => workers.push(h),
+            Err(e) => {
+                // Fewer workers then; the scan still runs on the others, or
+                // on this thread if none could be had.
+                let _ = e;
+            }
+        }
+    }
+    if workers.is_empty() {
+        while std::time::Instant::now() < deadline {
+            let Some(host) = queue.lock().unwrap().pop() else {
+                break;
+            };
+            let r = probe_one(host);
+            let mut p = progress.lock().unwrap();
+            p.done += 1;
+            if let Ok(Some(f)) = r {
+                p.found.push(f);
+            }
+        }
+    }
+    for w in workers {
+        let _ = w.join();
+    }
+    let mut p = progress.lock().unwrap();
+    let left = queue.lock().unwrap().len();
+    p.skipped += left;
+    p.found.sort_by_key(|f| f.host);
+    p.finished = true;
+}
+
+/// The search as the firmware runs it: `hosts` on `port`, `parallel`
+/// connections at a time, `per_host` to connect and answer, `budget`
+/// for the whole run.
+pub fn scan(
+    hosts: Vec<Ipv4Addr>,
+    port: u16,
+    parallel: usize,
+    per_host: Duration,
+    budget: Duration,
+    progress: &std::sync::Arc<std::sync::Mutex<Progress>>,
+) {
+    scan_with(hosts, parallel, budget, progress, move |h| {
+        probe(h, port, per_host)
+    });
 }
 
 /// Send one of [`COMMANDS`] over an open stream and read the reply.
@@ -489,7 +706,7 @@ pub fn translate(raw: &Raw) -> Value {
     let alive = pf("Status").as_str() == Some("Alive");
     let best = sf("Best Share");
     json!({
-        "cgminer": { "api": api, "commands": COMMANDS, "host": pf("URL") },
+        "cgminer": { "api": api, "commands": &COMMANDS[..3], "host": pf("URL") },
         "deviceModel": model, "boardVersion": model, "boardName": model, "hostname": model,
         "ASICModel": mm.chip_name, "asicCount": chip_count,
         "version": format!("MM {}", firmware.split('_').next().unwrap_or(&firmware)),
@@ -746,6 +963,90 @@ mod tests {
     }
 
     #[test]
+    fn the_version_reply_of_the_avalon_q_identifies_it() {
+        let f = identify("192.168.178.43".parse().unwrap(), &fixture("version")).unwrap();
+        assert_eq!(f.product, "Avalon Q");
+        assert_eq!(f.model, "Q");
+        assert_eq!(f.firmware, "25052801_14a19a2");
+        assert_eq!(f.api, "cgminer 4.11.1 · API 3.7");
+        let h: Ipv4Addr = "10.0.0.1".parse().unwrap();
+        assert!(identify(h, &json!({"VERSION": [{"MODEL": "Q"}]})).is_none());
+        assert_eq!(
+            identify(h, &json!({"VERSION": [{"API": "3.7", "MODEL": "A15"}]}))
+                .unwrap()
+                .product,
+            "Avalon A15"
+        );
+        assert!(identify(h, &json!({"STATUS": "S"})).is_none());
+        assert!(identify(h, &json!({"hashRate": 1})).is_none());
+    }
+
+    #[test]
+    fn the_search_walks_the_own_slash_24_without_itself() {
+        let hosts = subnet_hosts("192.168.178.41".parse().unwrap());
+        assert_eq!(hosts.len(), 253);
+        assert_eq!(hosts[0], "192.168.178.1".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(hosts[252], "192.168.178.254".parse::<Ipv4Addr>().unwrap());
+        assert!(!hosts.contains(&"192.168.178.41".parse().unwrap()));
+        assert!(!hosts.contains(&"192.168.178.0".parse().unwrap()));
+        assert!(!hosts.contains(&"192.168.178.255".parse().unwrap()));
+    }
+
+    #[test]
+    fn the_budget_ends_a_search_and_the_rest_counts_as_skipped() {
+        use std::sync::{Arc, Mutex};
+        let hosts = subnet_hosts("10.9.8.7".parse().unwrap());
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        let t0 = std::time::Instant::now();
+        // 100 ms per host, four at a time, 350 ms in all: about 12–16 hosts.
+        scan_with(hosts, 4, Duration::from_millis(350), &progress, |_h| {
+            std::thread::sleep(Duration::from_millis(100));
+            Err(Error::Connect("refused".into()))
+        });
+        let p = progress.lock().unwrap().clone();
+        assert!(
+            t0.elapsed() < Duration::from_millis(900),
+            "{:?}",
+            t0.elapsed()
+        );
+        assert!(p.finished);
+        assert_eq!(p.total, 253);
+        assert!(p.done >= 8 && p.done <= 24, "{p:?}");
+        assert_eq!(p.done + p.skipped, 253);
+        assert!(p.found.is_empty());
+    }
+
+    #[test]
+    fn a_full_search_finds_the_simulated_avalon_and_retries_busy_sockets() {
+        use std::sync::{Arc, Mutex};
+        let dev = Arc::new(Mutex::new(warpaxe_sim::AvalonQ::settled(0, 23.0, 1)));
+        let addr = warpaxe_cgminer::spawn("127.0.0.1:0", Arc::clone(&dev)).unwrap();
+        let port = addr.port();
+        let hosts: Vec<Ipv4Addr> = vec!["127.0.0.1".parse().unwrap(), "127.0.0.2".parse().unwrap()];
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        let busy = Arc::new(Mutex::new(0));
+        let b2 = Arc::clone(&busy);
+        scan_with(hosts, 2, Duration::from_secs(5), &progress, move |h| {
+            // The first try on the real host says "no socket free".
+            if h == "127.0.0.1".parse::<Ipv4Addr>().unwrap() {
+                let mut n = b2.lock().unwrap();
+                *n += 1;
+                if *n == 1 {
+                    return Err(Error::Read("Too many open files (os error 24)".into()));
+                }
+            }
+            probe(h, port, Duration::from_millis(800))
+        });
+        let p = progress.lock().unwrap().clone();
+        assert!(p.finished);
+        assert_eq!(p.found.len(), 1, "{p:?}");
+        assert_eq!(p.found[0].product, "Avalon Q");
+        assert_eq!(p.found[0].host, "127.0.0.1".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(p.skipped, 0);
+        assert_eq!(dev.lock().unwrap().mode().index, 0, "nothing was written");
+    }
+
+    #[test]
     fn only_the_three_read_commands_go_over_the_wire() {
         let dev = std::sync::Arc::new(std::sync::Mutex::new(warpaxe_sim::AvalonQ::settled(
             1, 23.0, 1,
@@ -756,6 +1057,22 @@ mod tests {
             query(&mut s, "ascset", Duration::from_secs(1)),
             Err(Error::Shape("a read command"))
         );
+        for cmd in [
+            "setpool",
+            "restart",
+            "quit",
+            "devs",
+            "stats",
+            "ascset|0,workmode,set,2",
+        ] {
+            let mut s = TcpStream::connect(addr).unwrap();
+            assert_eq!(
+                query(&mut s, cmd, Duration::from_secs(1)),
+                Err(Error::Shape("a read command")),
+                "{cmd}"
+            );
+        }
+        assert_eq!(COMMANDS, ["summary", "estats", "pools", "version"]);
         let raw = fetch("127.0.0.1", addr.port(), Duration::from_secs(2)).unwrap();
         let v = translate(&raw);
         assert_eq!(v["workMode"], "Standard");

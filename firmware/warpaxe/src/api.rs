@@ -966,6 +966,20 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         let (status, body) = swarm::lookup(host);
         reply_json_cors(req, status, &body, false)
     })?;
+    // The network search for an Avalon: POST starts a walk of the own
+    // /24 for port 4028 (or answers with the one under way or just
+    // finished), GET says where it stands; neither waits (see swarm.rs).
+    server.fn_handler("/api/v1/swarm/cgminer/scan", Method::Post, |mut req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::info!("swarm: cgminer search requested from {}", peer(&mut req));
+        let (status, body) = swarm::scan_start();
+        reply_json_cors(req, status, &body, false)
+    })?;
+    server.fn_handler("/api/v1/swarm/cgminer/scan", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let (status, body) = swarm::scan_status();
+        reply_json_cors(req, status, &body, false)
+    })?;
     server.fn_handler("/api/v1/update", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let mut v = serde_json::to_value(crate::update::state()).unwrap_or_default();

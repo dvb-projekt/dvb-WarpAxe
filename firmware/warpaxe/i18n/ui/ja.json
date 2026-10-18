@@ -396,5 +396,7 @@
   "sw_cg_s": "Avalon はポート 4028 で cgminer API を提供していますが、ブラウザからは直接アクセスできません。このマイナーがページ用に summary、stats、pools を読み取り（読み取り専用、10 秒に 1 回まで）、その結果を中継します。",
   "sw_reading": "読み取り中…",
   "sw_via": "このマイナー経由",
-  "sw_fan": "ファン"
+  "sw_fan": "ファン",
+  "sw_kind_avalon": "Avalon · cgminer",
+  "sw_scan_skipped": "マイナーに空き接続がなかったため、{n} 件のアドレスで Avalon を確認できませんでした。もう一度検索してください。"
 }

@@ -198,10 +198,12 @@ fn eff_jth(m: &miner::MinerState, b: &board::BoardState) -> Option<f64> {
     (m.hashrate_ghs > 1.0).then(|| f64::from(w) / (m.hashrate_ghs / 1000.0))
 }
 
+/// "12 d 23 h" / "3 h 12 min", the day letter in the display language
+/// (j in French, g in Italian, T in German).
 fn uptime(s: u64) -> String {
     let (d, h, m) = (s / 86_400, s / 3600 % 24, s / 60 % 60);
     if d > 0 {
-        format!("{d} d {h} h")
+        format!("{d} {} {h} h", l("d", "T"))
     } else {
         format!("{h} h {m} min")
     }

@@ -396,5 +396,7 @@
   "sw_cg_s": "Un Avalon usa la API de cgminer en el puerto 4028, al que un navegador no puede acceder. Este minero lee su resumen, sus estadísticas y sus pools —en solo lectura y como mucho una vez cada 10 s— y los pasa a la página.",
   "sw_reading": "leyendo …",
   "sw_via": "a través de este minero",
-  "sw_fan": "Ventilador"
+  "sw_fan": "Ventilador",
+  "sw_kind_avalon": "Avalon · cgminer",
+  "sw_scan_skipped": "No se pudo comprobar si hay un Avalon en {n} direcciones: el minero no tenía conexiones libres. Vuelve a buscar."
 }
