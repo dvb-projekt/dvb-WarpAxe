@@ -150,7 +150,7 @@
   "invertfan_s": "Para ventiladores que funcionan al revés del ajuste",
   "pidTargetTemp": "Temperatura objetivo de chips (°C)",
   "overheat_temp": "Temperatura de apagado (°C)",
-  "overheat_s": "Chips o regulador por encima: se corta el voltaje del núcleo hasta que ambos bajen 10 °C",
+  "overheat_s": "Para los chips: si se supera, se corta el voltaje del núcleo hasta que los chips y el regulador estén 10 °C por debajo de sus límites. El regulador tiene su propio límite fijo según la placa, visible en el panel.",
   "minFanSpeed": "Velocidad mínima del ventilador (%)",
   "minFan_s": "Los ventiladores grandes pueden no arrancar por debajo de un 25 %",
   "fanspeed": "Velocidad fija del ventilador (%)",
@@ -335,5 +335,7 @@
   "psu_s": "Potencia nominal de la fuente que alimenta este minero. WarpTune mantiene el minero por debajo del 80 % de ella y, sin este dato, no busca por encima del punto de fábrica. Varios mineros en una misma fuente: reparte su potencia nominal entre ellos de modo que la suma no la supere (p. ej., 600 W → 240 + 150 + 100 W). WarpTune mantiene entonces cada minero por debajo del 80 % de su parte. Vacío = desconocida.",
   "psu_label": "Fuente de alimentación",
   "psu_note": "Indica en los ajustes la potencia de tu fuente de alimentación para que WarpTune sepa hasta dónde puede llegar.",
-  "psu_hide": "Ocultar"
+  "psu_hide": "Ocultar",
+  "ask_yes": "Sí, adelante",
+  "ask_no": "Cancelar"
 }

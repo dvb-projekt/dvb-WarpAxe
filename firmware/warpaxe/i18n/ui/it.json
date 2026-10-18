@@ -150,7 +150,7 @@
   "invertfan_s": "Per ventole che funzionano al contrario rispetto all'impostazione",
   "pidTargetTemp": "Temperatura chip obiettivo (°C)",
   "overheat_temp": "Temperatura di spegnimento (°C)",
-  "overheat_s": "Chip o regolatore oltre questo valore: tensione core spenta finché entrambi non scendono di 10 °C",
+  "overheat_s": "Per i chip: oltre questo valore la tensione core viene tolta finché chip e regolatore non sono 10 °C sotto i rispettivi limiti. Il regolatore ha un proprio limite, fisso per ogni scheda, mostrato nella dashboard.",
   "minFanSpeed": "Velocità minima ventola (%)",
   "minFan_s": "Le ventole grandi potrebbero non partire sotto il 25 % circa",
   "fanspeed": "Velocità fissa ventola (%)",
@@ -335,5 +335,7 @@
   "psu_s": "Potenza nominale dell’alimentatore di questo miner. WarpTune resta sotto l’80 % di questo valore e, senza di esso, non cerca oltre l’impostazione di fabbrica. Più miner sullo stesso alimentatore: suddividi la sua potenza nominale tra i miner in modo che la somma delle quote non la superi (ad es. 600 W → 240 + 150 + 100 W). WarpTune mantiene poi ogni miner sotto l’80 % della sua quota. Vuoto = sconosciuto.",
   "psu_label": "Alimentatore",
   "psu_note": "Inserisci nelle impostazioni la potenza del tuo alimentatore, così WarpTune sa fin dove può spingersi.",
-  "psu_hide": "Nascondi"
+  "psu_hide": "Nascondi",
+  "ask_yes": "Sì, procedi",
+  "ask_no": "Annulla"
 }

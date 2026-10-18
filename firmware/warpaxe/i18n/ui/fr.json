@@ -150,7 +150,7 @@
   "invertfan_s": "Pour les ventilateurs qui tournent à l'inverse de la consigne",
   "pidTargetTemp": "Température cible des puces (°C)",
   "overheat_temp": "Température d'arrêt (°C)",
-  "overheat_s": "Puces ou régulateur au-delà : tension cœur coupée jusqu'à ce que les deux aient refroidi de 10 °C",
+  "overheat_s": "Pour les puces : au-delà, la tension cœur est coupée jusqu’à ce que les puces et le régulateur soient à 10 °C sous leurs limites respectives. Le régulateur a sa propre limite, fixe pour chaque modèle de carte, affichée sur le tableau de bord.",
   "minFanSpeed": "Vitesse min. du ventilateur (%)",
   "minFan_s": "Les gros ventilateurs peuvent ne pas démarrer sous environ 25 %",
   "fanspeed": "Vitesse fixe du ventilateur (%)",
@@ -335,5 +335,7 @@
   "psu_s": "Puissance nominale de l’alimentation de ce mineur. WarpTune reste sous 80 % de cette valeur et, sans elle, ne cherche pas au-delà du réglage d’usine. Plusieurs mineurs sur une même alimentation : répartissez sa puissance nominale entre eux sans que la somme des parts la dépasse (p. ex. 600 W → 240 + 150 + 100 W). WarpTune maintient alors chaque mineur sous 80 % de sa part. Vide = inconnue.",
   "psu_label": "Alimentation",
   "psu_note": "Indiquez la puissance de votre alimentation dans les réglages, pour que WarpTune sache jusqu’où il peut aller.",
-  "psu_hide": "Masquer"
+  "psu_hide": "Masquer",
+  "ask_yes": "Oui, continuer",
+  "ask_no": "Annuler"
 }

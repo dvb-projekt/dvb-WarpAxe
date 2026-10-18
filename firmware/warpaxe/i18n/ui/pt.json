@@ -150,7 +150,7 @@
   "invertfan_s": "Para ventoinhas que giram ao contrário do ajuste",
   "pidTargetTemp": "Temperatura alvo dos chips (°C)",
   "overheat_temp": "Temperatura de desligamento (°C)",
-  "overheat_s": "Chips ou regulador acima dela: tensão do núcleo cortada até ambos esfriarem 10 °C",
+  "overheat_s": "Para os chips: acima dela, a tensão do núcleo é cortada até que os chips e o regulador estejam 10 °C abaixo dos respectivos limites. O regulador tem um limite fixo próprio para cada placa, mostrado no painel.",
   "minFanSpeed": "Velocidade mínima da ventoinha (%)",
   "minFan_s": "Ventoinhas grandes podem não girar abaixo de uns 25 %",
   "fanspeed": "Velocidade fixa da ventoinha (%)",
@@ -335,5 +335,7 @@
   "psu_s": "Potência nominal da fonte que alimenta este minerador. O WarpTune mantém o minerador abaixo de 80 % dela e, sem esse dado, não busca acima do ponto de fábrica. Vários mineradores na mesma fonte: divida a potência nominal dela entre eles de forma que a soma das partes não a ultrapasse (ex.: 600 W → 240 + 150 + 100 W). O WarpTune então mantém cada minerador abaixo de 80 % da sua parte. Vazio = desconhecida.",
   "psu_label": "Fonte de alimentação",
   "psu_note": "Informe nas configurações a potência da sua fonte, para que o WarpTune saiba até onde pode ir.",
-  "psu_hide": "Ocultar"
+  "psu_hide": "Ocultar",
+  "ask_yes": "Sim, continuar",
+  "ask_no": "Cancelar"
 }
