@@ -1206,7 +1206,8 @@ async function cgScan(scan) {
     for (const f of j.found || []) {
       const a = "cgminer:" + f.host;
       if (sw.members.some(m => m.toLowerCase() === a) || sw.found.some(x => x.a === a)) continue;
-      sw.found.push({a, j: {cgminer: true, hostname: f.product, deviceModel: f.product, ASICModel: f.model, version: f.firmware ? "MM " + f.firmware.split("_")[0] : f.api}});
+      // The hit reads "Avalon Q · cgminer 4.11.1 · API 3.7 · MM 25052801".
+      sw.found.push({a, j: {cgminer: true, hostname: f.product, deviceModel: f.api || f.model, ASICModel: f.model, version: f.firmware ? "MM " + f.firmware.split("_")[0] : ""}});
     }
   } catch (e) {}
   st.finished = true;
