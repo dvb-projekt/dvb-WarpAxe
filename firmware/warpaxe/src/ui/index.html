@@ -1188,10 +1188,10 @@ function swSpark(vals, color) {
   const pts = vals.map((x, i) => x == null ? null : `${(i / (n - 1) * 300).toFixed(1)} ${(36 - (x - lo) / span * 28).toFixed(1)}`).filter(Boolean);
   return `<svg class="swspark" viewBox="0 0 300 40" preserveAspectRatio="none"><path d="M${pts.join(" L")} L300 40 L0 40Z" fill="${color}" opacity=".08"/><path d="M${pts.join(" L")}" fill="none" stroke="${color}" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
 }
-function swGauge(label, v, limit) {
+function swGauge(label, v, limit, suffix = "") {
   if (v == null || !(v > 0)) return `<div>${label} –<div class="swt"></div></div>`;
   const f = Math.min(1, v / limit), col = f > .9 ? "var(--err)" : f > .8 ? "linear-gradient(90deg,var(--ok),var(--warn))" : "var(--ok)";
-  return `<div>${label} ${nf(v, 1)} °C<div class="swt"><div style="width:${Math.round(f * 100)}%;background:${col}"></div></div></div>`;
+  return `<div>${label} ${nf(v, 1)} °C${suffix}<div class="swt"><div style="width:${Math.round(f * 100)}%;background:${col}"></div></div></div>`;
 }
 function swStation(addr, j, self, record) {
   const c = swColor(addr), host = swHost(addr), link = `http://${esc(host)}/`;
@@ -1201,13 +1201,13 @@ function swStation(addr, j, self, record) {
   const fw = String(j.version || "").replace(/^v/, ""), chips = cpu ? "ESP32-S3 · SHA + CPU" : (j.asicCount > 1 ? j.asicCount + "× " : "") + (j.ASICModel || "");
   const best = j.bestDiff, isRec = typeof best === "number" && best === record && record > 0;
   // An Avalon's MM throttles by itself and runs its chips to 92 °C in Super mode; the bar ends at WarpTune's failsafe line of 100 °C.
-  const tLimit = j.overheat_temp || (cg ? 100 : 75), tLabel = t("sw_chip") + (cg && j.tempMax != null ? ` · ${t("max_temp")} ${nf(j.tempMax, 0)}` : "");
+  const tLimit = j.overheat_temp || (cg ? 100 : 75), tMax = cg && j.tempMax != null ? ` · ${t("max_temp")} ${nf(j.tempMax, 0)}` : "";
   const second = cpu ? "" : cg ? `<div>${t("sw_fan")} ${j.fanspeed == null ? "–" : nf(j.fanspeed, 0) + " %"}${j.fanrpm ? ` · ${nf(j.fanrpm)} ${t("rpm")}` : ""}<div class="swt"><div style="width:${Math.round(Math.min(100, j.fanspeed || 0))}%;background:linear-gradient(90deg,var(--warp),var(--plasma))"></div></div></div>` : j.hasVr === false ? "" : swGauge(t("sw_vr"), j.vrTemp, j.vrOverheatTemp || 105);
   return `<div class="swst" style="--c:${c}"><div class="swsh"><div style="min-width:0"><div class="swname"><span class="swdot" style="background:${hot ? "var(--err)" : th > 0 ? "var(--ok)" : "var(--warn)"}"></span>${esc(j.hostname || host)}${cg && j.workMode ? `<span class="swmode">${esc(j.workMode)}</span>` : ""}</div>
     <div class="swsub">${self ? t("sw_this") : esc(host)} · ${esc(fw)} · ${esc(chips)}${cg ? " · " + t("sw_via") : ""}</div></div>${icons}</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${cpu ? nf(j.hashRate * 1e6, 1) : hru(j.hashRate).v}<small>${cpu ? "kH/s" : hru(j.hashRate).u}</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
     ${swSpark(sw.hist[addr] || [], c)}
-    <div class="swg">${swGauge(cpu ? "ESP32-S3" : tLabel, j.temp, tLimit)}${second}</div>
+    <div class="swg">${swGauge(cpu ? "ESP32-S3" : t("sw_chip"), j.temp, tLimit, tMax)}${second}</div>
     <div class="swfoot"><span>${cpu || w == null ? "" : `${nf(w, 1)} W${eff == null ? "" : " · " + nf(eff, 1) + " J/TH"}`}</span><span>${nf(j.sharesAccepted)} / <span class="${j.sharesRejected ? "warn" : ""}">${nf(j.sharesRejected)}</span></span><span title="${t("sw_best")}" style="${isRec ? "color:var(--btc)" : ""}">${swBest(best)}</span></div></div>`;
 }
 function swarmPage() {
