@@ -398,5 +398,7 @@
   "sw_via": "via ce mineur",
   "sw_fan": "Ventilateur",
   "sw_kind_avalon": "Avalon · cgminer",
-  "sw_scan_skipped": "{n} adresses n’ont pas pu être interrogées pour y chercher un Avalon : le mineur n’avait plus de connexion libre. Relancez la recherche."
+  "sw_scan_skipped": "{n} adresses n’ont pas pu être interrogées pour y chercher un Avalon : le mineur n’avait plus de connexion libre. Relancez la recherche.",
+  "sw_scan_time": "Le temps imparti à la recherche du mineur est écoulé : {n} adresses n’ont pas été interrogées pour y chercher un Avalon. Relancez la recherche.",
+  "sw_scan_fail": "Le mineur n’a pas pu lancer la recherche d’Avalon : "
 }

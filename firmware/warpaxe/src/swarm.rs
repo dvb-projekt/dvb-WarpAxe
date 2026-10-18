@@ -23,12 +23,13 @@
 //! `/api/system/info`, WarpTune, WarpPool and every save with it.
 //!
 //! The network search (`POST /api/v1/swarm/cgminer/scan`, then `GET` for
-//! its progress) walks the miner's own /24 for port 4028 on a thread of
-//! its own, [`SCAN_PARALLEL`] connections at a time, asking a host that
-//! answers for its `version` and nothing else; a hard budget ends it.
-//! Only the own subnet, never an address the browser names; one search
-//! at a time; the result is kept for [`SCAN_KEEP_S`] so a second click
-//! within that time gets it without another walk.
+//! its progress) walks the miner's own /24 for port 4028 on threads of
+//! their own (stacks in PSRAM), [`SCAN_PARALLEL`] connections at a time,
+//! asking a host that answers for its `version` and nothing else; a hard
+//! budget ends it. Only the own private subnet, never an address the
+//! browser names; one search at a time; not while an update is written
+//! or the internal heap is short; the result is kept for [`SCAN_KEEP_S`]
+//! so a second click within that time gets it without another walk.
 
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -45,16 +46,33 @@ const TIMEOUT: Duration = Duration::from_millis(2500);
 /// Hosts remembered at most; the list itself allows 32 members.
 const CACHE_MAX: usize = 8;
 /// The search: connections at a time (lwIP has 16 sockets in all, the
-/// HTTP server holds up to five, the pool one, mDNS two), time per
-/// host, and the budget for the whole /24 (253 hosts / 4 × 400 ms ≈ 25 s
-/// if every one times out; refusals come back at once).
-const SCAN_PARALLEL: usize = 4;
-const SCAN_PER_HOST: Duration = Duration::from_millis(400);
-const SCAN_BUDGET: Duration = Duration::from_secs(20);
+/// HTTP server holds up to five, the pool one, mDNS two), the time to
+/// reach a host and for its `version`, and the budget for the whole /24
+/// (253 hosts that do not answer ARP cost the full 400 ms each: 253 / 6
+/// × 0.4 s ≈ 17 s; refusals come back at once). Worker stacks live in
+/// PSRAM (sockets and a 4 KB reply, no flash), so a search costs the
+/// internal heap only lwIP's own buffers.
+const SCAN_PARALLEL: usize = 6;
+const SCAN_CONNECT: Duration = Duration::from_millis(400);
+const SCAN_REPLY: Duration = Duration::from_secs(1);
+const SCAN_BUDGET: Duration = Duration::from_secs(30);
 /// A finished search answers a new request for this long.
 const SCAN_KEEP_S: u64 = 30;
+/// No search below this much free internal heap: lwIP takes its
+/// connection blocks and buffers from there, next to everything else.
+const SCAN_MIN_INTERNAL_HEAP: u32 = 20 * 1024;
+/// Stack of a search worker (PSRAM) and of the coordinator (PSRAM too:
+/// it joins the workers and logs).
+const SCAN_WORKER_STACK: usize = 10 * 1024;
 
+/// Lock order, everywhere in this file: `SCAN` first, then the scan's
+/// `progress`; never the other way round, and never `progress` held
+/// while `SCAN` is taken. The coordinator thread therefore copies what
+/// it needs out of `progress`, drops that guard, logs, and only then
+/// takes `SCAN` to note its end (and only if the entry is still its own
+/// generation: a later search may have replaced it).
 struct Scan {
+    generation: u32,
     progress: std::sync::Arc<Mutex<warpaxe_avalon::Progress>>,
     started: Instant,
     ended: Option<Instant>,
@@ -62,14 +80,22 @@ struct Scan {
 }
 
 static SCAN: Mutex<Option<Scan>> = Mutex::new(None);
+static SCAN_GENERATION: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// The search's state as JSON, for both the start and the status reply.
+/// Called with `SCAN` held; takes `progress` inside (the lock order).
 fn scan_json(s: &Scan) -> Value {
     let p = s.progress.lock().unwrap().clone();
+    let seconds = match s.ended {
+        Some(e) if p.finished => e.duration_since(s.started).as_secs(),
+        _ => s.started.elapsed().as_secs(),
+    };
     json!({
         "running": !p.finished, "finished": p.finished, "subnet": s.subnet,
-        "done": p.done, "total": p.total, "skipped": p.skipped,
-        "seconds": s.started.elapsed().as_secs(),
+        "done": p.done, "total": p.total,
+        "skippedTime": p.skipped_time, "skippedSockets": p.skipped_sockets,
+        "skipped": p.skipped_time + p.skipped_sockets,
+        "seconds": seconds,
         "found": p.found.iter().map(|f| json!({
             "host": f.host.to_string(), "product": f.product, "model": f.model,
             "firmware": f.firmware, "api": f.api,
@@ -85,10 +111,18 @@ pub fn scan_status() -> (u16, Value) {
     }
 }
 
+/// An address of the private ranges (RFC 1918): the only networks the
+/// search walks. The netmask is taken as /24.
+fn is_private(ip: std::net::Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
+}
+
 /// `POST …/scan`: start a search of the own /24 (202 with the state), or
 /// answer with the one under way (202) or the one finished within
-/// [`SCAN_KEEP_S`] (200). 400 without a Wi-Fi address: the USB network is
-/// a point-to-point link with nothing to find.
+/// [`SCAN_KEEP_S`] (200). 400 without a private Wi-Fi address (the USB
+/// network is a point-to-point link with nothing to find), 503 while an
+/// update is being written or the internal heap is short.
 pub fn scan_start() -> (u16, Value) {
     let Some(own) = crate::net::state()
         .wifi_ip
@@ -96,6 +130,22 @@ pub fn scan_start() -> (u16, Value) {
     else {
         return (400, json!({"error": "no Wi-Fi address to search from"}));
     };
+    if !is_private(own) {
+        return (
+            400,
+            json!({"error": "the search walks private networks only (10/8, 172.16/12, 192.168/16)"}),
+        );
+    }
+    if crate::display::OTA_STATE.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+        return (503, json!({"error": "a firmware update is being written"}));
+    }
+    let free = crate::diag::free_heap_internal();
+    if free < SCAN_MIN_INTERNAL_HEAP {
+        return (
+            503,
+            json!({"error": format!("only {} KB of internal memory free; try again later", free / 1024)}),
+        );
+    }
     let mut guard = SCAN.lock().unwrap();
     if let Some(s) = guard.as_ref() {
         let finished = s.progress.lock().unwrap().finished;
@@ -108,6 +158,7 @@ pub fn scan_start() -> (u16, Value) {
             return (200, scan_json(s));
         }
     }
+    let generation = SCAN_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     let hosts = warpaxe_avalon::subnet_hosts(own);
     let progress = std::sync::Arc::new(Mutex::new(warpaxe_avalon::Progress {
         total: hosts.len(),
@@ -119,42 +170,46 @@ pub fn scan_start() -> (u16, Value) {
         format!("{}.{}.{}.0/24", o[0], o[1], o[2])
     };
     log::info!(
-        "swarm: cgminer search of {subnet} ({} hosts, {} at a time, {} KB internal heap free)",
+        "swarm: cgminer search #{generation} of {subnet} ({} hosts, {} at a time, {} KB internal heap free)",
         hosts.len(),
         SCAN_PARALLEL,
-        crate::diag::free_heap_internal() / 1024
+        free / 1024
     );
-    // The coordinator: internal RAM, sockets and small replies only. The
-    // workers it starts have 6 KB each (warpaxe_avalon::scan_with).
-    let spawned = std::thread::Builder::new()
-        .name("cgscan".into())
-        .stack_size(8 * 1024)
-        .spawn(move || {
-            let t0 = Instant::now();
-            warpaxe_avalon::scan(
-                hosts,
-                warpaxe_avalon::PORT,
-                SCAN_PARALLEL,
-                SCAN_PER_HOST,
-                SCAN_BUDGET,
-                &p2,
-            );
-            let p = p2.lock().unwrap();
-            log::info!(
-                "swarm: cgminer search done in {} s: {} found, {} of {} tried, {} skipped",
-                t0.elapsed().as_secs(),
-                p.found.len(),
-                p.done,
-                p.total,
-                p.skipped
-            );
-            for f in &p.found {
-                log::info!("swarm: cgminer at {}: {} ({})", f.host, f.product, f.api);
-            }
-            if let Some(s) = SCAN.lock().unwrap().as_mut() {
+    let spawned = crate::diag::spawn_psram("cgscan", SCAN_WORKER_STACK, move || {
+        let t0 = Instant::now();
+        let spawn = |f: Box<dyn FnOnce() + Send>| {
+            crate::diag::spawn_psram("cgscan-w", SCAN_WORKER_STACK, f).ok()
+        };
+        warpaxe_avalon::scan(
+            hosts,
+            warpaxe_avalon::PORT,
+            SCAN_PARALLEL,
+            SCAN_CONNECT,
+            SCAN_REPLY,
+            SCAN_BUDGET,
+            &p2,
+            &spawn,
+        );
+        // Copy out, drop the progress guard, then log and take SCAN.
+        let summary = p2.lock().unwrap().clone();
+        log::info!(
+            "swarm: cgminer search #{generation} done in {} s: {} found, {} of {} tried, {} skipped for time, {} for sockets",
+            t0.elapsed().as_secs(),
+            summary.found.len(),
+            summary.done,
+            summary.total,
+            summary.skipped_time,
+            summary.skipped_sockets
+        );
+        for f in &summary.found {
+            log::info!("swarm: cgminer at {}: {} ({})", f.host, f.product, f.api);
+        }
+        if let Some(s) = SCAN.lock().unwrap().as_mut() {
+            if s.generation == generation {
                 s.ended = Some(Instant::now());
             }
-        });
+        }
+    });
     if let Err(e) = spawned {
         log::warn!("swarm: cgminer search: no thread: {e}");
         return (
@@ -163,6 +218,7 @@ pub fn scan_start() -> (u16, Value) {
         );
     }
     let s = Scan {
+        generation,
         progress,
         started: Instant::now(),
         ended: None,

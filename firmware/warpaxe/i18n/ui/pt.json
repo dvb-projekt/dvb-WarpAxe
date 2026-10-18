@@ -398,5 +398,7 @@
   "sw_via": "por meio deste minerador",
   "sw_fan": "Ventoinha",
   "sw_kind_avalon": "Avalon · cgminer",
-  "sw_scan_skipped": "Não foi possível verificar se há um Avalon em {n} endereços: o minerador não tinha nenhuma conexão livre. Busque de novo."
+  "sw_scan_skipped": "Não foi possível verificar se há um Avalon em {n} endereços: o minerador não tinha nenhuma conexão livre. Busque de novo.",
+  "sw_scan_time": "O tempo de busca do minerador se esgotou: não foi verificado se há um Avalon em {n} endereços. Busque de novo.",
+  "sw_scan_fail": "O minerador não conseguiu buscar um Avalon: "
 }

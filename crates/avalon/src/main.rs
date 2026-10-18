@@ -30,16 +30,19 @@ fn main() {
             warpaxe_avalon::PORT,
             8,
             Duration::from_millis(400),
-            Duration::from_secs(20),
+            Duration::from_secs(1),
+            Duration::from_secs(30),
             &progress,
+            &warpaxe_avalon::thread_spawner(64 * 1024),
         );
         let p = progress.lock().unwrap();
         println!(
-            "{} of {} hosts tried in {} s, {} skipped",
+            "{} of {} hosts tried in {} s, {} skipped for time, {} for sockets",
             p.done,
             p.total,
             t0.elapsed().as_secs(),
-            p.skipped
+            p.skipped_time,
+            p.skipped_sockets
         );
         for f in &p.found {
             println!("{}  {}  MM {}  {}", f.host, f.product, f.firmware, f.api);

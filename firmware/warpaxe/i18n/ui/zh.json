@@ -398,5 +398,7 @@
   "sw_via": "通过本机",
   "sw_fan": "风扇",
   "sw_kind_avalon": "Avalon · cgminer",
-  "sw_scan_skipped": "有 {n} 个地址未能检查是否为 Avalon：矿机没有空闲连接。请重新搜索。"
+  "sw_scan_skipped": "有 {n} 个地址未能检查是否为 Avalon：矿机没有空闲连接。请重新搜索。",
+  "sw_scan_time": "矿机的搜索已超时：有 {n} 个地址未检查是否为 Avalon。请重新搜索。",
+  "sw_scan_fail": "矿机无法搜索 Avalon："
 }

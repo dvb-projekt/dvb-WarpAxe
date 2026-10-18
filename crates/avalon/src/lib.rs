@@ -165,12 +165,18 @@ pub fn nesting_depth(bytes: &[u8], limit: usize) -> usize {
 /// some builds add a newline; both are dropped. Nesting beyond
 /// [`MAX_DEPTH`] is refused before the parser sees it.
 pub fn parse_reply(bytes: &[u8]) -> Result<Value, Error> {
+    parse_reply_depth(bytes, MAX_DEPTH)
+}
+
+/// [`parse_reply`] with its own nesting limit: the search's `version`
+/// replies are three levels deep and parsed on small stacks.
+pub fn parse_reply_depth(bytes: &[u8], max_depth: usize) -> Result<Value, Error> {
     let end = bytes
         .iter()
         .rposition(|&b| b != 0 && !b.is_ascii_whitespace())
         .map_or(0, |i| i + 1);
     let bytes = &bytes[..end];
-    if nesting_depth(bytes, MAX_DEPTH) > MAX_DEPTH {
+    if nesting_depth(bytes, max_depth) > max_depth {
         return Err(Error::TooDeep);
     }
     let text = std::str::from_utf8(bytes).map_err(|e| Error::NotJson(e.to_string()))?;
@@ -277,14 +283,32 @@ pub fn subnet_hosts(own: Ipv4Addr) -> Vec<Ipv4Addr> {
         .collect()
 }
 
-/// One host of the search: connect within `timeout`, ask `version`,
-/// read the bounded reply. `Ok(Some)` is a cgminer, `Ok(None)` a port
-/// that answered with something else, `Err` nothing reachable there
-/// (or no socket free on this side: `Error::Read` with the OS text).
-pub fn probe(host: Ipv4Addr, port: u16, timeout: Duration) -> Result<Option<Found>, Error> {
+/// The search's bound on a `version` reply's length: the Avalon Q's is
+/// 425 bytes; a worker's stack is sized for these.
+pub const PROBE_MAX_REPLY: usize = 4 * 1024;
+/// The search's bound on a `version` reply's nesting: real ones are
+/// three levels deep.
+pub const PROBE_MAX_DEPTH: usize = 4;
+
+/// Whether a connect error means "no socket free on this side" (EMFILE,
+/// ENFILE), which is not "nothing there" and is worth a retry.
+pub fn is_busy(e: &Error) -> bool {
+    matches!(e, Error::Read(w) if w.contains("os error 24") || w.contains("os error 23") || w.contains("Too many open files"))
+}
+
+/// One host of the search: connect within `connect`, ask `version`,
+/// read the reply within `reply` (at most [`PROBE_MAX_REPLY`] bytes,
+/// [`PROBE_MAX_DEPTH`] levels). `Ok(Some)` is a cgminer, `Ok(None)` a
+/// port that answered with something else, `Err` nothing reachable
+/// there, or no socket free on this side ([`is_busy`]).
+pub fn probe(
+    host: Ipv4Addr,
+    port: u16,
+    connect: Duration,
+    reply: Duration,
+) -> Result<Option<Found>, Error> {
     let addr = std::net::SocketAddr::from((host, port));
-    let mut s = TcpStream::connect_timeout(&addr, timeout).map_err(|e| {
-        // No socket left on this side is not "nothing there".
+    let mut s = TcpStream::connect_timeout(&addr, connect).map_err(|e| {
         if e.raw_os_error() == Some(24) || e.raw_os_error() == Some(23) {
             Error::Read(e.to_string())
         } else {
@@ -292,10 +316,20 @@ pub fn probe(host: Ipv4Addr, port: u16, timeout: Duration) -> Result<Option<Foun
         }
     })?;
     let _ = s.set_nodelay(true);
-    match query(&mut s, "version", timeout) {
+    match query_bounded(
+        &mut s,
+        "version",
+        reply,
+        reply,
+        PROBE_MAX_REPLY,
+        PROBE_MAX_DEPTH,
+    ) {
         Ok(v) => Ok(identify(host, &v)),
-        Err(Error::NotJson(_)) | Err(Error::TooDeep) | Err(Error::TooLong) => Ok(None),
-        Err(e) => Err(e),
+        // Connected, but no cgminer document came: not one (a web server
+        // that resets the connection, a chatty service, a deep or long
+        // reply). Only a socket shortage on this side is worth a retry.
+        Err(e) if is_busy(&e) => Err(e),
+        Err(_) => Ok(None),
     }
 }
 
@@ -306,131 +340,165 @@ pub struct Progress {
     pub done: usize,
     /// Hosts to try in all.
     pub total: usize,
-    /// Hosts not tried: the budget ran out, or no socket was free three
-    /// times in a row for one of them.
-    pub skipped: usize,
+    /// Hosts not tried because the budget ran out (the highest addresses:
+    /// the walk goes upwards from .1, where static miners tend to sit).
+    pub skipped_time: usize,
+    /// Hosts not tried because no socket was free three times in a row.
+    pub skipped_sockets: usize,
     /// The cgminers found.
     pub found: Vec<Found>,
     /// The search has ended (all hosts, or the budget).
     pub finished: bool,
 }
 
-/// Walk `hosts` with `parallel` workers, each trying one host at a time
-/// through `probe_one`, until all are done or `budget` has passed since
-/// the start (a worker in the middle of a host finishes that host). A
-/// host whose probe says "no socket free" is tried again after a pause,
-/// three times, then counted as skipped. `progress` is updated as it
-/// goes and `finished` is set at the end.
+/// Starts a worker thread for the search; the firmware puts their
+/// stacks in PSRAM, the host uses plain threads. `None` = no thread to
+/// be had.
+pub type Spawner = dyn Fn(Box<dyn FnOnce() + Send>) -> Option<std::thread::JoinHandle<()>> + Sync;
+
+/// A plain-thread [`Spawner`] with `stack` bytes each.
+pub fn thread_spawner(
+    stack: usize,
+) -> impl Fn(Box<dyn FnOnce() + Send>) -> Option<std::thread::JoinHandle<()>> + Sync {
+    move |f| {
+        std::thread::Builder::new()
+            .name("cgscan".into())
+            .stack_size(stack)
+            .spawn(f)
+            .ok()
+    }
+}
+
+/// Walk `hosts` upwards with `parallel` workers (started through
+/// `spawn`), each trying one host at a time through `probe_one`, until
+/// all are done or `budget` has passed since the start (a worker in the
+/// middle of a host finishes that host). A host whose probe says "no
+/// socket free" is tried again after a pause, three times, then counted
+/// in `skipped_sockets`; what the budget leaves untried is
+/// `skipped_time`. `progress` is updated as it goes and `finished` is
+/// set at the end. Locks: `queue` and `progress` are never held at the
+/// same time.
 pub fn scan_with<F>(
-    hosts: Vec<Ipv4Addr>,
+    mut hosts: Vec<Ipv4Addr>,
     parallel: usize,
     budget: Duration,
     progress: &std::sync::Arc<std::sync::Mutex<Progress>>,
     probe_one: F,
+    spawn: &Spawner,
 ) where
     F: Fn(Ipv4Addr) -> Result<Option<Found>, Error> + Send + Sync + 'static,
 {
     use std::sync::{Arc, Mutex};
     let total = hosts.len();
     progress.lock().unwrap().total = total;
+    // pop() takes from the end: reversed, the walk goes .1 upwards.
+    hosts.reverse();
     let queue = Arc::new(Mutex::new(hosts));
     let probe_one = Arc::new(probe_one);
     let deadline = std::time::Instant::now() + budget;
-    let mut workers = Vec::new();
-    for _ in 0..parallel.max(1) {
+    let worker = {
         let (queue, progress, probe_one) = (
             Arc::clone(&queue),
             Arc::clone(progress),
             Arc::clone(&probe_one),
         );
-        // Small stacks: a connect, a 500-byte reply and its parse.
-        let w = std::thread::Builder::new()
-            .name("cgscan".into())
-            .stack_size(6 * 1024)
-            .spawn(move || loop {
-                if std::time::Instant::now() >= deadline {
-                    return;
-                }
-                let Some(host) = queue.lock().unwrap().pop() else {
-                    return;
-                };
-                let mut outcome = None;
-                for attempt in 0..3 {
-                    match probe_one(host) {
-                        Err(Error::Read(e)) if e.contains("files") || e.contains("Too many") => {
-                            // No socket free right now: let one go and try again.
-                            if attempt < 2 {
-                                std::thread::sleep(Duration::from_millis(300));
-                            }
-                        }
-                        other => {
-                            outcome = Some(other);
-                            break;
-                        }
-                    }
-                }
-                let mut p = progress.lock().unwrap();
-                match outcome {
-                    Some(Ok(Some(f))) => {
-                        p.done += 1;
-                        p.found.push(f);
-                    }
-                    Some(_) => p.done += 1,
-                    None => p.skipped += 1,
-                }
-            });
-        match w {
-            Ok(h) => workers.push(h),
-            Err(e) => {
-                // Fewer workers then; the scan still runs on the others, or
-                // on this thread if none could be had.
-                let _ = e;
+        move || loop {
+            if std::time::Instant::now() >= deadline {
+                return;
             }
+            let next = queue.lock().unwrap().pop();
+            let Some(host) = next else {
+                return;
+            };
+            let mut outcome = None;
+            for attempt in 0..3 {
+                match probe_one(host) {
+                    Err(e) if is_busy(&e) => {
+                        // No socket free right now: let one go and try again.
+                        if attempt < 2 {
+                            std::thread::sleep(Duration::from_millis(300));
+                        }
+                    }
+                    other => {
+                        outcome = Some(other);
+                        break;
+                    }
+                }
+            }
+            let mut p = progress.lock().unwrap();
+            match outcome {
+                Some(Ok(Some(f))) => {
+                    p.done += 1;
+                    p.found.push(f);
+                }
+                Some(_) => p.done += 1,
+                None => p.skipped_sockets += 1,
+            }
+        }
+    };
+    let mut workers = Vec::new();
+    for _ in 0..parallel.max(1) {
+        let w = worker.clone();
+        if let Some(h) = spawn(Box::new(w)) {
+            workers.push(h);
         }
     }
     if workers.is_empty() {
-        while std::time::Instant::now() < deadline {
-            let Some(host) = queue.lock().unwrap().pop() else {
-                break;
-            };
-            let r = probe_one(host);
-            let mut p = progress.lock().unwrap();
-            p.done += 1;
-            if let Ok(Some(f)) = r {
-                p.found.push(f);
-            }
-        }
+        // No thread to be had: the caller's thread walks alone.
+        worker();
     }
     for w in workers {
         let _ = w.join();
     }
-    let mut p = progress.lock().unwrap();
     let left = queue.lock().unwrap().len();
-    p.skipped += left;
+    let mut p = progress.lock().unwrap();
+    p.skipped_time += left;
     p.found.sort_by_key(|f| f.host);
     p.finished = true;
 }
 
-/// The search as the firmware runs it: `hosts` on `port`, `parallel`
-/// connections at a time, `per_host` to connect and answer, `budget`
-/// for the whole run.
+/// The search: `hosts` on `port`, `parallel` connections at a time,
+/// `connect` to reach a host and `reply` for its answer, `budget` for
+/// the whole run, workers from `spawn`.
+#[allow(clippy::too_many_arguments)]
 pub fn scan(
     hosts: Vec<Ipv4Addr>,
     port: u16,
     parallel: usize,
-    per_host: Duration,
+    connect: Duration,
+    reply: Duration,
     budget: Duration,
     progress: &std::sync::Arc<std::sync::Mutex<Progress>>,
+    spawn: &Spawner,
 ) {
-    scan_with(hosts, parallel, budget, progress, move |h| {
-        probe(h, port, per_host)
-    });
+    scan_with(
+        hosts,
+        parallel,
+        budget,
+        progress,
+        move |h| probe(h, port, connect, reply),
+        spawn,
+    );
 }
 
 /// Send one of [`COMMANDS`] over an open stream and read the reply.
 /// Other command names are refused here, so no caller can widen what
 /// goes over the wire.
 pub fn query(stream: &mut TcpStream, command: &str, timeout: Duration) -> Result<Value, Error> {
+    query_bounded(stream, command, timeout, READ_BUDGET, MAX_REPLY, MAX_DEPTH)
+}
+
+/// [`query`] with the bounds spelt out: `timeout` per socket read,
+/// `read_budget` for the whole reply, `max_reply` bytes, `max_depth`
+/// levels. The command whitelist is the same.
+pub fn query_bounded(
+    stream: &mut TcpStream,
+    command: &str,
+    timeout: Duration,
+    read_budget: Duration,
+    max_reply: usize,
+    max_depth: usize,
+) -> Result<Value, Error> {
     if !COMMANDS.contains(&command) {
         return Err(Error::Shape("a read command"));
     }
@@ -444,8 +512,8 @@ pub fn query(stream: &mut TcpStream, command: &str, timeout: Duration) -> Result
     stream
         .write_all(req.as_bytes())
         .map_err(|e| Error::Read(e.to_string()))?;
-    let bytes = read_reply(stream, MAX_REPLY, READ_BUDGET)?;
-    parse_reply(&bytes)
+    let bytes = read_reply(stream, max_reply, read_budget)?;
+    parse_reply_depth(&bytes, max_depth)
 }
 
 /// The three replies of one round.
@@ -993,16 +1061,26 @@ mod tests {
     }
 
     #[test]
-    fn the_budget_ends_a_search_and_the_rest_counts_as_skipped() {
+    fn the_budget_ends_a_search_and_the_rest_counts_as_skipped_for_time() {
         use std::sync::{Arc, Mutex};
         let hosts = subnet_hosts("10.9.8.7".parse().unwrap());
         let progress = Arc::new(Mutex::new(Progress::default()));
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let o2 = Arc::clone(&order);
         let t0 = std::time::Instant::now();
         // 100 ms per host, four at a time, 350 ms in all: about 12–16 hosts.
-        scan_with(hosts, 4, Duration::from_millis(350), &progress, |_h| {
-            std::thread::sleep(Duration::from_millis(100));
-            Err(Error::Connect("refused".into()))
-        });
+        scan_with(
+            hosts,
+            4,
+            Duration::from_millis(350),
+            &progress,
+            move |h| {
+                o2.lock().unwrap().push(h);
+                std::thread::sleep(Duration::from_millis(100));
+                Err(Error::Connect("refused".into()))
+            },
+            &thread_spawner(64 * 1024),
+        );
         let p = progress.lock().unwrap().clone();
         assert!(
             t0.elapsed() < Duration::from_millis(900),
@@ -1012,8 +1090,121 @@ mod tests {
         assert!(p.finished);
         assert_eq!(p.total, 253);
         assert!(p.done >= 8 && p.done <= 24, "{p:?}");
-        assert_eq!(p.done + p.skipped, 253);
+        assert_eq!(p.done + p.skipped_time, 253);
+        assert_eq!(p.skipped_sockets, 0);
         assert!(p.found.is_empty());
+        // The walk went upwards: the first four hosts are .1–.4.
+        let first: Vec<u8> = order
+            .lock()
+            .unwrap()
+            .iter()
+            .take(4)
+            .map(|h| h.octets()[3])
+            .collect();
+        let mut sorted = first.clone();
+        sorted.sort_unstable();
+        assert_eq!(sorted, [1, 2, 3, 4], "{first:?}");
+    }
+
+    #[test]
+    fn a_full_slash_24_of_dead_hosts_fits_the_budget() {
+        use std::sync::{Arc, Mutex};
+        // The firmware's shape scaled by ten: 253 hosts that each cost the
+        // full connect timeout (40 ms for 400), six workers, 3 s for 30.
+        let hosts = subnet_hosts("10.9.8.7".parse().unwrap());
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        scan_with(
+            hosts,
+            6,
+            Duration::from_secs(3),
+            &progress,
+            |_h| {
+                std::thread::sleep(Duration::from_millis(40));
+                Err(Error::Connect("timed out".into()))
+            },
+            &thread_spawner(64 * 1024),
+        );
+        let p = progress.lock().unwrap().clone();
+        assert_eq!(p.done, 253, "{p:?}");
+        assert_eq!(p.skipped_time + p.skipped_sockets, 0);
+    }
+
+    #[test]
+    fn a_host_without_a_free_socket_three_times_is_skipped_for_sockets() {
+        use std::sync::{Arc, Mutex};
+        let hosts: Vec<Ipv4Addr> = vec!["10.1.1.1".parse().unwrap(), "10.1.1.2".parse().unwrap()];
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        let tries = Arc::new(Mutex::new(0));
+        let t2 = Arc::clone(&tries);
+        scan_with(
+            hosts,
+            1,
+            Duration::from_secs(5),
+            &progress,
+            move |h| {
+                if h.octets()[3] == 1 {
+                    *t2.lock().unwrap() += 1;
+                    Err(Error::Read("Too many open files (os error 24)".into()))
+                } else {
+                    Err(Error::Connect("refused".into()))
+                }
+            },
+            &thread_spawner(64 * 1024),
+        );
+        let p = progress.lock().unwrap().clone();
+        assert_eq!(*tries.lock().unwrap(), 3);
+        assert_eq!(p.skipped_sockets, 1);
+        assert_eq!(p.done, 1);
+        assert_eq!(p.skipped_time, 0);
+        assert!(p.finished);
+    }
+
+    #[test]
+    fn a_port_that_answers_with_something_else_is_not_a_cgminer() {
+        use std::io::Write;
+        let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = l.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l.incoming().take(3).flatten() {
+                let mut s = s;
+                let _ = s.write_all(b"HTTP/1.0 400 Bad Request\\r\\n\\r\\nnot json");
+            }
+        });
+        let h: Ipv4Addr = "127.0.0.1".parse().unwrap();
+        let r = probe(
+            h,
+            port,
+            Duration::from_millis(500),
+            Duration::from_millis(500),
+        );
+        assert_eq!(r, Ok(None));
+        // A deep JSON reply on that port is not one either, and is refused
+        // before the parser runs.
+        let l2 = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port2 = l2.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for s in l2.incoming().take(1).flatten() {
+                let mut s = s;
+                let _ = s.write_all("[".repeat(40).as_bytes());
+                let _ = s.write_all(b"\\0");
+            }
+        });
+        assert_eq!(
+            probe(
+                h,
+                port2,
+                Duration::from_millis(500),
+                Duration::from_millis(500)
+            ),
+            Ok(None)
+        );
+        // Nothing listening: not reachable, and not "busy".
+        let r = probe(h, 1, Duration::from_millis(300), Duration::from_millis(300));
+        assert!(matches!(r, Err(Error::Connect(_))), "{r:?}");
+        assert!(!is_busy(&r.unwrap_err()));
+        assert!(is_busy(&Error::Read(
+            "Too many open files (os error 24)".into()
+        )));
     }
 
     #[test]
@@ -1026,23 +1217,35 @@ mod tests {
         let progress = Arc::new(Mutex::new(Progress::default()));
         let busy = Arc::new(Mutex::new(0));
         let b2 = Arc::clone(&busy);
-        scan_with(hosts, 2, Duration::from_secs(5), &progress, move |h| {
-            // The first try on the real host says "no socket free".
-            if h == "127.0.0.1".parse::<Ipv4Addr>().unwrap() {
-                let mut n = b2.lock().unwrap();
-                *n += 1;
-                if *n == 1 {
-                    return Err(Error::Read("Too many open files (os error 24)".into()));
+        scan_with(
+            hosts,
+            2,
+            Duration::from_secs(5),
+            &progress,
+            move |h| {
+                // The first try on the real host says "no socket free".
+                if h == "127.0.0.1".parse::<Ipv4Addr>().unwrap() {
+                    let mut n = b2.lock().unwrap();
+                    *n += 1;
+                    if *n == 1 {
+                        return Err(Error::Read("Too many open files (os error 24)".into()));
+                    }
                 }
-            }
-            probe(h, port, Duration::from_millis(800))
-        });
+                probe(
+                    h,
+                    port,
+                    Duration::from_millis(800),
+                    Duration::from_millis(800),
+                )
+            },
+            &thread_spawner(64 * 1024),
+        );
         let p = progress.lock().unwrap().clone();
         assert!(p.finished);
         assert_eq!(p.found.len(), 1, "{p:?}");
         assert_eq!(p.found[0].product, "Avalon Q");
         assert_eq!(p.found[0].host, "127.0.0.1".parse::<Ipv4Addr>().unwrap());
-        assert_eq!(p.skipped, 0);
+        assert_eq!(p.skipped_time + p.skipped_sockets, 0);
         assert_eq!(dev.lock().unwrap().mode().index, 0, "nothing was written");
     }
 

@@ -112,18 +112,28 @@ out. A browser cannot open that socket, so the miner does it.
 once: the browser's (every address, `/api/system/info`, as before) and
 the miner's for port 4028 (`POST /api/v1/swarm/cgminer/scan` starts it,
 `GET` says where it stands; neither waits on the HTTP task). The miner's
-walk takes the subnet from its own Wi-Fi address and nothing the browser
-names (400 without one: the USB link has nothing to find), runs one
-search at a time on a coordinator thread (8 KB) with four workers
-(6 KB each; lwIP has 16 sockets since this change, `sdkconfig.defaults`,
-the HTTP server holds up to five, the pool one, mDNS two), 400 ms per
-host and a hard budget of 20 s for the whole run; a host that accepts
-the connection is asked for `version` only, with the same 16 KB and
-eight-level bounds as the other reads, and counts as a cgminer when the
-reply carries `VERSION[0].CGMiner` or `.API` (`PROD` names the product,
-"Avalon Q"). A host for which no socket was free is tried three times,
-then counted as skipped; the page says how many were skipped. A finished
-search answers a second click within 30 s. From a Mac the same walk
+walk takes the subnet from its own Wi-Fi address (a private range only,
+RFC 1918, taken as /24) and nothing the browser names (400 otherwise:
+the USB link has nothing to find), refuses to start while an update is
+being written or less than 20 KB of internal heap is free (503), runs
+one search at a time on a coordinator thread with six workers, all with
+stacks in PSRAM (sockets and a 4 KB reply, no flash; lwIP has 16 sockets
+since this change, `sdkconfig.defaults`, the HTTP server holds up to
+five, the pool one, mDNS two), 400 ms to reach a host and 1 s for its
+reply, and a hard budget of 30 s for the whole run (253 silent hosts /
+6 × 0.4 s ≈ 17 s). The walk goes upwards from .1, where static miners
+tend to sit, so what a budget leaves untried is the top of the range. A
+host that accepts the connection is asked for `version` only, bounded to
+4 KB and four levels (real replies: 425 bytes, three levels), and counts
+as a cgminer when the reply carries `VERSION[0].CGMiner` or `.API`
+(`PROD` names the product, "Avalon Q"); a port that answers with
+anything else, or resets, is simply not one. A host for which no socket
+was free is tried three times, then counted apart from what the budget
+left; the page names both counts. A finished search answers a second
+click within 30 s. Locks: `SCAN` before a scan's `progress`, never the
+other way; the coordinator copies its summary out of `progress`, drops
+the guard, logs, and only then notes its end under `SCAN`, and only if
+the entry is still its own generation. From a Mac the same walk
 (`cargo run -p warpaxe-avalon -- --scan <own ip>`) found the .43 and
 nothing else in 10 s on 2026-10-18.
 
@@ -163,7 +173,7 @@ against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
 
 ## Image size
 
-v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,026,320 bytes, 53,872 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`)
+v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,030,352 bytes, 49,840 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`)
 (+105.1 KB; the OTA slot is 3,145,728, so 134.5 KB remain). The growth
 is the new web-UI strings in eight languages (about 32 KB of HTML), the
 display tables and their validation, the Avalon client with its JSON

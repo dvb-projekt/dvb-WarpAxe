@@ -398,5 +398,7 @@
   "sw_via": "tramite questo miner",
   "sw_fan": "Ventola",
   "sw_kind_avalon": "Avalon · cgminer",
-  "sw_scan_skipped": "Non è stato possibile verificare la presenza di un Avalon su {n} indirizzi: il miner non aveva connessioni libere. Ripeti la ricerca."
+  "sw_scan_skipped": "Non è stato possibile verificare la presenza di un Avalon su {n} indirizzi: il miner non aveva connessioni libere. Ripeti la ricerca.",
+  "sw_scan_time": "Il tempo a disposizione del miner per la ricerca è scaduto: la presenza di un Avalon non è stata verificata su {n} indirizzi. Ripeti la ricerca.",
+  "sw_scan_fail": "Il miner non è riuscito a cercare un Avalon: "
 }
