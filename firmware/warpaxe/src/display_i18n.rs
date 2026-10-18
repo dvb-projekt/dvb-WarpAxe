@@ -68,7 +68,7 @@ static ES: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate de red"),
     ("OVERHEAT", "SOBRECALENTADO"),
     ("PASSWORD", "CONTRASEÑA"),
-    ("POOL DIFF", "DIF. DEL POOL"),
+    ("POOL DIFF", "DIF. POOL"),
     ("POWER", "POTENCIA"),
     ("Password · 10 digits", "Contraseña · 10 dígitos"),
     ("Pool difficulty", "Dificultad del pool"),
@@ -103,7 +103,7 @@ static ES: &[(&str, &str)] = &[
 ];
 
 static FR: &[(&str, &str)] = &[
-    ("BEST DIFF", "MEILLEURE DIF."),
+    ("BEST DIFF", "MEILL. DIFF."),
     ("BLOCK", "BLOC"),
     ("BLOCK FOUND", "BLOC TROUVÉ"),
     ("BLOCK HEIGHT", "HAUTEUR DE BLOC"),
@@ -169,7 +169,7 @@ static FR: &[(&str, &str)] = &[
     ("Network hashrate", "Hashrate réseau"),
     ("OVERHEAT", "SURCHAUFFE"),
     ("PASSWORD", "MOT DE PASSE"),
-    ("POOL DIFF", "DIFF. DU POOL"),
+    ("POOL DIFF", "DIFF. POOL"),
     ("POWER", "PUISSANCE"),
     ("Password · 10 digits", "Mot de passe · 10 chiffres"),
     ("Pool difficulty", "Difficulté du pool"),
@@ -204,7 +204,7 @@ static FR: &[(&str, &str)] = &[
 ];
 
 static IT: &[(&str, &str)] = &[
-    ("BEST DIFF", "MIGLIOR DIFF."),
+    ("BEST DIFF", "MIGLIOR DIFF"),
     ("BLOCK", "BLOCCO"),
     ("BLOCK FOUND", "BLOCCO TROVATO"),
     ("BLOCK HEIGHT", "ALTEZZA BLOCCO"),

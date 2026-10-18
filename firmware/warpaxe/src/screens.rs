@@ -200,17 +200,6 @@ fn eff_jth(m: &miner::MinerState, b: &board::BoardState) -> Option<f64> {
     (m.hashrate_ghs > 1.0).then(|| f64::from(w) / (m.hashrate_ghs / 1000.0))
 }
 
-/// Up to a day "h:mm" with the unit "h", from a day on "d/hh:mm" with
-/// the unit "d/h:min": VAL16 has digits, "/" and ":" only.
-fn uptime_parts(s: u64) -> (String, &'static str) {
-    let (d, h, m) = (s / 86_400, s / 3600 % 24, s / 60 % 60);
-    if d > 0 {
-        (format!("{d}/{h:02}:{m:02}"), l("d/h:min", "T/h:min"))
-    } else {
-        (format!("{h}:{m:02}"), "h")
-    }
-}
-
 fn uptime(s: u64) -> String {
     let (d, h, m) = (s / 86_400, s / 3600 % 24, s / 60 % 60);
     if d > 0 {
@@ -985,10 +974,14 @@ fn slot(c: &mut Canvas, id: &str, y: i32, v: &Live) {
             };
             (l("POOL DIFF", "POOL-DIFF"), n, u.into(), gfx::FG)
         }
-        "uptime" => {
-            let (n, u) = uptime_parts(diag::uptime_s());
-            (l("UPTIME", "LAUFZEIT"), n, u.into(), gfx::FG)
-        }
+        // "12 d 23 h" in the text face (VAL12): the digit face would need
+        // "12/23:59" plus a unit, which does not fit the column.
+        "uptime" => (
+            l("UPTIME", "LAUFZEIT"),
+            uptime(diag::uptime_s()),
+            String::new(),
+            gfx::FG,
+        ),
         "vin" => (
             l("INPUT", "EINGANG"),
             b.vin_mv
@@ -1035,7 +1028,8 @@ fn slot(c: &mut Canvas, id: &str, y: i32, v: &Live) {
     if VAL16.width(&value) + 3 + LABEL11.width(&unit) > room && id == "shares" {
         value = value.replace([',', '.', ' '], "");
     }
-    let w = c.text(&VAL16, rx, y + 17, col, &value, Align::Left);
+    let vf: &gfx::font::Font = if id == "uptime" { &VAL12 } else { &VAL16 };
+    let w = c.text(vf, rx, y + 17, col, &value, Align::Left);
     let uf: &gfx::font::Font = if w + 3 + LABEL11.width(&unit) <= room {
         &LABEL11
     } else {

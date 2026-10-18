@@ -136,8 +136,11 @@ pub fn query(stream: &mut TcpStream, command: &str, timeout: Duration) -> Result
 /// The three replies of one round.
 #[derive(Debug, Clone)]
 pub struct Raw {
+    /// The `summary` reply.
     pub summary: Value,
+    /// The `estats` reply.
     pub estats: Value,
+    /// The `pools` reply.
     pub pools: Value,
 }
 
@@ -175,7 +178,7 @@ pub fn mm_tokens(s: &str) -> Vec<(&str, &str)> {
             break;
         };
         let key = rest[..open]
-            .rsplit(|c: char| c == ']' || c == '{' || c == ':')
+            .rsplit([']', '{', ':'])
             .next()
             .unwrap_or("")
             .trim();
@@ -193,32 +196,52 @@ pub fn mm_tokens(s: &str) -> Vec<(&str, &str)> {
 pub struct Mm {
     /// `Ver[Q-25052801_14a19a2]`: the first letter group is the model.
     pub version: String,
+    /// `DNA[…]`: the board's unique id.
     pub dna: String,
+    /// `STATE[1]` while the MM works.
     pub state: Option<i64>,
+    /// Seconds since the MM started.
     pub elapsed_s: Option<u64>,
+    /// `TMax`: the hottest chip, °C.
     pub temp_max_c: Option<f64>,
+    /// `TAvg`: the chips' mean, °C (what the Avalon's own LCD shows).
     pub temp_avg_c: Option<f64>,
+    /// `TarT`: the MM's own fan target, °C.
     pub temp_target_c: Option<f64>,
+    /// `ITemp`: the inlet air, °C.
     pub temp_inlet_c: Option<f64>,
+    /// `Fan1`–`Fan4`, rpm.
     pub fan_rpm: Vec<u32>,
+    /// `FanR`: the fans' duty, %.
     pub fan_pct: Option<f64>,
     /// `PS[type vin×100mV iin_mA ? vout×100mV iout_mA watts]`: the
     /// last field is the miner's draw as its own LCD shows it (840 W at
     /// 54 TH/s in Eco); the first two give a small auxiliary bus
     /// (12.08 V × 2.3 A), not the mining power.
     pub power_w: Option<f64>,
+    /// The second `PS` field: a bus voltage, V.
     pub ps_vin_v: Option<f64>,
+    /// `GHSspd`: the last seconds' rate, GH/s, noisy.
     pub ghs_now: Option<f64>,
+    /// `GHSavg`: the mean since the MM started, GH/s.
     pub ghs_avg: Option<f64>,
+    /// `Freq`: the chips' mean clock, MHz.
     pub freq_mhz: Option<f64>,
+    /// `WORKMODE`: 0 Eco, 1 Standard, 2 Super.
     pub work_mode: Option<u8>,
+    /// `WORKLEVEL` within the mode.
     pub work_level: Option<u8>,
+    /// `MPO`: the mode's power cap, W.
     pub mode_power_cap_w: Option<f64>,
     /// `DH[3.501%]`: the device's hardware-error share of its work.
     pub error_percent: Option<f64>,
+    /// `Core[A3197S]`: the chip.
     pub chip_name: String,
+    /// `TA`: chips in all.
     pub chip_count: Option<u32>,
+    /// `SYSTEMSTATU[Work: In Work, Hash Board: 1]`.
     pub system_status: String,
+    /// `PVT_T0`: every chip's temperature, °C.
     pub chip_temps: Vec<f64>,
 }
 
