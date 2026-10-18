@@ -33,8 +33,13 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
     })
 }
 
-/// The web UI: one static page on top of the JSON API.
-const UI: &str = include_str!("ui/index.html");
+/// The web UI: one static page on top of the JSON API, gzip-compressed
+/// by build.rs (the source is `ui/index.html`; the image holds only the
+/// compressed form, 90 KB instead of 290 KB) and served with
+/// `Content-Encoding: gzip` on every path the page comes from: Wi-Fi,
+/// the USB network and the setup hotspot's captive portal, whose
+/// redirects all end at `/`.
+const UI_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
@@ -549,15 +554,37 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
 
     server.fn_handler("/", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        // Every browser, the captive-portal sheets of phones and laptops
+        // included, takes gzip; a client that says in so many words that
+        // it does not (an Accept-Encoding without gzip or identity-only)
+        // gets a line of plain text instead of the compressed bytes. A
+        // missing header means anything goes (RFC 9110), so curl and
+        // the like get the gzip, which `curl --compressed` unpacks.
+        let accepts_gzip = req
+            .header("Accept-Encoding")
+            .is_none_or(|v| v.contains("gzip") || v.contains('*'));
+        if !accepts_gzip {
+            let mut r = req.into_response(
+                406,
+                None,
+                &[("Content-Type", "text/plain; charset=utf-8")],
+            )?;
+            r.write_all(b"WarpAxe: the web UI is served gzip-compressed; open it in a browser or request it with gzip in Accept-Encoding.\n")?;
+            return Ok::<(), EspIOError>(());
+        }
+        let len = UI_GZ.len().to_string();
         let mut r = req.into_response(
             200,
             None,
             &[
                 ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Encoding", "gzip"),
+                ("Content-Length", &len),
+                ("Vary", "Accept-Encoding"),
                 ("Cache-Control", "no-cache"),
             ],
         )?;
-        r.write_all(UI.as_bytes())?;
+        r.write_all(UI_GZ)?;
         Ok::<(), EspIOError>(())
     })?;
 

@@ -171,9 +171,29 @@ and an empty one, and reads the simulated Avalon Q of `warpaxe-cgminer`
 end to end, checking that its mode was not written. Live, read-only,
 against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
 
+## The web UI, gzip-compressed
+
+The page (`src/ui/index.html`, 292 KB with eight languages) goes into
+the image gzip-compressed: `build.rs` packs it deterministically (no
+mtime, no file name, OS byte fixed) into `OUT_DIR/index.html.gz`,
+decompresses it again and compares it byte for byte with the source
+(a mismatch fails the build), and `api.rs` embeds only the compressed
+form with `include_bytes!` and serves it on `/` with `Content-Encoding:
+gzip`, `Content-Length` and `Vary: Accept-Encoding`, `Cache-Control:
+no-cache` as before. Every path the page comes from ends there: Wi-Fi,
+the USB network (192.168.7.1) and the setup hotspot, whose captive-portal
+probes redirect to `/`. Every browser takes gzip, the captive-portal
+sheets of phones and laptops included (they are the system's web view);
+a client whose `Accept-Encoding` names no gzip gets one line of plain
+text (406) instead of compressed bytes, and a client that sends no such
+header (curl, wget) gets the gzip, as RFC 9110 allows (`curl
+--compressed` unpacks it). The fonts and the wordmark stay as they are:
+woff2 and webp are compressed already. `tools/i18n-apply.py` and
+`tools/display-preview` keep working on the uncompressed source.
+
 ## Image size
 
-v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,041,712 bytes, 38,480 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`)
+v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,041,712 bytes, 38,480 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`); with the web UI gzip-compressed 2,840,368 bytes, 239,824 bytes below the import window (the page: 292,502 → 90,330 bytes)
 (+105.1 KB; the OTA slot is 3,145,728, so 134.5 KB remain). The growth
 is the new web-UI strings in eight languages (about 32 KB of HTML), the
 display tables and their validation, the Avalon client with its JSON

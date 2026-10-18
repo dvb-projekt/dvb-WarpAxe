@@ -53,6 +53,9 @@ warpaxe-avalon = { path = "../../crates/avalon" }
 
 [build-dependencies]
 embuild = "0.33"
+# The web UI goes into the image gzip-compressed (build.rs): 290 KB of
+# HTML with eight languages become 90 KB. Pure Rust (miniz_oxide).
+flate2 = "1"
 
 [features]
 # The SHA peripheral bench of the T-Display-S3 (docs/06): measured once
