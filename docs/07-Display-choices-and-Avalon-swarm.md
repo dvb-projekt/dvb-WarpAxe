@@ -173,7 +173,7 @@ against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
 
 ## Image size
 
-v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,030,352 bytes, 49,840 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`)
+v0.1.30 (a53c909): 2,900,352 bytes. With both features: 3,008,016 bytes; with the network search for an Avalon 3,041,712 bytes, 38,480 bytes below the 0x2F0000 import window of the chipless board (`tools/release-firmware.sh`)
 (+105.1 KB; the OTA slot is 3,145,728, so 134.5 KB remain). The growth
 is the new web-UI strings in eight languages (about 32 KB of HTML), the
 display tables and their validation, the Avalon client with its JSON

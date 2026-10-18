@@ -15,6 +15,7 @@ Run from the repo root: python3 tools/i18n-apply.py
 """
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -95,8 +96,12 @@ def main():
         "        .map(|i| table[i].1)\n"
         "}\n"
     )
-    (FW / "src/display_i18n.rs").write_text("\n".join(rs))
-    print(f"web UI: {len(blocks)} languages; display: {len(tables)} languages")
+    out = FW / "src/display_i18n.rs"
+    out.write_text("\n".join(rs))
+    # The generated file goes through rustfmt here, so the fmt gate never
+    # trips on it (it did more than once when this step was left to hand).
+    subprocess.run(["rustfmt", "--edition", "2021", str(out)], check=True)
+    print(f"web UI: {len(blocks)} languages; display: {len(tables)} languages (display_i18n.rs through rustfmt)")
 
 
 if __name__ == "__main__":

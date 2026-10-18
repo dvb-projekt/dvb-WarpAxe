@@ -400,5 +400,8 @@
   "sw_kind_avalon": "Avalon · cgminer",
   "sw_scan_skipped": "No se pudo comprobar si hay un Avalon en {n} direcciones: el minero no tenía conexiones libres. Vuelve a buscar.",
   "sw_scan_time": "La búsqueda del minero se quedó sin tiempo: no se comprobó si hay un Avalon en {n} direcciones. Vuelve a buscar.",
-  "sw_scan_fail": "El minero no pudo buscar un Avalon: "
+  "sw_scan_fail": "El minero no pudo buscar un Avalon: ",
+  "sw_scan_memory": "No se comprobó si hay un Avalon en {n} direcciones: al minero le faltaba memoria. Vuelve a buscar más tarde.",
+  "sw_scan_silent": "{n} direcciones tienen el puerto 4028 abierto, pero no respondieron.",
+  "sw_scan_unfinished": "La búsqueda de un Avalon por parte del minero no terminó. Vuelve a buscar."
 }

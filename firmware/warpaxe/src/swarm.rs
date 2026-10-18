@@ -61,6 +61,9 @@ const SCAN_KEEP_S: u64 = 30;
 /// No search below this much free internal heap: lwIP takes its
 /// connection blocks and buffers from there, next to everything else.
 const SCAN_MIN_INTERNAL_HEAP: u32 = 20 * 1024;
+/// And no further host below this much while a search runs (checked
+/// before each one; three refusals skip the host, counted apart).
+const SCAN_MIN_HEAP_PER_HOST: u32 = 16 * 1024;
 /// Stack of a search worker (PSRAM) and of the coordinator (PSRAM too:
 /// it joins the workers and logs).
 const SCAN_WORKER_STACK: usize = 10 * 1024;
@@ -93,8 +96,9 @@ fn scan_json(s: &Scan) -> Value {
     json!({
         "running": !p.finished, "finished": p.finished, "subnet": s.subnet,
         "done": p.done, "total": p.total,
-        "skippedTime": p.skipped_time, "skippedSockets": p.skipped_sockets,
-        "skipped": p.skipped_time + p.skipped_sockets,
+        "skippedTime": p.skipped_time, "skippedSockets": p.skipped_sockets, "skippedMemory": p.skipped_memory,
+        "skipped": p.skipped_time + p.skipped_sockets + p.skipped_memory,
+        "openNoAnswer": p.open_no_answer,
         "seconds": seconds,
         "found": p.found.iter().map(|f| json!({
             "host": f.host.to_string(), "product": f.product, "model": f.model,
@@ -124,6 +128,20 @@ fn is_private(ip: std::net::Ipv4Addr) -> bool {
 /// network is a point-to-point link with nothing to find), 503 while an
 /// update is being written or the internal heap is short.
 pub fn scan_start() -> (u16, Value) {
+    // A search under way or just finished answers first; the guards
+    // below gate a new start only.
+    let mut guard = SCAN.lock().unwrap();
+    if let Some(s) = guard.as_ref() {
+        let finished = s.progress.lock().unwrap().finished;
+        if !finished {
+            return (202, scan_json(s));
+        }
+        if s.ended
+            .is_some_and(|e| e.elapsed() < Duration::from_secs(SCAN_KEEP_S))
+        {
+            return (200, scan_json(s));
+        }
+    }
     let Some(own) = crate::net::state()
         .wifi_ip
         .and_then(|ip| ip.parse::<std::net::Ipv4Addr>().ok())
@@ -145,18 +163,6 @@ pub fn scan_start() -> (u16, Value) {
             503,
             json!({"error": format!("only {} KB of internal memory free; try again later", free / 1024)}),
         );
-    }
-    let mut guard = SCAN.lock().unwrap();
-    if let Some(s) = guard.as_ref() {
-        let finished = s.progress.lock().unwrap().finished;
-        if !finished {
-            return (202, scan_json(s));
-        }
-        if s.ended
-            .is_some_and(|e| e.elapsed() < Duration::from_secs(SCAN_KEEP_S))
-        {
-            return (200, scan_json(s));
-        }
     }
     let generation = SCAN_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
     let hosts = warpaxe_avalon::subnet_hosts(own);
@@ -180,26 +186,34 @@ pub fn scan_start() -> (u16, Value) {
         let spawn = |f: Box<dyn FnOnce() + Send>| {
             crate::diag::spawn_psram("cgscan-w", SCAN_WORKER_STACK, f).ok()
         };
-        warpaxe_avalon::scan(
+        // Before every host: enough internal heap left? Allocations under
+        // 16 KB come from there even on a PSRAM stack (replies, buffers),
+        // and a failed one would restart the miner.
+        warpaxe_avalon::scan_with(
             hosts,
-            warpaxe_avalon::PORT,
             SCAN_PARALLEL,
-            SCAN_CONNECT,
-            SCAN_REPLY,
             SCAN_BUDGET,
             &p2,
+            |h| {
+                if crate::diag::free_heap_internal() < SCAN_MIN_HEAP_PER_HOST {
+                    return Err(warpaxe_avalon::Error::NoMemory);
+                }
+                warpaxe_avalon::probe(h, warpaxe_avalon::PORT, SCAN_CONNECT, SCAN_REPLY)
+            },
             &spawn,
         );
         // Copy out, drop the progress guard, then log and take SCAN.
         let summary = p2.lock().unwrap().clone();
         log::info!(
-            "swarm: cgminer search #{generation} done in {} s: {} found, {} of {} tried, {} skipped for time, {} for sockets",
+            "swarm: cgminer search #{generation} done in {} s: {} found, {} of {} tried, {} skipped for time, {} for sockets, {} for memory, {} open without an answer",
             t0.elapsed().as_secs(),
             summary.found.len(),
             summary.done,
             summary.total,
             summary.skipped_time,
-            summary.skipped_sockets
+            summary.skipped_sockets,
+            summary.skipped_memory,
+            summary.open_no_answer
         );
         for f in &summary.found {
             log::info!("swarm: cgminer at {}: {} ({})", f.host, f.product, f.api);

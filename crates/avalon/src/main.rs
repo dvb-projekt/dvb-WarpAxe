@@ -37,12 +37,13 @@ fn main() {
         );
         let p = progress.lock().unwrap();
         println!(
-            "{} of {} hosts tried in {} s, {} skipped for time, {} for sockets",
+            "{} of {} hosts tried in {} s, {} skipped for time, {} for sockets, {} open without an answer",
             p.done,
             p.total,
             t0.elapsed().as_secs(),
             p.skipped_time,
-            p.skipped_sockets
+            p.skipped_sockets,
+            p.open_no_answer
         );
         for f in &p.found {
             println!("{}  {}  MM {}  {}", f.host, f.product, f.firmware, f.api);

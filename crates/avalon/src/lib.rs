@@ -64,6 +64,11 @@ pub enum Error {
     Connect(String),
     /// The socket failed or timed out while the reply was being read.
     Read(String),
+    /// No socket, buffer or memory free on this side (EMFILE, ENFILE,
+    /// ENOBUFS, ENOMEM): worth a retry, not a verdict on the host.
+    Busy(String),
+    /// The caller's own memory check said no: this host was not tried.
+    NoMemory,
     /// More than [`MAX_REPLY`] bytes without the terminating NUL.
     TooLong,
     /// Brackets nested deeper than [`MAX_DEPTH`].
@@ -79,6 +84,8 @@ impl std::fmt::Display for Error {
         match self {
             Error::Connect(e) => write!(f, "connect: {e}"),
             Error::Read(e) => write!(f, "read: {e}"),
+            Error::Busy(e) => write!(f, "busy: {e}"),
+            Error::NoMemory => write!(f, "internal memory short"),
             Error::TooLong => write!(f, "reply longer than {MAX_REPLY} bytes"),
             Error::TooDeep => write!(f, "reply nested deeper than {MAX_DEPTH} levels"),
             Error::NotJson(e) => write!(f, "not a cgminer reply: {e}"),
@@ -91,7 +98,9 @@ impl std::fmt::Display for Error {
 /// EOF (the server closes after the reply), at most `max` bytes and
 /// within `budget` from the first call.
 pub fn read_reply<R: Read>(r: &mut R, max: usize, budget: Duration) -> Result<Vec<u8>, Error> {
-    let mut out = Vec::with_capacity(1024);
+    // Small to begin with: on the firmware every allocation under 16 KB
+    // comes from the internal heap, and six searchers read at once.
+    let mut out = Vec::with_capacity(512);
     let mut buf = [0u8; 512];
     let t0 = std::time::Instant::now();
     loop {
@@ -284,52 +293,90 @@ pub fn subnet_hosts(own: Ipv4Addr) -> Vec<Ipv4Addr> {
 }
 
 /// The search's bound on a `version` reply's length: the Avalon Q's is
-/// 425 bytes; a worker's stack is sized for these.
-pub const PROBE_MAX_REPLY: usize = 4 * 1024;
+/// 425 bytes; a worker's stack and the internal heap are sized for these.
+pub const PROBE_MAX_REPLY: usize = 2 * 1024;
 /// The search's bound on a `version` reply's nesting: real ones are
 /// three levels deep.
 pub const PROBE_MAX_DEPTH: usize = 4;
 
-/// Whether a connect error means "no socket free on this side" (EMFILE,
-/// ENFILE), which is not "nothing there" and is worth a retry.
+/// Whether an error is a shortage on this side ([`Error::Busy`]), worth
+/// a retry rather than a verdict on the host.
 pub fn is_busy(e: &Error) -> bool {
-    matches!(e, Error::Read(w) if w.contains("os error 24") || w.contains("os error 23") || w.contains("Too many open files"))
+    matches!(e, Error::Busy(_))
+}
+
+/// The OS errors that mean a shortage on this side, not a host that is
+/// not there: EMFILE 24, ENFILE 23, ENOMEM 12, ENOBUFS 105 (lwIP's
+/// netconn and pcb pools answer with the last two).
+fn busy_errno(code: Option<i32>) -> bool {
+    matches!(code, Some(24) | Some(23) | Some(12) | Some(105))
+}
+
+/// What one host of the search turned out to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Probe {
+    /// A cgminer, identified from its `version`.
+    Cgminer(Found),
+    /// Port 4028 accepted the connection and answered with something
+    /// that is no cgminer document (or reset the connection).
+    Other,
+    /// Port 4028 accepted the connection but sent nothing within the
+    /// reply time, twice.
+    OpenNoAnswer,
 }
 
 /// One host of the search: connect within `connect`, ask `version`,
 /// read the reply within `reply` (at most [`PROBE_MAX_REPLY`] bytes,
-/// [`PROBE_MAX_DEPTH`] levels). `Ok(Some)` is a cgminer, `Ok(None)` a
-/// port that answered with something else, `Err` nothing reachable
-/// there, or no socket free on this side ([`is_busy`]).
+/// [`PROBE_MAX_DEPTH`] levels). `Err(Connect)` is nothing reachable
+/// there, `Err(Busy)` a shortage on this side ([`is_busy`]). A port that
+/// stays silent is asked a second time before it counts as
+/// [`Probe::OpenNoAnswer`].
 pub fn probe(
     host: Ipv4Addr,
     port: u16,
     connect: Duration,
     reply: Duration,
-) -> Result<Option<Found>, Error> {
-    let addr = std::net::SocketAddr::from((host, port));
-    let mut s = TcpStream::connect_timeout(&addr, connect).map_err(|e| {
-        if e.raw_os_error() == Some(24) || e.raw_os_error() == Some(23) {
-            Error::Read(e.to_string())
-        } else {
-            Error::Connect(e.to_string())
-        }
-    })?;
-    let _ = s.set_nodelay(true);
-    match query_bounded(
-        &mut s,
-        "version",
-        reply,
-        reply,
-        PROBE_MAX_REPLY,
-        PROBE_MAX_DEPTH,
-    ) {
-        Ok(v) => Ok(identify(host, &v)),
-        // Connected, but no cgminer document came: not one (a web server
-        // that resets the connection, a chatty service, a deep or long
-        // reply). Only a socket shortage on this side is worth a retry.
-        Err(e) if is_busy(&e) => Err(e),
-        Err(_) => Ok(None),
+) -> Result<Probe, Error> {
+    let mut silent = 0;
+    loop {
+        let addr = std::net::SocketAddr::from((host, port));
+        let mut s = TcpStream::connect_timeout(&addr, connect).map_err(|e| {
+            if busy_errno(e.raw_os_error()) {
+                Error::Busy(e.to_string())
+            } else {
+                Error::Connect(e.to_string())
+            }
+        })?;
+        let _ = s.set_nodelay(true);
+        return match query_bounded(
+            &mut s,
+            "version",
+            reply,
+            reply,
+            PROBE_MAX_REPLY,
+            PROBE_MAX_DEPTH,
+        ) {
+            Ok(v) => Ok(identify(host, &v).map_or(Probe::Other, Probe::Cgminer)),
+            Err(Error::Busy(e)) => Err(Error::Busy(e)),
+            // Nothing came at all: once more, then "open, no answer".
+            Err(Error::Read(w))
+                if w.contains("not complete")
+                    || w.contains("timed out")
+                    || w.contains("WouldBlock")
+                    || w.contains("os error 35")
+                    || w.contains("os error 11")
+                    || w.contains("os error 60") =>
+            {
+                silent += 1;
+                if silent < 2 {
+                    continue;
+                }
+                Ok(Probe::OpenNoAnswer)
+            }
+            // Connected, but no cgminer document: a web server that resets
+            // the connection, a chatty service, a deep or long reply.
+            Err(_) => Ok(Probe::Other),
+        };
     }
 }
 
@@ -343,8 +390,14 @@ pub struct Progress {
     /// Hosts not tried because the budget ran out (the highest addresses:
     /// the walk goes upwards from .1, where static miners tend to sit).
     pub skipped_time: usize,
-    /// Hosts not tried because no socket was free three times in a row.
+    /// Hosts not tried because no socket, buffer or memory was free on
+    /// this side three times in a row.
     pub skipped_sockets: usize,
+    /// Hosts not tried because the caller's memory check said no
+    /// ([`Error::NoMemory`]) three times in a row.
+    pub skipped_memory: usize,
+    /// Hosts whose port 4028 accepted the connection but sent nothing.
+    pub open_no_answer: usize,
     /// The cgminers found.
     pub found: Vec<Found>,
     /// The search has ended (all hosts, or the budget).
@@ -386,7 +439,7 @@ pub fn scan_with<F>(
     probe_one: F,
     spawn: &Spawner,
 ) where
-    F: Fn(Ipv4Addr) -> Result<Option<Found>, Error> + Send + Sync + 'static,
+    F: Fn(Ipv4Addr) -> Result<Probe, Error> + Send + Sync + 'static,
 {
     use std::sync::{Arc, Mutex};
     let total = hosts.len();
@@ -411,10 +464,13 @@ pub fn scan_with<F>(
                 return;
             };
             let mut outcome = None;
+            let mut why = None;
             for attempt in 0..3 {
                 match probe_one(host) {
-                    Err(e) if is_busy(&e) => {
-                        // No socket free right now: let one go and try again.
+                    // No socket (or memory) free right now: let some go and
+                    // try again, three times.
+                    Err(e @ Error::Busy(_)) | Err(e @ Error::NoMemory) => {
+                        why = Some(e);
                         if attempt < 2 {
                             std::thread::sleep(Duration::from_millis(300));
                         }
@@ -427,12 +483,19 @@ pub fn scan_with<F>(
             }
             let mut p = progress.lock().unwrap();
             match outcome {
-                Some(Ok(Some(f))) => {
+                Some(Ok(Probe::Cgminer(f))) => {
                     p.done += 1;
                     p.found.push(f);
                 }
+                Some(Ok(Probe::OpenNoAnswer)) => {
+                    p.done += 1;
+                    p.open_no_answer += 1;
+                }
                 Some(_) => p.done += 1,
-                None => p.skipped_sockets += 1,
+                None => match why {
+                    Some(Error::NoMemory) => p.skipped_memory += 1,
+                    _ => p.skipped_sockets += 1,
+                },
             }
         }
     };
@@ -1091,7 +1154,7 @@ mod tests {
         assert_eq!(p.total, 253);
         assert!(p.done >= 8 && p.done <= 24, "{p:?}");
         assert_eq!(p.done + p.skipped_time, 253);
-        assert_eq!(p.skipped_sockets, 0);
+        assert_eq!(p.skipped_sockets + p.skipped_memory, 0);
         assert!(p.found.is_empty());
         // The walk went upwards: the first four hosts are .1–.4.
         let first: Vec<u8> = order
@@ -1126,7 +1189,7 @@ mod tests {
         );
         let p = progress.lock().unwrap().clone();
         assert_eq!(p.done, 253, "{p:?}");
-        assert_eq!(p.skipped_time + p.skipped_sockets, 0);
+        assert_eq!(p.skipped_time + p.skipped_sockets + p.skipped_memory, 0);
     }
 
     #[test]
@@ -1144,7 +1207,7 @@ mod tests {
             move |h| {
                 if h.octets()[3] == 1 {
                     *t2.lock().unwrap() += 1;
-                    Err(Error::Read("Too many open files (os error 24)".into()))
+                    Err(Error::Busy("Too many open files (os error 24)".into()))
                 } else {
                     Err(Error::Connect("refused".into()))
                 }
@@ -1177,7 +1240,7 @@ mod tests {
             Duration::from_millis(500),
             Duration::from_millis(500),
         );
-        assert_eq!(r, Ok(None));
+        assert_eq!(r, Ok(Probe::Other));
         // A deep JSON reply on that port is not one either, and is refused
         // before the parser runs.
         let l2 = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -1196,13 +1259,54 @@ mod tests {
                 Duration::from_millis(500),
                 Duration::from_millis(500)
             ),
-            Ok(None)
+            Ok(Probe::Other)
         );
         // Nothing listening: not reachable, and not "busy".
         let r = probe(h, 1, Duration::from_millis(300), Duration::from_millis(300));
         assert!(matches!(r, Err(Error::Connect(_))), "{r:?}");
         assert!(!is_busy(&r.unwrap_err()));
-        assert!(is_busy(&Error::Read(
+        // A port that accepts and stays silent: open, no answer (asked twice).
+        let l3 = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port3 = l3.local_addr().unwrap().port();
+        let accepted = std::sync::Arc::new(std::sync::Mutex::new(0));
+        let acc2 = std::sync::Arc::clone(&accepted);
+        std::thread::spawn(move || {
+            let mut kept = Vec::new();
+            for s in l3.incoming().take(2).flatten() {
+                *acc2.lock().unwrap() += 1;
+                kept.push(s);
+            }
+            std::thread::sleep(Duration::from_secs(3));
+            drop(kept);
+        });
+        let t0 = std::time::Instant::now();
+        assert_eq!(
+            probe(
+                h,
+                port3,
+                Duration::from_millis(500),
+                Duration::from_millis(200)
+            ),
+            Ok(Probe::OpenNoAnswer)
+        );
+        assert!(t0.elapsed() < Duration::from_secs(2));
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(*accepted.lock().unwrap(), 2);
+        // The caller's memory check: three refusals skip the host for memory.
+        use std::sync::{Arc, Mutex};
+        let progress = Arc::new(Mutex::new(Progress::default()));
+        scan_with(
+            vec![h],
+            1,
+            Duration::from_secs(5),
+            &progress,
+            |_h| Err(Error::NoMemory),
+            &thread_spawner(64 * 1024),
+        );
+        let p = progress.lock().unwrap().clone();
+        assert_eq!(p.skipped_memory, 1);
+        assert_eq!(p.skipped_sockets, 0);
+        assert!(is_busy(&Error::Busy(
             "Too many open files (os error 24)".into()
         )));
     }
@@ -1228,7 +1332,7 @@ mod tests {
                     let mut n = b2.lock().unwrap();
                     *n += 1;
                     if *n == 1 {
-                        return Err(Error::Read("Too many open files (os error 24)".into()));
+                        return Err(Error::Busy("Too many open files (os error 24)".into()));
                     }
                 }
                 probe(
@@ -1245,7 +1349,8 @@ mod tests {
         assert_eq!(p.found.len(), 1, "{p:?}");
         assert_eq!(p.found[0].product, "Avalon Q");
         assert_eq!(p.found[0].host, "127.0.0.1".parse::<Ipv4Addr>().unwrap());
-        assert_eq!(p.skipped_time + p.skipped_sockets, 0);
+        assert_eq!(p.skipped_time + p.skipped_sockets + p.skipped_memory, 0);
+        assert_eq!(p.open_no_answer, 0);
         assert_eq!(dev.lock().unwrap().mode().index, 0, "nothing was written");
     }
 

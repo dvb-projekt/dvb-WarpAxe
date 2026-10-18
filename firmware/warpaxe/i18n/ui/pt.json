@@ -400,5 +400,8 @@
   "sw_kind_avalon": "Avalon · cgminer",
   "sw_scan_skipped": "Não foi possível verificar se há um Avalon em {n} endereços: o minerador não tinha nenhuma conexão livre. Busque de novo.",
   "sw_scan_time": "O tempo de busca do minerador se esgotou: não foi verificado se há um Avalon em {n} endereços. Busque de novo.",
-  "sw_scan_fail": "O minerador não conseguiu buscar um Avalon: "
+  "sw_scan_fail": "O minerador não conseguiu buscar um Avalon: ",
+  "sw_scan_memory": "Não foi verificado se há um Avalon em {n} endereços: o minerador ficou sem memória. Busque de novo mais tarde.",
+  "sw_scan_silent": "{n} endereços têm a porta 4028 aberta, mas não responderam.",
+  "sw_scan_unfinished": "A busca do minerador por um Avalon não terminou. Busque de novo."
 }

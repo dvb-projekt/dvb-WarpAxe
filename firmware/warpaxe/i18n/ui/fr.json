@@ -400,5 +400,8 @@
   "sw_kind_avalon": "Avalon · cgminer",
   "sw_scan_skipped": "{n} adresses n’ont pas pu être interrogées pour y chercher un Avalon : le mineur n’avait plus de connexion libre. Relancez la recherche.",
   "sw_scan_time": "Le temps imparti à la recherche du mineur est écoulé : {n} adresses n’ont pas été interrogées pour y chercher un Avalon. Relancez la recherche.",
-  "sw_scan_fail": "Le mineur n’a pas pu lancer la recherche d’Avalon : "
+  "sw_scan_fail": "Le mineur n’a pas pu lancer la recherche d’Avalon : ",
+  "sw_scan_memory": "{n} adresses n’ont pas été interrogées pour y chercher un Avalon : le mineur manquait de mémoire. Relancez la recherche plus tard.",
+  "sw_scan_silent": "{n} adresses ont le port 4028 ouvert, mais n’ont pas répondu.",
+  "sw_scan_unfinished": "La recherche d’Avalon par le mineur ne s’est pas terminée. Relancez la recherche."
 }
