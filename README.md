@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-378%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-393%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.30-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.31-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.30).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.31).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,7 +58,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-16, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-18, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -84,7 +84,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | yes |
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
-| What the device display shows | fixed pages (themes on the colour display) | fixed pages | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
+| What the device display shows | fixed pages | fixed pages | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
 | Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API** (read by the miner, read-only) |
 | Web UI languages | English | 9 | 8 |
 | Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
