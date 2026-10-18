@@ -376,7 +376,7 @@
   "cf_iu": "IP · uptime",
   "cf_wi": "Worker · IP",
   "disp_live": "Vista in tempo reale",
-  "disp_live_s": "Lo schermo del dispositivo, aggiornato ogni 2 s finché questa pagina è aperta. Le modifiche salvate compaiono qui in un attimo.",
+  "disp_live_s": "Lo schermo del dispositivo, aggiornato ogni 3 s finché questa pagina è aperta. Le modifiche salvate compaiono qui in un attimo.",
   "disp_live_off": "Schermo spento o al momento non visualizza nulla.",
   "disp_reset": "Disposizione di fabbrica",
   "disp_oled": "Schermate OLED",

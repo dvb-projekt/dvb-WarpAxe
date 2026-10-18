@@ -376,7 +376,7 @@
   "cf_iu": "IP · temps de fonctionnement",
   "cf_wi": "Worker · IP",
   "disp_live": "Vue en direct",
-  "disp_live_s": "L’écran de l’appareil, capturé toutes les 2 s tant que cette page est ouverte. Les modifications enregistrées y apparaissent en quelques instants.",
+  "disp_live_s": "L’écran de l’appareil, capturé toutes les 3 s tant que cette page est ouverte. Les modifications enregistrées y apparaissent en quelques instants.",
   "disp_live_off": "Écran éteint ou rien à afficher pour le moment.",
   "disp_reset": "Disposition d’usine",
   "disp_oled": "Écrans OLED",

@@ -376,7 +376,7 @@
   "cf_iu": "IP · tiempo activo",
   "cf_wi": "Worker · IP",
   "disp_live": "Vista en directo",
-  "disp_live_s": "La pantalla del dispositivo, leída cada 2 s mientras esta página esté abierta. Los cambios guardados aparecen aquí en un momento.",
+  "disp_live_s": "La pantalla del dispositivo, leída cada 3 s mientras esta página esté abierta. Los cambios guardados aparecen aquí en un momento.",
   "disp_live_off": "Pantalla apagada o sin imagen en este momento.",
   "disp_reset": "Disposición de fábrica",
   "disp_oled": "Diapositivas OLED",
