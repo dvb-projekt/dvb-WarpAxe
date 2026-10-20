@@ -107,13 +107,25 @@ release build.
 
 _Filled in as they come; nothing here is from notes._
 
-### Hardware test on .41
+### Hardware test on .41 (NerdQAxe++, 2026-10-20 07:17–07:28Z)
 
-Planned (needs Oliver's OK, announced to Warppool #2 first): the
-fragtest image uploaded after a restart; `fragment` until
-`largestFreeInternal` ≤ 8 KB; the click update to the published release
-(v0.1.31) under that heap; then the fix image, `fragment`, and an upload
-of the same image under that heap.
+Oliver's OK through dvb-WarpAxe #2, Warppool #2 told; images from
+commit 5a84125 only. `free` / `largest` = `freeHeapInternal` /
+`largestFreeInternal`.
+
+| Step | What | free / largest | Outcome |
+|---|---|---|---|
+| 1 | fragtest image uploaded over b9b019d (20 min up, 33 KB free) | boot end (`step: RUN`): 90 / 31 KB; 17 s: 54 / 22; 86 s: 55 / 20 | up, marked valid at chain ready |
+| 2 | `POST /api/v1/diag/fragment` | 55 / 20 → 45 / 8 KB | only three 8 KB blocks were to be had in one piece: the rest was already smaller |
+| 3 | click update to the published v0.1.31 under that heap | largest 8 KB | written, restarted, back as v0.1.31 (1b4322b) with the record "v0.1.31 verified" |
+| 4a | fragtest image uploaded over v0.1.31 (fresh boot) | 90 / 31 at boot end | up, marked valid |
+| 4b | `fragment` | 55 / 20 → 45 / 9 KB | |
+| 4c | fix image uploaded under that heap | 36 / 8 KB at the hand-off | `ota: 2874960 bytes handed to the writer`, `writing … on the main task`, erase 13 s, write 81 s, verify 4.5 s, `written and verified, restarting (8584 bytes of the writer's stack never used)`, `board: update: chips off before the reset`; back as 5a84125, pending-verify → valid at chain ready |
+
+So the writer needs about 7.4 KB of the main task's 16000; the 16 KB
+thread of v0.1.31 could not have been spawned at any point of steps 3
+and 4c. Even a fresh boot has its largest piece at a third of the free
+total.
 
 ### The heap over hours
 
@@ -122,6 +134,14 @@ Fleet log since 2026-10-20 07:05Z, once a minute (`freeHeapInternal`,
 
 ## Audit
 
+- **Restart and download mode** (`POST /api/system/restart`,
+  `/bootloader`) spawned a thread with the default 8 KB internal stack;
+  on the heap above `std::thread::spawn` would panic, and the panic
+  resets the board without `prepare_reset` (chips powered through the
+  reset, docs/04). Both go through the same hand-off now
+  (`update::Work`); a restart asked while a write is queued or under
+  way is dropped, since that write ends in a restart of its own. Read
+  only, not exercised on hardware in the test above.
 - **Boot loop**: no new boot path. The writer takes a job only after
   `set_step("RUN")`; a job that fails to write reports and is dropped.
 - **Rollback**: a written image boots as `pending-verify` and is marked
