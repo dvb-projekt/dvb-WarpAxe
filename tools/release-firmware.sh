@@ -149,6 +149,18 @@ else
     echo "no TESTED_ON and no SOAK_DEVKIT: the release carries no tested-on.txt, no devkit will install it" >&2
 fi
 
+# PUBLISH_GATE=<file>: hold here, after the soaks, until the release is
+# cleared by hand: the run publishes once <file> exists and stops without
+# publishing once <file>.abort does (Oliver, 2026-10-20: the go-ahead to
+# publish comes after the soaks, separately).
+if [ -n "${PUBLISH_GATE:-}" ]; then
+    echo "soaks passed: waiting for $PUBLISH_GATE to publish ($PUBLISH_GATE.abort stops)"
+    until [ -e "$PUBLISH_GATE" ]; do
+        [ -e "$PUBLISH_GATE.abort" ] && { echo "stopped before publishing: not published" >&2; exit 1; }
+        sleep 5
+    done
+fi
+
 BODY="WarpAxe $TAG"
 [ -n "$NOTES_FILE" ] && BODY="$(cat "$NOTES_FILE")"
 REL="$(python3 -c 'import json,sys; print(json.dumps({"tag_name":sys.argv[1],"target_commitish":sys.argv[2],"name":"WarpAxe "+sys.argv[1],"body":sys.argv[3],"draft":False,"prerelease":False}))' "$TAG" "$COMMIT" "$BODY")"
