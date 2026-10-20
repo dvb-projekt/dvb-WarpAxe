@@ -198,6 +198,28 @@ pub fn stack_unused() -> u32 {
     unsafe { sys::uxTaskGetStackHighWaterMark(core::ptr::null_mut()) as u32 }
 }
 
+/// Raises the calling task's FreeRTOS priority until dropped, then puts
+/// the old one back (on every path, the error path included).
+pub struct PriorityBoost(u32);
+
+impl PriorityBoost {
+    pub fn raise(prio: u32) -> PriorityBoost {
+        unsafe {
+            let old = sys::uxTaskPriorityGet(core::ptr::null_mut());
+            if prio > old {
+                sys::vTaskPrioritySet(core::ptr::null_mut(), prio);
+            }
+            PriorityBoost(old)
+        }
+    }
+}
+
+impl Drop for PriorityBoost {
+    fn drop(&mut self) {
+        unsafe { sys::vTaskPrioritySet(core::ptr::null_mut(), self.0) }
+    }
+}
+
 /// Spawn a thread whose stack lives in PSRAM, for threads that neither
 /// write flash nor run with the cache off (display, fetches, sampling):
 /// the internal RAM stays free for the OTA writer and TLS.
