@@ -143,6 +143,8 @@ impl Guard {
 mod tests {
     use super::*;
 
+    /// A NerdOS two-fan board's chip line (70) with a TPS546 regulator
+    /// line (105): the tests below count from those.
     fn reading(chip: Option<f32>, vr: Option<f32>) -> Reading {
         Reading {
             chip_c: chip,
@@ -152,6 +154,28 @@ mod tests {
             vr_expected: true,
             chip_expected: true,
         }
+    }
+
+    /// The Bitaxe Gamma under its stock lines (chip 75, regulator 105):
+    /// back on once the regulator is at 95, as AxeOS does
+    /// (`TPS546_THROTTLE_TEMP - 10`), and the chip at 65.
+    #[test]
+    fn bitaxe_gamma_resumes_where_axeos_does() {
+        let mut g = Guard::new();
+        g.trip(0, Cause::Hot);
+        let gamma = |chip: f32, vr: f32| Reading {
+            chip_c: Some(chip),
+            chip_limit_c: 75.0,
+            vr_c: Some(vr),
+            vr_limit_c: 105.0,
+            vr_expected: true,
+            chip_expected: true,
+        };
+        let t = MIN_OFF_S;
+        assert!(!g.may_resume(t, &gamma(60.0, 95.5)), "regulator above 95");
+        assert!(g.may_resume(t, &gamma(60.0, 95.0)), "AxeOS's 105 - 10");
+        assert!(!g.may_resume(t, &gamma(65.5, 90.0)), "chip above 65");
+        assert!(g.may_resume(t, &gamma(65.0, 90.0)));
     }
 
     #[test]

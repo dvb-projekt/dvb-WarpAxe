@@ -249,7 +249,7 @@ fn limits() -> (f32, f32) {
     let hot = if cfg.overheat_temp > 0 {
         f32::from(cfg.overheat_temp)
     } else {
-        p.max_temp_c
+        p.chip_stop_c
     };
     (target, hot)
 }
@@ -879,7 +879,7 @@ fn slot(c: &mut Canvas, id: &str, y: i32, v: &Live) {
     let (label, value, unit, col): (&str, String, String, u16) = match id {
         "vr" => {
             let t = b.vr_temp_c;
-            let hot = board::profile().vr_max_c;
+            let hot = board::profile().vr_stop_c;
             (
                 l("REGULATOR", "REGLER"),
                 t.map_or_else(dash, |t| t.to_string()),
@@ -1050,7 +1050,7 @@ fn slot(c: &mut Canvas, id: &str, y: i32, v: &Live) {
     let bar = match id {
         "vr" => b
             .vr_temp_c
-            .map(|t| (t as f32, board::profile().vr_max_c, col)),
+            .map(|t| (t as f32, board::profile().vr_stop_c, col)),
         "chip" => b.temp_c.map(|t| (t, limits().1, temp_color(t))),
         _ => None,
     };

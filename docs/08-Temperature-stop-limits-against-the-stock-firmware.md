@@ -1,0 +1,87 @@
+# Temperature stop limits against the stock firmware
+
+Written 2026-10-20 (branch `fix/temp-limits`), after a Bitaxe owner found
+145 °C "too high" for the regulator stop and the check showed that
+WarpAxe's Bitaxe profiles carried the wrong ESP-Miner constants: the
+defined-but-unused `MAX_TEMP` / `TPS546_MAX_TEMP` (90 / 145) instead of
+the lines ESP-Miner actually compares against, `THROTTLE_TEMP` /
+`TPS546_THROTTLE_TEMP` (75 / 105). A Bitaxe under WarpAxe up to v0.1.31
+therefore stopped 15 °C (chip) and 40 °C (regulator) later than under
+AxeOS. The regulator's own `OT_FAULT` at 145 °C was the only line
+before that.
+
+## What the stock firmwares do
+
+Read from the sources, not from notes. Line numbers are the file's at the
+named commit.
+
+| Board(s) | Firmware | Chip stop | Regulator stop | Where | After the stop |
+|---|---|---|---|---|---|
+| Bitaxe Gamma 60x, Gamma Duo, Gamma Turbo, Naja Duo, Gamma Hex | ESP-Miner v2.15.3 (`fb31c4f`) | > 75 (`THROTTLE_TEMP`) | > 105 (`TPS546_THROTTLE_TEMP`) | `main/tasks/power_management_task.c` 16–17, 24–25 (constants), 159–163 (compare). `MAX_TEMP` 90 and `TPS546_MAX_TEMP` 145 appear nowhere else in `main/` | fans 100 %, at least 30 s (6 × 5 s), until regulator ≤ 95 (`TPS546_THROTTLE_TEMP - 10`, line 185); boards with the EMC's internal sensor (Ultra/Supra, not the Gamma) also wait for chip ≤ `SAFE_TEMP` 45 (199). Then restart at voltage − 100 mV and clock − 100 MHz (`ASIC_REDUCTION`, 210–211). No per-board values |
+| BitForge Nano (800) | ForgeOS v1.6, closed | unknown | unknown | its `/api/system/info` is ESP-Miner's shape (`overheat_mode`, `boardVersion`) | unknown |
+| NerdQAxe++, NerdQAxe++ Rev 7, NerdOctaxe-γ, Q1370, Q1373 | NerdOS v1.1.0.1 (`762092d`) | > `overheat_temp`, Kconfig default 70, range 50–90 | > `fan1_overheat`, a two-fan board inherits the chip value (70) | `main/Kconfig.projbuild` 24–27; `main/fan_controller.cpp` 89–116 (channel 0 = chips, 1 = regulator, each against its own line); `main/tasks/power_management_task.cpp` 305–314 (either channel: `setVoltage(0.0)`, board error); `main/nvs_config.cpp` 243–254 (channel 1 default). Chip reading = max(TMP1075 + 10 °C, chip-internal) on the NQ++ (`nerdqaxeplus2.cpp` 199, `power_management_task.cpp` 286) | stays off (board error until reboot) |
+| NerdAxe Gamma | NerdOS v1.1.0.1 | > 70 (same `overheat_temp`) | **none**: `fan1_overheat` is forced to 0 on the one-fan NerdAxe family (`nvs_config.cpp` 246–247) and the fan loop only runs channel 0 (`board.cpp` 20 `m_numFans = 1`). `m_vr_maxTemp = TPS546_THROTTLE_TEMP` (`nerdaxegamma.cpp` 40) is a dashboard figure (`board.h` 298) | as above | stays off |
+| NerdAxe Gaia | BitMaker's NerdOS at `ae509770` (what the reference board shipped with) | > 70 by code (`Kconfig.projbuild` 24–27); the reference board has 75 in NVS | **none** (one fan, `NerdAxe` family: `nerdaxegaia.h` 8, `nvs_config.cpp` 246–247); `m_vr_maxTemp` display only (`nerdaxegaia.cpp` 42) | as above | stays off |
+| NerdNOS | WantClue NerdMiner_v2 branch `nerdnos` (`2258834`) | > 80 (`MAX_SAFE_TEMP`) | no regulator temperature | `src/mining_nerdnos.cpp` 51 (constant), 292 (stop), 297 (wait until ≤ 70), 303 (`BM1397_init(210, 1)`) | PEN low, back below 70, re-init at 210 MHz for good |
+
+The TPS546's registers are the same everywhere: `OT_WARN_LIMIT` 105,
+`OT_FAULT_LIMIT` 145 (`crates/board/src/tps546.rs` 306–307). 145 is the
+part's own shutdown, which stays as the backstop behind every firmware
+line above.
+
+## What WarpAxe does from this branch on
+
+`crates/board/src/profile.rs`, the fields now called what they are:
+`chip_stop_c` and `vr_stop_c` (the unused `throttle_temp_c` /
+`vr_throttle_c` are gone, so the two pairs cannot be mixed up again).
+
+| Profile | chip_stop_c | vr_stop_c | Note |
+|---|---|---|---|
+| bitaxe-gamma, -duo, -turbo, naja-duo, gamma-hex | 75 (was 90) | 105 (was 145) | ESP-Miner's compare lines |
+| bitforge-nano | 75 (was 90) | 105 (was 145) | ForgeOS closed; taken as ESP-Miner's until read off the board |
+| nerdaxe-gamma | 70 (was 90) | 105 (was 145) | chip as NerdOS; regulator: NerdOS has no stop, WarpAxe keeps AxeOS's 105 on the same TPS546 — **deliberate deviation, Oliver's call** |
+| nerdaxe-gaia | 75 (unchanged) | 105 (unchanged) | chip = the reference board's NVS, not the Kconfig 70 — **kept, open for Oliver** |
+| nerdqaxe-plusplus, nerdoctaxe-gamma, q1370, q1373 | 70 | 70 | unchanged, NerdOS |
+| nerdqaxe-plusplus-rev7 | 70 | 70 (was 105) | the 105 in the profile was NerdOS's dashboard figure, not its stop |
+| nerdnos | 80 | 105 (was 145, reported only) | no regulator temperature |
+| t-display-s3 | 85 | 105 (was 145, reported only) | the ESP32-S3's own line, no regulator |
+
+Unchanged and checked against the new lines:
+
+- Resume (`crates/board/src/overheat.rs`): both 10 °C under their line,
+  at least 60 s off, the third stop within an hour latches. On the Gamma
+  that is regulator ≤ 95 — AxeOS's `TPS546_THROTTLE_TEMP - 10` — and
+  chip ≤ 65 (AxeOS waits for the regulator only on the Gamma, since the
+  diode reads nothing with the chip off). Test
+  `bitaxe_gamma_resumes_where_axeos_does`.
+- AxeOS restarts at voltage − 100 mV / clock − 100 MHz after a stop;
+  NerdOS stays off; WarpAxe comes back at the configured point, except a
+  board without a fan to drive, which comes back one clock option lower
+  (`clockStep`). Compared only, not changed.
+- `overheat_temp` (the chip line as a setting, 0 = the profile's) now
+  has the server-side window 50–90 (`api.rs` `expert_refuse`), the same
+  as the settings page, the stock import and NerdOS's Kconfig range. A
+  value already stored above the new default stays in force up to 90.
+- API: `vrOverheatTemp` and NerdOS-style `fans[1].overheatTemp` report
+  `vr_stop_c`; `overheat_temp` and `fans[0].overheatTemp` the chip line
+  in force. The web UI's help text and the swarm card's `|| 105`
+  fallback for stock AxeOS boards were right already.
+- WarpTune (dvb-WarpPool `crates/tune/src/axeos.rs` 423–431,
+  `runner.rs` 2311–2318, 2882) reads `fans[0].overheatTemp` and
+  `fans[1].overheatTemp` only — the array WarpAxe emits for the
+  TMP1075/EMC2302 Nerd boards, whose lines are unchanged — and derives
+  its failsafe (chip line − 1) and regulator ceilings (− 2 / − 6) from
+  them. It does not read `vrOverheatTemp` or `overheat_temp`. For the
+  Bitaxe boards it keeps its own defaults ("ESP-Miner hardcodes 75/90").
+  Nothing to change there.
+
+## Open for Oliver
+
+1. NerdAxe Gamma and Gaia: keep the 105 °C regulator stop that NerdOS
+   does not have (recommended), or follow NerdOS and leave it to the
+   TPS546's 145 °C fault.
+2. Gaia chip line: 75 (the reference board's setting, as now) or the
+   Kconfig default 70.
+3. `overheat_temp` above the board's new default: allowed up to 90 (as
+   built), or capped at the profile's line.
+4. The soak on the .41 and the Gamma after the merge.

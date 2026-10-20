@@ -194,15 +194,19 @@ pub struct Profile {
     pub max_power_w: u16,
     /// Added to VOUT×IOUT: what the rest of the board draws.
     pub power_offset_w: f32,
-    /// Chip temperature above which the firmware throttles / above
-    /// which it stops (ESP-Miner THROTTLE_TEMP / MAX_TEMP).
-    pub throttle_temp_c: f32,
-    /// Chip temperature at which mining stops, °C.
-    pub max_temp_c: f32,
-    /// Regulator temperature limits (TPS546_THROTTLE_TEMP / MAX_TEMP).
-    pub vr_throttle_c: f32,
-    /// Regulator temperature at which mining stops, °C.
-    pub vr_max_c: f32,
+    /// Chip temperature above which the core voltage goes off, °C: the
+    /// stock firmware's stop, not its warning level. ESP-Miner stops at
+    /// `THROTTLE_TEMP` (75); its `MAX_TEMP` (90) is defined and never
+    /// read (v2.15.3 `power_management_task.c` 16–17, 159–161). NerdOS
+    /// stops at `overheat_temp` (Kconfig default 70). The setting
+    /// `overheat_temp` overrides this per device; 0 = this value.
+    pub chip_stop_c: f32,
+    /// Regulator temperature above which the core voltage goes off, °C.
+    /// ESP-Miner stops at `TPS546_THROTTLE_TEMP` (105); its
+    /// `TPS546_MAX_TEMP` (145) is never read either (lines 24–25, 163).
+    /// 145 °C is the TPS546's own OT_FAULT ([`tps546`]), which stays as
+    /// the hardware backstop behind this. Not configurable.
+    pub vr_stop_c: f32,
     /// Added to the board temperature sensors: NerdOS adds 10 °C on the
     /// NerdQAxe++ (`NerdQaxePlus2::getTemperature`) and 3 °C on the
     /// Q13xx carriers, whose sensors sit beside the chips. The fan
@@ -439,10 +443,14 @@ pub const BITAXE_GAMMA: Profile = Profile {
     nominal_voltage_v: 5,
     max_power_w: 40,
     power_offset_w: 5.0,
-    throttle_temp_c: 75.0,
-    max_temp_c: 90.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // AxeOS stops where ESP-Miner v2.15.3 `power_management_task.c`
+    // compares: chip > THROTTLE_TEMP 75 (lines 159–161), regulator >
+    // TPS546_THROTTLE_TEMP 105 (line 163). Up to v0.1.31 these profiles
+    // carried the unused MAX_TEMP / TPS546_MAX_TEMP (90 / 145) instead
+    // and stopped 15 / 40 °C later than AxeOS. The Duo, Turbo, Naja Duo
+    // and Hex inherit them: ESP-Miner has no per-board values.
+    chip_stop_c: 75.0,
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
     job_interval_ms: 0,
@@ -613,10 +621,13 @@ pub const BITFORGE_NANO: Profile = Profile {
     nominal_voltage_v: 12,
     max_power_w: 60,
     power_offset_w: 0.0,
-    throttle_temp_c: 75.0,
-    max_temp_c: 90.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // ForgeOS is closed and its `/api/system/info` is ESP-Miner's
+    // (`overheat_mode`, `boardVersion` 800): taken as ESP-Miner's stops,
+    // 75 / 105, until someone reads them off the board. Under WarpAxe
+    // the board reached 82 °C (regulator 95 °C) before the fans were
+    // fixed, below neither of the old 90 / 145 lines.
+    chip_stop_c: 75.0,
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
     job_interval_ms: 0,
@@ -664,12 +675,11 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     // 85 and the plain S3 105), and the die runs about 20 K above ambient
     // under load (44 °C measured in a 24 °C room). So: red from 85 °C,
     // yellow from 70 (target + 5). The CPU miner's coordinator stops
-    // hashing at max_temp_c and resumes 10 °C below it (cpuminer.rs);
-    // there is no regulator to switch off.
-    throttle_temp_c: 75.0,
-    max_temp_c: 85.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // hashing at chip_stop_c and resumes 10 °C below it (cpuminer.rs);
+    // there is no regulator to switch off, so the regulator stop is
+    // reported only (AxeOS's figure, for a swarm card reading it).
+    chip_stop_c: 85.0,
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 65.0,
     job_interval_ms: 0,
@@ -722,10 +732,18 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     nominal_voltage_v: 5,
     max_power_w: 25,
     power_offset_w: 5.0,
-    throttle_temp_c: 75.0,
-    max_temp_c: 90.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // NerdOS v1.1.0.1 stops the chip at `overheat_temp`, Kconfig default
+    // 70 (`main/Kconfig.projbuild` 24–27; `fan_controller.cpp` 114,
+    // `power_management_task.cpp` 305–314). The regulator has no stop
+    // there: a one-fan board gets `fan1_overheat = 0` (`nvs_config.cpp`
+    // 246–247), and `m_vr_maxTemp = TPS546_THROTTLE_TEMP` in
+    // `nerdaxegamma.cpp` 40 is a dashboard figure, never compared. Only
+    // the TPS546's own 145 °C OT_FAULT protects it. WarpAxe keeps AxeOS's
+    // 105 °C stop on purpose: same regulator, same carrier class as the
+    // Bitaxe Gamma, and a stop 40 °C below the part's fault is the
+    // safer default (Oliver's call, 2026-10-20 handoff).
+    chip_stop_c: 70.0,
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 60.0,
     job_interval_ms: 1500,
@@ -747,7 +765,8 @@ pub const NERDAXE_GAMMA: Profile = Profile {
 /// fan (ideality 0x24, beta off, as on the BM1370), chain reset GPIO1,
 /// UART 17/18, I²C 44/43. Stock 350 MHz / 940 mV, brought up at
 /// 1000 mV, 40 W gauge with +5 W offset, fan target 65 °C and overheat
-/// 75 °C as the reference board runs (the code default is 60 °C).
+/// 75 °C as the reference board runs (its NVS; the code defaults are 60
+/// and 70 °C, `nerdaxegaia.cpp` 44 and `Kconfig.projbuild` 27 at ae509770).
 /// Clock and core voltage capped at 420 MHz / 970 mV: at 440 MHz /
 /// 970 mV the regulator dropped the core voltage without a fault flag
 /// (WarpTune, 2026-09), so the stock 440 MHz and 980–1040 mV options
@@ -782,11 +801,14 @@ pub const NERDAXE_GAIA: Profile = Profile {
     nominal_voltage_v: 12,
     max_power_w: 40,
     power_offset_w: 5.0,
-    throttle_temp_c: 75.0,
-    max_temp_c: 75.0,
-    // NerdOS `m_vr_maxTemp = TPS546_THROTTLE_TEMP`.
-    vr_throttle_c: 105.0,
-    vr_max_c: 105.0,
+    // The reference board's setting rather than the Kconfig default 70
+    // (a board switched over keeps its own `overheat_temp` anyway).
+    chip_stop_c: 75.0,
+    // BitMaker's firmware (NerdOS, one fan) has no regulator stop, as on
+    // the NerdAxe Gamma: `m_vr_maxTemp = TPS546_THROTTLE_TEMP`
+    // (`nerdaxegaia.cpp` 42) is display only, `fan1_overheat` is forced
+    // to 0 for the NerdAxe family. 105 kept on purpose, see NERDAXE_GAMMA.
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 65.0,
     // BitMaker uses 1500 ms; under WarpAxe that made 87 % of the
@@ -835,12 +857,14 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     nominal_voltage_v: 12,
     max_power_w: 100,
     power_offset_w: 0.0,
-    // NerdOS: CONFIG_OVERHEAT_TEMP 70 °C for the chips and, on the
-    // second fan channel, for the regulator; no throttle step.
-    throttle_temp_c: 70.0,
-    max_temp_c: 70.0,
-    vr_throttle_c: 70.0,
-    vr_max_c: 70.0,
+    // NerdOS v1.1.0.1: `overheat_temp` (Kconfig default 70, range 50–90)
+    // on fan channel 0 for the chips, `fan1_overheat` on channel 1 for
+    // the regulator, which a two-fan board inherits from the chip value
+    // (`nvs_config.cpp` 249–254); either channel over its line switches
+    // the buck off (`power_management_task.cpp` 305–314), and NerdOS
+    // stays off. No throttle step. The Octaxe, Q1370 and Q1373 inherit.
+    chip_stop_c: 70.0,
+    vr_stop_c: 70.0,
     // NerdOS `NerdQaxePlus2::getTemperature`: TMP1075 + 10 °C ("should
     // be about right" for the chips). Without it the 70 °C limit would
     // let the sensors reach what NerdOS calls 80 °C.
@@ -862,8 +886,10 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
 /// TPS546 (NerdOS `Rev7TPS546`, VOUT = 2 × core), the Rev 6 carrier
 /// pins (enable GPIO10, LDO GPIO13), 1200 mV default, 120 W, fan target
-/// 65 °C, regulator limit 105 °C, clock up to 1000 MHz (NerdOS
-/// `applyRev7Profile`). Profile only: never run under WarpAxe.
+/// 65 °C, clock up to 1000 MHz (NerdOS `applyRev7Profile`). Its
+/// `m_vr_maxTemp = TPS546_THROTTLE_TEMP` (`nerdqaxeplus2.cpp` 65) is a
+/// dashboard figure; the stop stays the two-fan board's `fan1_overheat`
+/// (70, inherited below). Profile only: never run under WarpAxe.
 pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
     name: "nerdqaxe-plusplus-rev7",
     model: "NerdQAxe++ Rev 7",
@@ -876,8 +902,6 @@ pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
     default_core_mv: 1200,
     init_core_mv: 1200,
     max_power_w: 120,
-    vr_throttle_c: 105.0,
-    vr_max_c: 105.0,
     fan_target_c: 65.0,
     job_interval_ms: 500,
     frequency_options: &[
@@ -1060,12 +1084,12 @@ pub const NERDNOS: Profile = Profile {
     // ~8 W at stock per the OSMU wiki; the USB-C port is the limit.
     max_power_w: 10,
     power_offset_w: 0.0,
-    // WantClue `MAX_SAFE_TEMP 80.0` with a 10 °C hysteresis, on a
-    // thermistor beside the chip; yellow from 70.
-    throttle_temp_c: 70.0,
-    max_temp_c: 80.0,
-    vr_throttle_c: 105.0,
-    vr_max_c: 145.0,
+    // WantClue `MAX_SAFE_TEMP 80.0` (`mining_nerdnos.cpp` 51, stop at
+    // 292, back below 70 at 297, re-init at 210 MHz at 303) on a
+    // thermistor beside the chip; yellow from 70. No regulator
+    // temperature: the regulator stop is reported only.
+    chip_stop_c: 80.0,
+    vr_stop_c: 105.0,
     temp_offset_c: 0.0,
     fan_target_c: 65.0,
     // The chip's own 30 ms (WantClue `NERDNOS_JOB_INTERVAL_MS`).
@@ -1179,6 +1203,59 @@ pub const ALL: &[Profile] = &[
 
 #[cfg(test)]
 mod tests {
+
+    /// The stop lines are the stock firmware's, board by board: ESP-Miner
+    /// v2.15.3 compares against THROTTLE_TEMP 75 / TPS546_THROTTLE_TEMP
+    /// 105, NerdOS against `overheat_temp` 70 on both fan channels,
+    /// WantClue's NerdNOS against MAX_SAFE_TEMP 80. Up to v0.1.31 the
+    /// Bitaxe profiles carried ESP-Miner's unused MAX_TEMP constants
+    /// (90 / 145) and stopped 15 / 40 °C after AxeOS.
+    #[test]
+    fn stop_limits_are_the_stock_firmwares() {
+        use super::*;
+        let axeos = [
+            &BITAXE_GAMMA,
+            &BITAXE_GAMMA_DUO,
+            &BITAXE_GAMMA_TURBO,
+            &BITAXE_NAJA_DUO,
+            &BITAXE_GAMMA_HEX,
+            &BITFORGE_NANO,
+        ];
+        for p in axeos {
+            assert_eq!((p.chip_stop_c, p.vr_stop_c), (75.0, 105.0), "{}", p.name);
+        }
+        // NerdOS two-fan boards: chip and regulator at the same 70.
+        for p in [
+            &NERDQAXE_PLUSPLUS,
+            &NERDQAXE_PLUSPLUS_REV7,
+            &NERDOCTAXE_GAMMA,
+            &Q1370,
+            &Q1373,
+        ] {
+            assert_eq!((p.chip_stop_c, p.vr_stop_c), (70.0, 70.0), "{}", p.name);
+        }
+        // NerdOS one-fan boards: NerdOS has no regulator stop at all;
+        // WarpAxe keeps AxeOS's 105 on the same TPS546.
+        assert_eq!(
+            (NERDAXE_GAMMA.chip_stop_c, NERDAXE_GAMMA.vr_stop_c),
+            (70.0, 105.0)
+        );
+        assert_eq!(
+            (NERDAXE_GAIA.chip_stop_c, NERDAXE_GAIA.vr_stop_c),
+            (75.0, 105.0)
+        );
+        assert_eq!(NERDNOS.chip_stop_c, 80.0);
+        assert_eq!(T_DISPLAY_S3_DEVKIT.chip_stop_c, 85.0);
+        for p in ALL {
+            // Nothing stops above the old lines, and every chip line sits
+            // above the fan target (NerdOS leaves the Rev 7 only 5 °C).
+            assert!(p.chip_stop_c <= 90.0 && p.vr_stop_c <= 105.0, "{}", p.name);
+            assert!(p.chip_stop_c > p.fan_target_c, "{}", p.name);
+            // The regulator stop stays under the TPS546's 145 °C OT_FAULT
+            // by a wide margin on every board.
+            assert!(p.vr_stop_c <= 145.0 - 40.0, "{}", p.name);
+        }
+    }
 
     #[test]
     fn nerd_job_intervals_follow_nerdos() {
@@ -1337,7 +1414,7 @@ mod tests {
         assert_eq!(p.display, Display::St7789I80);
         assert_eq!(p.i2c, None);
         assert_eq!((p.default_frequency_mhz, p.default_core_mv), (300, 1400));
-        assert_eq!(p.max_temp_c, 80.0);
+        assert_eq!(p.chip_stop_c, 80.0);
         assert_eq!(p.abs_max_frequency_mhz, 400);
         assert!(p.voltage_options.is_empty());
         assert!(p.frequency_options.contains(&300));
@@ -1453,7 +1530,7 @@ mod tests {
         );
         assert_eq!(NERDOCTAXE_GAMMA.fan_target_c, 55.0);
         for p in [&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &Q1370, &Q1373] {
-            assert_eq!((p.max_temp_c, p.vr_max_c), (70.0, 70.0), "{}", p.name);
+            assert_eq!((p.chip_stop_c, p.vr_stop_c), (70.0, 70.0), "{}", p.name);
         }
         assert_eq!(NERDOCTAXE_GAMMA.tps53647().unwrap().vr_temp_offset_c, 8);
         assert_eq!(Q1373.temp_offset_c, 3.0);

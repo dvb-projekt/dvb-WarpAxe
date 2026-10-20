@@ -186,7 +186,7 @@ pub(crate) fn set_devkit_temp(temp_c: Option<f32>) {
 }
 
 /// The devkit's own overheat guard (the CPU miner stops at the profile's
-/// `max_temp_c`, resumes 10 °C below): the same flag the sensor loop
+/// `chip_stop_c`, resumes 10 °C below): the same flag the sensor loop
 /// raises on a board with chips, so the API and the display say so.
 pub(crate) fn set_devkit_overheat(on: bool) {
     OVERHEAT.store(on, Ordering::Relaxed);
@@ -1634,10 +1634,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             let chip_limit = if cfg.overheat_temp > 0 {
                 f32::from(cfg.overheat_temp)
             } else {
-                profile.max_temp_c
+                profile.chip_stop_c
             };
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
-            let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_max_c);
+            let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_stop_c);
             let blind = temp_seen && temp_lost_s >= TEMP_LOST_S;
             if !temp_seen && temp_lost_s >= TEMP_LOST_S && !no_sensor_warned {
                 no_sensor_warned = true;
@@ -1716,7 +1716,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 } else {
                     log::error!(
                         "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
-                        profile.vr_max_c
+                        profile.vr_stop_c
                     );
                 }
                 if let Some(vr) = vr.as_mut() {
@@ -1737,7 +1737,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         chip_c: temp,
                         chip_limit_c: chip_limit,
                         vr_c: vr_temp.map(|c| c as f32),
-                        vr_limit_c: profile.vr_max_c,
+                        vr_limit_c: profile.vr_stop_c,
                         vr_expected: vr_temp_seen,
                         chip_expected: temp_seen,
                     },

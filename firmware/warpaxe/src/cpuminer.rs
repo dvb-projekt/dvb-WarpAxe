@@ -22,7 +22,7 @@
 //! 30 s buckets into a 10-minute window as the chain loop does, reported
 //! in `MinerState` in GH/s (so a few 1e-4) and in kH/s through [`info`]
 //! for the web UI. The ESP's own die temperature stands in for the chip
-//! temperature; at the profile's `max_temp_c` the workers stop, 10 °C
+//! temperature; at the profile's `chip_stop_c` the workers stop, 10 °C
 //! below they resume.
 //!
 //! First start: [`import_nerdminer`] takes the Wi-Fi and the wallet a
@@ -739,7 +739,7 @@ fn run() {
                 let limit = if cfg.overheat_temp > 0 {
                     f32::from(cfg.overheat_temp)
                 } else {
-                    board::profile().max_temp_c
+                    board::profile().chip_stop_c
                 };
                 // A manual reset (/api/v1/overheat/reset, the same flag a
                 // board with chips clears) ends the stop as well; the
