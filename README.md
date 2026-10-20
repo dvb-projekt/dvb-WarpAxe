@@ -74,7 +74,8 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
 | Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools — also AxeOS 2.15's —, hostname, clock and voltage, fans and temperature limits, display) |
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
-| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler) | not found | yes (≥ 60 s, chip and regulator 10 °C cooler; the third stop within an hour stays off) |
+| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50–90), the regulator's fixed per board, 105 °C on every TPS546 board |
+| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage and clock 100 lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
@@ -248,7 +249,10 @@ back at any time with `GET /api/v1/display/frame`.
   target, then the PID takes over from there instead of running them down
   on a cold board. Boards with one fan for chip and regulator (NerdAxe) run it for
   whichever of the two needs more (regulator target 80 °C).
-- Overheat shutdown of the core voltage and a guard for a lost chip sensor
+- Overheat shutdown of the core voltage at the stock firmware's lines
+  (Bitaxe and BitForge Nano: chip 75 °C, regulator 105 °C as AxeOS stops;
+  NerdQAxe/NerdOctaxe/Q13xx: 70 / 70 as NerdOS; NerdNOS: 80; the chip line
+  is a setting, the regulator's is fixed per board) and a guard for a lost chip sensor
   (60 s blind = off, once the chip temperature has been read; a board whose
   chip sensor never answers runs like NerdOS, on the regulator limit with
   the fans at full, and says so in the log). The chips start again on their own once chip and
