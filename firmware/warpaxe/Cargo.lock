@@ -1774,6 +1774,7 @@ dependencies = [
  "warpaxe-core",
  "warpaxe-cpuminer",
  "warpaxe-displaycfg",
+ "warpaxe-ota",
  "warpaxe-stratum",
  "warpaxe-sv2",
 ]
@@ -1817,6 +1818,10 @@ version = "0.1.0"
 dependencies = [
  "serde_json",
 ]
+
+[[package]]
+name = "warpaxe-ota"
+version = "0.1.0"
 
 [[package]]
 name = "warpaxe-stratum"

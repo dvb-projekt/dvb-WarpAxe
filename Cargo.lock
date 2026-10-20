@@ -897,6 +897,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "warpaxe-ota"
+version = "0.1.0"
+
+[[package]]
 name = "warpaxe-sim"
 version = "0.1.0"
 dependencies = [
