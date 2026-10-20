@@ -58,7 +58,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-18, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-20, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -74,6 +74,9 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
 | Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools — also AxeOS 2.15's —, hostname, clock and voltage, fans and temperature limits, display) |
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
+| Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
+| Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
+| Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board, 105 °C on every TPS546 board |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage and clock 100 lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
@@ -214,6 +217,11 @@ back at any time with `GET /api/v1/display/frame`.
   optional **TLS** (esp-tls, built-in CA bundle, hostname checked).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
+- **Saved pools**: up to eight, each with a name and the coin it mines;
+  the main pool as it is now is saved with one click, a saved one becomes
+  the main pool with another, and the miner reconnects at once. Passwords
+  stay on the miner (`GET`/`POST /api/v1/pools`). A first start from AxeOS
+  2.15 takes over the pools it had saved.
 - The Wi-Fi radio stays awake (no modem sleep), so a new job from the
   pool does not wait for the access point's next beacon (~100 ms). The
   NerdNOS is the exception: fanless next to the ESP32-S3, it keeps modem
@@ -286,17 +294,24 @@ back at any time with `GET /api/v1/display/frame`.
   NerdAxe an estimate, marked ≈), so a Bitaxe's 40 A of core current does
   not read as drawn from the power supply; a notice asks for the power
   supply's rating (*Settings*, in watts) until it is set or dismissed; the best difficulty since the start next to the all-time
-  best, which survives restarts; live log. Optional (*Settings → Dashboard*, off by default):
-  the hash counters per chip and domain, a weak domain marked in colour,
-  a total line on boards with several chips, and the error rate over the
-  last minute. The BM1373 has eight hash
+  best, which survives restarts; the chips' error rate over the last minute
+  next to the expected hashrate, as AxeOS shows it; live log. Optional
+  (*Settings → Dashboard*, off by default): the hash counters per chip and
+  domain, a weak domain marked in colour, and a total line on boards with
+  several chips. The BM1373 has eight hash
   domains, not four: WarpAxe reads all eight counters (0x88–0x8B and
   0xAC–0xAF), where AxeOS reads four and doubles them. Its error rate runs
   higher than the BM1370's (about 2.5 % on a NerdAxe Gaia at its hand
   point, rising steeply at low core voltage) and is shown without a colour.
 - **Coinbase payout** of every job, as AxeOS shows it: the share of a found
   block that goes to your address (green from 95 %, red below), the
-  coinbase value and its outputs, over Stratum V1 and V2.
+  coinbase value and its outputs, over Stratum V1 and V2. The address in
+  the worker name is decoded (base58, bech32/bech32m, CashAddr) and matched
+  against the output scripts, so the split is right when solo mining
+  another SHA-256 coin too (BCH, eCash, DigiByte, FixedCoin …); the
+  outputs are written the way that coin writes addresses, and the amounts
+  carry the coin set for the pool (*Coin*, default BTC). A worker name that
+  is a pool account, not an address, shows "paid by the pool".
 - **Swarm** page for the other miners on the network — AxeOS, NerdOS,
   ForgeOS or WarpAxe: fleet hashrate, power, J/TH and record difficulty,
   each miner's share, a card per miner with a sparkline and its
@@ -306,7 +321,7 @@ back at any time with `GET /api/v1/display/frame`.
   never changes or restarts another miner. Add miners by address or by a
   search of the local /24. An **Avalon** (cgminer API on TCP 4028, which
   a browser cannot open) is found by that search as well: the miner walks
-  its own /24 for port 4028, four connections at a time with a hard 20-s
+  its own /24 for port 4028, six connections at a time with a hard 30-s
   budget, asks a host that answers for its `version` and nothing else,
   and the hit shows as "Avalon · cgminer" beside the others; adding it
   (or typing it as "Avalon (cgminer API)") stores `cgminer:<ip>`. For
@@ -347,7 +362,11 @@ back at any time with `GET /api/v1/display/frame`.
   field and wording) with `powerFaultCodes`, `isUsingFallbackStratum` (also as NerdOS's
   `stratum.usingFallback`),
   `sharesRejectedReasons`, AxeOS's `coinbaseOutputs`,
-  `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis`,
+  `coinbaseValueTotalSatoshis` and `coinbaseValueUserSatoshis` with
+  `coinbaseOwnAddress` (the worker name is an address) and
+  `coinbaseBitcoin` (it is a Bitcoin one) and the pool's `coinTicker`,
+  `overheat_temp` (the chip stop in force) with `overheatTempMax` and
+  `vrOverheatTemp`,
   `temptarget` (the fan target, under ESP-Miner's name) so a tuner keeps
   its own target above it, `coreCurrentA` with `coreCurrentWarnA`,
   `faultCause` (why the regulator stopped), `regulatorMinMv` and
