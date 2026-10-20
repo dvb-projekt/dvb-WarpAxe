@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-400%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-416%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.31-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.32-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.31).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.32).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -77,7 +77,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
-| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board, 105 °C on every TPS546 board |
+| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage and clock 100 lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
@@ -156,7 +156,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-pool.png" alt="Pool page: connection, shares, coinbase payout and outputs, pool settings" width="760"><br>
-  <em>Pool — the connection (protocol, Noise/TLS, fallback), shares with reject reasons, and who a found block pays: your share, the coinbase value and each output. Below, main and fallback pool, each Stratum V1 with optional TLS or Stratum V2 with the pool's authority key.</em>
+  <em>Pool — the connection (protocol, Noise/TLS, fallback), shares with reject reasons, and who a found block pays: your share, the coinbase value and each output. Below, the saved pools (up to eight, one click makes one the main pool), then main and fallback pool with the coin the pool pays in, each Stratum V1 with optional TLS or Stratum V2 with the pool's authority key.</em>
 </p>
 
 ### Device display
@@ -259,8 +259,13 @@ back at any time with `GET /api/v1/display/frame`.
   whichever of the two needs more (regulator target 80 °C).
 - Overheat shutdown of the core voltage at the stock firmware's lines
   (Bitaxe and BitForge Nano: chip 75 °C, regulator 105 °C as AxeOS stops;
-  NerdQAxe/NerdOctaxe/Q13xx: 70 / 70 as NerdOS; NerdNOS: 80; the chip line
-  is a setting, the regulator's is fixed per board) and a guard for a lost chip sensor
+  NerdQAxe/NerdOctaxe/Q13xx: 70 / 70 as NerdOS; NerdAxe Gamma 70 / 105 and
+  NerdAxe Gaia 75 / 105 — NerdOS has no regulator stop on these one-fan
+  boards, WarpAxe keeps AxeOS's 105 on the same TPS546; NerdNOS: 80;
+  [`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)).
+  The chip line is a setting: on the NerdOS boards up to 90 °C as NerdOS
+  allows, on every other board only below its own line; the regulator's is
+  fixed per board. And a guard for a lost chip sensor
   (60 s blind = off, once the chip temperature has been read; a board whose
   chip sensor never answers runs like NerdOS, on the regulator limit with
   the fans at full, and says so in the log). The chips start again on their own once chip and
@@ -443,6 +448,14 @@ back at any time with `GET /api/v1/display/frame`.
   installs it. A release without a signature still installs for now and is
   marked as unsigned; that tolerance ends once every release carries one.
   Nothing installs by itself: an update restarts the miner.
+- **The writer needs no free memory**: the online update, an upload, a
+  restart and download mode are carried out by the firmware's main task,
+  whose stack exists from boot on, so an update works however fragmented
+  the internal heap is after days of mining (up to v0.1.31 an update
+  could be refused with 45 KB free but no 16 KB piece). A second image
+  while one is queued or being written is refused at once (409 on the
+  upload); `largestFreeInternal` in `/api/system/info` shows the largest
+  piece ([`docs/09`](docs/09-Update-with-a-fragmented-heap.md)).
 - **Chips off before every restart**: an update, a restart and download
   mode first switch the core voltage off and hold the chips in reset, and
   every boot does so before anything else. A TPS546 keeps its output on
@@ -607,7 +620,7 @@ Host crates and tests:
 ```bash
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
-cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board \
+cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board -p warpaxe-ota \
     --target thumbv7em-none-eabihf                             # proves no_std
 ```
 
@@ -645,8 +658,12 @@ License) and `docs/brand` by `tools/make-fonts.py` and
 | `crates/core` | BM13xx wire protocol: frames, CRCs, decoders, PLL solvers (ESP-Miner's and cgminer's gekko formula), register payloads, SHA-256 midstates for the BM1397, chip profiles with the init sequence as data — `no_std`, no alloc |
 | `crates/chain` | the chain driver over a `Uart` trait — `no_std`, the code the firmware runs |
 | `crates/board` | regulators, sensors, fans, fan PID, OLED, board profiles over an `I2c` trait — `no_std`, tested against a scripted bus |
-| `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading, tested against a captured WarpPool session |
+| `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading and payout (the worker's address decoded — base58, bech32/bech32m, CashAddr — for any SHA-256 coin), tested against a captured WarpPool session |
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
+| `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |
+| `crates/avalon` | read-only cgminer API client for an Avalon (`summary`, `estats`, `pools`), translated to an AxeOS-like document |
+| `crates/cpuminer` | SHA-256 hashing without an ASIC for the T-Display-S3, NerdMiner settings import |
+| `crates/displaycfg` | the display's page, cockpit and slide names, defaults and PATCH checks |
 | `crates/sim`, `crates/simuart` | a simulated BM1370/BM1373/BM1397 chain and board with fault injection |
 | `crates/axeos`, `crates/cgminer` | AxeOS- and cgminer-compatible devices on top of the simulator, for testing tuners |
 | `crates/scenarios` | WarpTune's regulator in-process against the simulated devices (git dependency on dvb-WarpPool) |
@@ -686,7 +703,14 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   — the display's choosable pages, cockpit places and OLED slides (names,
   defaults, why the curve follows the large number), and the Avalon on
   the swarm page: the cgminer fields and what each is used as, the
-  read-only guard rails, the image size before and after.
+  read-only guard rails, the image size before and after;
+- [`docs/08-Temperature-stop-limits-against-the-stock-firmware.md`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)
+  — the lines AxeOS and NerdOS actually stop at (75/105, 70/70, none on the
+  one-fan NerdAxe), board by board, and why WarpAxe up to v0.1.31 stopped
+  later on a Bitaxe;
+- [`docs/09-Update-with-a-fragmented-heap.md`](docs/09-Update-with-a-fragmented-heap.md)
+  — an update refused with 45 KB free but no 16 KB piece, and why the main
+  task writes the firmware now.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
