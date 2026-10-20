@@ -127,10 +127,69 @@ thread of v0.1.31 could not have been spawned at any point of steps 3
 and 4c. Even a fresh boot has its largest piece at a third of the free
 total.
 
-### The heap over hours
+### The heap over hours (2026-10-20 07:05–09:34Z)
 
-Fleet log since 2026-10-20 07:05Z, once a minute (`freeHeapInternal`,
-`largestFreeInternal` where the image reports it).
+Fleet log once a minute from `/api/system/info` (`freeHeapInternal`,
+`largestFreeInternal` where the image reports it). .41 ran the fix
+image 5a84125 from 07:32Z (Sv2 at the pool, chain up, nobody else on
+it). Phase A: the swarm page open in a browser for an hour (the Avalon
+card refreshing, the network search clicked once at the start). Phase
+B: the hour after, no page open.
+
+| .41 | Samples | free, min–max (mean) | largest piece |
+|---|---|---|---|
+| A, 07:33–08:33Z, swarm page open | 59 | 25 631–34 087 B (31 261) | 20 480 B in every sample |
+| B, 08:33–09:33Z, no page | 59 | 28 735–36 147 B (32 805) | 20 480 B in every sample |
+
+- **The largest piece does not move.** 24 576 B at 36 s up, 20 480 B
+  from the second minute on and in all 119 samples after, through both
+  phases. The holes are cut while the services come up (the test table
+  above shows the same: 31 KB at the end of boot, 22 KB at 17 s, 20 KB
+  at 86 s), not by anything that runs periodically afterwards.
+- **The swarm page changes nothing** that matters. The free total sits
+  about 1.5 KB lower with the page open (its polls and the Avalon read
+  churn the heap), inside the ±4 KB band both phases show, and the
+  largest piece is the same number. The PSRAM read of b9b019d is in
+  the clear.
+- **The fleet on the release** (821e8d2, rebooted into it between
+  07:51Z and 09:04Z) shows the same shape: a largest piece of 25–32 KB
+  that is constant per miner (.42: 31 744 B in all 102 samples over
+  100 min; .40, .44, .45, .46: one step of 1 KB at most in 30–40 min)
+  while the free total wanders by 10–18 KB.
+- **The old fleet** before the release (v0.1.31, up 150 000 s) did not
+  lose free total over the morning either: .40 30 955 → 39 007 B,
+  .45 28 863 → 30 143 B between 07:05Z and the reboot. Those images
+  report no largest piece, so whether the 16 KB cgminer thread of
+  v0.1.31 cut the holes over days stays unproven; two hours on an image
+  that no longer has it cannot show it. What the morning shows is that
+  the update refused in the handover (45 KB free, no 16 KB piece at
+  2 800 s up) is the normal state of a NerdQAxe++ a minute after boot,
+  no days needed.
+
+Why a fresh boot already has a largest piece of a third of its free
+total: the internal heap is several regions, and a free run cannot
+cross one. The 90 KB at the end of boot are spread over them; the
+biggest run sits in one.
+
+What else allocates internal RAM repeatedly, from reading the code:
+
+- **Stratum** spawns a 6 KB internal sender thread per session (V1 and
+  V2, `stratum.rs`); it ends with the session. One hole per reconnect
+  at most, and the next one usually takes the freed stack.
+- **HTTP**: `esp_httpd` buffers per request and every JSON reply go
+  internal first (below 16 KB, `ALWAYSINTERNAL`). Short-lived; that is
+  the ±4 KB wander of the free total.
+- **mbedTLS** allocates from PSRAM (`CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC`),
+  so a TLS session does not touch the internal heap.
+- **Swarm**: the Avalon read and the scan workers run on PSRAM stacks
+  since b9b019d.
+- Everything else (board, miner, Wi-Fi, mDNS, display, history, market,
+  update, sv2) is one thread, created at boot.
+
+Not done, a candidate if the free total ever gets tight: lowering
+`CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL` (say to 4 KB) would send the
+JSON replies and the larger buffers to PSRAM. Slower replies, less
+churn; measure before, measure after.
 
 ## Audit
 
