@@ -309,32 +309,46 @@ fn start_read(host: &str) {
         *busy = Some(host.to_string());
     }
     let h = host.to_string();
-    // Internal RAM for the stack (the default): sockets and a few KB of
-    // JSON, no flash. The normal path takes about 4 KB; the parser is
-    // kept off deep documents (`warpaxe_avalon::MAX_DEPTH`), and 16 KB
-    // leaves room for the eight levels it may see. If no thread can be
-    // had right now the request says so and the page tries again later.
-    let spawned = std::thread::Builder::new()
-        .name("cgminer".into())
-        .stack_size(16 * 1024)
-        .spawn(move || {
-            let t0 = Instant::now();
-            let result = warpaxe_avalon::fetch(&h, warpaxe_avalon::PORT, TIMEOUT)
-                .map(|raw| warpaxe_avalon::translate(&raw))
-                .map_err(|e| e.to_string());
-            match &result {
-                Ok(v) => log::info!(
-                    "swarm: cgminer {h}: {} {} GH/s {} W in {} ms",
-                    v["deviceModel"].as_str().unwrap_or("?"),
-                    v["hashRate"].as_f64().map_or(0, |g| g.round() as i64),
-                    v["power"].as_f64().map_or(0, |w| w.round() as i64),
-                    t0.elapsed().as_millis()
-                ),
-                Err(e) => log::warn!("swarm: cgminer {h}: {e}"),
-            }
-            remember(&h, result);
-            *BUSY.lock().unwrap() = None;
-        });
+    // The small buffers of the read (socket, reply) still come from
+    // internal RAM, so the same guard as the search's.
+    let free = crate::diag::free_heap_internal();
+    if free < SCAN_MIN_HEAP_PER_HOST {
+        log::warn!(
+            "swarm: cgminer {host}: {} KB internal heap free, read later",
+            free / 1024
+        );
+        remember(
+            host,
+            Err("the miner is short of memory right now, retrying".into()),
+        );
+        *BUSY.lock().unwrap() = None;
+        return;
+    }
+    // The stack in PSRAM, as the search's workers: the read only opens a
+    // socket and parses a few KB of JSON, never flash. 16 KB of internal
+    // RAM in one piece was not to be had on a NerdQAxe++ with 33 KB free
+    // (fragmented), and every read failed with ENOMEM (2026-10-20). The
+    // normal path takes about 4 KB; the parser is kept off deep documents
+    // (`warpaxe_avalon::MAX_DEPTH`), and 16 KB leaves room for the eight
+    // levels it may see.
+    let spawned = crate::diag::spawn_psram("cgminer", 16 * 1024, move || {
+        let t0 = Instant::now();
+        let result = warpaxe_avalon::fetch(&h, warpaxe_avalon::PORT, TIMEOUT)
+            .map(|raw| warpaxe_avalon::translate(&raw))
+            .map_err(|e| e.to_string());
+        match &result {
+            Ok(v) => log::info!(
+                "swarm: cgminer {h}: {} {} GH/s {} W in {} ms",
+                v["deviceModel"].as_str().unwrap_or("?"),
+                v["hashRate"].as_f64().map_or(0, |g| g.round() as i64),
+                v["power"].as_f64().map_or(0, |w| w.round() as i64),
+                t0.elapsed().as_millis()
+            ),
+            Err(e) => log::warn!("swarm: cgminer {h}: {e}"),
+        }
+        remember(&h, result);
+        *BUSY.lock().unwrap() = None;
+    });
     if let Err(e) = spawned {
         log::warn!("swarm: cgminer {host}: no thread: {e}");
         remember(host, Err(format!("no thread for the read: {e}")));
