@@ -512,18 +512,32 @@ pub struct Job {
     pub delay: Duration,
 }
 
-/// The hand-off to the writer (`warpaxe_ota::Handoff`, host-tested) and
-/// the bell that wakes it.
-static WRITER: Mutex<warpaxe_ota::Handoff<Job>> = Mutex::new(warpaxe_ota::Handoff::new());
+/// What the main task does for others: write an image, or restart
+/// (into the app or into ROM download mode) with the chips parked
+/// first. The restarts used to spawn a thread with an 8 KB internal
+/// stack; on the fragmented heap that stops an update, `std::thread::spawn`
+/// panics instead, and the panic resets the board without
+/// `prepare_reset` (the chips stay powered through it; docs/04).
+pub enum Work {
+    Write(Job),
+    /// `POST /api/system/restart`, with the reason for the log.
+    Restart(&'static str),
+    /// `/bootloader`: ROM download mode, the PHY on USB-Serial/JTAG.
+    Bootloader,
+}
+
+/// The hand-off to the main task (`warpaxe_ota::Handoff`, host-tested)
+/// and the bell that wakes it.
+static WRITER: Mutex<warpaxe_ota::Handoff<Work>> = Mutex::new(warpaxe_ota::Handoff::new());
 static WRITER_BELL: Condvar = Condvar::new();
 
 /// Queue an image for the main task to write. Refused, with the reason
-/// for the user, while another image is queued or being written; the
-/// image is dropped then, and the caller says so.
+/// for the user, while another job is queued or under way; the image
+/// is dropped then, and the caller says so.
 pub fn submit(job: Job) -> Result<(), &'static str> {
     let (origin, bytes) = (job.origin, job.image.len());
     let mut w = WRITER.lock().unwrap();
-    match w.offer(job) {
+    match w.offer(Work::Write(job)) {
         Ok(()) => {
             log::info!(
                 "{origin}: {bytes} bytes handed to the writer ({})",
@@ -539,7 +553,18 @@ pub fn submit(job: Job) -> Result<(), &'static str> {
     }
 }
 
-/// A write is queued or under way.
+/// Queue a restart (or the way into download mode) for the main task.
+/// While a write is queued or under way the request is dropped: that
+/// write ends in a restart of its own, and must not be cut short.
+pub fn submit_restart(work: Work) {
+    let mut w = WRITER.lock().unwrap();
+    match w.offer(work) {
+        Ok(()) => WRITER_BELL.notify_all(),
+        Err((why, _)) => log::warn!("restart: not now, {}", why.reason()),
+    }
+}
+
+/// A job (a write or a restart) is queued or under way.
 pub fn writing() -> bool {
     WRITER.lock().unwrap().phase() != warpaxe_ota::Phase::Idle
 }
@@ -552,13 +577,29 @@ pub fn writing() -> bool {
 /// and the task waits for the next job.
 pub fn serve_writes() -> ! {
     loop {
-        let job = {
+        let work = {
             let mut w = WRITER.lock().unwrap();
             loop {
-                if let Some(job) = w.take() {
-                    break job;
+                if let Some(work) = w.take() {
+                    break work;
                 }
                 w = WRITER_BELL.wait(w).unwrap();
+            }
+        };
+        let job = match work {
+            Work::Write(job) => job,
+            Work::Restart(why) => {
+                // The answer goes out first.
+                std::thread::sleep(Duration::from_millis(300));
+                crate::board::prepare_reset(why);
+                diag::restart();
+            }
+            Work::Bootloader => {
+                std::thread::sleep(Duration::from_millis(300));
+                // Nothing runs in ROM download mode: the chips must not
+                // sit powered at their last clock meanwhile.
+                crate::board::prepare_reset("download mode");
+                diag::reboot_to_bootloader();
             }
         };
         let Job {

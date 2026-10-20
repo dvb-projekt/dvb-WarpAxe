@@ -930,11 +930,9 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         let mut r = req.into_ok_response()?;
         r.write_all(b"restarting\n")?;
         r.flush()?;
-        std::thread::spawn(|| {
-            std::thread::sleep(Duration::from_millis(300));
-            board::prepare_reset("restart");
-            diag::restart();
-        });
+        // On the main task (update::serve_writes): no thread to spawn
+        // from a heap that may have no 8 KB piece left.
+        crate::update::submit_restart(crate::update::Work::Restart("restart"));
         Ok::<(), EspIOError>(())
     })?;
 
@@ -1282,13 +1280,7 @@ fn bootloader(
     let mut r = req.into_ok_response()?;
     r.write_all(b"rebooting into ROM download mode; clear RTC_CNTL_OPTION1_REG before the reset that should start the app\n")?;
     r.flush()?;
-    std::thread::spawn(|| {
-        std::thread::sleep(Duration::from_millis(300));
-        // Nothing runs in ROM download mode: the chips must not sit
-        // powered at their last clock meanwhile.
-        board::prepare_reset("download mode");
-        diag::reboot_to_bootloader();
-    });
+    crate::update::submit_restart(crate::update::Work::Bootloader);
     Ok(())
 }
 
