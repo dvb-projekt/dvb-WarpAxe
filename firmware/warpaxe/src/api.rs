@@ -111,7 +111,7 @@ pub fn system_info() -> serde_json::Value {
         "power": b.power_w, "powerEstimated": b.power_estimated, "hasFan": profile.has_fan(), "hasVr": b.has_vr, "voltage": b.vin_mv, "current": b.iout_ma,
         "temp": b.temp_c, "vrTemp": b.vr_temp_c.unwrap_or(0),
         "overheat_mode": u8::from(b.overheat), "overheatLatched": b.overheat_latched, "overheatTrips": b.overheat_trips, "overheatCause": b.overheat_cause, "fanWarmup": b.fan_warmup, "faultCause": fault_cause(&b), "coreCurrentA": b.core_current_a, "coreCurrentWarnA": b.core_current_warn_a, "power_fault": b.power_fault, "powerFaultCodes": b.power_fault_codes, "shutdown": b.shutdown, "chainStopped": board::chain_stopped(), "fanrpm": b.fan_rpm,
-        "vrOverheatTemp": profile.vr_max_c.round() as u32, "boardError": b.last_error,
+        "vrOverheatTemp": profile.vr_stop_c.round() as u32, "boardError": b.last_error,
         "fanrpm2": b.fan2_rpm, "fanspeed2": b.fan2_pct, "vrPart": b.vr_part,
         "fans": nerd_fans(&cfg, profile, &b),
         "invertfanpolarity": u8::from(cfg.invertfanpolarity), "minFanSpeed": cfg.min_fan_speed,
@@ -122,7 +122,7 @@ pub fn system_info() -> serde_json::Value {
         "autofanspeed2": cfg.autofanspeed2, "manualFanSpeed2": cfg.manual_fan_speed2, "manualFanSpeed": cfg.fanspeed,
         "vrTargetTemp": vr_target(&cfg), "linkFans": cfg.link_fans,
         "stratumSuggestedDifficulty": cfg.suggested_difficulty, "jobInterval": cfg.job_interval_ms,
-        "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.max_temp_c.round() as u32 },
+        "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.chip_stop_c.round() as u32 },
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
@@ -232,7 +232,7 @@ fn nerd_fans(
     let chip_limit = if cfg.overheat_temp > 0 {
         u32::from(cfg.overheat_temp)
     } else {
-        p.max_temp_c.round() as u32
+        p.chip_stop_c.round() as u32
     };
     let target = if cfg.pid_target_temp > 0 {
         u32::from(cfg.pid_target_temp)
@@ -245,7 +245,7 @@ fn nerd_fans(
          "overheatTemp": chip_limit, "pid": gains(target),
          "rpm": b.fan_rpm, "speedPerc": b.fan_pct},
         {"label": "M1", "mode": if cfg.autofanspeed2 { 3 } else { 0 }, "manualSpeed": cfg.manual_fan_speed2,
-         "overheatTemp": p.vr_max_c.round() as u32, "pid": gains(vr_target(cfg)),
+         "overheatTemp": p.vr_stop_c.round() as u32, "pid": gains(vr_target(cfg)),
          "rpm": b.fan2_rpm.unwrap_or(0), "speedPerc": b.fan2_pct.unwrap_or(0)},
     ])
 }
@@ -381,6 +381,11 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         ("fallbackStratumTLS", 0.0, 1.0),
         ("vrTargetTemp", 40.0, 90.0),
         ("pidTargetTemp", 35.0, 85.0),
+        // The chip stop may be raised above the board's own line, but
+        // never past 90: the old Bitaxe default and NerdOS's Kconfig
+        // ceiling (`range 50 90`), the same window the settings page and
+        // the stock import (`config::import_fans`) apply.
+        ("overheat_temp", 50.0, 90.0),
         // 10 ms: a BM1397 scans its nonce space in ~100 ms at 250 MHz, so
         // cadence experiments need the range below the old 100 ms floor.
         ("jobInterval", 10.0, 5000.0),
