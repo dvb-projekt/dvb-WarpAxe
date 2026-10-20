@@ -59,9 +59,13 @@ Unchanged and checked against the new lines:
   board without a fan to drive, which comes back one clock option lower
   (`clockStep`). Compared only, not changed.
 - `overheat_temp` (the chip line as a setting, 0 = the profile's) now
-  has the server-side window 50–90 (`api.rs` `expert_refuse`), the same
-  as the settings page, the stock import and NerdOS's Kconfig range. A
-  value already stored above the new default stays in force up to 90.
+  has a floor of 50 and a ceiling per board (`Profile::chip_stop_max_c`):
+  90 on the NerdOS boards, as NerdOS's Kconfig range allows, and the
+  board's own line everywhere else, since AxeOS has no such setting. So a
+  Bitaxe's chip line can only go down. `Profile::chip_limit_c` applies the
+  ceiling to a value already stored, too (a Gamma set to 90 before now
+  stops at 75); `expert_refuse` refuses a PATCH above it, and the settings
+  field takes its `max` from `overheatTempMax`.
 - API: `vrOverheatTemp` and NerdOS-style `fans[1].overheatTemp` report
   `vr_stop_c`; `overheat_temp` and `fans[0].overheatTemp` the chip line
   in force. The web UI's help text and the swarm card's `|| 105`
@@ -75,13 +79,11 @@ Unchanged and checked against the new lines:
   Bitaxe boards it keeps its own defaults ("ESP-Miner hardcodes 75/90").
   Nothing to change there.
 
-## Open for Oliver
+## Decided by Oliver (2026-10-20)
 
-1. NerdAxe Gamma and Gaia: keep the 105 °C regulator stop that NerdOS
-   does not have (recommended), or follow NerdOS and leave it to the
-   TPS546's 145 °C fault.
-2. Gaia chip line: 75 (the reference board's setting, as now) or the
-   Kconfig default 70.
-3. `overheat_temp` above the board's new default: allowed up to 90 (as
-   built), or capped at the profile's line.
-4. The soak on the .41 and the Gamma after the merge.
+1. NerdAxe Gamma and Gaia keep the 105 °C regulator stop that NerdOS
+   does not have.
+2. Gaia chip line stays 75 (the reference board's setting).
+3. `overheat_temp` above the board's line: up to 90 on the NerdOS boards
+   (as NerdOS), never above the board's line on a Bitaxe and the others.
+4. The soak on the .41 and the Gamma follows the merge.

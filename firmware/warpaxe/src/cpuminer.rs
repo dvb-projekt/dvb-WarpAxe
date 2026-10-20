@@ -736,11 +736,7 @@ fn run() {
             board::set_devkit_temp(temp);
             if let Some(t) = temp {
                 let cfg = config::get();
-                let limit = if cfg.overheat_temp > 0 {
-                    f32::from(cfg.overheat_temp)
-                } else {
-                    board::profile().chip_stop_c
-                };
+                let limit = board::profile().chip_limit_c(cfg.overheat_temp);
                 // A manual reset (/api/v1/overheat/reset, the same flag a
                 // board with chips clears) ends the stop as well; the
                 // next reading above the limit raises it again.

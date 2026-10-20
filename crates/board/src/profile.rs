@@ -305,6 +305,31 @@ const OCTAXE_6P_VOLTAGES: &[u16] = &[
 ];
 
 impl Profile {
+    /// How high an owner may set the chip stop: NerdOS lets them choose up
+    /// to 90 °C (`range 50 90` in its Kconfig), so its boards keep that;
+    /// AxeOS has no such setting, so a Bitaxe (and every other board) can
+    /// only go below its own line (Oliver, 2026-10-20).
+    pub fn chip_stop_max_c(&self) -> f32 {
+        let nerdos = ["nerdqaxe", "nerdoctaxe", "nerdaxe", "q13"]
+            .iter()
+            .any(|n| self.name.starts_with(n));
+        if nerdos {
+            90.0
+        } else {
+            self.chip_stop_c
+        }
+    }
+
+    /// The chip temperature that stops mining: the owner's setting (0 =
+    /// the board's line), never above [`Profile::chip_stop_max_c`].
+    pub fn chip_limit_c(&self, setting: u8) -> f32 {
+        if setting == 0 {
+            self.chip_stop_c
+        } else {
+            f32::from(setting).min(self.chip_stop_max_c())
+        }
+    }
+
     /// The choices this board publishes. The NerdOCTAXE-γ's depend on the
     /// regulator found at start (`tps53667`): the 6-phase part gets
     /// NerdOS's extended lists, the 4-phase TPS53647 the NerdQAxe++'s it
@@ -1210,6 +1235,22 @@ mod tests {
     /// WantClue's NerdNOS against MAX_SAFE_TEMP 80. Up to v0.1.31 the
     /// Bitaxe profiles carried ESP-Miner's unused MAX_TEMP constants
     /// (90 / 145) and stopped 15 / 40 °C after AxeOS.
+    #[test]
+    fn a_bitaxe_chip_stop_only_goes_down_a_nerd_one_up_to_90() {
+        let gamma = Profile::by_name("bitaxe-gamma").unwrap();
+        assert_eq!(gamma.chip_limit_c(0), 75.0);
+        assert_eq!(gamma.chip_limit_c(70), 70.0);
+        assert_eq!(gamma.chip_limit_c(90), 75.0, "a stored 90 is capped");
+        let nq = Profile::by_name("nerdqaxe-plusplus").unwrap();
+        assert_eq!(nq.chip_limit_c(0), 70.0);
+        assert_eq!(nq.chip_limit_c(85), 85.0);
+        assert_eq!(nq.chip_limit_c(95), 90.0);
+        for p in ALL {
+            assert!(p.chip_stop_max_c() >= p.chip_stop_c, "{}", p.name);
+            assert!(p.chip_stop_max_c() <= 90.0, "{}", p.name);
+        }
+    }
+
     #[test]
     fn stop_limits_are_the_stock_firmwares() {
         use super::*;

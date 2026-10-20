@@ -122,7 +122,7 @@ pub fn system_info() -> serde_json::Value {
         "autofanspeed2": cfg.autofanspeed2, "manualFanSpeed2": cfg.manual_fan_speed2, "manualFanSpeed": cfg.fanspeed,
         "vrTargetTemp": vr_target(&cfg), "linkFans": cfg.link_fans,
         "stratumSuggestedDifficulty": cfg.suggested_difficulty, "jobInterval": cfg.job_interval_ms,
-        "overheat_temp": if cfg.overheat_temp > 0 { u32::from(cfg.overheat_temp) } else { profile.chip_stop_c.round() as u32 },
+        "overheat_temp": profile.chip_limit_c(cfg.overheat_temp).round() as u32, "overheatTempMax": profile.chip_stop_max_c().round() as u32,
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
         "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
@@ -230,11 +230,7 @@ fn nerd_fans(
     if p.thermal != warpaxe_board::Thermal::Tmp1075Emc2302 {
         return json!([]);
     }
-    let chip_limit = if cfg.overheat_temp > 0 {
-        u32::from(cfg.overheat_temp)
-    } else {
-        p.chip_stop_c.round() as u32
-    };
+    let chip_limit = p.chip_limit_c(cfg.overheat_temp).round() as u32;
     let target = if cfg.pid_target_temp > 0 {
         u32::from(cfg.pid_target_temp)
     } else {
@@ -362,6 +358,14 @@ fn display_refuse(v: &serde_json::Value) -> Option<String> {
 /// Expert fields outside what the controllers can use sensibly.
 fn expert_refuse(v: &serde_json::Value) -> Option<String> {
     let num = |k: &str| v.get(k).and_then(|x| x.as_f64());
+    if let Some(x) = num("overheat_temp") {
+        let max = board::profile().chip_stop_max_c();
+        if x > f64::from(max) {
+            return Some(format!(
+                "overheat_temp {x} above this board's ceiling of {max} °C (0 = default)"
+            ));
+        }
+    }
     for (k, lo, hi) in [
         ("pidP", 0.0, 100.0),
         ("pidI", 0.0, 10.0),
@@ -382,10 +386,8 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
         ("fallbackStratumTLS", 0.0, 1.0),
         ("vrTargetTemp", 40.0, 90.0),
         ("pidTargetTemp", 35.0, 85.0),
-        // The chip stop may be raised above the board's own line, but
-        // never past 90: the old Bitaxe default and NerdOS's Kconfig
-        // ceiling (`range 50 90`), the same window the settings page and
-        // the stock import (`config::import_fans`) apply.
+        // The chip stop: 50 at the lowest, the board's ceiling checked
+        // below (90 on the NerdOS boards, the board's own line elsewhere).
         ("overheat_temp", 50.0, 90.0),
         // 10 ms: a BM1397 scans its nonce space in ~100 ms at 250 MHz, so
         // cadence experiments need the range below the old 100 ms floor.

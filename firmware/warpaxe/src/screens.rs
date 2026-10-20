@@ -246,11 +246,7 @@ fn limits() -> (f32, f32) {
     } else {
         p.fan_target_c
     };
-    let hot = if cfg.overheat_temp > 0 {
-        f32::from(cfg.overheat_temp)
-    } else {
-        p.chip_stop_c
-    };
+    let hot = p.chip_limit_c(cfg.overheat_temp);
     (target, hot)
 }
 

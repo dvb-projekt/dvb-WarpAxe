@@ -1631,11 +1631,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 }
                 rpm = t.rpm();
             }
-            let chip_limit = if cfg.overheat_temp > 0 {
-                f32::from(cfg.overheat_temp)
-            } else {
-                profile.chip_stop_c
-            };
+            let chip_limit = profile.chip_limit_c(cfg.overheat_temp);
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_stop_c);
             let blind = temp_seen && temp_lost_s >= TEMP_LOST_S;
