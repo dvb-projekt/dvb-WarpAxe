@@ -272,6 +272,13 @@ fn run() {
         .spawn(probe_primary)
         .ok();
     loop {
+        // A change that came while no session was up (connecting, or in
+        // the backoff) applies now: this pass reads the new config.
+        if RECONNECT.swap(false, Ordering::Relaxed) {
+            on_fallback = false;
+            fails = 0;
+            backoff = Duration::from_secs(3);
+        }
         let cfg = config::get();
         if cfg.stratum_url.is_empty() || cfg.stratum_user.is_empty() {
             update(|s| s.last_error = "no pool or user configured".into());
@@ -362,12 +369,21 @@ fn run() {
             if !on_fallback {
                 fails += 1;
             }
-            std::thread::sleep(backoff);
+            pause_unless_reconnect(backoff);
             backoff = (backoff * 2).min(Duration::from_secs(60));
         } else {
             fails = 0;
             backoff = Duration::from_secs(3);
         }
+    }
+}
+
+/// The backoff, cut short by a settings change: a saved pool chosen while
+/// the old one keeps failing applies within a second, not a minute.
+fn pause_unless_reconnect(d: Duration) {
+    let end = Instant::now() + d;
+    while Instant::now() < end && !RECONNECT.load(Ordering::Relaxed) {
+        std::thread::sleep(Duration::from_millis(250));
     }
 }
 
@@ -409,6 +425,12 @@ fn session(
     // and written on a small writer thread (see `link`).
     let stream = Arc::new(Link::connect(host, port, tls)?);
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    // Settings changed while this session was connecting (DNS, connect,
+    // TLS): `reconnect` found no stream to shut, so end here and let
+    // `run` start over with the new config.
+    if RECONNECT.load(Ordering::Relaxed) {
+        return Ok(());
+    }
     if fallback {
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
@@ -735,6 +757,12 @@ fn session_v2(
     let stream = Arc::new(Link::connect(host, port, false)?);
 
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    // Settings changed while this session was connecting (DNS, connect,
+    // TLS): `reconnect` found no stream to shut, so end here and let
+    // `run` start over with the new config.
+    if RECONNECT.load(Ordering::Relaxed) {
+        return Ok(());
+    }
     if fallback {
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }

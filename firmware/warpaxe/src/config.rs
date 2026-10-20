@@ -487,7 +487,8 @@ pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
 const POOLS_KEY: &str = "pools";
 /// At most this many saved pools, and this many bytes stored.
 pub const POOLS_MAX: usize = 8;
-const POOLS_MAX_BYTES: usize = 3072;
+/// Below the 4000-byte limit of an NVS string.
+const POOLS_MAX_BYTES: usize = 3968;
 
 /// A saved pool: the main pool's fields under their config names, so
 /// using it is a config patch, plus a name and the coin it mines.
@@ -554,13 +555,31 @@ impl PoolProfile {
 /// The saved pools, in the order they were saved. Their own NVS key, so
 /// the config document stays small.
 pub fn pools() -> Vec<PoolProfile> {
+    stored_pools().unwrap_or_default()
+}
+
+/// The saved pools as stored; `Err` when something is stored but does
+/// not read (damaged, or written by another version), so a save does not
+/// silently replace the whole list with one pool.
+fn stored_pools() -> Result<Vec<PoolProfile>, String> {
     let mut buf = vec![0u8; POOLS_MAX_BYTES + 64];
-    NVS.lock()
-        .unwrap()
-        .as_ref()
-        .and_then(|nvs| nvs.get_str(POOLS_KEY, &mut buf).ok().flatten())
-        .and_then(|s| serde_json::from_str::<Vec<PoolProfile>>(s.trim_end_matches('\0')).ok())
-        .unwrap_or_default()
+    let g = NVS.lock().unwrap();
+    let raw = match g.as_ref().map(|nvs| nvs.get_str(POOLS_KEY, &mut buf)) {
+        Some(Ok(Some(s))) => s.trim_end_matches('\0').to_string(),
+        Some(Ok(None)) | None => return Ok(Vec::new()),
+        Some(Err(e)) => {
+            log::warn!("config: reading the saved pools: {e}");
+            return Err("the saved pools cannot be read".into());
+        }
+    };
+    drop(g);
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<PoolProfile>>(&raw).map_err(|e| {
+        log::warn!("config: the saved pools do not read ({e}); not overwriting them");
+        "the saved pools cannot be read".to_string()
+    })
 }
 
 fn store_pools(list: &[PoolProfile]) -> Result<(), String> {
@@ -584,7 +603,7 @@ pub fn save_pool(mut p: PoolProfile) -> Result<Vec<PoolProfile>, String> {
     if p.url.trim().is_empty() || p.user.trim().is_empty() {
         return Err("the pool needs an address and a worker".into());
     }
-    let mut list = pools();
+    let mut list = stored_pools()?;
     match list.iter().position(|q| q.name.eq_ignore_ascii_case(&name)) {
         Some(i) => list[i] = p,
         None if list.len() >= POOLS_MAX => return Err(format!("at most {POOLS_MAX} pools")),
@@ -595,7 +614,7 @@ pub fn save_pool(mut p: PoolProfile) -> Result<Vec<PoolProfile>, String> {
 }
 
 pub fn delete_pool(name: &str) -> Result<Vec<PoolProfile>, String> {
-    let mut list = pools();
+    let mut list = stored_pools()?;
     let before = list.len();
     list.retain(|q| !q.name.eq_ignore_ascii_case(name.trim()));
     if list.len() == before {
@@ -989,14 +1008,17 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             let Some(p) = axeos_pool(stock, Some(n as f64)) else {
                 continue;
             };
-            let mut name = p.url.clone();
+            // Names are at most 32 characters: shorten first, then make
+            // them unique, so two long URLs do not end up with one name.
+            let base: String = p.url.chars().take(27).collect();
+            let mut name: String = p.url.chars().take(32).collect();
             let mut k = 2;
             while list.iter().any(|q| q.name.eq_ignore_ascii_case(&name)) {
-                name = format!("{} ({k})", p.url);
+                name = format!("{base} ({k})");
                 k += 1;
             }
-            list.push(PoolProfile {
-                name: name.chars().take(32).collect(),
+            let profile = PoolProfile {
+                name,
                 port: if p.port > 0 { p.port } else { 3333 },
                 pass: if p.pass.is_empty() {
                     "x".into()
@@ -1014,7 +1036,13 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
                 url: p.url,
                 user: p.user,
                 require_auth: false,
-            });
+            };
+            // As many as fit: a long list is cut, not dropped.
+            list.push(profile);
+            if serde_json::to_string(&list).map_or(true, |j| j.len() > POOLS_MAX_BYTES) {
+                list.pop();
+                break;
+            }
         }
         if !list.is_empty() {
             match store_pools(&list) {

@@ -74,7 +74,7 @@ fn raw_outputs(tx: &[u8]) -> Option<Vec<(u64, &[u8])>> {
     let inputs = varint(tx, &mut at)?;
     for _ in 0..inputs {
         take(tx, &mut at, 36)?; // prevout
-        let len = varint(tx, &mut at)? as usize;
+        let len = usize::try_from(varint(tx, &mut at)?).ok()?;
         take(tx, &mut at, len)?; // script
         take(tx, &mut at, 4)?; // sequence
     }
@@ -86,7 +86,7 @@ fn raw_outputs(tx: &[u8]) -> Option<Vec<(u64, &[u8])>> {
     for _ in 0..n {
         let v = take(tx, &mut at, 8)?;
         let value = u64::from_le_bytes(v.try_into().ok()?);
-        let len = varint(tx, &mut at)? as usize;
+        let len = usize::try_from(varint(tx, &mut at)?).ok()?;
         out.push((value, take(tx, &mut at, len)?));
     }
     Some(out)
@@ -122,10 +122,12 @@ pub fn payout(head: &[u8], extranonce_len: usize, tail: &[u8], user: &str) -> Op
         ..Payout::default()
     };
     for (value, script) in raw {
-        p.total += value;
+        // The pool sends these numbers: more than all bitcoin there will
+        // ever be is not a coinbase.
+        p.total = p.total.checked_add(value).filter(|&t| t <= MAX_SAT)?;
         let address = match &wallet {
             Some(w) if w.pays(script) => {
-                p.user += value;
+                p.user += value; // ≤ total, checked above
                 w.text.clone()
             }
             Some(w) => w.label(script),
@@ -135,6 +137,9 @@ pub fn payout(head: &[u8], extranonce_len: usize, tail: &[u8], user: &str) -> Op
     }
     Some(p)
 }
+
+/// 21 million coins in satoshis; no SHA-256 coin's coinbase pays more.
+const MAX_SAT: u64 = 21_000_000 * 100_000_000;
 
 /// The miner's own address, decoded: what its outputs look like and how
 /// the coin writes the other outputs.
@@ -209,11 +214,12 @@ impl Wallet {
         match &self.kind {
             Kind::Base58 { version, hash } => {
                 let (pkh, sh) = match version {
-                    0x00 | 0x6f => (true, false),
-                    0x05 | 0xc4 => (false, true),
-                    // Another coin: its version bytes are not known here,
-                    // and the hash is what decides.
-                    _ => (true, true),
+                    // Bitcoin (and the legacy form of BCH), DigiByte.
+                    0x00 | 0x6f | 0x1e => (true, false),
+                    0x05 | 0xc4 | 0x3f => (false, true),
+                    // Another coin's version byte: counted as a key hash
+                    // only, so a script-hash output cannot pass for ours.
+                    _ => (true, false),
                 };
                 (pkh && p2pkh(script) == Some(hash)) || (sh && p2sh(script) == Some(hash))
             }
@@ -811,6 +817,27 @@ mod tests {
         }
         // bech32 with the bech32m constant (and the reverse) is invalid.
         assert!(Wallet::parse("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5").is_none());
+    }
+
+    #[test]
+    fn an_unknown_fork_version_counts_only_key_hashes() {
+        let hash: [u8; 20] = h(HASH).try_into().unwrap();
+        let fork = base58check(0x23, &hash);
+        let w = Wallet::parse(&fork).unwrap();
+        assert!(w.pays(&pkh()));
+        assert!(!w.pays(&h(&format!("a914{HASH}87"))));
+        // DigiByte's script-hash version is known.
+        let dgb_sh = Wallet::parse(&base58check(0x3f, &hash)).unwrap();
+        assert!(dgb_sh.pays(&h(&format!("a914{HASH}87"))));
+        assert!(!dgb_sh.pays(&pkh()));
+    }
+
+    #[test]
+    fn impossible_amounts_do_not_parse() {
+        let (head, mut tail) = job();
+        let at = 4 + 1;
+        tail[at..at + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(payout(&head, 8, &tail, "x").is_none());
     }
 
     #[test]
