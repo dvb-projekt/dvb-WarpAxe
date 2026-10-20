@@ -50,6 +50,8 @@ warpaxe-displaycfg = { path = "../../crates/displaycfg" }
 # The swarm page's Avalon: a read-only cgminer client and its
 # translation into an AxeOS-like document.
 warpaxe-avalon = { path = "../../crates/avalon" }
+# The firmware writer's hand-off: one image at a time to the main task.
+warpaxe-ota = { path = "../../crates/ota" }
 
 [build-dependencies]
 embuild = "0.33"
@@ -62,6 +64,10 @@ flate2 = "1"
 # after start and on POST /api/v1/cpuminer/bench. Off in releases:
 # `cargo build --release --features shabench` to measure.
 shabench = []
+# A test build only: POST /api/v1/diag/fragment takes the internal heap
+# apart (many small blocks, every other one kept) until no 16 KB piece
+# is left, to prove an update still goes through (docs/09).
+fragtest = []
 
 [package.metadata.esp-idf-sys]
 esp_idf_tools_install_dir = "global"

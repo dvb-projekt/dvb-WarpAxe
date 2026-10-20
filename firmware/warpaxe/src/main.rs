@@ -333,7 +333,9 @@ fn main() {
         "running: http on usb {} and wifi when up",
         net::usb::ip_string()
     );
-    loop {
-        std::thread::sleep(Duration::from_secs(5));
-    }
+    info!("heap: {}", diag::heap_line());
+    // From here on the main task is the firmware writer: its stack is in
+    // internal RAM and was there before the heap could fragment, so an
+    // update never waits for a 16 KB piece (update::serve_writes).
+    update::serve_writes()
 }

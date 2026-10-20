@@ -1,0 +1,12 @@
+[package]
+name = "warpaxe-ota"
+description = "The firmware writer's hand-off: one app image at a time goes from whoever received it (the online update, an upload) to the task that writes flash, and a second one is refused while the first is queued or being written. No I/O; host-tested, the firmware's main task runs it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

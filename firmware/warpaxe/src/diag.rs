@@ -175,6 +175,29 @@ pub fn free_heap_internal() -> u32 {
     unsafe { sys::heap_caps_get_free_size(sys::MALLOC_CAP_INTERNAL) as u32 }
 }
 
+/// The largest piece of internal heap in one go: what a task stack or a
+/// DMA buffer can still get. The free total says nothing about it once
+/// the heap is fragmented (45 KB free and no 16 KB piece, 2026-10-20).
+pub fn largest_free_internal() -> u32 {
+    unsafe { sys::heap_caps_get_largest_free_block(sys::MALLOC_CAP_INTERNAL) as u32 }
+}
+
+/// Internal heap in one line for the log, with its largest piece.
+pub fn heap_line() -> String {
+    format!(
+        "{} KB internal free, largest piece {} KB",
+        free_heap_internal() / 1024,
+        largest_free_internal() / 1024
+    )
+}
+
+/// How much of the calling task's stack was never touched so far, bytes
+/// (FreeRTOS' high-water mark): logged after a flash write to see the
+/// writer's real need.
+pub fn stack_unused() -> u32 {
+    unsafe { sys::uxTaskGetStackHighWaterMark(core::ptr::null_mut()) as u32 }
+}
+
 /// Spawn a thread whose stack lives in PSRAM, for threads that neither
 /// write flash nor run with the cache off (display, fetches, sampling):
 /// the internal RAM stays free for the OTA writer and TLS.

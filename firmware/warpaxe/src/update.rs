@@ -18,9 +18,17 @@
 //! only after a soak on a devkit in the same run). Without the file, or
 //! without its profile in it, the devkit shows the release as a notice
 //! and installs nothing. Boards with chips are offered every release.
+//!
+//! Writing the image to flash is the main task's job ([`serve_writes`]):
+//! its stack sits in internal RAM from boot, so a write never waits for
+//! a 16 KB piece of a fragmented heap (the v0.1.31 writer thread did, and
+//! a miner up for hours could not update until restarted; docs/09). The
+//! online update and the upload (`POST /api/system/OTA`) hand their image
+//! over with [`submit`] and are told at once when another write is
+//! under way.
 
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
@@ -483,30 +491,113 @@ fn install() {
     // Survives the restart: the next boot reports what was installed
     // and how the signature checked.
     let record = format!("{} {}", r.tag, state().signature);
-    let spawned = std::thread::Builder::new()
-        .stack_size(16 * 1024)
-        .spawn(move || match crate::api::flash_image(&image) {
+    if let Err(why) = submit(Job {
+        image,
+        origin: "update",
+        record: Some(record),
+        delay: Duration::ZERO,
+    }) {
+        fail(format!("cannot write: {why}"));
+    }
+}
+
+/// An image for the writer: where it came from (for the log), the
+/// install record to store once it is written (the online update's; an
+/// upload leaves none), and a pause before the write starts (the upload
+/// answers its request first).
+pub struct Job {
+    pub image: Vec<u8>,
+    pub origin: &'static str,
+    pub record: Option<String>,
+    pub delay: Duration,
+}
+
+/// The hand-off to the writer (`warpaxe_ota::Handoff`, host-tested) and
+/// the bell that wakes it.
+static WRITER: Mutex<warpaxe_ota::Handoff<Job>> = Mutex::new(warpaxe_ota::Handoff::new());
+static WRITER_BELL: Condvar = Condvar::new();
+
+/// Queue an image for the main task to write. Refused, with the reason
+/// for the user, while another image is queued or being written; the
+/// image is dropped then, and the caller says so.
+pub fn submit(job: Job) -> Result<(), &'static str> {
+    let (origin, bytes) = (job.origin, job.image.len());
+    let mut w = WRITER.lock().unwrap();
+    match w.offer(job) {
+        Ok(()) => {
+            log::info!(
+                "{origin}: {bytes} bytes handed to the writer ({})",
+                diag::heap_line()
+            );
+            WRITER_BELL.notify_all();
+            Ok(())
+        }
+        Err((why, _)) => {
+            log::warn!("{origin}: refused, {}", why.reason());
+            Err(why.reason())
+        }
+    }
+}
+
+/// A write is queued or under way.
+pub fn writing() -> bool {
+    WRITER.lock().unwrap().phase() != warpaxe_ota::Phase::Idle
+}
+
+/// The writer: runs on the main task once boot is done and never
+/// returns. The main task's stack (CONFIG_ESP_MAIN_TASK_STACK_SIZE, in
+/// internal RAM, allocated before anything else) is what writing flash
+/// needs, and it exists whatever the heap looks like after hours of
+/// mining. A written image ends in a restart; a failed write reports
+/// and the task waits for the next job.
+pub fn serve_writes() -> ! {
+    loop {
+        let job = {
+            let mut w = WRITER.lock().unwrap();
+            loop {
+                if let Some(job) = w.take() {
+                    break job;
+                }
+                w = WRITER_BELL.wait(w).unwrap();
+            }
+        };
+        let Job {
+            image,
+            origin,
+            record,
+            delay,
+        } = job;
+        if !delay.is_zero() {
+            std::thread::sleep(delay);
+        }
+        log::info!("{origin}: writing {} bytes on the main task", image.len());
+        match crate::api::flash_image(&image) {
             Ok(()) => {
-                log::info!("update: written and verified, restarting");
-                config::set_last_install(&record);
+                log::info!(
+                    "{origin}: written and verified, restarting ({} bytes of the writer's stack never used)",
+                    diag::stack_unused()
+                );
+                drop(image);
+                if let Some(record) = &record {
+                    config::set_last_install(record);
+                }
                 std::thread::sleep(Duration::from_millis(500));
                 crate::board::prepare_reset("update");
                 diag::restart();
             }
             Err(e) => {
+                drop(image);
                 display::OTA_STATE.store(0, Ordering::Relaxed);
-                log::error!("update: flashing failed: {e}");
-                update(|s| {
-                    s.phase = "failed".into();
-                    s.error = format!("flashing: {e}");
-                });
+                log::error!("{origin}: flashing failed: {e}");
+                if origin == "update" {
+                    update(|s| {
+                        s.phase = "failed".into();
+                        s.error = format!("flashing: {e}");
+                    });
+                }
+                WRITER.lock().unwrap().done();
             }
-        });
-    if let Err(e) = spawned {
-        fail(format!(
-            "cannot start the writer: {e} ({} bytes internal RAM free)",
-            diag::free_heap_internal()
-        ));
+        }
     }
 }
 

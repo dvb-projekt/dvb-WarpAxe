@@ -135,6 +135,10 @@ pub fn system_info() -> serde_json::Value {
         "bestDiff": if board::devkit() { json!(config::best_diff_f()) } else { json!(config::best_diff()) },
         "bestSessionDiff": if board::devkit() { json!(crate::cpuminer::info().best_diff) } else { json!(m.best_session_diff) },
         "freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(),
+        // The largest piece of internal heap in one go (bytes): a task
+        // stack or a DMA buffer must fit into it, the total says nothing
+        // about that once the heap is fragmented.
+        "largestFreeInternal": diag::largest_free_internal(),
         "coreVoltage": cfg.core_voltage,
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),
         // The lowest core voltage the regulator holds cleanly, mV; a
@@ -889,6 +893,30 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             reply_json(req, 409, &json!({"error": "a bench is still pending"}))
         }
     })?;
+    // A test build only (`fragtest`, docs/09): take the internal heap
+    // apart so no 16 KB piece is left, as hours of mining do, and prove
+    // an update still goes through. `?free=1` gives the blocks back.
+    #[cfg(feature = "fragtest")]
+    server.fn_handler("/api/v1/diag/fragment", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let free = req.uri().contains("free=1");
+        let (before_free, before_largest) =
+            (diag::free_heap_internal(), diag::largest_free_internal());
+        let kept = if free {
+            fragtest::release()
+        } else {
+            fragtest::fragment()
+        };
+        reply_json(
+            req,
+            200,
+            &json!({
+                "blocksKept": kept, "blockBytes": fragtest::BLOCK,
+                "before": {"freeHeapInternal": before_free, "largestFreeInternal": before_largest},
+                "after": {"freeHeapInternal": diag::free_heap_internal(), "largestFreeInternal": diag::largest_free_internal()},
+            }),
+        )
+    })?;
     server.fn_handler("/api/v1/bestdiff/reset", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         config::reset_best_diff();
@@ -1168,32 +1196,18 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         }
         let n = image.len();
         log::info!("ota: {n} bytes received, flashing in background");
-        // Start the writer before answering: if its stack does not fit in
-        // internal RAM, say so instead of accepting an update that never
-        // happens. It waits a moment so the answer goes out first.
-        let spawned = std::thread::Builder::new()
-            .stack_size(16 * 1024)
-            .spawn(move || {
-                std::thread::sleep(Duration::from_millis(300));
-                match flash_image(&image) {
-                Ok(()) => {
-                    log::info!("ota: written and verified, restarting");
-                    std::thread::sleep(Duration::from_millis(500));
-                    board::prepare_reset("update");
-                    diag::restart();
-                }
-                Err(e) => {
-                    display::OTA_STATE.store(0, Ordering::Relaxed);
-                    log::error!("ota: failed: {e}")
-                }
-                }
-            });
-        if let Err(e) = spawned {
-            log::error!("ota: cannot start the writer: {e}");
-            let mut r = req.into_response(503, None, &[])?;
-            r.write_all(
-                format!("ota: not enough internal memory to start the update ({} bytes free), try again\n", diag::free_heap_internal()).as_bytes(),
-            )?;
+        // Hand the image to the main task's writer (update::serve_writes):
+        // no thread, no 16 KB of internal RAM to find in a fragmented
+        // heap. It waits a moment so the answer goes out first. Refused
+        // only while another image is queued or being written.
+        if let Err(why) = crate::update::submit(crate::update::Job {
+            image,
+            origin: "ota",
+            record: None,
+            delay: Duration::from_millis(300),
+        }) {
+            let mut r = req.into_response(409, None, &[])?;
+            r.write_all(format!("ota: {why}, try again later\n").as_bytes())?;
             return Ok(());
         }
         let mut r = req.into_ok_response()?;
@@ -1348,4 +1362,72 @@ fn fault_cause(b: &board::BoardState) -> Option<&'static str> {
         "temp" => Some("overtemp"),
         _ => None,
     })
+}
+
+/// The heap-fragmentation test (a build with the `fragtest` feature):
+/// the internal heap is carved into [`BLOCK`]-byte pieces until none is
+/// left, then every other piece is given back. What remains free is
+/// half the heap, in holes of one block each: no allocation above
+/// [`BLOCK`] bytes can succeed any more, which is what a fragmented heap
+/// after hours of mining looks like to the writer thread of v0.1.31
+/// (16 KB wanted, 45 KB free, no piece that size). 8 KB holes leave the
+/// 6 KB threads of a pool reconnect their room; the 12 and 16 KB stacks
+/// of v0.1.31's writers would not fit.
+#[cfg(feature = "fragtest")]
+mod fragtest {
+    use std::sync::Mutex;
+
+    use esp_idf_svc::sys;
+
+    pub const BLOCK: usize = 8 * 1024;
+    /// The pieces kept, as raw heap pointers (freed by [`release`]).
+    static KEPT: Mutex<Vec<usize>> = Mutex::new(Vec::new());
+
+    /// Carve the heap and keep every other piece; how many are kept.
+    pub fn fragment() -> usize {
+        let mut kept = KEPT.lock().unwrap();
+        release_all(&mut kept);
+        let mut all = Vec::new();
+        loop {
+            let p = unsafe {
+                sys::heap_caps_malloc(BLOCK, sys::MALLOC_CAP_INTERNAL | sys::MALLOC_CAP_8BIT)
+            };
+            if p.is_null() {
+                break;
+            }
+            all.push(p as usize);
+        }
+        for (i, p) in all.into_iter().enumerate() {
+            if i % 2 == 0 {
+                unsafe { sys::heap_caps_free(p as *mut core::ffi::c_void) };
+            } else {
+                kept.push(p);
+            }
+        }
+        log::warn!(
+            "fragtest: {} blocks of {BLOCK} bytes kept, {}",
+            kept.len(),
+            crate::diag::heap_line()
+        );
+        kept.len()
+    }
+
+    /// Give every kept piece back; how many were kept.
+    pub fn release() -> usize {
+        let mut kept = KEPT.lock().unwrap();
+        let n = release_all(&mut kept);
+        log::warn!(
+            "fragtest: {n} blocks released, {}",
+            crate::diag::heap_line()
+        );
+        n
+    }
+
+    fn release_all(kept: &mut Vec<usize>) -> usize {
+        let n = kept.len();
+        for p in kept.drain(..) {
+            unsafe { sys::heap_caps_free(p as *mut core::ffi::c_void) };
+        }
+        n
+    }
 }

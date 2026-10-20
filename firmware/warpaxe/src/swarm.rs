@@ -154,7 +154,9 @@ pub fn scan_start() -> (u16, Value) {
             json!({"error": "the search walks private networks only (10/8, 172.16/12, 192.168/16)"}),
         );
     }
-    if crate::display::OTA_STATE.load(std::sync::atomic::Ordering::Relaxed) != 0 {
+    if crate::display::OTA_STATE.load(std::sync::atomic::Ordering::Relaxed) != 0
+        || crate::update::writing()
+    {
         return (503, json!({"error": "a firmware update is being written"}));
     }
     let free = crate::diag::free_heap_internal();
