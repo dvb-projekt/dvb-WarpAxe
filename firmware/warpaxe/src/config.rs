@@ -84,6 +84,10 @@ pub struct Config {
     /// dashboard. Off by default; `hashrateMonitor` is in the API either way.
     #[serde(rename = "showHashCounters")]
     pub show_hash_counters: bool,
+    /// The coin the main pool mines, as its ticker (BTC, BCH, FIX …):
+    /// only the unit the web UI writes the coinbase amounts in.
+    #[serde(rename = "coinTicker")]
+    pub coin_ticker: String,
     /// Currency of that price (a key of mempool.space `/api/v1/prices`).
     #[serde(rename = "priceCurrency")]
     pub price_currency: String,
@@ -231,6 +235,7 @@ impl Default for Config {
             btc_price: false,
             show_hash_counters: false,
             price_currency: "EUR".into(),
+            coin_ticker: "BTC".into(),
             update_check: true,
             frequency: 525,
             core_voltage: 1150,
@@ -477,6 +482,133 @@ pub fn set_swarm(members: &[String]) -> Result<Vec<String>, String> {
     let nvs = g.as_mut().ok_or("no NVS")?;
     nvs.set_str(SWARM_KEY, &json).map_err(|e| e.to_string())?;
     Ok(clean)
+}
+
+const POOLS_KEY: &str = "pools";
+/// At most this many saved pools, and this many bytes stored.
+pub const POOLS_MAX: usize = 8;
+const POOLS_MAX_BYTES: usize = 3072;
+
+/// A saved pool: the main pool's fields under their config names, so
+/// using it is a config patch, plus a name and the coin it mines.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+#[serde(default)]
+pub struct PoolProfile {
+    pub name: String,
+    #[serde(rename = "stratumURL")]
+    pub url: String,
+    #[serde(rename = "stratumPort")]
+    pub port: u16,
+    #[serde(rename = "stratumUser")]
+    pub user: String,
+    #[serde(rename = "stratumPassword")]
+    pub pass: String,
+    #[serde(rename = "stratumTLS")]
+    pub tls: u8,
+    #[serde(rename = "stratumProtocol")]
+    pub protocol: String,
+    #[serde(rename = "stratumV2AuthorityPubkey")]
+    pub pubkey: String,
+    #[serde(rename = "stratumV2RequireAuth")]
+    pub require_auth: bool,
+    #[serde(rename = "coinTicker")]
+    pub coin: String,
+}
+
+impl PoolProfile {
+    /// The main pool as it is configured now, under `name`.
+    pub fn current(name: &str, cfg: &Config) -> PoolProfile {
+        PoolProfile {
+            name: name.trim().to_string(),
+            url: cfg.stratum_url.clone(),
+            port: cfg.stratum_port,
+            user: cfg.stratum_user.clone(),
+            pass: cfg.stratum_pass.clone(),
+            tls: cfg.stratum_tls,
+            protocol: cfg.stratum_protocol.clone(),
+            pubkey: cfg.stratum_v2_authority_pubkey.clone(),
+            require_auth: cfg.stratum_v2_require_auth,
+            coin: cfg.coin_ticker.clone(),
+        }
+    }
+
+    /// The config patch that makes this the main pool.
+    pub fn as_patch(&self) -> serde_json::Value {
+        let mut v = serde_json::to_value(self).unwrap_or_default();
+        if let Some(o) = v.as_object_mut() {
+            o.remove("name");
+        }
+        v
+    }
+
+    /// For the API: the password is never sent back.
+    pub fn redacted(&self) -> PoolProfile {
+        let mut p = self.clone();
+        if !p.pass.is_empty() {
+            p.pass = "***".into();
+        }
+        p
+    }
+}
+
+/// The saved pools, in the order they were saved. Their own NVS key, so
+/// the config document stays small.
+pub fn pools() -> Vec<PoolProfile> {
+    let mut buf = vec![0u8; POOLS_MAX_BYTES + 64];
+    NVS.lock()
+        .unwrap()
+        .as_ref()
+        .and_then(|nvs| nvs.get_str(POOLS_KEY, &mut buf).ok().flatten())
+        .and_then(|s| serde_json::from_str::<Vec<PoolProfile>>(s.trim_end_matches('\0')).ok())
+        .unwrap_or_default()
+}
+
+fn store_pools(list: &[PoolProfile]) -> Result<(), String> {
+    let json = serde_json::to_string(list).map_err(|e| e.to_string())?;
+    if json.len() > POOLS_MAX_BYTES {
+        return Err("the saved pools take too much space".into());
+    }
+    let mut g = NVS.lock().unwrap();
+    let nvs = g.as_mut().ok_or("no NVS")?;
+    nvs.set_str(POOLS_KEY, &json).map_err(|e| e.to_string())
+}
+
+/// Save a pool under its name; the same name (any case) is replaced in
+/// place, a new one goes at the end.
+pub fn save_pool(mut p: PoolProfile) -> Result<Vec<PoolProfile>, String> {
+    p.name = p.name.trim().to_string();
+    let name = p.name.clone();
+    if name.is_empty() || name.chars().count() > 32 {
+        return Err("a name of 1 to 32 characters".into());
+    }
+    if p.url.trim().is_empty() || p.user.trim().is_empty() {
+        return Err("the pool needs an address and a worker".into());
+    }
+    let mut list = pools();
+    match list.iter().position(|q| q.name.eq_ignore_ascii_case(&name)) {
+        Some(i) => list[i] = p,
+        None if list.len() >= POOLS_MAX => return Err(format!("at most {POOLS_MAX} pools")),
+        None => list.push(p),
+    }
+    store_pools(&list)?;
+    Ok(list)
+}
+
+pub fn delete_pool(name: &str) -> Result<Vec<PoolProfile>, String> {
+    let mut list = pools();
+    let before = list.len();
+    list.retain(|q| !q.name.eq_ignore_ascii_case(name.trim()));
+    if list.len() == before {
+        return Err("no saved pool of that name".into());
+    }
+    store_pools(&list)?;
+    Ok(list)
+}
+
+pub fn pool(name: &str) -> Option<PoolProfile> {
+    pools()
+        .into_iter()
+        .find(|q| q.name.eq_ignore_ascii_case(name.trim()))
 }
 
 /// The last config changes over the API: when (unix seconds, 0 before
@@ -848,6 +980,48 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
     }
     if import_display(stock, &mut cfg) {
         took.push("display");
+    }
+    // Every pool AxeOS 2.15 kept, as saved pools, so switching between
+    // them stays one click after the move.
+    if pools().is_empty() {
+        let mut list: Vec<PoolProfile> = Vec::new();
+        for n in 0..POOLS_MAX {
+            let Some(p) = axeos_pool(stock, Some(n as f64)) else {
+                continue;
+            };
+            let mut name = p.url.clone();
+            let mut k = 2;
+            while list.iter().any(|q| q.name.eq_ignore_ascii_case(&name)) {
+                name = format!("{} ({k})", p.url);
+                k += 1;
+            }
+            list.push(PoolProfile {
+                name: name.chars().take(32).collect(),
+                port: if p.port > 0 { p.port } else { 3333 },
+                pass: if p.pass.is_empty() {
+                    "x".into()
+                } else {
+                    p.pass
+                },
+                tls: u8::from(p.tls == 1),
+                protocol: if is_sv2(&p.protocol) {
+                    "SV2".into()
+                } else {
+                    "SV1".into()
+                },
+                pubkey: p.pubkey,
+                coin: "BTC".into(),
+                url: p.url,
+                user: p.user,
+                require_auth: false,
+            });
+        }
+        if !list.is_empty() {
+            match store_pools(&list) {
+                Ok(()) => took.push("saved pools"),
+                Err(e) => log::warn!("config: storing the stock firmware's pools: {e}"),
+            }
+        }
     }
     if !took.is_empty() {
         if let Err(e) = save(&cfg) {

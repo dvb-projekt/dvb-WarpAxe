@@ -187,6 +187,7 @@ pub fn system_info() -> serde_json::Value {
         "blockHeight": st.block_height, "networkDifficulty": st.network_difficulty, "scriptsig": st.scriptsig,
         "coinbaseOutputs": st.coinbase_outputs.iter().map(|(v, a)| json!({"value": v, "address": a})).collect::<Vec<_>>(),
         "coinbaseValueTotalSatoshis": st.coinbase_total_sat, "coinbaseValueUserSatoshis": st.coinbase_user_sat,
+        "coinbaseOwnAddress": st.coinbase_own_address, "coinbaseBitcoin": st.coinbase_bitcoin, "coinTicker": cfg.coin_ticker,
         "blockFound": m.blocks_found, "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "showHashCounters": cfg.show_hash_counters, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
         // The display's choosable parts, as they take effect (the
         // config's empty lists resolved to the board's defaults), and
@@ -431,6 +432,16 @@ fn pool_refuse(v: &mut serde_json::Value) -> Option<String> {
             }
         }
     }
+    if let Some(c) = v.get("coinTicker").cloned() {
+        match c.as_str().map(normalize_ticker) {
+            Some(Some(t)) => {
+                if let Some(o) = v.as_object_mut() {
+                    o.insert("coinTicker".into(), serde_json::Value::String(t));
+                }
+            }
+            _ => return Some("coinTicker: 1 to 8 letters or digits".into()),
+        }
+    }
     for k in ["stratumV2ChannelType", "fallbackStratumV2ChannelType"] {
         if let Some(t) = v.get(k).and_then(|x| x.as_str()) {
             if t != "extended" {
@@ -439,6 +450,16 @@ fn pool_refuse(v: &mut serde_json::Value) -> Option<String> {
         }
     }
     None
+}
+
+/// A coin ticker as the web UI shows it: upper case, 1–8 letters or
+/// digits; empty means the default, BTC.
+fn normalize_ticker(t: &str) -> Option<String> {
+    let t = t.trim().to_ascii_uppercase();
+    if t.is_empty() {
+        return Some("BTC".into());
+    }
+    (t.len() <= 8 && t.chars().all(|c| c.is_ascii_alphanumeric())).then_some(t)
 }
 
 /// WarpAxe's own state document.
@@ -974,6 +995,50 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             ),
         }
     })?;
+    // Saved pools: GET lists them (passwords never leave the miner),
+    // POST {"action": "save"|"use"|"delete", "name": …} saves the main
+    // pool as it is now, makes a saved one the main pool, or drops one.
+    server.fn_handler("/api/v1/pools", Method::Get, |req| {
+        let list: Vec<_> = config::pools().iter().map(|p| p.redacted()).collect();
+        reply_json(req, 200, &json!({"pools": list, "max": config::POOLS_MAX}))
+    })?;
+    server.fn_handler("/api/v1/pools", Method::Post, |mut req| {
+        let who = peer(&mut req);
+        let body = read_body(&mut req, 512)?;
+        let v = serde_json::from_slice::<serde_json::Value>(&body).unwrap_or_default();
+        let name = v["name"].as_str().unwrap_or("").to_string();
+        let done = match v["action"].as_str() {
+            Some("save") => config::save_pool(config::PoolProfile::current(&name, &config::get())),
+            Some("delete") => config::delete_pool(&name),
+            Some("use") => match config::pool(&name) {
+                None => Err("no saved pool of that name".into()),
+                Some(p) => {
+                    let mut patch = p.as_patch();
+                    match pool_refuse(&mut patch)
+                        .map_or_else(|| config::patch(&patch).map_err(|e| e.to_string()), Err)
+                    {
+                        Ok(_) => {
+                            log::info!("pools: {who} switched to saved pool {:?}", p.name);
+                            config::record_patch(&who, &[format!("pool:{}", p.name)]);
+                            crate::display::touch();
+                            stratum::reconnect();
+                            Ok(config::pools())
+                        }
+                        Err(e) => Err(e),
+                    }
+                }
+            },
+            _ => Err("expected {\"action\": \"save\"|\"use\"|\"delete\", \"name\": …}".into()),
+        };
+        match done {
+            Ok(list) => {
+                let list: Vec<_> = list.iter().map(|p| p.redacted()).collect();
+                reply_json(req, 200, &json!({"pools": list}))
+            }
+            Err(e) => reply_json(req, 400, &json!({"error": e})),
+        }
+    })?;
+
     // An Avalon on the swarm list, read over the cgminer API for the
     // browser (see `swarm.rs`): ?host=<ip>. 200 with the AxeOS-like
     // document, 202 while a read is under way (the page asks again, the

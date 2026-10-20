@@ -3,6 +3,11 @@
 //! extranonce + suffix), with their addresses. AxeOS shows the same as
 //! `coinbaseOutputs`; a solo pool pays everything to the miner's address,
 //! a pool that keeps a fee shows it here.
+//!
+//! The miner's own address is decoded, not compared as text, so the
+//! split is right on any SHA-256 coin: Bitcoin, its forks with their own
+//! base58 or bech32 prefixes (FixedCoin, DigiByte), and the CashAddr
+//! coins (Bitcoin Cash, eCash).
 
 use sha2::{Digest, Sha256};
 
@@ -25,6 +30,12 @@ pub struct Payout {
     pub total: u64,
     /// Sum of the outputs to the miner's own address, satoshis.
     pub user: u64,
+    /// The worker name starts with an address. If not, it is a pool
+    /// account, and the pool, not the coinbase, pays the miner.
+    pub own_address: bool,
+    /// That address is a Bitcoin one (mainnet, testnet, signet, regtest),
+    /// so the amounts are in BTC.
+    pub bitcoin: bool,
 }
 
 fn varint(b: &[u8], at: &mut usize) -> Option<u64> {
@@ -53,8 +64,9 @@ fn take<'a>(b: &'a [u8], at: &mut usize, n: usize) -> Option<&'a [u8]> {
 }
 
 /// The outputs of a coinbase transaction (legacy or segwit serialisation;
-/// the witness is not needed). `None` if it does not parse.
-pub fn outputs(tx: &[u8], hrp: &str) -> Option<Vec<Output>> {
+/// the witness is not needed): value and output script. `None` if it does
+/// not parse.
+fn raw_outputs(tx: &[u8]) -> Option<Vec<(u64, &[u8])>> {
     let mut at = 4; // version
     if tx.get(4..6) == Some(&[0x00, 0x01]) {
         at += 2; // segwit marker and flag
@@ -75,13 +87,23 @@ pub fn outputs(tx: &[u8], hrp: &str) -> Option<Vec<Output>> {
         let v = take(tx, &mut at, 8)?;
         let value = u64::from_le_bytes(v.try_into().ok()?);
         let len = varint(tx, &mut at)? as usize;
-        let script = take(tx, &mut at, len)?;
-        out.push(Output {
-            value,
-            address: address(script, hrp),
-        });
+        out.push((value, take(tx, &mut at, len)?));
     }
     Some(out)
+}
+
+/// The outputs of a coinbase transaction with Bitcoin addresses for the
+/// chain `hrp` names. `None` if it does not parse.
+pub fn outputs(tx: &[u8], hrp: &str) -> Option<Vec<Output>> {
+    Some(
+        raw_outputs(tx)?
+            .into_iter()
+            .map(|(value, script)| Output {
+                value,
+                address: address(script, hrp),
+            })
+            .collect(),
+    )
 }
 
 /// The payout of a job: its outputs, their total and what goes to
@@ -92,18 +114,360 @@ pub fn payout(head: &[u8], extranonce_len: usize, tail: &[u8], user: &str) -> Op
     tx.extend_from_slice(head);
     tx.resize(head.len() + extranonce_len, 0);
     tx.extend_from_slice(tail);
-    let addr = user.split('.').next().unwrap_or("");
-    let outputs = outputs(&tx, hrp_for(addr))?;
-    let total = outputs.iter().map(|o| o.value).sum();
-    let user = outputs
-        .iter()
-        .filter(|o| !addr.is_empty() && o.address.eq_ignore_ascii_case(addr))
-        .map(|o| o.value)
-        .sum();
-    Some(Payout {
-        outputs,
-        total,
-        user,
+    let raw = raw_outputs(&tx)?;
+    let wallet = Wallet::parse(user.split('.').next().unwrap_or(""));
+    let mut p = Payout {
+        own_address: wallet.is_some(),
+        bitcoin: wallet.as_ref().is_none_or(|w| w.bitcoin().is_some()),
+        ..Payout::default()
+    };
+    for (value, script) in raw {
+        p.total += value;
+        let address = match &wallet {
+            Some(w) if w.pays(script) => {
+                p.user += value;
+                w.text.clone()
+            }
+            Some(w) => w.label(script),
+            None => address(script, "bc"),
+        };
+        p.outputs.push(Output { value, address });
+    }
+    Some(p)
+}
+
+/// The miner's own address, decoded: what its outputs look like and how
+/// the coin writes the other outputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Wallet {
+    /// As the miner typed it.
+    pub text: String,
+    kind: Kind,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Kind {
+    /// Base58check: version byte and the 20-byte hash.
+    Base58 { version: u8, hash: [u8; 20] },
+    /// CashAddr (Bitcoin Cash, eCash): prefix, P2SH or P2PKH, hash.
+    Cash {
+        prefix: String,
+        p2sh: bool,
+        hash: [u8; 20],
+    },
+    /// Bech32/bech32m: prefix, witness version and program.
+    Segwit {
+        hrp: String,
+        version: u8,
+        program: Vec<u8>,
+    },
+}
+
+/// CashAddr prefixes tried for an address typed without one.
+const CASH_PREFIXES: [&str; 6] = [
+    "bitcoincash",
+    "ecash",
+    "bchtest",
+    "ectest",
+    "bchreg",
+    "ecregtest",
+];
+
+impl Wallet {
+    /// Decode an address of any SHA-256 coin; `None` for anything else
+    /// (a pool account name).
+    pub fn parse(addr: &str) -> Option<Wallet> {
+        let addr = addr.trim();
+        let kind = decode_segwit(addr)
+            .or_else(|| decode_cash(addr))
+            .or_else(|| decode_base58(addr))?;
+        Some(Wallet {
+            text: addr.to_string(),
+            kind,
+        })
+    }
+
+    /// `Some(mainnet)` for a Bitcoin address, `None` for another coin.
+    pub fn bitcoin(&self) -> Option<bool> {
+        match &self.kind {
+            Kind::Base58 { version, .. } => match version {
+                0x00 | 0x05 => Some(true),
+                0x6f | 0xc4 => Some(false),
+                _ => None,
+            },
+            Kind::Segwit { hrp, .. } => match hrp.as_str() {
+                "bc" => Some(true),
+                "tb" | "bcrt" => Some(false),
+                _ => None,
+            },
+            Kind::Cash { .. } => None,
+        }
+    }
+
+    /// Whether an output script pays this address.
+    pub fn pays(&self, script: &[u8]) -> bool {
+        match &self.kind {
+            Kind::Base58 { version, hash } => {
+                let (pkh, sh) = match version {
+                    0x00 | 0x6f => (true, false),
+                    0x05 | 0xc4 => (false, true),
+                    // Another coin: its version bytes are not known here,
+                    // and the hash is what decides.
+                    _ => (true, true),
+                };
+                (pkh && p2pkh(script) == Some(hash)) || (sh && p2sh(script) == Some(hash))
+            }
+            Kind::Cash { p2sh: sh, hash, .. } => {
+                if *sh {
+                    p2sh(script) == Some(hash)
+                } else {
+                    p2pkh(script) == Some(hash)
+                }
+            }
+            Kind::Segwit {
+                version, program, ..
+            } => witness(script) == Some((*version, program.as_slice())),
+        }
+    }
+
+    /// Another output, written the way this coin writes addresses; as the
+    /// script itself where the coin's form is not known.
+    pub fn label(&self, script: &[u8]) -> String {
+        if let Some(main) = self.bitcoin() {
+            let hrp = match &self.kind {
+                Kind::Segwit { hrp, .. } => hrp.as_str(),
+                _ if main => "bc",
+                _ => "tb",
+            };
+            return address(script, hrp);
+        }
+        if script.first() == Some(&0x6a) {
+            return address(script, "bc");
+        }
+        match &self.kind {
+            Kind::Cash { prefix, .. } => {
+                if let Some(h) = p2pkh(script) {
+                    return cashaddr(prefix, false, h);
+                }
+                if let Some(h) = p2sh(script) {
+                    return cashaddr(prefix, true, h);
+                }
+            }
+            Kind::Segwit { hrp, .. } => {
+                if let Some((v, prog)) = witness(script) {
+                    return segwit(hrp, v, prog);
+                }
+            }
+            Kind::Base58 { .. } => {}
+        }
+        format!("script {}", hex::encode(script))
+    }
+}
+
+fn p2pkh(script: &[u8]) -> Option<&[u8; 20]> {
+    match script {
+        [0x76, 0xa9, 0x14, h @ .., 0x88, 0xac] => h.try_into().ok(),
+        _ => None,
+    }
+}
+
+fn p2sh(script: &[u8]) -> Option<&[u8; 20]> {
+    match script {
+        [0xa9, 0x14, h @ .., 0x87] => h.try_into().ok(),
+        _ => None,
+    }
+}
+
+fn witness(script: &[u8]) -> Option<(u8, &[u8])> {
+    match script {
+        [0x00, n, p @ ..] if (*n == 20 || *n == 32) && p.len() == *n as usize => Some((0, p)),
+        [v @ 0x51..=0x60, n, p @ ..] if (2..=40).contains(n) && p.len() == *n as usize => {
+            Some((v - 0x50, p))
+        }
+        _ => None,
+    }
+}
+
+/// 5-bit groups to bytes; `None` if the padding is not clean.
+fn from_5bit(data: &[u8]) -> Option<Vec<u8>> {
+    let (mut acc, mut bits) = (0u32, 0u32);
+    let mut out = Vec::with_capacity(data.len() * 5 / 8);
+    for &d in data {
+        if d > 31 {
+            return None;
+        }
+        acc = (acc << 5) | u32::from(d);
+        bits += 5;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+        }
+    }
+    if bits >= 5 || (acc & ((1 << bits) - 1)) != 0 {
+        return None;
+    }
+    Some(out)
+}
+
+fn to_5bit(bytes: &[u8]) -> Vec<u8> {
+    let (mut acc, mut bits) = (0u32, 0u32);
+    let mut out = Vec::with_capacity(bytes.len() * 8 / 5 + 1);
+    for &b in bytes {
+        acc = (acc << 8) | u32::from(b);
+        bits += 8;
+        while bits >= 5 {
+            bits -= 5;
+            out.push(((acc >> bits) & 31) as u8);
+        }
+    }
+    if bits > 0 {
+        out.push(((acc << (5 - bits)) & 31) as u8);
+    }
+    out
+}
+
+/// The bech32 characters of a lower-case string as 5-bit values.
+fn values(s: &str) -> Option<Vec<u8>> {
+    s.bytes()
+        .map(|c| CHARSET.iter().position(|&x| x == c).map(|i| i as u8))
+        .collect()
+}
+
+fn decode_segwit(addr: &str) -> Option<Kind> {
+    let lower = addr.to_ascii_lowercase();
+    if addr != lower && addr != addr.to_ascii_uppercase() {
+        return None;
+    }
+    let (hrp, data) = lower.rsplit_once('1')?;
+    if hrp.is_empty() || data.len() < 7 || lower.len() > 90 || hrp.contains(':') {
+        return None;
+    }
+    let data = values(data)?;
+    let mut v: Vec<u8> = hrp.bytes().map(|c| c >> 5).collect();
+    v.push(0);
+    v.extend(hrp.bytes().map(|c| c & 31));
+    v.extend_from_slice(&data);
+    let check = polymod(&v);
+    let version = data[0];
+    let program = from_5bit(&data[1..data.len() - 6])?;
+    let ok = match version {
+        0 => check == 1 && (program.len() == 20 || program.len() == 32),
+        1..=16 => check == 0x2bc8_30a3 && (2..=40).contains(&program.len()),
+        _ => false,
+    };
+    ok.then(|| Kind::Segwit {
+        hrp: hrp.to_string(),
+        version,
+        program,
+    })
+}
+
+fn cash_polymod(v: &[u8]) -> u64 {
+    const GEN: [u64; 5] = [
+        0x98_f2bc_8e61,
+        0x79_b76d_99e2,
+        0xf3_3e5f_b3c4,
+        0xae_2eab_e2a8,
+        0x1e_4f43_e470,
+    ];
+    let mut c: u64 = 1;
+    for &d in v {
+        let top = c >> 35;
+        c = ((c & 0x07_ffff_ffff) << 5) ^ u64::from(d);
+        for (i, g) in GEN.iter().enumerate() {
+            if (top >> i) & 1 == 1 {
+                c ^= g;
+            }
+        }
+    }
+    c ^ 1
+}
+
+fn cash_prefix_values(prefix: &str) -> Vec<u8> {
+    let mut v: Vec<u8> = prefix.bytes().map(|c| c & 31).collect();
+    v.push(0);
+    v
+}
+
+fn decode_cash(addr: &str) -> Option<Kind> {
+    let lower = addr.to_ascii_lowercase();
+    if addr != lower && addr != addr.to_ascii_uppercase() {
+        return None;
+    }
+    let (prefixes, payload): (Vec<&str>, &str) = match lower.split_once(':') {
+        Some((p, rest)) => (vec![p], rest),
+        None => (CASH_PREFIXES.to_vec(), lower.as_str()),
+    };
+    let data = values(payload)?;
+    if data.len() != 42 {
+        return None; // 160-bit hashes only
+    }
+    let prefix = prefixes.into_iter().find(|p| {
+        let mut v = cash_prefix_values(p);
+        v.extend_from_slice(&data);
+        cash_polymod(&v) == 0
+    })?;
+    let bytes = from_5bit(&data[..data.len() - 8])?;
+    let (version, hash) = bytes.split_first()?;
+    if version & 0x07 != 0 || version & 0x80 != 0 {
+        return None;
+    }
+    let p2sh = match version >> 3 {
+        0 => false,
+        1 => true,
+        _ => return None,
+    };
+    Some(Kind::Cash {
+        prefix: prefix.to_string(),
+        p2sh,
+        hash: hash.try_into().ok()?,
+    })
+}
+
+/// A CashAddr address with its prefix.
+fn cashaddr(prefix: &str, p2sh: bool, hash: &[u8; 20]) -> String {
+    let mut payload = vec![if p2sh { 0x08 } else { 0x00 }];
+    payload.extend_from_slice(hash);
+    let data = to_5bit(&payload);
+    let mut v = cash_prefix_values(prefix);
+    v.extend_from_slice(&data);
+    v.extend_from_slice(&[0; 8]);
+    let pm = cash_polymod(&v);
+    let mut s = String::with_capacity(prefix.len() + 1 + data.len() + 8);
+    s.push_str(prefix);
+    s.push(':');
+    s.extend(data.iter().map(|&d| CHARSET[d as usize] as char));
+    s.extend((0..8).map(|i| CHARSET[((pm >> (5 * (7 - i))) & 31) as usize] as char));
+    s
+}
+
+fn decode_base58(addr: &str) -> Option<Kind> {
+    let mut bytes: Vec<u8> = Vec::with_capacity(25);
+    for c in addr.bytes() {
+        let mut carry = B58.iter().position(|&x| x == c)? as u32;
+        for b in bytes.iter_mut() {
+            carry += u32::from(*b) * 58;
+            *b = carry as u8;
+            carry >>= 8;
+        }
+        while carry > 0 {
+            bytes.push(carry as u8);
+            carry >>= 8;
+        }
+    }
+    let zeros = addr.bytes().take_while(|&c| c == b'1').count();
+    bytes.extend(std::iter::repeat_n(0, zeros));
+    bytes.reverse();
+    if bytes.len() != 25 {
+        return None;
+    }
+    let check = Sha256::digest(Sha256::digest(&bytes[..21]));
+    if check[..4] != bytes[21..] {
+        return None;
+    }
+    Some(Kind::Base58 {
+        version: bytes[0],
+        hash: bytes[1..21].try_into().ok()?,
     })
 }
 
@@ -198,19 +562,7 @@ fn polymod(values: &[u8]) -> u32 {
 /// (BIP 173, BIP 350).
 fn segwit(hrp: &str, version: u8, program: &[u8]) -> String {
     let mut data = vec![version];
-    // 8-bit bytes to 5-bit groups.
-    let (mut acc, mut bits) = (0u32, 0u32);
-    for &b in program {
-        acc = (acc << 8) | u32::from(b);
-        bits += 8;
-        while bits >= 5 {
-            bits -= 5;
-            data.push(((acc >> bits) & 31) as u8);
-        }
-    }
-    if bits > 0 {
-        data.push(((acc << (5 - bits)) & 31) as u8);
-    }
+    data.extend(to_5bit(program));
     let mut values: Vec<u8> = hrp.bytes().map(|c| c >> 5).collect();
     values.push(0);
     values.extend(hrp.bytes().map(|c| c & 31));
@@ -350,5 +702,124 @@ mod tests {
         assert_eq!(hrp_for("tb1qxyz"), "tb");
         assert_eq!(hrp_for("bcrt1qxyz"), "bcrt");
         assert_eq!(hrp_for("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa"), "bc");
+    }
+
+    /// The job's coinbase with its first output paying `script` instead.
+    fn job_paying(script: &[u8]) -> (Vec<u8>, Vec<u8>) {
+        let (head, mut tail) = job();
+        let at = 4 + 1 + 8; // sequence, output count, value
+        let old = 1 + tail[at] as usize;
+        let mut s = vec![script.len() as u8];
+        s.extend_from_slice(script);
+        tail.splice(at..at + old, s);
+        (head, tail)
+    }
+
+    const HASH: &str = "76a04053bda0a88bda5177b86a15c3b29f559873";
+
+    fn pkh() -> Vec<u8> {
+        h(&format!("76a914{HASH}88ac"))
+    }
+
+    #[test]
+    fn cashaddr_matches_the_spec_vectors() {
+        // The CashAddr specification's example: the same hash as
+        // 1BpEi6DfDAUFd7GtittLSdBeYJvcoaVggu.
+        let w = Wallet::parse("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a").unwrap();
+        assert!(w.pays(&pkh()));
+        assert!(!w.pays(&h(&format!("a914{HASH}87"))), "P2SH is not ours");
+        assert_eq!(w.bitcoin(), None);
+        // Without its prefix, and upper case.
+        let bare = Wallet::parse("QPM2QSZNHKS23Z7629MMS6S4CWEF74VCWVY22GDX6A").unwrap();
+        assert!(bare.pays(&pkh()));
+        let sh = Wallet::parse("bitcoincash:ppm2qsznhks23z7629mms6s4cwef74vcwvn0h829pq").unwrap();
+        assert!(sh.pays(&h(&format!("a914{HASH}87"))));
+        // A wrong checksum is not an address.
+        assert!(Wallet::parse("bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6b").is_none());
+        // Our encoder writes the spec's form back.
+        let hash: [u8; 20] = h(HASH).try_into().unwrap();
+        assert_eq!(
+            cashaddr("bitcoincash", false, &hash),
+            "bitcoincash:qpm2qsznhks23z7629mms6s4cwef74vcwvy22gdx6a"
+        );
+    }
+
+    #[test]
+    fn ecash_and_its_outputs_are_written_as_ecash() {
+        let hash: [u8; 20] = h(HASH).try_into().unwrap();
+        let addr = cashaddr("ecash", false, &hash);
+        let (head, tail) = job_paying(&pkh());
+        let typed = addr.trim_start_matches("ecash:").to_string();
+        let p = payout(&head, 8, &tail, &format!("{typed}.bitaxe")).unwrap();
+        assert_eq!(p.user, 312_500_000);
+        assert!(p.own_address && !p.bitcoin);
+        assert_eq!(p.outputs[0].address, typed, "ours as typed");
+        let w = Wallet::parse(&typed).unwrap();
+        let other = h("76a914000000000000000000000000000000000000000088ac");
+        assert!(w.label(&other).starts_with("ecash:q"));
+    }
+
+    #[test]
+    fn a_fork_with_its_own_base58_prefix_is_still_ours() {
+        // DigiByte P2PKH (version 0x1e, "D…"); FixedCoin and other forks
+        // work the same way whatever their version byte is.
+        let hash: [u8; 20] = h(HASH).try_into().unwrap();
+        let dgb = base58check(0x1e, &hash);
+        assert!(dgb.starts_with('D'), "{dgb}");
+        let (head, tail) = job_paying(&pkh());
+        let p = payout(&head, 8, &tail, &format!("{dgb}.rig1")).unwrap();
+        assert_eq!((p.total, p.user), (312_500_000, 312_500_000));
+        assert!(p.own_address && !p.bitcoin);
+        // The same hash as a Bitcoin P2PKH address also matches, but a
+        // Bitcoin P2SH address with that hash does not.
+        let btc_sh = base58check(0x05, &hash);
+        let p = payout(&head, 8, &tail, &btc_sh).unwrap();
+        assert_eq!(p.user, 0);
+        assert!(p.bitcoin);
+        // A broken checksum is not an address.
+        let mut bad = dgb.clone().into_bytes();
+        let last = bad.len() - 1;
+        bad[last] = if bad[last] == b'2' { b'3' } else { b'2' };
+        assert!(Wallet::parse(std::str::from_utf8(&bad).unwrap()).is_none());
+    }
+
+    #[test]
+    fn a_fork_with_its_own_bech32_prefix_is_still_ours() {
+        let prog = h("751e76e8199196d454941c45d1b3a323f1433bd6");
+        let dgb = segwit("dgb", 0, &prog);
+        let (head, tail) = job();
+        let p = payout(&head, 8, &tail, &format!("{dgb}.x")).unwrap();
+        assert_eq!(p.user, 312_500_000);
+        assert!(!p.bitcoin);
+        let w = Wallet::parse(&dgb).unwrap();
+        let other = h(&format!("0014{}", "22".repeat(20)));
+        assert!(w.label(&other).starts_with("dgb1q"));
+        // The witness commitment keeps its name.
+        assert!(p.outputs[1].address.starts_with("OP_RETURN"));
+    }
+
+    #[test]
+    fn bitcoin_addresses_still_decode() {
+        for a in [
+            "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4",
+            "bc1p0xlxvlhemja6c4dqv22uapctqupfhlxm9h8z3k2e72q4k9hcz7vqzk5jj0",
+            "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa",
+            "tb1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3q0sl5k7",
+        ] {
+            let w = Wallet::parse(a).unwrap_or_else(|| panic!("{a}"));
+            assert!(w.bitcoin().is_some(), "{a}");
+        }
+        // bech32 with the bech32m constant (and the reverse) is invalid.
+        assert!(Wallet::parse("bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t5").is_none());
+    }
+
+    #[test]
+    fn a_pool_account_is_not_an_address() {
+        let (head, tail) = job();
+        let p = payout(&head, 8, &tail, "jY9cmgRLes.Bit-Four").unwrap();
+        assert_eq!((p.total, p.user), (312_500_000, 0));
+        assert!(!p.own_address);
+        assert!(p.bitcoin, "unknown, so the amounts stay in BTC");
+        assert!(p.outputs[0].address.starts_with("bc1q"));
     }
 }

@@ -65,6 +65,11 @@ pub struct StratumState {
     pub coinbase_outputs: Vec<(u64, String)>,
     pub coinbase_total_sat: u64,
     pub coinbase_user_sat: u64,
+    /// The worker name starts with an address of some SHA-256 coin; if
+    /// not, it is a pool account and the pool pays, not the coinbase.
+    pub coinbase_own_address: bool,
+    /// That address is a Bitcoin one (amounts in BTC).
+    pub coinbase_bitcoin: bool,
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
@@ -128,6 +133,8 @@ fn set_payout(st: &mut StratumState, pay: Option<payout::Payout>) {
         .collect();
     st.coinbase_total_sat = p.total;
     st.coinbase_user_sat = p.user;
+    st.coinbase_own_address = p.own_address;
+    st.coinbase_bitcoin = p.bitcoin;
 }
 
 pub fn state() -> StratumState {
