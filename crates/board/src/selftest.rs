@@ -17,7 +17,7 @@
 //! | chip count | = the configured or profile count | ESP-Miner stops at a count mismatch in `asic_initialize` |
 //! | hashrate per chip | ≥ 80 % of small cores × clock, averaged over the window | ESP-Miner wants ≥ 85 % of the nominal total from nonces (`hashrate_test_percentage_target`, line 591–594, 737); the fleet's chip counters average 99–101 % over a minute (BM1370, BM1373) and 88 % on the BM1397, whose rate register is what it reports (2026-10-21) |
 //! | domains | each ≥ 67 % of the chip's expected share, averaged; a sample above 3× the share is implausible and dropped | ESP-Miner `SELF_TEST_DOMAIN_HASHRATE_TOLERANCE` 0.33 (line 35, 677–678), `max_plausible_hashrate` 3× (137) |
-//! | error rate | BM1370 ≤ 3 %, BM1373 ≤ 8 %, none on the BM1397 | ESP-Miner has no error-rate check; the fleet runs BM1370 chips at 0–1.3 % and the BM1373 at 3–6 % (docs/05) |
+//! | error rate | BM1370 ≤ 5 %, BM1373 ≤ 8 %, none on the BM1397 | ESP-Miner has no error-rate check; the fleet runs BM1370 chips at 0–1.3 % at stock and max points and 2.6 % at WarpTune's eco point (the Nano, 2026-10-21), the BM1373 at 3–6 % (docs/05). The rate is a tuning figure as much as a hardware one (it rises as the voltage drops), so the line sits well above any tuned point and the measured value is always reported |
 //! | core voltage | measured within ±5 % of the set value | ESP-Miner ±10 % of the default voltage (`SELF_TEST_CORE_VOLTAGE_TOLERANCE`, 38, 405–419); the fleet's regulators read back within 0.5 % |
 //! | regulator | no fault condition | ESP-Miner `test_vreg_faults` (442–451) |
 //! | fan | ≥ 500 rpm at 100 % duty, and faster than before when the duty was below 90 % | ESP-Miner `test_fan_sense` wants more than `self_test_fan_target_rpm` (1000 by default, 500 on the Turbo, Naja Duo and Hex; 353–369) at whatever duty its PID holds |
@@ -310,7 +310,7 @@ impl Limits {
         chip_min_ratio: 0.80,
         domain_min_ratio: 0.67,
         domain_reject_ratio: 3.0,
-        error_max_percent_bm1370: 3.0,
+        error_max_percent_bm1370: 5.0,
         error_max_percent_bm1373: 8.0,
         core_tolerance: 0.05,
         vin_tolerance: 0.10,
@@ -980,8 +980,9 @@ mod tests {
 
     #[test]
     fn the_error_limit_is_per_chip_type_and_the_bm1397_has_none() {
-        // 4 % errors: too many for a BM1370, fine for a BM1373.
-        let w = window(1, 1.0, 4.0);
+        // 6 % errors: too many for a BM1370, fine for a BM1373; the
+        // Nano's 2.6 % at WarpTune's eco point passes.
+        let w = window(1, 1.0, 6.0);
         let r = judge(
             Asic::Bm1370,
             &Limits::DEFAULT,
@@ -990,8 +991,17 @@ mod tests {
             Some(&fan_ok()),
         );
         let e = r.get(Check::Errors);
-        assert_eq!((e.status, e.limit), (Status::Fail, Some(3.0)));
-        assert_eq!(e.value.map(|v| v.round()), Some(4.0));
+        assert_eq!((e.status, e.limit), (Status::Fail, Some(5.0)));
+        assert_eq!(e.value.map(|v| v.round()), Some(6.0));
+        let eco = window(1, 1.0, 2.6);
+        let r = judge(
+            Asic::Bm1370,
+            &Limits::DEFAULT,
+            &gamma(),
+            Some(&eco),
+            Some(&fan_ok()),
+        );
+        assert_eq!(r.get(Check::Errors).status, Status::Pass);
         let r = judge(
             Asic::Bm1373,
             &Limits::DEFAULT,
