@@ -80,7 +80,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests) in NVS |
-| Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if one is stored, until dismissed |
+| Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
@@ -479,7 +479,10 @@ back at any time with `GET /api/v1/display/frame`.
   events only, never on a timer, from threads with an internal stack.
 - **After a crash** (panic or watchdog) the web UI shows a banner until
   it is dismissed: the reason and the time, a button for the diagnostics
-  file and, if one is stored, one for the core dump.
+  file and, if this crash wrote one, one for its core dump. A dump only
+  counts as this crash's when the running image wrote it and no earlier
+  boot reported it; otherwise the banner says no dump was written, and
+  the Diagnostics card marks a dump left in flash as an older one.
 
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
