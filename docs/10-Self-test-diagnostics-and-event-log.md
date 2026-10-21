@@ -283,10 +283,17 @@ The next crash is a new `bootId`, so the banner comes back.
   config states and the log formatting. Since the fix ("selftest: the window and the report on the heap …") the window lives in a
   `Box`, the thread has 16 KB, and the log line at the end says how
   much of it was never used, so the next run measures the real need.
-- Still to confirm on devices: the fan reaction on a Bitaxe (EMC2101
-  tach at 100 %), a Nerd board (both outputs; the empty M1 header as a
-  note), the Nano (two tachs) and the Gaia's BM1373 error rate under
-  the 8 % line.
+- **The second run on .42** (image 4c0ec36 with the fix, Oliver's OK,
+  dvb-WarpAxe #2): PASS, 9 checks, 73 s, no restart. `10240 of 16384
+  bytes of the thread's stack never used`: the peak is about 6 KB, so
+  the 8 KB of the first run were too little even with the window on
+  the heap in reserve; 16 KB stays (PSRAM, nothing else wants it).
+  The figures at 575 MHz / 1060 mV: chips 1 of 1, hashrate 98.7 %,
+  domains 97.6 %, errors 0.04 %, core 1056 mV (set 1060), regulator
+  clear, fan 2446 → 4707 rpm at 100 %, chip 62.1 °C, input 5.19 V.
+- Still to confirm on devices: a Nerd board (both outputs; the empty
+  M1 header as a note), the Nano (two tachs) and the Gaia's BM1373
+  error rate under the 8 % line (runs under way, 2026-10-21).
 
 ## Image size
 
