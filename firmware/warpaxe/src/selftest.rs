@@ -43,6 +43,9 @@ pub const WINDOW_S: u32 = 60;
 pub const FAN_HOLD_S: u32 = 10;
 /// The result stays on the device display this long.
 pub const SHOW_S: u64 = 300;
+/// The thread's stack, PSRAM. The log line at the end says how much of
+/// it was needed.
+const STACK: usize = 16 * 1024;
 
 /// Where a run stands.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -133,12 +136,23 @@ pub fn start() -> Result<u32, &'static str> {
         fan: None,
     });
     // Nothing here writes flash: a PSRAM stack is fine, and the internal
-    // heap stays for the update writer and the pool.
-    if diag::spawn_psram("selftest", 8 * 1024, move || {
+    // heap stays for the update writer and the pool. The large values
+    // (the window, the report) live on the heap, not on this stack: the
+    // first device run (2026-10-21, 8 KB) ended in a panic without a
+    // core dump, which is what a stack overflow in a PSRAM task leaves.
+    if diag::spawn_psram("selftest", STACK, move || {
         let t0 = Instant::now();
-        log::info!("selftest: run {id} started at {} MHz / {} mV", cfg.frequency, cfg.core_voltage);
+        log::info!(
+            "selftest: run {id} started at {} MHz / {} mV",
+            cfg.frequency,
+            cfg.core_voltage
+        );
         let outcome = perform(&cfg);
         finish(id, outcome, t0.elapsed());
+        log::info!(
+            "selftest: run {id} done, {} of {STACK} bytes of the thread's stack never used",
+            diag::stack_unused()
+        );
         RUNNING.store(false, Ordering::Relaxed);
     })
     .is_err()
@@ -172,8 +186,8 @@ fn readings(cfg: &config::Config) -> BoardReadings {
     let b = board::state();
     let m = miner::state();
     let profile = board::profile();
-    let regulator_fault = b.overheat_cause == Some("power")
-        || b.power_fault_codes.iter().any(|c| *c != "temp_warn");
+    let regulator_fault =
+        b.overheat_cause == Some("power") || b.power_fault_codes.iter().any(|c| *c != "temp_warn");
     BoardReadings {
         chips_found: m.chips,
         chips_expected: board::chips_expected(),
@@ -210,7 +224,7 @@ fn wait(d: Duration) -> bool {
     true
 }
 
-type Outcome = Result<(BoardReadings, Option<Window>, Option<FanReadings>), &'static str>;
+type Outcome = Result<(BoardReadings, Option<Box<Window>>, Option<FanReadings>), &'static str>;
 
 fn perform(cfg: &config::Config) -> Outcome {
     let profile = board::profile();
@@ -221,7 +235,12 @@ fn perform(cfg: &config::Config) -> Outcome {
     if first.hashing && first.chips_found > 0 {
         let m = miner::state();
         let expected = f32::from(chip.small_cores) * m.frequency_hz as f32 / 1e9;
-        let mut w = Window::new(first.chips_found, chip.domains, expected, &Limits::DEFAULT);
+        let mut w = Box::new(Window::new(
+            first.chips_found,
+            chip.domains,
+            expected,
+            &Limits::DEFAULT,
+        ));
         update(|r| {
             r.state = State::Running {
                 step: "hashrate",
@@ -297,7 +316,7 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
             (State::Aborted(why), None, Vec::new(), None, None)
         }
         Ok((b, window, fan)) => {
-            let report = judge(asic, &Limits::DEFAULT, &b, window.as_ref(), fan.as_ref());
+            let report = judge(asic, &Limits::DEFAULT, &b, window.as_deref(), fan.as_ref());
             let chips = window
                 .as_ref()
                 .map(|w| {
@@ -316,7 +335,11 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
                                     }
                                 })
                                 .collect();
-                            let pct = if expected > 0.0 { ghs / expected * 100.0 } else { 0.0 };
+                            let pct = if expected > 0.0 {
+                                ghs / expected * 100.0
+                            } else {
+                                0.0
+                            };
                             (ghs, pct, w.chip_error_percent(c), doms)
                         })
                         .collect()
