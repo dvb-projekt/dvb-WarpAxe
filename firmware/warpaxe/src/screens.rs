@@ -1721,7 +1721,7 @@ fn step_name(step: &str, progress: u8) -> String {
             l("Hash counters {s} s", "Hash-Zähler {s} s").replace("{s}", &format!("{}", s.saturating_sub(done.min(s))))
         }
         "fan" => l("Fan test", "Lüftertest").to_string(),
-        "judge" => l("Judging", "Auswertung").to_string(),
+        "judge" => l("Evaluating", "Auswertung").to_string(),
         _ => l("Board", "Board").to_string(),
     }
 }
@@ -1762,7 +1762,7 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
     let Some(r) = s.report else {
         c.text(&TITLE, W / 2, 80, gfx::WARN, l("CANCELLED", "ABGEBROCHEN"), Align::Center);
         let why = match s.aborted {
-            Some("pointChanged") => l("Clock or voltage changed during the test", "Takt oder Spannung während des Tests geändert"),
+            Some("pointChanged") => l("Clock or voltage changed during the test", "Takt oder Spannung im Test geändert"),
             Some("chainStopped") => l("The chips went off during the test", "Die Chips gingen während des Tests aus"),
             _ => l("Cancelled in the web UI", "In der Weboberfläche abgebrochen"),
         };

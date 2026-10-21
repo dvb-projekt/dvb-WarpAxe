@@ -71,7 +71,7 @@
  "Board": "Placa",
  "Hash counters {s} s": "Cont. hash {s} s",
  "Fan test": "Teste ventoinha",
- "Judging": "Avaliando",
+ "Evaluating": "Avaliando",
  "Mining continues": "A mineração continua",
  "CANCELLED": "CANCELADO",
  "Clock or voltage changed during the test": "Freq. ou tensão mudou no teste",

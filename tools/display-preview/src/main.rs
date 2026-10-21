@@ -483,6 +483,92 @@ mod stratum {
     }
 }
 
+/// The self-test screens: PREVIEW_SELFTEST picks none (unset), running,
+/// pass, fail or cancelled; the report comes from the real judgement
+/// with sample readings, so the screen shows what the firmware would.
+mod selftest {
+    use warpaxe_board::selftest::{
+        judge, BoardReadings, FanReadings, Limits, Report, Window,
+    };
+    pub const WINDOW_S: u32 = 60;
+    pub struct Shown {
+        pub id: u32,
+        pub running: bool,
+        pub step: &'static str,
+        pub progress: u8,
+        pub aborted: Option<&'static str>,
+        pub report: Option<Report>,
+    }
+    pub static MODE: std::sync::Mutex<&'static str> = std::sync::Mutex::new("");
+    fn report(fail: bool) -> Report {
+        let gamma = crate::board::gamma();
+        let chips = if gamma { 1 } else { 4 };
+        let expected = if gamma { 1305.6 } else { 1632.0 };
+        let mut w = Window::new(chips, 4, expected, &Limits::DEFAULT);
+        for _ in 0..60 {
+            for c in 0..usize::from(chips) {
+                let ghs = if fail && c == 2 { expected * 0.55 } else { expected * 0.98 };
+                let d = [ghs / 4.0; 4];
+                w.sample(c, ghs, ghs * 0.004, &d, true);
+            }
+        }
+        let b = BoardReadings {
+            chips_found: chips,
+            chips_expected: chips,
+            hashing: true,
+            has_regulator: true,
+            core_set_mv: if gamma { 1140 } else { 1250 },
+            core_actual_mv: Some(if gamma { 1140 } else { 1238 }),
+            regulator_fault: false,
+            has_thermal: true,
+            chip_temp_c: Some(if gamma { 62.3 } else { 56.2 }),
+            chip_limit_c: if gamma { 75.0 } else { 70.0 },
+            vr_temp_c: Some(if gamma { 55.0 } else { 50.0 }),
+            vr_limit_c: if gamma { 105.0 } else { 70.0 },
+            vin_v: Some(if gamma { 5.12 } else { 12.05 }),
+            nominal_v: if gamma { 5.0 } else { 12.0 },
+        };
+        let f = FanReadings {
+            duty_before: 59,
+            rpm_before: 1831,
+            rpm2_before: if gamma { None } else { Some(0) },
+            rpm_full: if fail { 0 } else { 4210 },
+            rpm2_full: if gamma { None } else { Some(0) },
+        };
+        judge(crate::board::profile().asic, &Limits::DEFAULT, &b, Some(&w), Some(&f))
+    }
+    pub fn shown() -> Option<Shown> {
+        let mode = *MODE.lock().unwrap();
+        match mode {
+            "running" => Some(Shown {
+                id: 1,
+                running: true,
+                step: "hashrate",
+                progress: 47,
+                aborted: None,
+                report: None,
+            }),
+            "pass" | "fail" => Some(Shown {
+                id: 1,
+                running: false,
+                step: "",
+                progress: 100,
+                aborted: None,
+                report: Some(report(mode == "fail")),
+            }),
+            "cancelled" => Some(Shown {
+                id: 1,
+                running: false,
+                step: "",
+                progress: 100,
+                aborted: Some("pointChanged"),
+                report: None,
+            }),
+            _ => None,
+        }
+    }
+}
+
 fn save(dir: &str, name: &str) {
     let f = FRAME.lock().unwrap().clone();
     std::fs::write(format!("{dir}/{name}.raw"), f).expect("write frame");
@@ -536,6 +622,13 @@ fn main() {
     ui.frame(&mut d);
     save(&dir, "lcd-ev-setup");
     HOTSPOT.store(false, Ordering::Relaxed);
+    for mode in ["running", "pass", "fail", "cancelled"] {
+        *selftest::MODE.lock().unwrap() = mode;
+        let mut ui = screens::Ui::new();
+        ui.frame(&mut d);
+        save(&dir, &format!("lcd-ev-selftest-{mode}"));
+    }
+    *selftest::MODE.lock().unwrap() = "";
 
     // OLED: every slide of the rotation.
     GAMMA.store(true, Ordering::Relaxed);
@@ -551,6 +644,13 @@ fn main() {
     ui.frame(&mut o);
     save(&dir, "oled-ev-overheat");
     *display::DEMO.lock().unwrap() = None;
+    for mode in ["running", "pass", "fail"] {
+        *selftest::MODE.lock().unwrap() = mode;
+        let mut ui = screens::Ui::new();
+        ui.frame(&mut o);
+        save(&dir, &format!("oled-ev-selftest-{mode}"));
+    }
+    *selftest::MODE.lock().unwrap() = "";
     HOTSPOT.store(true, Ordering::Relaxed);
     let start = std::time::Instant::now();
     for (page, at) in [0.2f32, 3.2, 6.2].into_iter().enumerate() {

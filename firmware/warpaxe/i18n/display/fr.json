@@ -71,12 +71,12 @@
  "Board": "Carte",
  "Hash counters {s} s": "Compteurs hash {s} s",
  "Fan test": "Test ventil.",
- "Judging": "Évaluation",
+ "Evaluating": "Évaluation",
  "Mining continues": "Le minage continue",
  "CANCELLED": "ANNULÉ",
  "Clock or voltage changed during the test": "Fréq. ou tension modifiée pendant le test",
  "The chips went off during the test": "Puces coupées pendant le test",
  "Cancelled in the web UI": "Annulé dans l’interface web",
  "{n} of {m} checks passed": "{n} contrôles réussis sur {m}",
- "{n} of {m} checks failed": "{n} contrôles échoués sur {m}"
+ "{n} of {m} checks failed": "{n} contrôles en échec sur {m}"
 }
