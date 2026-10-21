@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-444%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.33-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.34-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.33).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.34).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -77,8 +77,10 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
-| Self-test | yes, instead of mining: after a factory flash or with the boot key held, one mock job, stops at the first failure, PASS/FAIL on the display only (`main/self_test/self_test.c`) | not checked | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
-| Diagnostics file for support, event log across restarts | not checked | not checked | yes: one JSON with no passwords and masked addresses; the last 32 events (restarts, stops, pool switches, updates, silent chips, self-tests) in NVS; a banner after a crash |
+| Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
+| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
+| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests) in NVS |
+| Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if one is stored, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
@@ -123,8 +125,8 @@ draw:
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
   hundreds of pool shares.
-- **A running self-test** (`selfTest.state`): WarpTune holds its writes
-  while one runs, and a clock or voltage change during the test ends it
+- **A running self-test** (`selfTest.state`): WarpTune (from v1.42)
+  holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.
 
 The table on the WarpPool side lists, firmware by firmware, what WarpTune
@@ -454,11 +456,12 @@ back at any time with `GET /api/v1/display/frame`.
 ### Self-test, diagnostics and event log
 - **Self-test** on a click under System, while the miner mines, about
   80 s: chip count, every chip's and every domain's hash counter over a
-  60-s window, the error rate per chip type, the core voltage against
-  the set value, the regulator's status, the fan's speed at 100 % for
-  10 s (never below what the control wants, released by the board task
-  itself), chip and regulator temperatures under their stop lines, the
-  input voltage. One PASS/FAIL with every check's figure in the web UI,
+  60-second window, the error rate against a line per chip type (5% on
+  the BM1370, 8% on the BM1373), the core voltage against the set value,
+  the regulator's status, the fans' speed at 100% for 10 s (the step
+  never lowers what the fan control wants, and the board task drops it
+  by itself when the time is up), chip and regulator temperatures under
+  their stop lines, the input voltage. One PASS/FAIL with every check's figure in the web UI,
   on the display and in the API; a clock or voltage change during the
   test ends it. The limits and where they come from:
   [`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md).
@@ -471,11 +474,12 @@ back at any time with `GET /api/v1/display/frame`.
 - **Event log** across restarts: the last 32 events (restart with its
   reason, overheat stop with its cause, regulator fault, pool switch,
   update or rollback, silent chip, self-test result) with time and
-  uptime, under System, in `/api/v1/state` and in the file. Written on
+  uptime, under System, in `/api/v1/state`, `/api/v1/events` and in the
+  file. Written on
   events only, never on a timer, from threads with an internal stack.
-- **After a crash** (panic or watchdog) the web UI shows a banner once:
-  the reason and the time, the diagnostics file, the core dump if one
-  is stored.
+- **After a crash** (panic or watchdog) the web UI shows a banner until
+  it is dismissed: the reason and the time, a button for the diagnostics
+  file and, if one is stored, one for the core dump.
 
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
@@ -752,9 +756,12 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   one-fan NerdAxe), board by board, and why WarpAxe up to v0.1.31 stopped
   later on a Bitaxe;
 - [`docs/09-Update-with-a-fragmented-heap.md`](docs/09-Update-with-a-fragmented-heap.md)
-- [`docs/10-Self-test-diagnostics-and-event-log.md`](docs/10-Self-test-diagnostics-and-event-log.md)
   — an update refused with 45 KB free but no contiguous 16 KB block, and why the main
-  task writes the firmware now.
+  task writes the firmware now;
+- [`docs/10-Self-test-diagnostics-and-event-log.md`](docs/10-Self-test-diagnostics-and-event-log.md)
+  — the self-test against ESP-Miner's, its checks and limits and the
+  runs on four boards; the diagnostics file's privacy rules; the event
+  log's flash wear; the crash banner.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
