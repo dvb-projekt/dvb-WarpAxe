@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-416%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.32-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.33-7B5CFF"></a>
 </p>
 
 ---
@@ -25,7 +25,7 @@ firmware on the device and speaks their
 HTTP API, so dashboards, tuners and fleet tools that talk to a Bitaxe keep
 working — including
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool), the
-clock-and-voltage regulator of dvb-WarpPool.
+clock-and-voltage tuner of dvb-WarpPool.
 
 It does what the stock firmware does — Stratum V2 with the pool's
 authority key checked, Stratum V1 over TLS, a fallback pool that hands back
@@ -46,19 +46,19 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.32).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.33).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
 > 8 October also a NerdNOS (BM1397), its clock set by hand. Seven
 > more boards have a profile; of these the Bitaxe Gamma Duo and Gamma
-> Turbo have run it at a user's, as has a NerdOCTAXE-γ v2.2 with the
+> Turbo have run it at a user's; so has a NerdOCTAXE-γ v2.2 with the
 > 4-phase regulator — see [Supported boards](#supported-boards) before you
 > flash.
 
 ## Compared with the stock firmware
 
-As of 2026-10-20, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-21, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
@@ -72,13 +72,13 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
 | Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe) |
-| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools — also AxeOS 2.15's —, hostname, clock and voltage, fans and temperature limits, display) |
+| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools including AxeOS 2.15's saved list, hostname, clock and voltage, fans and temperature limits, display) |
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
-| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
-| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage and clock 100 lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
+| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
+| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
 | Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
 | Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
@@ -104,8 +104,8 @@ stay with the stock firmware.
 ## With WarpTune
 
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool/src/branch/main/scripts/warptune-setup.md#what-each-firmware-gives-warptune),
-the clock-and-voltage regulator of dvb-WarpPool, works on the stock
-firmware in full — it talks the AxeOS API, and WarpAxe keeps that API. The
+the clock-and-voltage tuner of dvb-WarpPool, works fully on the stock
+firmware — it talks the AxeOS API, and WarpAxe keeps that API. The
 difference is what the firmware says about itself: WarpAxe reports these
 states explicitly, so WarpTune does not have to guess them from the power
 draw:
@@ -151,7 +151,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, way back to the stock firmware, live log" width="760"><br>
-  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off without losing the device, reset overheat), the way back to the stock firmware and the live log.</em>
+  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off while the device stays reachable, reset an overheat stop), the way back to the stock firmware and the live log.</em>
 </p>
 
 <p align="center">
@@ -203,7 +203,7 @@ back at any time with `GET /api/v1/display/frame`.
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
   2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left
-  one hash domain of a chip at 3 % in four power-ups out of six, NerdOS's
+  one hash domain of a chip at 3% in four power-ups out of six, NerdOS's
   none in six ([`docs/04`](docs/04-Octaxe-Warm-Reboot-Latch.md)).
 - **Stratum V2** per pool: Noise handshake (secp256k1 + EllSwift,
   ChaCha20-Poly1305), extended channel, the pool's certificate checked
@@ -265,7 +265,7 @@ back at any time with `GET /api/v1/display/frame`.
   [`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)).
   The chip line is a setting: on the NerdOS boards up to 90 °C as NerdOS
   allows, on every other board only below its own line; the regulator's is
-  fixed per board. And a guard for a lost chip sensor
+  fixed per board. There is also a guard for a lost chip sensor
   (60 s blind = off, once the chip temperature has been read; a board whose
   chip sensor never answers runs like NerdOS, on the regulator limit with
   the fans at full, and says so in the log). The chips start again on their own once chip and
@@ -306,14 +306,14 @@ back at any time with `GET /api/v1/display/frame`.
   several chips. The BM1373 has eight hash
   domains, not four: WarpAxe reads all eight counters (0x88–0x8B and
   0xAC–0xAF), where AxeOS reads four and doubles them. Its error rate runs
-  higher than the BM1370's (about 2.5 % on a NerdAxe Gaia at its hand
+  higher than the BM1370's (about 2.5% on a NerdAxe Gaia at its hand
   point, rising steeply at low core voltage) and is shown without a colour.
 - **Coinbase payout** of every job, as AxeOS shows it: the share of a found
-  block that goes to your address (green from 95 %, red below), the
+  block that goes to your address (green from 95%, red below), the
   coinbase value and its outputs, over Stratum V1 and V2. The address in
   the worker name is decoded (base58, bech32/bech32m, CashAddr) and matched
   against the output scripts, so the split is right when solo mining
-  another SHA-256 coin too (BCH, eCash, DigiByte, FixedCoin …); the
+  another SHA-256 coin too (BCH, eCash, DigiByte, FixedCoin…); the
   outputs are written the way that coin writes addresses, and the amounts
   carry the coin set for the pool (*Coin*, default BTC). A worker name that
   is a pool account, not an address, shows "paid by the pool".
@@ -326,7 +326,7 @@ back at any time with `GET /api/v1/display/frame`.
   never changes or restarts another miner. Add miners by address or by a
   search of the local /24. An **Avalon** (cgminer API on TCP 4028, which
   a browser cannot open) is found by that search as well: the miner walks
-  its own /24 for port 4028, six connections at a time with a hard 30-s
+  its own /24 for port 4028, six connections at a time with a hard 30 s
   budget, asks a host that answers for its `version` and nothing else,
   and the hit shows as "Avalon · cgminer" beside the others; adding it
   (or typing it as "Avalon (cgminer API)") stores `cgminer:<ip>`. For
@@ -396,13 +396,13 @@ back at any time with `GET /api/v1/display/frame`.
   clock; the Network tab shows it, and how far the miner's clock is from
   the browser's, since TLS and an authenticated Stratum V2 pool wait for
   the time), and `psuWatts` (the rated output of the miner's power supply,
-  entered once in Settings, so WarpTune knows its 80 % limit without its
+  entered once in Settings, so WarpTune knows its 80% limit without its
   own configuration; several miners on one supply each get their share of
   its rating; null while unknown), and `mdnsHostname` / `fullHostname`
   (the name the miner announces over mDNS, as AxeOS reports it).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
-  ten-digit password made at every start and shown only on the device
+  ten-digit password generated at every start and shown only on the device
   display. A phone that joins it gets the Wi-Fi setup page by itself
   (captive portal); after saving, the miner restarts, joins the network and
   closes the hotspot. The log names the address behind every restart,
@@ -452,10 +452,14 @@ back at any time with `GET /api/v1/display/frame`.
   restart and download mode are carried out by the firmware's main task,
   whose stack exists from boot on, so an update works however fragmented
   the internal heap is after days of mining (up to v0.1.31 an update
-  could be refused with 45 KB free but no 16 KB piece). A second image
+  could be refused with 45 KB free but no contiguous 16 KB block). A second image
   while one is queued or being written is refused at once (409 on the
   upload); `largestFreeInternal` in `/api/system/info` shows the largest
-  piece ([`docs/09`](docs/09-Update-with-a-fragmented-heap.md)).
+  free block ([`docs/09`](docs/09-Update-with-a-fragmented-heap.md)).
+  From v0.1.33 the write runs at the priority the old writer thread had,
+  so it no longer waits behind the mining and network threads: on a
+  NerdQAxe++ an update takes about 60 s from upload to restart instead of
+  144 s.
 - **Chips off before every restart**: an update, a restart and download
   mode first switch the core voltage off and hold the chips in reset, and
   every boot does so before anything else. A TPS546 keeps its output on
@@ -471,7 +475,7 @@ back at any time with `GET /api/v1/display/frame`.
   cut — brings the previous version back, and the System page says so
   (`otaState` `aborted`). This needs the bootloader of v0.1.22 or later,
   which only a USB install writes: a reinstall with the web flasher
-  (settings kept) gives it to a miner that came by online update.
+  (settings kept) gives it to a miner that has only ever been updated online.
 - Downloads are tried up to three times; the log names the address that
   started an install, an upload or an update check, and the last install
   (version and signature result) is kept across the restart. Every
@@ -493,16 +497,16 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
-| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ± 2.5 % (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
+| NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); offered on the first start, never taken on its own |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers); free clock values with `?oc` as on the Gamma |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
-| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102 % of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
+| NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102% of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
-| NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08: at 300 MHz the pool counted ≈ 190 GH/s over an hour, the stock firmware ≈ 180 GH/s on the same pool and clock (±6–9 % each); ours runs there, at about 73 °C with a case fan (the board has none of its own); after an overheat stop it comes back one clock step lower; the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; taken on the first start when the thermistor on GPIO2 and the 1.4 V rail on GPIO3 both answer (the buck switched on for 150 ms for the reading, the chip held in reset); the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
+| NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08: at 300 MHz the pool counted ≈190 GH/s over an hour, the stock firmware ≈180 GH/s on the same pool and clock (±6–9% each); ours runs there, at about 73 °C with a case fan (the board has none of its own); after an overheat stop it comes back one clock step lower; the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; taken on the first start when the thermistor on GPIO2 and the 1.4 V rail on GPIO3 both answer (the buck switched on for 150 ms for the reading, the chip held in reset); the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
 Boards marked "profile only" have pins, regulator window and limits taken
@@ -666,7 +670,7 @@ License) and `docs/brand` by `tools/make-fonts.py` and
 | `crates/displaycfg` | the display's page, cockpit and slide names, defaults and PATCH checks |
 | `crates/sim`, `crates/simuart` | a simulated BM1370/BM1373/BM1397 chain and board with fault injection |
 | `crates/axeos`, `crates/cgminer` | AxeOS- and cgminer-compatible devices on top of the simulator, for testing tuners |
-| `crates/scenarios` | WarpTune's regulator in-process against the simulated devices (git dependency on dvb-WarpPool) |
+| `crates/scenarios` | WarpTune's tuning loop, in-process, against the simulated devices (git dependency on dvb-WarpPool) |
 | `firmware/warpaxe` | the ESP32-S3 firmware: Wi-Fi and USB networking, Stratum, miner, board, web UI, display, updates |
 | `tools/` | font and splash generators, display preview, flash backup, release script |
 
@@ -694,11 +698,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
   — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
   ours) against ESP-Miner's, and an A/B on the NerdAxe Gaia: the same
-  rate and the same error count, so the Gaia keeps NerdOS's init.
+  rate and the same error count, so the Gaia keeps NerdOS's init;
 - [`docs/06-Devkit-S3-SHA-Peripheral.md`](docs/06-Devkit-S3-SHA-Peripheral.md)
   — the T-Display-S3's SHA peripheral measured cycle by cycle, and how
   writing the next block while the engine runs took the devkit from
-  about 290 to about 340 kH/s (`--features shabench` builds the bench).
+  about 290 to about 340 kH/s (`--features shabench` builds the bench);
 - [`docs/07-Display-choices-and-Avalon-swarm.md`](docs/07-Display-choices-and-Avalon-swarm.md)
   — the display's choosable pages, cockpit places and OLED slides (names,
   defaults, why the curve follows the large number), and the Avalon on
@@ -709,7 +713,7 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   one-fan NerdAxe), board by board, and why WarpAxe up to v0.1.31 stopped
   later on a Bitaxe;
 - [`docs/09-Update-with-a-fragmented-heap.md`](docs/09-Update-with-a-fragmented-heap.md)
-  — an update refused with 45 KB free but no 16 KB piece, and why the main
+  — an update refused with 45 KB free but no contiguous 16 KB block, and why the main
   task writes the firmware now.
 
 Short version: registers and init sequences are **data**, not code per
