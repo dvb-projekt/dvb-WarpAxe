@@ -83,7 +83,7 @@ static ES: &[(&str, &str)] = &[
     ("Regulator", "Regulador"),
     (
         "Regulator fault · core voltage off",
-        "Fallo regulador · voltaje del núcleo cortado",
+        "Fallo del regulador · voltaje del núcleo cortado",
     ),
     ("Restart clock", "Frec. al reiniciar"),
     ("Shutdown {h} °C", "Apagado a {h} °C"),
@@ -110,7 +110,7 @@ static FR: &[(&str, &str)] = &[
     ("Best diff", "Meilleure diff."),
     (
         "Best diff (session / all-time)",
-        "Meilleure diff (session / record)",
+        "Meilleure diff. (session / record)",
     ),
     ("Block", "Bloc"),
     ("CHIPS OFF", "PUCES COUPÉES"),
@@ -186,7 +186,7 @@ static FR: &[(&str, &str)] = &[
         "Regulator fault · core voltage off",
         "Défaut régulateur · tension cœur coupée",
     ),
-    ("Restart clock", "Redémarrage"),
+    ("Restart clock", "Fréq. redémarrage"),
     ("Shutdown {h} °C", "Arrêt {h} °C"),
     ("THEN OPEN", "PUIS OUVRIR"),
     ("UPTIME", "ACTIF DEPUIS"),
@@ -312,7 +312,7 @@ static PT: &[(&str, &str)] = &[
     ("Best diff", "Melhor dif."),
     (
         "Best diff (session / all-time)",
-        "Melhor diff (sessão / histórica)",
+        "Melhor dif. (sessão / histórica)",
     ),
     ("Block", "Bloco"),
     ("CHIPS OFF", "CHIPS PARADOS"),
@@ -344,7 +344,7 @@ static PT: &[(&str, &str)] = &[
     ("Fan M2", "Vent. M2"),
     (
         "Fans 100 % · clear it in the web UI under System",
-        "Ventoinhas 100% · liberar na interface web em Sistema",
+        "Ventoinhas 100% · libere na interface web em Sistema",
     ),
     (
         "Fans 100 % · starts again once cooled",
@@ -365,7 +365,7 @@ static PT: &[(&str, &str)] = &[
     ("Fees", "Taxas"),
     ("INPUT", "ENTRADA"),
     ("Input", "Entrada"),
-    ("Join {n}", "Conecte a {n}"),
+    ("Join {n}", "Conecte-se a {n}"),
     ("Log", "Log"),
     ("Network difficulty", "Dificuldade da rede"),
     ("Network hashrate", "Hashrate da rede"),
@@ -378,7 +378,7 @@ static PT: &[(&str, &str)] = &[
     ("Power", "Potência"),
     (
         "Preparing flash · do not power off",
-        "Preparando a memória · não desligue",
+        "Preparando gravação · não desligue",
     ),
     ("Press a key to close", "Pressione uma tecla para fechar"),
     ("REGULATOR", "REGULADOR"),

@@ -489,7 +489,7 @@ impl Ui {
             fade_text(c, &TITLE, W / 2, 86, title_col, title, a);
             let sub = format!("{} {}", l("Block", "Block"), num(height as f64, 0));
             fade_text(c, &VAL12, W / 2, 106, gfx::FG, &sub, a);
-            let hint = l("Press a key to close", "Taste drücken zum Schließen");
+            let hint = l("Press a key to close", "Zum Schließen Taste drücken");
             fade_text(c, &LABEL11, W / 2, 120, gfx::MUTE, hint, a * 0.8);
         }
     }
@@ -1406,7 +1406,7 @@ fn device(c: &mut Canvas, pos: usize, total: usize) {
         } else {
             "–".into()
         };
-        kv(c, l("Effective", "Effektiv"), &eff, 44, gfx::FG, r2, e);
+        kv(c, l("Effective", "Ausbeute"), &eff, 44, gfx::FG, r2, e);
         let n = net::state();
         let (w, wc) = n.wifi_rssi.map_or(("–".into(), gfx::FG), |r| {
             (format!("{r} dBm"), rssi_color(r))
@@ -1800,7 +1800,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 l("WI-FI SETUP", "WLAN-EINRICHTUNG"),
                 Align::Center,
             );
-            let join = l("Join {n}", "Verbinden mit {n}").replace("{n}", &ssid);
+            let join = l("Join {n}", "Mit {n} verbinden").replace("{n}", &ssid);
             fit_text(
                 c,
                 &[&VAL12, &LABEL11, &LABEL10],
