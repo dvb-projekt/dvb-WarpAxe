@@ -126,6 +126,16 @@ tar -czf "$OUT/web-flasher.tar.gz" -C "$FL" .
 if [ "${SKIP_SOAK:-0}" != 1 ]; then
     "$ROOT/tools/soak-test.py" "${SOAK_HOST:-192.168.178.41}" --upload "$OUT/warpaxe.bin" \
         --minutes "${SOAK_MINUTES:-5}" || { echo "soak test failed: not published" >&2; exit 1; }
+    # WarpTune must still read and tune the soaked miner on the new image
+    # (WarpTune v1.42.0 could not parse 0.1.34's selfTest fields). Runs
+    # when the WarpPool repo is checked out next to this one; WARPPOOL_REPO
+    # overrides the path, SKIP_TUNE_PROBE=1 skips it.
+    WP="${WARPPOOL_REPO:-$HOME/code/dvb-WarpPool}"
+    if [ "${SKIP_TUNE_PROBE:-0}" != 1 ] && [ -f "$WP/Cargo.toml" ]; then
+        cargo run -q --release --manifest-path "$WP/Cargo.toml" -p dvb-warppool-tune -- \
+            probe "${SOAK_HOST:-192.168.178.41}" --check \
+            || { echo "WarpTune cannot read or tune ${SOAK_HOST:-192.168.178.41} on this image: not published" >&2; exit 1; }
+    fi
 fi
 # The boards the release ran on (see the header). The devkit's id comes
 # only from a passed soak on a devkit in this run, never from TESTED_ON.
