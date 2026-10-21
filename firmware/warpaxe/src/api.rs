@@ -1439,10 +1439,10 @@ fn diagnostics(
         &mut esp_idf_svc::http::server::EspHttpConnection<'_>,
     >,
                        key: &str,
-                       v: serde_json::Value|
+                       mut v: serde_json::Value|
      -> Result<(), EspIOError> {
+        scrub.apply_json(&mut v);
         let text = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".into());
-        let text = scrub.apply(&text);
         let text = if scrub.leaks(&text) {
             log::error!("diagnostics: section {key} still carried a secret after scrubbing; left out");
             "\"left out: a secret would have leaked\"".to_string()

@@ -388,6 +388,16 @@ impl Window {
         self.chips
     }
 
+    /// Domains per chip the window was opened for.
+    pub fn domains(&self) -> u8 {
+        self.domains
+    }
+
+    /// What one chip was expected to hash, GH/s.
+    pub fn expected_chip_ghs(&self) -> f32 {
+        self.expected_chip_ghs
+    }
+
     /// One reading of chip `chip`: its total rate, its error rate and its
     /// domain rates in GH/s as the monitor reports them. `fresh` is false
     /// when the chip has not answered a counter read recently; its rates

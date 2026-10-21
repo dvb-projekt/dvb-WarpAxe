@@ -101,12 +101,30 @@ impl Scrubber {
         out
     }
 
-    /// Whether any rule's text still appears in `text` (a check after
-    /// scrubbing, for tests and for the firmware's own assertion).
+    /// Every string value of a JSON document scrubbed, keys left alone:
+    /// a network name that happens to be an English word ("pool",
+    /// "temp") must not rewrite the keys the file is read by.
+    pub fn apply_json(&self, v: &mut serde_json::Value) {
+        match v {
+            serde_json::Value::String(s) => {
+                let out = self.apply(s);
+                if out != *s {
+                    *s = out;
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|x| self.apply_json(x)),
+            serde_json::Value::Object(o) => o.values_mut().for_each(|x| self.apply_json(x)),
+            _ => {}
+        }
+    }
+
+    /// Whether a secret (a password, not a masked name) still appears in
+    /// `text`: the check after scrubbing, for tests and for the
+    /// firmware's own assertion before a section goes out.
     pub fn leaks(&self, text: &str) -> bool {
         self.rules
             .iter()
-            .any(|(from, to)| from != to && text.contains(from.as_str()))
+            .any(|(from, to)| to == MASK && text.contains(from.as_str()))
     }
 }
 
@@ -155,6 +173,36 @@ mod tests {
         );
         assert!(!s.leaks(&out));
         assert!(s.leaks(log));
+        assert!(s.leaks("Tr0ub4dor&3 in a line"));
+    }
+
+    #[test]
+    fn json_values_are_scrubbed_and_keys_stay() {
+        let s = Scrubber::new()
+            .secret("hunter2hunter2")
+            .replace("pool", "p…4")
+            .replace("bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq", "bc1q…5mdq");
+        let mut v = serde_json::json!({
+            "pool": "stratum.pool.example:3333",
+            "ssid": "pool",
+            "stratumUser": "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq.gamma",
+            "log": ["joined pool with hunter2hunter2", "temp 61"],
+            "n": 5
+        });
+        s.apply_json(&mut v);
+        assert_eq!(v["pool"], "stratum.p…4.example:3333");
+        assert_eq!(v["ssid"], "p…4");
+        assert_eq!(v["stratumUser"], "bc1q…5mdq.gamma");
+        assert_eq!(v["log"][0], "joined p…4 with ***");
+        assert_eq!(v["log"][1], "temp 61");
+        assert_eq!(v["n"], 5);
+        let text = v.to_string();
+        assert!(text.contains("\"pool\":"), "the key survives: {text}");
+        assert!(!s.leaks(&text));
+        // Only a secret counts as a leak: a masked name that is also an
+        // English word may well appear elsewhere.
+        assert!(!s.leaks("the pool page"));
+        assert!(s.leaks("pass hunter2hunter2"));
     }
 
     #[test]

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-416%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-444%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.33-7B5CFF"></a>
 </p>
@@ -77,6 +77,8 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
+| Self-test | yes, instead of mining: after a factory flash or with the boot key held, one mock job, stops at the first failure, PASS/FAIL on the display only (`main/self_test/self_test.c`) | not checked | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
+| Diagnostics file for support, event log across restarts | not checked | not checked | yes: one JSON with no passwords and masked addresses; the last 32 events (restarts, stops, pool switches, updates, silent chips, self-tests) in NVS; a banner after a crash |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
 | Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
@@ -121,6 +123,9 @@ draw:
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
   hundreds of pool shares.
+- **A running self-test** (`selfTest.state`): WarpTune holds its writes
+  while one runs, and a clock or voltage change during the test ends it
+  rather than spoiling it.
 
 The table on the WarpPool side lists, firmware by firmware, what WarpTune
 gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
@@ -174,6 +179,11 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 <p align="center">
   <img src="docs/screenshots/lcd-special.png" alt="Special screens: overheat, chips off, firmware update" width="760"><br>
   <em>Special screens — overheat (pulsing frame), chips off, firmware update with progress.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/lcd-selftest.png" alt="Self-test on the LCD: running with progress, PASS with nine marks, FAIL naming chip 2" width="760"><br>
+  <em>Self-test — the running test, PASS, and a FAIL that names the chip and domain; the OLED shows the verdict and the first failed check (<code>oled-selftest.png</code>).</em>
 </p>
 
 <p align="center">
@@ -351,7 +361,9 @@ back at any time with `GET /api/v1/display/frame`.
   `/api/v2/dashboard` (its `performance` object: hash rates and, per chip,
   the hash rate and the error hash rate), restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
-  off/on, overheat and best-difficulty reset, Wi-Fi scan, display frame /
+  off/on, overheat and best-difficulty reset, the self-test (`POST`/`GET`/
+  `DELETE /api/v1/selftest`), the diagnostics file (`GET
+  /api/v1/diagnostics`), the event log (`GET /api/v1/events`), Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
   list (`/api/v1/swarm`), an Avalon read for it
   (`/api/v1/swarm/cgminer?host=`) and the search for one
@@ -438,6 +450,32 @@ back at any time with `GET /api/v1/display/frame`.
 - Optional BTC price and fee rates from mempool.space — **off by default**;
   with it off the miner talks to its pool and nothing else (plus the update
   check, which you can switch off too).
+
+### Self-test, diagnostics and event log
+- **Self-test** on a click under System, while the miner mines, about
+  80 s: chip count, every chip's and every domain's hash counter over a
+  60-s window, the error rate per chip type, the core voltage against
+  the set value, the regulator's status, the fan's speed at 100 % for
+  10 s (never below what the control wants, released by the board task
+  itself), chip and regulator temperatures under their stop lines, the
+  input voltage. One PASS/FAIL with every check's figure in the web UI,
+  on the display and in the API; a clock or voltage change during the
+  test ends it. The limits and where they come from:
+  [`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md).
+- **Diagnostics file** (`GET /api/v1/diagnostics`): one JSON with the
+  firmware, board, self-test result, hash counters, pool status,
+  regulator and temperatures, memory, event log, settings and the last
+  log lines. No passwords; the worker's address and the Wi-Fi name are
+  masked, and every section is scrubbed of every secret the firmware
+  knows before it is written.
+- **Event log** across restarts: the last 32 events (restart with its
+  reason, overheat stop with its cause, regulator fault, pool switch,
+  update or rollback, silent chip, self-test result) with time and
+  uptime, under System, in `/api/v1/state` and in the file. Written on
+  events only, never on a timer, from threads with an internal stack.
+- **After a crash** (panic or watchdog) the web UI shows a banner once:
+  the reason and the time, the diagnostics file, the core dump if one
+  is stored.
 
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
@@ -665,6 +703,7 @@ License) and `docs/brand` by `tools/make-fonts.py` and
 | `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading and payout (the worker's address decoded — base58, bech32/bech32m, CashAddr — for any SHA-256 coin), tested against a captured WarpPool session |
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |
+| `crates/diag` | the diagnostics file's privacy rules (passwords never, addresses and the Wi-Fi name masked, every section scrubbed) and the event log's ring — host-tested |
 | `crates/avalon` | read-only cgminer API client for an Avalon (`summary`, `estats`, `pools`), translated to an AxeOS-like document |
 | `crates/cpuminer` | SHA-256 hashing without an ASIC for the T-Display-S3, NerdMiner settings import |
 | `crates/displaycfg` | the display's page, cockpit and slide names, defaults and PATCH checks |
@@ -713,6 +752,7 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   one-fan NerdAxe), board by board, and why WarpAxe up to v0.1.31 stopped
   later on a Bitaxe;
 - [`docs/09-Update-with-a-fragmented-heap.md`](docs/09-Update-with-a-fragmented-heap.md)
+- [`docs/10-Self-test-diagnostics-and-event-log.md`](docs/10-Self-test-diagnostics-and-event-log.md)
   — an update refused with 45 KB free but no contiguous 16 KB block, and why the main
   task writes the firmware now.
 

@@ -301,13 +301,13 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
             let chips = window
                 .as_ref()
                 .map(|w| {
-                    let expected = w_expected(w);
+                    let expected = w.expected_chip_ghs();
                     (0..usize::from(w.chips()))
                         .map(|c| {
                             let ghs = w.chip_ghs(c);
-                            let doms: Vec<f32> = (0..usize::from(board::chip().domains))
+                            let doms: Vec<f32> = (0..usize::from(w.domains()))
                                 .map(|d| {
-                                    let share = expected / f32::from(board::chip().domains.max(1));
+                                    let share = expected / f32::from(w.domains().max(1));
                                     let (g, n) = w.domain_ghs(c, d);
                                     if n == 0 || share <= 0.0 {
                                         0.0
@@ -339,14 +339,6 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
         r.duration_s = took.as_secs() as u32;
     });
     crate::display::touch();
-}
-
-fn w_expected(w: &Window) -> f32 {
-    // The window keeps the figure it was opened with; recomputed the same
-    // way the firmware did (small cores × the clock at the start).
-    let m = miner::state();
-    let _ = w;
-    f32::from(board::chip().small_cores) * m.frequency_hz as f32 / 1e9
 }
 
 /// One line for the log and the event log: `PASS, 9 checks` or
