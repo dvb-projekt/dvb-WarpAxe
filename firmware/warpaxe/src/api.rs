@@ -11,7 +11,7 @@ use esp_idf_svc::io::{EspIOError, Write};
 use esp_idf_svc::ota::EspOta;
 use serde_json::json;
 
-use crate::{board, config, diag, display, miner, net, stratum, swarm};
+use crate::{board, config, diag, display, events, miner, net, selftest, stratum, swarm};
 use warpaxe_displaycfg as dcfg;
 
 /// The web UI's files: fonts (OFL, Latin subsets), the wordmark and the
@@ -205,6 +205,10 @@ pub fn system_info() -> serde_json::Value {
         "version": VERSION, "gitHash": env!("WARPAXE_GIT"), "runningPartition": crate::update::running_partition(), "otaState": crate::update::ota_state(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": u8::from(cfg.autofanspeed),
         "resetReason": diag::reset_reason(),
+        // The last reset was a crash or a watchdog: the web UI shows a
+        // banner once per boot (bootId tells one boot from the next).
+        "crashed": diag::last_run_crashed(), "bootId": diag::boot_id(), "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
+        "selfTest": selftest::brief(),
     });
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
@@ -496,6 +500,7 @@ pub fn v1_state() -> serde_json::Value {
         "board": board::state(),
         "display": json!({"asleep": crate::display::asleep(), "timeout_min": config::get().display_timeout}),
         "config": config::get().redacted(),
+        "events": events::list(),
     })
 }
 
@@ -649,21 +654,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     // oldest first, one line each.
     server.fn_handler("/api/v1/log", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
-        let count = unsafe { esp_idf_svc::sys::tusb::wa_log_count() } as usize;
-        let mut out = String::new();
-        for i in 0..count {
-            let mut buf = [0u8; 160];
-            unsafe {
-                esp_idf_svc::sys::tusb::wa_log_line(
-                    i as i32,
-                    buf.as_mut_ptr() as *mut core::ffi::c_char,
-                    buf.len(),
-                )
-            };
-            let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
-            out.push_str(&String::from_utf8_lossy(&buf[..end]));
-            out.push('\n');
-        }
+        let out = log_text();
         let mut r = req.into_response(200, None, &[("Content-Type", "text/plain")])?;
         r.write_all(out.as_bytes())?;
         Ok::<(), anyhow::Error>(())
@@ -917,6 +908,39 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             }),
         )
     })?;
+    // The self-test (docs/10): start, follow, cancel.
+    server.fn_handler("/api/v1/selftest", Method::Post, |mut req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::info!("api: self-test requested from {}", peer(&mut req));
+        match selftest::start() {
+            Ok(id) => reply_json(req, 202, &json!({"started": true, "id": id})),
+            Err(e) => reply_json(req, 409, &json!({"error": e})),
+        }
+    })?;
+    server.fn_handler("/api/v1/selftest", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        events::flush();
+        reply_json(req, 200, &selftest::status_json())
+    })?;
+    server.fn_handler("/api/v1/selftest", Method::Delete, |mut req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::info!("api: self-test cancel requested from {}", peer(&mut req));
+        let was = selftest::abort();
+        reply_json(req, 200, &json!({"cancelled": was}))
+    })?;
+    // The event log that survives restarts, newest first.
+    server.fn_handler("/api/v1/events", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        events::flush();
+        reply_json(req, 200, &events::json())
+    })?;
+    // The diagnostics file for support: one JSON document, secrets never,
+    // addresses and the network name masked (docs/10).
+    server.fn_handler("/api/v1/diagnostics", Method::Get, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        events::flush();
+        diagnostics(req)
+    })?;
     server.fn_handler("/api/v1/bestdiff/reset", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         config::reset_best_diff();
@@ -1053,6 +1077,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                         Ok(_) => {
                             log::info!("pools: {who} switched to saved pool {:?}", p.name);
                             config::record_patch(&who, &[format!("pool:{}", p.name)]);
+                            crate::events::record("pool", format!("saved pool {} used", p.name));
+                            crate::events::flush();
                             crate::display::touch();
                             stratum::reconnect();
                             Ok(config::pools())
@@ -1343,6 +1369,125 @@ fn peer(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection>) ->
 /// Why the regulator stopped the core, while it is stopped for that
 /// (`overheatCause` "power"): "overcurrent", "overvoltage",
 /// "undervoltage" or "overtemp"; null otherwise.
+/// The log ring as one string, one line per entry.
+fn log_text() -> String {
+    let count = unsafe { esp_idf_svc::sys::tusb::wa_log_count() } as usize;
+    let mut out = String::new();
+    for i in 0..count {
+        let mut buf = [0u8; 160];
+        unsafe {
+            esp_idf_svc::sys::tusb::wa_log_line(
+                i as i32,
+                buf.as_mut_ptr() as *mut core::ffi::c_char,
+                buf.len(),
+            )
+        };
+        let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+        out.push_str(&String::from_utf8_lossy(&buf[..end]));
+        out.push('\n');
+    }
+    out
+}
+
+/// The scrubber for the diagnostics file: every secret the firmware
+/// knows replaced with `***`, the worker addresses and the Wi-Fi name
+/// with their masked forms (`warpaxe_diag::scrub`).
+fn scrubber(cfg: &config::Config) -> warpaxe_diag::scrub::Scrubber {
+    use warpaxe_diag::scrub::{mask_ssid, mask_worker, Scrubber};
+    let mut s = Scrubber::new()
+        .secret(&cfg.wifi_pass)
+        .secret(&cfg.stratum_pass)
+        .secret(&cfg.fallback_pass)
+        .replace(&cfg.ssid, &mask_ssid(&cfg.ssid))
+        .replace(&cfg.stratum_user, &mask_worker(&cfg.stratum_user))
+        .replace(&cfg.fallback_user, &mask_worker(&cfg.fallback_user));
+    for p in config::pools() {
+        s = s.secret(&p.pass).replace(&p.user, &mask_worker(&p.user));
+    }
+    if let Some((_, pass)) = net::hotspot() {
+        s = s.secret(&pass);
+    }
+    s
+}
+
+/// `GET /api/v1/diagnostics`: the file, section by section so no whole
+/// copy sits in RAM. Every section's text goes through the scrubber;
+/// one that still contains a secret afterwards is replaced by a marker,
+/// never sent.
+fn diagnostics(
+    req: Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
+) -> Result<(), EspIOError> {
+    let cfg = config::get();
+    let scrub = scrubber(&cfg);
+    let now = crate::clock::unix_now().unwrap_or(0);
+    let name = format!(
+        "attachment; filename=\"warpaxe-diagnostics-{}-{}.json\"",
+        net::mdns::label(&cfg.hostname),
+        if now > 0 { now.to_string() } else { format!("up{}", diag::uptime_s()) }
+    );
+    let mut r = req.into_response(
+        200,
+        None,
+        &[
+            ("Content-Type", "application/json; charset=utf-8"),
+            ("Content-Disposition", &name),
+            ("Cache-Control", "no-store"),
+        ],
+    )?;
+    let mut first = true;
+    let mut section = |r: &mut esp_idf_svc::http::server::Response<
+        &mut esp_idf_svc::http::server::EspHttpConnection<'_>,
+    >,
+                       key: &str,
+                       v: serde_json::Value|
+     -> Result<(), EspIOError> {
+        let text = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".into());
+        let text = scrub.apply(&text);
+        let text = if scrub.leaks(&text) {
+            log::error!("diagnostics: section {key} still carried a secret after scrubbing; left out");
+            "\"left out: a secret would have leaked\"".to_string()
+        } else {
+            text
+        };
+        r.write_all(if first { b"{\n" } else { b",\n" })?;
+        first = false;
+        r.write_all(format!("\"{key}\": ").as_bytes())?;
+        r.write_all(text.as_bytes())?;
+        Ok(())
+    };
+    section(&mut r, "file", json!({
+        "what": "WarpAxe diagnostics file. No passwords; worker addresses and the Wi-Fi name are masked. Send it to support as it is.",
+        "generatedAt": (now > 0).then_some(now), "uptimeSeconds": diag::uptime_s(),
+        "resetReason": diag::reset_reason(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
+        "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
+        "coreDump": diag::core_dump().map(|_| "stored on the miner: GET /api/v1/coredump (ELF)"),
+        "installRecord": config::install_record(),
+        "memory": {"freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(), "largestFreeInternal": diag::largest_free_internal(), "httpHandlers": handler_count()},
+    }))?;
+    // Everything /api/system/info says (firmware, board, chips, hash
+    // counters, pool, regulator, temperatures, fans), with the worker
+    // addresses and the Wi-Fi name masked by the scrubber.
+    section(&mut r, "info", system_info())?;
+    section(&mut r, "selfTest", selftest::status_json())?;
+    section(&mut r, "events", json!(events::list()))?;
+    // The chain driver's and the pool client's own state (chain counters,
+    // the last nonce, reject reasons, reconnects).
+    section(&mut r, "chain", json!(miner::state()))?;
+    section(&mut r, "pool", json!(stratum::state()))?;
+    let mut c = serde_json::to_value(cfg.redacted()).unwrap_or_default();
+    if let Some(o) = c.as_object_mut() {
+        o.remove("wifiPass");
+        o.remove("stratumPassword");
+        o.remove("fallbackStratumPassword");
+    }
+    section(&mut r, "config", c)?;
+    section(&mut r, "savedPools", json!(config::pools().iter().map(|p| json!({"name": p.name, "host": p.url, "port": p.port, "user": p.user, "protocol": p.protocol})).collect::<Vec<_>>()))?;
+    section(&mut r, "configPatches", json!(config::patches()))?;
+    section(&mut r, "log", json!(log_text().lines().collect::<Vec<_>>()))?;
+    r.write_all(b"\n}\n")?;
+    Ok(())
+}
+
 fn fault_cause(b: &board::BoardState) -> Option<&'static str> {
     if b.overheat_cause != Some("power") {
         return None;

@@ -52,6 +52,8 @@ warpaxe-displaycfg = { path = "../../crates/displaycfg" }
 warpaxe-avalon = { path = "../../crates/avalon" }
 # The firmware writer's hand-off: one image at a time to the main task.
 warpaxe-ota = { path = "../../crates/ota" }
+# The diagnostics file's privacy rules and the event log's ring.
+warpaxe-diag = { path = "../../crates/diag" }
 
 [build-dependencies]
 embuild = "0.33"

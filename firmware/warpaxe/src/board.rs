@@ -138,6 +138,9 @@ static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 static FANS_FULL: AtomicBool = AtomicBool::new(false);
 /// The board thread runs, so it is the one switching the rail.
 static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
+/// The self-test's fan step: both outputs at least this duty until the
+/// deadline, then the PID again. Only ever raises the duty.
+static FAN_BOOST: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
@@ -217,6 +220,38 @@ pub fn chip() -> &'static ChipProfile {
 
 /// True once a temperature limit was crossed, until the board has cooled
 /// down (or the stop is cleared by hand).
+/// Hold both fan outputs at least at `pct` for `for_ms` (0 = release).
+/// The board task applies it on its next pass and drops it by itself
+/// when the time is up, so a caller that dies cannot leave it on.
+pub fn fan_boost(pct: u8, for_ms: u64) {
+    *FAN_BOOST.lock().unwrap() =
+        (pct > 0).then(|| (pct.min(100), Instant::now() + Duration::from_millis(for_ms)));
+}
+
+/// The fan boost in force right now, if any.
+fn fan_boost_now() -> Option<u8> {
+    let mut g = FAN_BOOST.lock().unwrap();
+    match *g {
+        Some((p, until)) if Instant::now() < until => Some(p),
+        Some(_) => {
+            *g = None;
+            None
+        }
+        None => None,
+    }
+}
+
+/// Chips there should be: the config's count, else the profile's (0 on
+/// a board without a chain).
+pub fn chips_expected() -> u8 {
+    let n = config::get().asic_count;
+    if n > 0 {
+        n
+    } else {
+        profile().asic_count
+    }
+}
+
 pub fn overheat() -> bool {
     OVERHEAT.load(Ordering::Relaxed)
 }
@@ -1704,15 +1739,30 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 if blind {
                     log::error!("board: no chip temperature for {temp_lost_s} s: core voltage off");
                     update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
+                    crate::events::record(
+                        "overheat",
+                        format!("no chip temperature for {temp_lost_s} s, chips off"),
+                    );
                 } else if cause == Cause::PowerFault {
                     log::error!(
                         "board: regulator fault: core voltage off, retry after {} s",
                         warpaxe_board::overheat::MIN_OFF_S
                     );
+                    let what = state().power_fault.unwrap_or_default();
+                    crate::events::record("power", format!("regulator fault: {what}"));
                 } else {
                     log::error!(
                         "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
                         profile.vr_stop_c
+                    );
+                    let t = temp.map_or("–".to_string(), |t| format!("{t:.0}"));
+                    let v = vr_temp.map_or("–".to_string(), |t| format!("{t}"));
+                    crate::events::record(
+                        "overheat",
+                        format!(
+                            "chip {t} °C (limit {chip_limit:.0}), regulator {v} °C (limit {:.0}), chips off",
+                            profile.vr_stop_c
+                        ),
                     );
                 }
                 if let Some(vr) = vr.as_mut() {
@@ -1764,6 +1814,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     });
                 }
             }
+            // Queued events go to flash from here: this thread's stack is
+            // internal.
+            crate::events::flush();
             let (latched, trips, cause) = {
                 let g = GUARD.lock().unwrap();
                 let cause = g.stopped().map(|c| match c {
@@ -1945,6 +1998,12 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     }
                 };
                 (chip, if cfg.link_fans { chip } else { vrf })
+            };
+            // The self-test's fan step: at least the asked duty on both
+            // outputs, never less than the loop wants.
+            let want = match fan_boost_now() {
+                Some(p) => (want.0.max(p), want.1.max(p)),
+                None => want,
             };
             // One fan output: the second value mirrors the first. On the
             // NerdAxe boards that one fan also cools a regulator running

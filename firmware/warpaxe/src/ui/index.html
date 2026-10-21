@@ -285,6 +285,14 @@ en: {
   maintenance:"Maintenance", status:"Status", st_fine:"No error · no overheat", last_reset:"Last restart", free_heap:"Free memory",
   chips_off:"Switch chips off", chips_on:"Switch chips on", reset_overheat:"Clear overheat shutdown", reset_best:"Reset best difficulty",
   maint_note:"“Switch chips off” cuts the core voltage; the miner stays reachable. “Clear overheat shutdown” restarts the chips after a shutdown without a reboot.",
+  st_title:"Self-test", st_s:"Checks chips, hash counters, error rate, core voltage, regulator, fan, temperatures and input voltage while the miner keeps mining. About 80 seconds; the fans run at full speed for ten seconds of it, then the control takes over again.", st_run:"Run self-test", st_cancel:"Cancel", st_ask:"Run the self-test now? Mining continues; the fans run at full speed for ten seconds. Clock and voltage must not change during the test.", st_started:"Self-test started.", st_busy:"A self-test is already running.", st_idle:"Not run since the last restart.",
+  st_running:"Running… {p} %", st_step_board:"Board", st_step_hashrate:"Hash counters, {s} s left", st_step_fan:"Fan test", st_step_judge:"Judging", st_pass:"PASS", st_fail:"FAIL", st_cancelled:"Cancelled", st_passed_n:"{n} of {m} checks passed", st_failed_n:"{f} of {m} checks failed", st_r_cancelled:"cancelled in the web UI", st_r_pointChanged:"clock or voltage changed during the test", st_r_chainStopped:"the chips went off during the test", st_when:"Tested {t} · {d} s · at {f} MHz / {v} mV", st_dl:"Download result", st_skipped:"skipped",
+  ck_chips:"Chip count", ck_hashrate:"Hashrate per chip", ck_domains:"Hash domains", ck_errors:"Error rate", ck_coreVoltage:"Core voltage", ck_regulator:"Regulator", ck_fan:"Fan", ck_temperature:"Temperatures", ck_inputVoltage:"Input voltage",
+  ckd_chips:"{v} of {l} found", ckd_pct:"lowest {v} % (chip {c}), limit {l} %", ckd_pct_dom:"lowest {v} % (chip {c}, domain {d}), limit {l} %", ckd_err:"highest {v} % (chip {c}), limit {l} %", ckd_vcore:"{v} mV, set {l} ±{t} mV", ckd_vr_ok:"no fault", ckd_fan:"{v} rpm at 100 % (before {b} rpm), at least {l} rpm", ckd_fan2:"second fan {v} rpm", ckd_temp:"chip {v} °C (stop {l} °C), regulator {v2} °C (stop {l2} °C)", ckd_temp1:"chip {v} °C (stop {l} °C)", ckd_vin:"{v} V, nominal {l} ±{t} V",
+  nt_notHashing:"the chips are not hashing", nt_noReading:"no reading", nt_noRegulator:"no regulator on this board", nt_noFan:"no fan to drive on this board", nt_noSensor:"no sensor on this board", nt_noCounter:"no error counter on this chip", nt_noDomains:"no domain counters on this chip", nt_noReply:"the chip stopped answering", nt_noSamples:"no usable counter readings", nt_noReaction:"no speed-up at full duty", nt_regulatorFault:"regulator fault", nt_overheat:"above the stop line", nt_secondFanMissing:"nothing on the second fan output",
+  dg_title:"Diagnostics file", dg_s:"One file with everything support needs: firmware, board, self-test result, hash counters, pool status, regulator and temperatures, memory, the event log and the last log lines. No passwords; worker addresses and the Wi-Fi name are masked. Send it as it is.", dg_dl:"Download diagnostics file", dg_core:"Download core dump", dg_core_s:"A crash left a core dump on the miner ({kb} KB).",
+  ev_title:"Event log", ev_s:"The last events, kept across restarts: restarts, overheat stops, regulator faults, pool switches, updates, silent chips, self-tests.", ev_empty:"No events yet.", ev_up:"{s} after start", evk_boot:"Restart", evk_overheat:"Overheat stop", evk_power:"Regulator fault", evk_pool:"Pool", evk_update:"Update", evk_rollback:"Rollback", evk_chain:"Chips", evk_selftest:"Self-test",
+  crash_title:"The miner crashed", crash_s:"Last restart: {r}, {t}. Please download the diagnostics file and send it to support.", crash_dismiss:"Dismiss",
   ask_restart:"Restart the miner now? Mining pauses for about 40 s.", ask_off:"Switch the chips off? Mining stops until you switch them on again.", ask_best:"Reset the best difficulty?",
   log:"Log", pause:"Pause", resume:"Resume", download:"Download", restarting:"Restarting…", days:"d",
   upd_restarting:"The miner is restarting with the new firmware; this page waits for it and reloads by itself.",
@@ -353,6 +361,14 @@ de: {
   maintenance:"Wartung", status:"Status", st_fine:"Kein Fehler · keine Überhitzung", last_reset:"Letzter Neustart", free_heap:"Freier Speicher",
   chips_off:"Chips abschalten", chips_on:"Chips einschalten", reset_overheat:"Überhitzungsabschaltung aufheben", reset_best:"Beste Difficulty zurücksetzen",
   maint_note:"„Chips abschalten“ schaltet die Kernspannung ab; der Miner bleibt erreichbar. „Überhitzungsabschaltung aufheben“ startet die Chips nach einer Abschaltung ohne Neustart wieder.",
+  st_title:"Selbsttest", st_s:"Prüft Chips, Hash-Zähler, Fehlerrate, Kernspannung, Regler, Lüfter, Temperaturen und Eingangsspannung, während der Miner weiter schürft. Etwa 80 Sekunden; davon laufen die Lüfter zehn Sekunden auf voller Drehzahl, danach übernimmt wieder die Regelung.", st_run:"Selbsttest starten", st_cancel:"Abbrechen", st_ask:"Selbsttest jetzt starten? Das Schürfen läuft weiter; die Lüfter laufen zehn Sekunden auf voller Drehzahl. Takt und Spannung dürfen sich während des Tests nicht ändern.", st_started:"Selbsttest gestartet.", st_busy:"Ein Selbsttest läuft bereits.", st_idle:"Seit dem letzten Neustart nicht ausgeführt.",
+  st_running:"Läuft … {p} %", st_step_board:"Board", st_step_hashrate:"Hash-Zähler, noch {s} s", st_step_fan:"Lüftertest", st_step_judge:"Auswertung", st_pass:"BESTANDEN", st_fail:"NICHT BESTANDEN", st_cancelled:"Abgebrochen", st_passed_n:"{n} von {m} Prüfungen bestanden", st_failed_n:"{f} von {m} Prüfungen nicht bestanden", st_r_cancelled:"in der Weboberfläche abgebrochen", st_r_pointChanged:"Takt oder Spannung wurden während des Tests geändert", st_r_chainStopped:"die Chips gingen während des Tests aus", st_when:"Geprüft {t} · {d} s · bei {f} MHz / {v} mV", st_dl:"Ergebnis herunterladen", st_skipped:"übersprungen",
+  ck_chips:"Chipanzahl", ck_hashrate:"Hashrate je Chip", ck_domains:"Hash-Domänen", ck_errors:"Fehlerrate", ck_coreVoltage:"Kernspannung", ck_regulator:"Regler", ck_fan:"Lüfter", ck_temperature:"Temperaturen", ck_inputVoltage:"Eingangsspannung",
+  ckd_chips:"{v} von {l} gefunden", ckd_pct:"niedrigster Wert {v} % (Chip {c}), Grenze {l} %", ckd_pct_dom:"niedrigster Wert {v} % (Chip {c}, Domäne {d}), Grenze {l} %", ckd_err:"höchster Wert {v} % (Chip {c}), Grenze {l} %", ckd_vcore:"{v} mV, eingestellt {l} ±{t} mV", ckd_vr_ok:"kein Fehler", ckd_fan:"{v} U/min bei 100 % (vorher {b} U/min), mindestens {l} U/min", ckd_fan2:"zweiter Lüfter {v} U/min", ckd_temp:"Chip {v} °C (Stopp {l} °C), Regler {v2} °C (Stopp {l2} °C)", ckd_temp1:"Chip {v} °C (Stopp {l} °C)", ckd_vin:"{v} V, nominal {l} ±{t} V",
+  nt_notHashing:"die Chips schürfen nicht", nt_noReading:"kein Messwert", nt_noRegulator:"kein Regler auf diesem Board", nt_noFan:"kein ansteuerbarer Lüfter auf diesem Board", nt_noSensor:"kein Sensor auf diesem Board", nt_noCounter:"kein Fehlerzähler auf diesem Chip", nt_noDomains:"keine Domänenzähler auf diesem Chip", nt_noReply:"der Chip antwortet nicht mehr", nt_noSamples:"keine brauchbaren Zählerwerte", nt_noReaction:"keine höhere Drehzahl bei voller Ansteuerung", nt_regulatorFault:"Reglerfehler", nt_overheat:"über der Stoppgrenze", nt_secondFanMissing:"nichts am zweiten Lüfterausgang",
+  dg_title:"Diagnosedatei", dg_s:"Eine Datei mit allem, was der Support braucht: Firmware, Board, Selbsttest-Ergebnis, Hash-Zähler, Pool-Status, Regler und Temperaturen, Speicher, das Ereignisprotokoll und die letzten Logzeilen. Keine Passwörter; Worker-Adressen und der WLAN-Name sind maskiert. Schick sie so, wie sie ist.", dg_dl:"Diagnosedatei herunterladen", dg_core:"Coredump herunterladen", dg_core_s:"Ein Absturz hat einen Coredump auf dem Miner hinterlassen ({kb} KB).",
+  ev_title:"Ereignisprotokoll", ev_s:"Die letzten Ereignisse, über Neustarts hinweg gespeichert: Neustarts, Überhitzungsstopps, Reglerfehler, Pool-Wechsel, Updates, verstummte Chips, Selbsttests.", ev_empty:"Noch keine Ereignisse.", ev_up:"{s} nach dem Start", evk_boot:"Neustart", evk_overheat:"Überhitzungsstopp", evk_power:"Reglerfehler", evk_pool:"Pool", evk_update:"Update", evk_rollback:"Rollback", evk_chain:"Chips", evk_selftest:"Selbsttest",
+  crash_title:"Der Miner ist abgestürzt", crash_s:"Letzter Neustart: {r}, {t}. Bitte lade die Diagnosedatei herunter und schick sie an den Support.", crash_dismiss:"Ausblenden",
   ask_restart:"Miner jetzt neu starten? Das Schürfen pausiert etwa 40 s.", ask_off:"Chips abschalten? Das Schürfen stoppt, bis du sie wieder einschaltest.", ask_best:"Beste Difficulty zurücksetzen?",
   log:"Log", pause:"Pausieren", resume:"Fortsetzen", download:"Herunterladen", restarting:"Startet neu …", days:"T",
   upd_restarting:"Der Miner startet mit der neuen Firmware neu; diese Seite wartet darauf und lädt sich dann selbst neu.",
@@ -1045,10 +1061,78 @@ function systemPage() {
     <div><div class="row"><span class="mute">${t("status")}</span><span class="${fine ? "ok" : "err"}">${fine ? t("st_fine") : esc(statusText(i, err))}</span></div><div class="row"><span class="mute">${t("last_reset")}</span><span class="num">${esc(i.resetReason)}</span></div><div class="row"><span class="mute">${t("free_heap")}</span><span class="num">${nf(i.freeHeap / 1024)} KB</span></div></div>
     <div class="g2" style="gap:10px"><button type="button" class="btn" data-act="restart">${t("restart")}</button>${i.shutdown ? `<button type="button" class="btn" data-act="on">${t("chips_on")}</button>` : `<button type="button" class="btn dng" data-act="off">${t("chips_off")}</button>`}${i.cpuMiner ? "" : `<button type="button" class="btn" data-act="overheat" ${i.overheat_mode ? "" : "disabled"}>${t("reset_overheat")}</button>`}<button type="button" class="btn" data-act="best">${t("reset_best")}</button></div>
     <div class="dim" style="font-size:12px">${t("maint_note")}</div></section></div>
+  <div class="g2"><section class="card" id="stcard" style="display:flex;flex-direction:column;gap:14px">${selftestHtml()}</section>
+  <section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("dg_title")}</h2><div class="mute" style="font-size:14px">${t("dg_s")}</div>
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><button type="button" class="btn pri" data-act="diag">${t("dg_dl")}</button>${i.coreDumpBytes ? `<button type="button" class="btn" data-act="coredl">${t("dg_core")}</button>` : ""}</div>${i.coreDumpBytes ? `<div class="dim" style="font-size:12px">${t("dg_core_s", {kb: nf(i.coreDumpBytes / 1024)})}</div>` : ""}
+    <div style="border-top:1px solid rgba(255,255,255,.06);padding-top:12px"><h2 style="font-size:15px;margin-bottom:6px">${t("ev_title")}</h2><div class="dim" style="font-size:12px;margin-bottom:8px">${t("ev_s")}</div>${eventsHtml()}</div></section></div>
   <section class="card" style="display:flex;flex-direction:column;gap:12px"><h2>${t("stock_h")}</h2><div class="mute" style="font-size:14px">${t("stock_s")}</div>
     <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><a class="btn pri" href="https://warppool.org/warpaxe/#restore" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;text-decoration:none">${t("stock_flasher")}</a><button type="button" class="btn" data-act="dlmode">${t("dlmode")}</button></div></section>
   <section class="card" style="display:flex;flex-direction:column;gap:12px"><div style="display:flex;justify-content:space-between;align-items:center"><h2>${t("log")}</h2><div class="actions"><button type="button" class="btn" data-act="logpause">${t(logPaused ? "resume" : "pause")}</button><button type="button" class="btn" data-act="logsave">${t("download")}</button></div></div><div class="log" id="log">${esc(logText)}</div></section>
   <section class="card" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap"><div style="display:flex;flex-direction:column;gap:4px"><h2>${t("whitepaper")}</h2><span class="dim" style="font-size:13px">Bitcoin: A Peer-to-Peer Electronic Cash System · ${t("wp_s")}</span></div><a class="btn" href="https://warppool.org/warpaxe/bitcoin.pdf" target="_blank" rel="noopener" style="display:inline-flex;align-items:center">${t("open_pdf")}</a></section>`;
+}
+/* The self-test (docs/10): started here, followed every 2 s while it
+   runs, the last result shown until the next run or a restart. */
+let st = null, stBusy = false;
+const whenAt = sec => sec ? new Date(sec * 1000).toLocaleString(lang, {dateStyle: "short", timeStyle: "short"}) : null;
+function checkDetail(c) {
+  const n = v => nf(v, Number.isInteger(v) ? 0 : 1), p = {v: n(c.value), l: n(c.limit), v2: n(c.value2), l2: n(c.limit2), t: n(c.value2), b: n(c.value2), c: c.chip, d: c.domain};
+  let s = "";
+  switch (c.id) {
+    case "chips": s = t("ckd_chips", p); break;
+    case "hashrate": s = t("ckd_pct", p); break;
+    case "domains": s = t("ckd_pct_dom", p); break;
+    case "errors": s = t("ckd_err", p); break;
+    case "coreVoltage": s = c.value == null ? "" : t("ckd_vcore", p); break;
+    case "regulator": s = c.status === "pass" ? t("ckd_vr_ok") : ""; break;
+    case "fan": s = t("ckd_fan", p) + (c.limit2 != null ? " · " + t("ckd_fan2", {v: n(c.limit2)}) : ""); break;
+    case "temperature": s = c.limit2 != null ? t("ckd_temp", p) : t("ckd_temp1", p); break;
+    case "inputVoltage": s = c.value == null ? "" : t("ckd_vin", {v: nf(c.value, 2), l: n(c.limit), t: nf(c.value2, 2)}); break;
+  }
+  if (c.status === "skip") s = t("st_skipped");
+  if (c.note) s += (s ? " · " : "") + t("nt_" + c.note);
+  return s;
+}
+function selftestHtml() {
+  const s = st, i = info || {};
+  let body = "";
+  if (!s || s.state === "idle") body = `<div class="dim" style="font-size:13px">${t("st_idle")}</div>`;
+  else if (s.state === "running") {
+    const step = s.step === "hashrate" ? t("st_step_hashrate", {s: Math.max(0, Math.round((s.windowS || 60) * (85 - Math.min(85, s.progress)) / 80))}) : t("st_step_" + (s.step || "board"));
+    body = `<div><div class="row" style="border:0;padding:4px 0"><span class="mute">${t("st_running", {p: s.progress})}</span><span class="dim" style="font-size:12px">${esc(step)}</span></div><div style="height:6px;border-radius:3px;background:rgba(255,255,255,.1)"><div style="height:6px;border-radius:3px;width:${s.progress}%;background:linear-gradient(90deg,var(--warp),var(--plasma))"></div></div></div>`;
+  } else {
+    const head = s.state === "aborted" ? `<span class="warn" style="font-weight:700">${t("st_cancelled")}</span><span class="dim" style="font-size:12px">${t("st_r_" + (s.abortReason || "cancelled"))}</span>`
+      : `<span class="${s.passed ? "ok" : "err"}" style="font-weight:700;font-size:16px">${t(s.passed ? "st_pass" : "st_fail")}</span><span class="dim" style="font-size:12px">${s.passed ? t("st_passed_n", {n: s.judged, m: s.judged}) : t("st_failed_n", {f: s.failed, m: s.judged})}</span>`;
+    const when = whenAt(s.finishedAt) || (s.finishedUptime != null ? t("ev_up", {s: fmtUptime(s.finishedUptime)}) : "");
+    body = `<div class="row" style="border:0;padding:0;align-items:center">${head}</div><div class="dim" style="font-size:12px">${t("st_when", {t: esc(when), d: s.durationS, f: s.frequency, v: s.coreVoltage})}</div>` +
+      (s.checks || []).map(c => `<div class="row" style="padding:7px 0"><span style="display:flex;gap:10px;align-items:baseline;min-width:0"><span class="${c.status === "pass" ? "ok" : c.status === "fail" ? "err" : "dim"}" style="font-weight:700;width:14px;flex:none">${c.status === "pass" ? "✓" : c.status === "fail" ? "✗" : "–"}</span><span style="min-width:0"><span style="${c.status === "skip" ? "color:var(--dim)" : ""}">${t("ck_" + c.id)}</span><br><span class="dim" style="font-size:12px">${esc(checkDetail(c))}</span></span></span></div>`).join("");
+  }
+  const running = s && s.state === "running";
+  return `<h2>${t("st_title")}</h2><div class="mute" style="font-size:14px">${t("st_s")}</div>${body}
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap">${running ? `<button type="button" class="btn" data-act="stcancel">${t("st_cancel")}</button>` : `<button type="button" class="btn pri" data-act="strun">${t("st_run")}</button>`}${s && s.state !== "idle" && !running ? `<button type="button" class="btn" data-act="stdl">${t("st_dl")}</button>` : ""}</div>`;
+}
+function fmtUptime(s) { s = Number(s) || 0; const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d} d ${h} h` : h ? `${h} h ${m} min` : `${m} min`; }
+function eventsHtml() {
+  const ev = (state?.events || []).slice().reverse();
+  if (!ev.length) return `<div class="dim" style="font-size:13px">${t("ev_empty")}</div>`;
+  return `<div style="max-height:260px;overflow:auto">${ev.map(e => `<div class="row" style="padding:6px 0;gap:10px;align-items:baseline"><span class="dim num" style="font-size:12px;flex:none;width:118px">${esc(whenAt(e.t) || t("ev_up", {s: fmtUptime(e.u)}))}</span><span style="min-width:0;font-size:13px"><b>${t("evk_" + e.k)}</b> <span class="mute">${esc(e.d)}</span></span></div>`).join("")}</div>`;
+}
+async function pollSelftest() {
+  if (route !== "system" || stBusy) return;
+  const b = info?.selfTest;
+  const want = (st && st.state === "running") || (b && b.state !== "idle" && (!st || st.id !== b.id || (st.state === "running") !== (b.state === "running")));
+  if (!want) return;
+  stBusy = true;
+  try { st = await get("/api/v1/selftest"); const e = $("#stcard"); if (e && !document.activeElement?.closest?.("#stcard")) e.innerHTML = selftestHtml(); } catch (e) {}
+  stBusy = false;
+}
+/* Once per boot after a crash or a watchdog reset: a banner with the way to the diagnostics file. */
+function crashBanner() {
+  const i = info; if (!i?.crashed) return "";
+  try { if (localStorage.getItem("crashSeen") === String(i.bootId)) return ""; } catch (e) {}
+  const at = i.unixTime && i.uptimeSeconds != null ? whenAt(i.unixTime - i.uptimeSeconds) : t("ev_up", {s: fmtUptime(0)});
+  return `<section class="card" style="border-color:rgba(255,90,90,.45);background:rgba(255,90,90,.06);display:flex;flex-direction:column;gap:12px">
+    <h2 class="err">${t("crash_title")}</h2><div class="mute" style="font-size:14px">${t("crash_s", {r: esc(i.resetReason), t: esc(at)})}</div>
+    <div class="actions" style="justify-content:flex-start;flex-wrap:wrap"><button type="button" class="btn pri" data-act="diag">${t("dg_dl")}</button>${i.coreDumpBytes ? `<button type="button" class="btn" data-act="coredl">${t("dg_core")}</button>` : ""}<button type="button" class="btn" data-act="crashdismiss">${t("crash_dismiss")}</button></div></section>`;
 }
 async function pollLog() {
   if (route !== "system" || logPaused) return;
@@ -1185,6 +1269,12 @@ async function act(a) {
     if (a === "updinstall") { if (!await ask(t("ask_install", {v: upd?.latest?.version || ""}))) return; await post("/api/v1/update/install"); setWatch({from: upd?.installed || "", t0: Date.now()}); updBar(t("ph_downloading", {p: 0}), 0); return; }
     if (a === "bdset") { const n = $("#bdpick")?.value; const m = (info.boardModels || []).find(b => b.name === n); if (!n || !await ask(t("bd_ask", {m: m ? m.model : n}))) return; await post("/api/system", {boardModel: n}); await fetch("/api/system/restart", {method: "POST"}).catch(() => {}); toast(t("restarting")); setTimeout(() => location.reload(), 30000); return; }
     if (a === "logpause") { logPaused = !logPaused; render(); return; }
+    if (a === "strun") { if (!await ask(t("st_ask"))) return; try { await post("/api/v1/selftest"); } catch (e) { toast(e.message === "409" ? t("st_busy") : t("failed") + e.message, "err"); return; } st = {state: "running", step: "board", progress: 0, windowS: 60}; const e = $("#stcard"); if (e) e.innerHTML = selftestHtml(); toast(t("st_started"), "ok"); return; }
+    if (a === "stcancel") { await fetch("/api/v1/selftest", {method: "DELETE"}).catch(() => {}); return; }
+    if (a === "stdl") { const b = new Blob([JSON.stringify(st, null, 2)], {type: "application/json"}); const u = URL.createObjectURL(b); const l = document.createElement("a"); l.href = u; l.download = `${info?.hostname || "warpaxe"}-selftest.json`; l.click(); URL.revokeObjectURL(u); return; }
+    if (a === "diag") { const l = document.createElement("a"); l.href = "/api/v1/diagnostics"; l.download = ""; l.click(); return; }
+    if (a === "coredl") { const l = document.createElement("a"); l.href = "/api/v1/coredump"; l.download = ""; l.click(); return; }
+    if (a === "crashdismiss") { try { localStorage.setItem("crashSeen", String(info?.bootId)); } catch (e) {} render(); return; }
     if (a === "dispreset") { await post("/api/system", {displayPages: PAGE_IDS, displayStartPage: "cockpit", cockpitBig: "hashrate", cockpitSlots: [], cockpitFooter: "pool-shares-ip", oledSlides: OLED_IDS, oledInterval: 4}); await load(true); toast(t("saved"), "ok"); previewTick(); return; }
     if (a === "logsave") { const b = new Blob([logText], {type: "text/plain"}); const u = URL.createObjectURL(b); const l = document.createElement("a"); l.href = u; l.download = `${info?.hostname || "warpaxe"}-log.txt`; l.click(); URL.revokeObjectURL(u); return; }
     await load(true); toast(t("saved"), "ok");
@@ -1196,7 +1286,7 @@ function render() {
   if (!info) { v.innerHTML = ""; return; }
   const editing = document.activeElement && ["INPUT", "SELECT"].includes(document.activeElement.tagName) && v.contains(document.activeElement);
   if (editing) return; // never re-render a form under the cursor
-  v.innerHTML = hotspotBanner() + boardBanner() + (route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : route === "swarm" ? swarmPage() : route === "network" ? networkPage() : dashboard());
+  v.innerHTML = hotspotBanner() + crashBanner() + boardBanner() + (route === "pool" ? poolPage() : route === "settings" ? settingsPage() : route === "system" ? systemPage() : route === "swarm" ? swarmPage() : route === "network" ? networkPage() : dashboard());
   const pf = $("#pf"); if (pf) pf.onsubmit = e => { e.preventDefault(); save(pf, ["stratumURL", "stratumPort", "stratumUser", "stratumPassword", "coinTicker", "useFallbackStratum", "fallbackStratumURL", "fallbackStratumPort", "fallbackStratumUser", "fallbackStratumPassword", "stratumTLS", "fallbackStratumTLS", "stratumProtocol", "stratumV2AuthorityPubkey", "stratumV2RequireAuth", "fallbackStratumProtocol", "fallbackStratumV2AuthorityPubkey", "fallbackStratumV2RequireAuth"]); };
   const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "usbSubnet", "ssid", "wifiPass", "useNTP", "ntpServer", "stratumSuggestedDifficulty"]); };
   const xp = $("#xp"); if (xp) xp.ontoggle = () => { xpOpen = xp.open; };
@@ -1421,6 +1511,7 @@ try {
 } catch (e) {}
 setInterval(() => load(false), 5000);
 setInterval(pollLog, 3000);
+setInterval(pollSelftest, 2000);
 setInterval(pollUpdate, 2000);
 document.addEventListener("change", async e => {
   if (e.target.id !== "updauto") return;

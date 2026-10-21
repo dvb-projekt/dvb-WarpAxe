@@ -46,7 +46,15 @@ pub struct AsicMonitor {
     /// GH/s of the total counter over the last full minute.
     #[serde(skip)]
     pub total_1m: f32,
+    /// The chip answered a counter read within the last few seconds; a
+    /// chip that stopped answering keeps its last rates here, and this
+    /// says not to trust them (the self-test counts it as hashing nothing).
+    #[serde(skip)]
+    pub fresh: bool,
 }
+
+/// A counter reading older than this is no longer the chip's rate.
+const COUNTER_FRESH_US: u64 = 5_000_000;
 
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinerState {
@@ -265,6 +273,26 @@ fn update(f: impl FnOnce(&mut MinerState)) {
 /// state the API and the display read.
 pub(crate) fn update_state(f: impl FnOnce(&mut MinerState)) {
     update(f);
+}
+
+/// A silent-chip event at most once per [`SILENT_EVENT_S`] per chip: a
+/// chip that flaps would otherwise fill the event log and wear the
+/// flash (the ring coalesces repeats within a minute only).
+const SILENT_EVENT_S: u64 = 600;
+static LAST_SILENT_EVENT: Mutex<[u64; 16]> = Mutex::new([0; 16]);
+
+fn silent_event(index: u8) {
+    let now = diag::uptime_s();
+    let mut last = LAST_SILENT_EVENT.lock().unwrap();
+    let Some(slot) = last.get_mut(usize::from(index)) else {
+        return;
+    };
+    if *slot != 0 && now.saturating_sub(*slot) < SILENT_EVENT_S {
+        return;
+    }
+    *slot = now;
+    drop(last);
+    crate::events::record("chain", format!("chip {index} silent"));
 }
 
 pub fn start(uart: ChipUart) {
@@ -524,7 +552,10 @@ fn run(mut uart: ChipUart) {
                             );
                         });
                     }
-                    Event::ChipSilent { index } => log::warn!("miner: chip {index} silent"),
+                    Event::ChipSilent { index } => {
+                        log::warn!("miner: chip {index} silent");
+                        silent_event(index);
+                    }
                     Event::ChipBack { index } => log::info!("miner: chip {index} back"),
                     Event::FrequencyApplied { hz } => {
                         log::info!("miner: clock {} MHz", hz / 1_000_000)
@@ -599,6 +630,7 @@ fn run(mut uart: ChipUart) {
                         log::warn!("miner: counter read: {e}");
                     }
                     let mon = chain.monitor();
+                    let now_read = now_us();
                     let asics: Vec<AsicMonitor> = mon
                         .chips()
                         .iter()
@@ -609,8 +641,12 @@ fn run(mut uart: ChipUart) {
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
                             error_ghs: c.error.ghs,
                             total_1m: c.total.ghs_1m,
+                            fresh: c.total.time_us != 0
+                                && now_read.saturating_sub(c.total.time_us) < COUNTER_FRESH_US,
                         })
                         .collect();
+                    // Queued events to flash from this internal stack.
+                    crate::events::flush();
                     let pct = mon.has_error_counter().then(|| mon.error_percent());
                     let pct_1m = mon.has_error_counter().then(|| mon.error_percent_1m());
                     update(|s| {
@@ -781,6 +817,10 @@ fn run(mut uart: ChipUart) {
                     });
                     log::warn!(
                         "miner: all {n} chips silent for 60 s at {mv} mV, restarting the chain"
+                    );
+                    crate::events::record(
+                        "chain",
+                        format!("all {n} chips silent for 60 s at {mv} mV, chain restarted"),
                     );
                     break;
                 }

@@ -291,6 +291,10 @@ fn run() {
             on_fallback = false;
         } else if !on_fallback && fails >= FAILS_BEFORE_FALLBACK {
             log::warn!("stratum: main pool failed {fails} times, switching to the fallback");
+            crate::events::record(
+                "pool",
+                format!("main pool failed {fails} times, on the fallback"),
+            );
             on_fallback = true;
             fails = 0;
         }
@@ -348,6 +352,7 @@ fn run() {
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
             log::warn!("stratum: main pool answers again, leaving the fallback");
+            crate::events::record("pool", "main pool answers again, back from the fallback");
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);

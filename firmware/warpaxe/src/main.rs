@@ -15,6 +15,7 @@ mod cpuminer;
 mod diag;
 mod display;
 mod display_i18n;
+mod events;
 mod font;
 mod gfx;
 mod history;
@@ -24,6 +25,7 @@ mod miner;
 mod net;
 mod ntc;
 mod screens;
+mod selftest;
 mod stratum;
 mod swarm;
 mod uart;
@@ -169,6 +171,29 @@ fn main() {
     // On the main task, before any thread with a PSRAM stack exists: it
     // reads the otadata partition from flash.
     update::init_ota_state();
+    // The event log: read, then this boot and what the bootloader says
+    // about the image, written here on the main task's internal stack.
+    events::init();
+    events::record("boot", diag::reset_reason());
+    match update::ota_state() {
+        "aborted" => events::record(
+            "rollback",
+            "the last update did not boot: back on the previous image",
+        ),
+        "pending-verify" => {
+            let r = config::last_install();
+            events::record(
+                "update",
+                if r.is_empty() {
+                    format!("{} installed", api::VERSION)
+                } else {
+                    r
+                },
+            )
+        }
+        _ => {}
+    }
+    events::flush();
 
     // The fallback for boards that never report a chain (the devkit, chips
     // off on purpose): the image counts as good after three minutes up.

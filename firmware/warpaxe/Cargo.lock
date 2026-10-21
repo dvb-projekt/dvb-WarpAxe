@@ -1773,6 +1773,7 @@ dependencies = [
  "warpaxe-chain",
  "warpaxe-core",
  "warpaxe-cpuminer",
+ "warpaxe-diag",
  "warpaxe-displaycfg",
  "warpaxe-ota",
  "warpaxe-stratum",
@@ -1806,6 +1807,14 @@ version = "0.1.0"
 
 [[package]]
 name = "warpaxe-cpuminer"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "warpaxe-diag"
 version = "0.1.0"
 dependencies = [
  "serde",

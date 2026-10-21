@@ -19,6 +19,14 @@ pub fn uptime_s() -> u64 {
     BOOT.get().map_or(0, |t| t.elapsed().as_secs())
 }
 
+static BOOT_ID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+/// A number that tells this boot from the last one (random, for the
+/// web UI's once-per-boot notices).
+pub fn boot_id() -> u32 {
+    *BOOT_ID.get_or_init(|| unsafe { sys::esp_random() })
+}
+
 /// Route ESP_LOG through the in-RAM ring the display shows.
 pub fn start_log_capture() {
     unsafe { tusb::wa_log_capture_start() };

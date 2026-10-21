@@ -39,6 +39,8 @@ enum Event {
     ChipsOff,
     /// The setup hotspot is up: how to join it.
     Setup,
+    /// A self-test running, or its result for a while after (run id).
+    SelfTest(u32),
 }
 
 #[derive(Clone, Copy)]
@@ -58,6 +60,8 @@ pub struct Ui {
     event: Option<Event>,
     event_t0: Instant,
     acked_block: Option<u64>,
+    /// A self-test screen dismissed by a key: (run id, it was finished).
+    acked_selftest: Option<(u32, bool)>,
     stars: Vec<Star>,
     rng: u32,
     oled_i: usize,
@@ -288,6 +292,7 @@ impl Ui {
             event: None,
             event_t0: Instant::now(),
             acked_block: None,
+            acked_selftest: None,
             stars: Vec::new(),
             rng: 0x9E37_79B9,
             oled_i: 0,
@@ -309,6 +314,12 @@ impl Ui {
         self.last_key_s = diag::uptime_s();
         if let Some(Event::Block(h)) = self.event {
             self.acked_block = Some(h);
+            *display::DEMO.lock().unwrap() = None;
+            return;
+        }
+        if let Some(Event::SelfTest(id)) = self.event {
+            let done = crate::selftest::shown().is_some_and(|s| !s.running);
+            self.acked_selftest = Some((id, done));
             *display::DEMO.lock().unwrap() = None;
             return;
         }
@@ -358,6 +369,13 @@ impl Ui {
         }
         if board::shutdown() {
             return Some(Event::ChipsOff);
+        }
+        if let Some(s) = crate::selftest::shown() {
+            // Dismissed while running: the result still shows once it is in.
+            let acked = self.acked_selftest.is_some_and(|(id, done)| id == s.id && (done || s.running));
+            if !acked {
+                return Some(Event::SelfTest(s.id));
+            }
         }
         if net::hotspot().is_some() {
             return Some(Event::Setup);
@@ -1678,9 +1696,134 @@ fn log_page(c: &mut Canvas, pos: usize, total: usize) {
     }
 }
 
+/// A check's short name for the display.
+fn check_name(ch: warpaxe_board::selftest::Check) -> &'static str {
+    use warpaxe_board::selftest::Check;
+    match ch {
+        Check::Chips => l("Chips", "Chips"),
+        Check::Hashrate => l("Hashrate", "Hashrate"),
+        Check::Domains => l("Domains", "Domänen"),
+        Check::Errors => l("Errors", "Fehler"),
+        Check::CoreVoltage => l("Core voltage", "Kernspannung"),
+        Check::Regulator => l("Regulator", "Regler"),
+        Check::Fan => l("Fan", "Lüfter"),
+        Check::Temperature => l("Temperature", "Temperatur"),
+        Check::InputVoltage => l("Input", "Eingang"),
+    }
+}
+
+/// A check's step name while running.
+fn step_name(step: &str, progress: u8) -> String {
+    match step {
+        "hashrate" => {
+            let s = crate::selftest::WINDOW_S;
+            let done = u32::from(progress.saturating_sub(5)) * s / 80;
+            l("Hash counters {s} s", "Hash-Zähler {s} s").replace("{s}", &format!("{}", s.saturating_sub(done.min(s))))
+        }
+        "fan" => l("Fan test", "Lüftertest").to_string(),
+        "judge" => l("Judging", "Auswertung").to_string(),
+        _ => l("Board", "Board").to_string(),
+    }
+}
+
+/// The self-test on the LCD: progress while it runs, then PASS or FAIL
+/// with every check in two columns.
+fn selftest_screen(c: &mut Canvas, t: f32) {
+    use warpaxe_board::selftest::Status;
+    let Some(s) = crate::selftest::shown() else {
+        return;
+    };
+    c.fill(gfx::rgb(0x0b, 0x0c, 0x14));
+    badge(c);
+    c.text(&LABEL12, 82, 17, gfx::PLASMA, &l("SELF-TEST", "SELBSTTEST").to_uppercase(), Align::Left);
+    if let Some(tc) = clock_text() {
+        c.text(&MONO11, 308, 18, gfx::MUTE, &tc, Align::Right);
+    }
+    c.rect(12, 25, 298, 1, gfx::WHITE, 16);
+    if s.running {
+        let pulse = 0.5 + 0.5 * (t * 2.5).sin();
+        c.disc(W as f32 / 2.0, 58.0, 5.0 + 2.0 * pulse, gfx::PLASMA, (120.0 + 135.0 * pulse) as u8);
+        c.text(&TITLE, W / 2, 96, gfx::FG, &format!("{} %", s.progress), Align::Center);
+        // The bar.
+        c.rect(40, 110, 240, 6, gfx::WHITE, 24);
+        c.rect(40, 110, 240 * i32::from(s.progress) / 100, 6, gfx::PLASMA, 255);
+        fit_text(c, &[&LABEL11, &LABEL10], W / 2, 134, gfx::MUTE, &step_name(s.step, s.progress), W - 16);
+        fit_text(
+            c,
+            &[&LABEL10, &MONO9],
+            W / 2,
+            156,
+            gfx::DIM,
+            l("Mining continues", "Das Schürfen läuft weiter"),
+            W - 16,
+        );
+        return;
+    }
+    let Some(r) = s.report else {
+        c.text(&TITLE, W / 2, 80, gfx::WARN, l("CANCELLED", "ABGEBROCHEN"), Align::Center);
+        let why = match s.aborted {
+            Some("pointChanged") => l("Clock or voltage changed during the test", "Takt oder Spannung während des Tests geändert"),
+            Some("chainStopped") => l("The chips went off during the test", "Die Chips gingen während des Tests aus"),
+            _ => l("Cancelled in the web UI", "In der Weboberfläche abgebrochen"),
+        };
+        fit_text(c, &[&LABEL11, &LABEL10, &MONO9], W / 2, 108, gfx::MUTE, why, W - 16);
+        c.text(&LABEL10, W / 2, 156, gfx::DIM, l("Press a key to close", "Zum Schließen Taste drücken"), Align::Center);
+        return;
+    };
+    let (word, col) = if r.passed() { ("PASS", gfx::OK) } else { ("FAIL", gfx::ERR) };
+    c.text(&TITLE, 12, 56, col, word, Align::Left);
+    let line = if r.passed() {
+        l("{n} of {m} checks passed", "{n} von {m} Prüfungen bestanden")
+            .replace("{n}", &r.judged().to_string())
+            .replace("{m}", &r.judged().to_string())
+    } else {
+        l("{n} of {m} checks failed", "{n} von {m} Prüfungen nicht bestanden")
+            .replace("{n}", &r.failed().to_string())
+            .replace("{m}", &r.judged().to_string())
+    };
+    let wx = TITLE.width(word) + 24;
+    let lf: &gfx::font::Font = if LABEL11.width(&line) <= W - 12 - wx { &LABEL11 } else { &LABEL10 };
+    c.text(lf, wx, 56, gfx::MUTE, &line, Align::Left);
+    c.rect(12, 64, 298, 1, gfx::WHITE, 16);
+    for (i, o) in r.outcomes.iter().enumerate() {
+        let (col_x, row) = if i < 5 { (12, i as i32) } else { (168, i as i32 - 5) };
+        let y = 82 + row * 15;
+        let (mark_col, label_col) = match o.status {
+            Status::Pass => (gfx::OK, gfx::FG),
+            Status::Fail => (gfx::ERR, gfx::FG),
+            Status::Skip => (gfx::DIM, gfx::DIM),
+        };
+        let (x, yb) = (col_x as f32, y as f32);
+        match o.status {
+            Status::Pass => {
+                c.line(x, yb - 5.0, x + 3.0, yb - 1.0, mark_col, 255);
+                c.line(x + 3.0, yb - 1.0, x + 9.0, yb - 9.0, mark_col, 255);
+            }
+            Status::Fail => {
+                c.line(x, yb - 9.0, x + 8.0, yb - 1.0, mark_col, 255);
+                c.line(x, yb - 1.0, x + 8.0, yb - 9.0, mark_col, 255);
+            }
+            Status::Skip => c.rect(col_x, y - 6, 8, 2, mark_col, 255),
+        }
+        let mut name = check_name(o.check).to_string();
+        if o.status == Status::Fail {
+            if let Some(ch) = o.chip {
+                name.push_str(&format!(" C{ch}"));
+            }
+            if let Some(d) = o.domain {
+                name.push_str(&format!("D{d}"));
+            }
+        }
+        let f: &gfx::font::Font = if LABEL11.width(&name) <= 118 { &LABEL11 } else { &LABEL10 };
+        c.text(f, col_x + 14, y, label_col, &name, Align::Left);
+    }
+    c.text(&LABEL10, W / 2, 163, gfx::DIM, l("Press a key to close", "Zum Schließen Taste drücken"), Align::Center);
+}
+
 fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
     let pulse = 0.5 + 0.5 * (t * 2.5).sin();
     match ev {
+        Event::SelfTest(_) => selftest_screen(c, t),
         Event::Overheat => {
             c.fill(gfx::rgb(0x1a, 0x07, 0x09));
             let a = (80.0 + 175.0 * pulse) as u8;
@@ -2049,6 +2192,37 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
             };
             oled_center(o, 6, &a);
             oled_center(o, 19, &b);
+        }
+        Event::SelfTest(_) => {
+            use warpaxe_board::selftest::Status;
+            let Some(s) = crate::selftest::shown() else {
+                return;
+            };
+            let title = oled_str(l("SELF-TEST", "SELBSTTEST"));
+            if s.running {
+                oled_center(o, 6, &format!("{title} {} %", s.progress));
+                oled_center(o, 19, &oled_str(&step_name(s.step, s.progress)));
+            } else if let Some(r) = s.report {
+                let word = if r.passed() { "PASS" } else { "FAIL" };
+                oled_center(o, 6, &if blink || r.passed() { format!("{title} {word}") } else { title.clone() });
+                let line = match r.outcomes.iter().find(|x| x.status == Status::Fail) {
+                    None => format!("{}/{} OK", r.judged(), r.judged()),
+                    Some(x) => {
+                        let mut n = oled_str(check_name(x.check));
+                        if let Some(ch) = x.chip {
+                            n.push_str(&format!(" C{ch}"));
+                        }
+                        if let Some(d) = x.domain {
+                            n.push_str(&format!("D{d}"));
+                        }
+                        n
+                    }
+                };
+                oled_center(o, 19, &line);
+            } else {
+                oled_center(o, 6, &title);
+                oled_center(o, 19, &oled_str(l("CANCELLED", "ABGEBROCHEN")));
+            }
         }
         Event::Ota(p) => {
             oled_center(o, 4, &oled_str(l("FIRMWARE UPDATE", "FIRMWARE-UPDATE")));

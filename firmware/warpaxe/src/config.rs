@@ -698,6 +698,27 @@ pub fn get() -> Config {
     CONFIG.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// A string of our NVS namespace by key, for the small records other
+/// modules keep beside the config (the event log). `None` when there is
+/// none or it does not read.
+pub fn nvs_get_str(key: &str, max: usize) -> Option<String> {
+    let g = NVS.lock().unwrap();
+    let nvs = g.as_ref()?;
+    let mut buf = vec![0u8; max];
+    nvs.get_str(key, &mut buf)
+        .ok()
+        .flatten()
+        .map(|s| s.trim_end_matches('\0').to_string())
+}
+
+/// Store a string under a key of our NVS namespace. A flash write: only
+/// from a thread whose stack is in internal RAM (the lesson of v0.1.5).
+pub fn nvs_set_str(key: &str, value: &str) -> Result<(), String> {
+    let mut g = NVS.lock().unwrap();
+    let nvs = g.as_mut().ok_or("no NVS")?;
+    nvs.set_str(key, value).map_err(|e| e.to_string())
+}
+
 impl Config {
     /// The config as the API may show it: secrets replaced by a marker
     /// that says whether one is set. Never return the real ones.
