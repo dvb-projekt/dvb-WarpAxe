@@ -68,13 +68,88 @@ pub fn last_run_crashed() -> bool {
 }
 
 static LAST_CRASH: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+/// The stored core dump was written by this crash (this image, not
+/// reported at an earlier boot). False until `check_core_dump` ran.
+static CORE_DUMP_CURRENT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// If the previous run crashed: log its core-dump summary (task, cause,
-/// PC, backtrace) into the ring and keep it for the API and the display.
+/// The stored core dump's identity as one tag, `dump:<sha9>@<pc>`: the
+/// first nine hex digits of the SHA-256 of the app that wrote it and the
+/// crashed task's PC. `None` without a dump.
+/// Reads the dump's summary from flash: on the main task only (a flash
+/// read from a thread whose stack sits in PSRAM hangs it, docs/09).
+pub fn core_dump_tag() -> Option<String> {
+    // SAFETY: plain IDF calls with an out-struct; the summary is read
+    // from the coredump partition.
+    unsafe {
+        if sys::esp_core_dump_image_check() != sys::ESP_OK {
+            return None;
+        }
+        let mut sum: sys::esp_core_dump_summary_t = core::mem::zeroed();
+        if sys::esp_core_dump_get_summary(&mut sum) != sys::ESP_OK {
+            return None;
+        }
+        let end = sum
+            .app_elf_sha256
+            .iter()
+            .position(|&b| b == 0)
+            .unwrap_or(sum.app_elf_sha256.len());
+        let sha = String::from_utf8_lossy(&sum.app_elf_sha256[..end.min(9)]).into_owned();
+        Some(format!("dump:{sha}@{:08x}", sum.exc_pc))
+    }
+}
+
+/// The first nine hex digits of the running app's ELF SHA-256 (what a
+/// core dump written by this image carries).
+pub fn app_elf_sha() -> String {
+    let mut buf = [0u8; 20];
+    unsafe { sys::esp_app_get_elf_sha256(buf.as_mut_ptr() as *mut core::ffi::c_char, buf.len()) };
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    String::from_utf8_lossy(&buf[..end.min(9)]).into_owned()
+}
+
+/// Decide whether the stored core dump belongs to the crash the board
+/// just came back from, and log it. A dump stays in flash until it is
+/// erased or overwritten, and a crash that cannot write one (an
+/// interrupt watchdog during a flash operation, for one) leaves the old
+/// one in place: the Nano of 2026-10-21 came back from an `int-wdt`
+/// with a dump written by an older test image. So a dump counts as this
+/// crash's only when it was written by this image (ELF SHA) and no
+/// earlier boot event already names it (`earlier_boots`: the boot
+/// events' details, which carry the tag). Returns the tag and the
+/// verdict; `None` without a dump.
+pub fn check_core_dump(earlier_boots: &[String]) -> Option<(String, bool)> {
+    let tag = core_dump_tag()?;
+    let same_image = tag[5..].starts_with(&app_elf_sha());
+    let seen = earlier_boots.iter().any(|d| d.contains(&tag));
+    let current = last_run_crashed() && same_image && !seen;
+    CORE_DUMP_CURRENT.store(current, std::sync::atomic::Ordering::Relaxed);
+    if !last_run_crashed() {
+        log::info!(
+            "a core dump is stored ({tag}), from an earlier crash; this restart was no crash"
+        );
+    } else if !same_image {
+        log::warn!(
+            "the stored core dump ({tag}) was written by another image (this one is {}): not this crash, none was written for it",
+            app_elf_sha()
+        );
+    } else if seen {
+        log::warn!("the stored core dump ({tag}) was reported at an earlier boot: not this crash, none was written for it");
+    }
+    Some((tag, current))
+}
+
+/// The stored core dump belongs to the crash the board just came back from.
+pub fn core_dump_current() -> bool {
+    CORE_DUMP_CURRENT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// If the previous run crashed and the stored core dump is its own
+/// (`check_core_dump`): log the dump's summary (task, cause, PC,
+/// backtrace) into the ring and keep it for the API and the display.
 /// The dump itself stays in flash for `/api/v1/coredump`, so after a clean
 /// restart it is not reported again. Returns true if there was one.
 pub fn log_core_dump() -> bool {
-    if !last_run_crashed() {
+    if !last_run_crashed() || !core_dump_current() {
         return false;
     }
     let before = unsafe { tusb::wa_log_count() };

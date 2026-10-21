@@ -208,6 +208,10 @@ pub fn system_info() -> serde_json::Value {
         // The last reset was a crash or a watchdog: the web UI shows a
         // banner once per boot (bootId tells one boot from the next).
         "crashed": diag::last_run_crashed(), "bootId": diag::boot_id(), "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
+        // The stored dump was written by the crash this boot followed
+        // (this image, not reported before); false for an older dump
+        // that stayed in flash because the last crash wrote none.
+        "coreDumpCurrent": diag::core_dump_current(),
         "selfTest": selftest::brief(),
     });
     if board::devkit() {
@@ -1469,7 +1473,8 @@ fn diagnostics(
             "generatedAt": (now > 0).then_some(now), "uptimeSeconds": diag::uptime_s(),
             "resetReason": diag::reset_reason(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
             "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
-            "coreDump": diag::core_dump().map(|_| "stored on the miner: GET /api/v1/coredump (ELF)"),
+            "coreDumpCurrent": diag::core_dump_current(), "coreDumpTag": diag::core_dump_tag(), "appElfSha": diag::app_elf_sha(),
+            "coreDump": diag::core_dump().map(|_| if diag::core_dump_current() { "stored on the miner, from this crash: GET /api/v1/coredump (ELF)" } else { "stored on the miner, from an EARLIER crash or another image (none was written for the last one): GET /api/v1/coredump (ELF)" }),
             "installRecord": config::install_record(),
             "memory": {"freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(), "largestFreeInternal": diag::largest_free_internal(), "httpHandlers": handler_count()},
         }),

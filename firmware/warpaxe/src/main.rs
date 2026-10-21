@@ -174,7 +174,22 @@ fn main() {
     // The event log: read, then this boot and what the bootloader says
     // about the image, written here on the main task's internal stack.
     events::init();
-    events::record("boot", diag::reset_reason());
+    // The boot event names the reset reason and, after a crash, the
+    // stored core dump's identity, so a later boot can tell an old dump
+    // from a new one (diag::check_core_dump).
+    let earlier: Vec<String> = events::list()
+        .iter()
+        .filter(|e| e.k == "boot")
+        .map(|e| e.d.clone())
+        .collect();
+    let boot_detail = match diag::check_core_dump(&earlier) {
+        Some((tag, true)) => format!("{} {tag}", diag::reset_reason()),
+        Some((tag, false)) if diag::last_run_crashed() => {
+            format!("{} no dump ({tag} old)", diag::reset_reason())
+        }
+        _ => diag::reset_reason().to_string(),
+    };
+    events::record("boot", boot_detail);
     match update::ota_state() {
         "aborted" => events::record(
             "rollback",

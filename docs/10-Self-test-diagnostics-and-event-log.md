@@ -243,9 +243,49 @@ panic or a watchdog (`diag::last_run_crashed`; a software restart, an
 update, a power-on or a brown-out are not crashes) and gives a `bootId`
 (random per boot). The web UI shows a banner on every page once per
 boot: the reason, the time (from `unixTime − uptimeSeconds`), the two
-download buttons (diagnostics, and the core dump if one is stored) and
-"Dismiss", which remembers the `bootId` in the browser's localStorage.
-The next crash is a new `bootId`, so the banner comes back.
+download buttons (diagnostics, and the core dump if one belongs to this
+crash) and "Dismiss", which remembers the `bootId` in the browser's
+localStorage. The next crash is a new `bootId`, so the banner comes
+back.
+
+### A core dump that is not this crash
+
+A core dump stays in the `coredump` partition until it is erased or the
+next crash overwrites it, and not every crash writes one: the panic
+handler writes the dump with `esp_flash_write`
+(`espcoredump/src/core_dump_flash.c`), which cannot run while a flash
+operation is in progress on the other core, and an interrupt watchdog
+is exactly what a flash operation that overran produces. The BitForge
+Nano .44 came back from an `int-wdt` on 2026-10-21 10:05Z with a dump
+whose app ELF SHA (`d7676a381`) matched no build of that day and no
+release v0.1.21 to v0.1.33 (checked against the app descriptors of the
+release assets): a dump from an earlier test image, which
+`log_core_dump`, `lastCrash`, `coreDumpBytes` and the new banner all
+presented as the crash at hand, including a wifi-task assert backtrace
+that had nothing to do with it.
+
+Since this branch a dump counts as the crash's own only when both hold
+(`diag::check_core_dump`, on the main task at boot):
+
+- it was written by this image: the dump's app ELF SHA (the core dump's
+  `ESP_CORE_DUMP_INFO` note, `esp_core_dump_summary_t.app_elf_sha256`)
+  starts with the running app's (`esp_app_get_elf_sha256`); and
+- no earlier boot event names it: the boot event's detail carries the
+  dump's tag `dump:<sha9>@<pc>` (`panic dump:fcfbb6da5@4037732c`), so
+  the same dump after a later crash of the same image reads as old
+  (`int-wdt no dump (dump:fcfbb6da5@4037732c old)`).
+
+Only then does `lastCrash` carry the summary, `coreDumpCurrent` is true,
+the banner offers the dump and the diagnostics file calls it "from this
+crash"; otherwise the banner says no dump was written, the Diagnostics
+card calls the stored one older, and the file says so too. The dump is
+never erased by the firmware: an old one may still be worth reading.
+
+Two ELF SHAs for the same commit are normal, by the way: `esp_app_desc.c`
+carries `__DATE__`/`__TIME__`, so every rebuild changes the SHA; the
+code and its addresses stay. A backtrace from a dump can only be read
+with the ELF of the build that was flashed, so `espflash save-image`
+and the ELF belong together in the release folder.
 
 ## Tests
 
