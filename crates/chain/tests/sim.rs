@@ -760,3 +760,163 @@ fn hash_counters_read_back_like_the_reference_monitor() {
     assert!(m.chips()[0].total.time_us > before, "chip 0 was read again");
     assert!(b.count(|e| matches!(e, Event::Nonce(_))) > nonces_before);
 }
+
+// ------------------------------------------------------------ self-test
+
+/// The self-test's hash window against the simulated chain: what the
+/// firmware does once a second (request the counters, sample the
+/// monitor), done here in simulated time, then judged by
+/// `warpaxe_board::selftest`. A chip whose counters are older than five
+/// seconds has stopped answering (`fresh = false`).
+mod selftest_window {
+    use super::*;
+    use warpaxe_board::selftest::{judge, BoardReadings, Check, Limits, Note, Status, Window};
+    use warpaxe_board::Asic;
+
+    const STALE_US: u64 = 5_000_000;
+
+    fn readings(chips: u8) -> BoardReadings {
+        BoardReadings {
+            chips_found: chips,
+            chips_expected: chips,
+            hashing: true,
+            has_regulator: true,
+            core_set_mv: 1150,
+            core_actual_mv: Some(1148),
+            regulator_fault: false,
+            has_thermal: true,
+            chip_temp_c: Some(58.0),
+            chip_limit_c: 75.0,
+            vr_temp_c: Some(60.0),
+            vr_limit_c: 105.0,
+            vin_v: Some(5.1),
+            nominal_v: 5.0,
+        }
+    }
+
+    /// Mine for `seconds`, sampling the window once a second as the
+    /// firmware's self-test does.
+    fn run_window(b: &mut Bench, seconds: u32) -> Window {
+        let m = b.drv.monitor();
+        let expected = b.drv.frequency_hz() as f32 * f32::from(BM1370.small_cores) / 1e9;
+        let mut w = Window::new(
+            b.drv.chip_count(),
+            m.domains() as u8,
+            expected,
+            &Limits::DEFAULT,
+        );
+        for _ in 0..seconds {
+            b.drv.request_counters(&mut b.uart).unwrap();
+            b.mine_ms(1000);
+            let m = b.drv.monitor();
+            for (i, c) in m.chips().iter().enumerate() {
+                let domains: Vec<f32> = (0..m.domains()).map(|d| m.domain_ghs(i, d)).collect();
+                let fresh = b.now.saturating_sub(c.total.time_us) < STALE_US;
+                w.sample(i, c.total.ghs, c.error.ghs, &domains, fresh);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn a_healthy_chain_passes_the_hash_checks() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        b.mine_ms(2_000);
+        let w = run_window(&mut b, 20);
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(4), Some(&w), None);
+        for c in [Check::Chips, Check::Hashrate, Check::Domains, Check::Errors] {
+            let o = r.get(c);
+            assert_eq!(o.status, Status::Pass, "{o:?}");
+        }
+        assert!(r.get(Check::Hashrate).value.unwrap() > 90.0, "{r:?}");
+        assert!(r.get(Check::Domains).value.unwrap() > 90.0, "{r:?}");
+    }
+
+    #[test]
+    fn a_hung_chip_fails_the_hashrate_check_by_name() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        // Chip 2 answers registers but hashes nothing (the silent VR
+        // shutdown's chip side, or an over-clock hang).
+        b.uart.sim.chip_mut(2).inject(Fault::HangAbove { hz: 1 });
+        b.mine_ms(2_000);
+        let w = run_window(&mut b, 20);
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(4), Some(&w), None);
+        let h = r.get(Check::Hashrate);
+        assert_eq!((h.status, h.chip), (Status::Fail, Some(2)), "{h:?}");
+        assert!(h.value.unwrap() < 10.0, "{h:?}");
+        assert_eq!(h.note, Note::None, "it answered, it just did not hash");
+        let d = r.get(Check::Domains);
+        assert_eq!((d.status, d.chip), (Status::Fail, Some(2)), "{d:?}");
+        assert!(!r.passed());
+    }
+
+    #[test]
+    fn a_chip_that_stops_answering_is_reported_as_no_reply() {
+        let mut b = Bench::new(2, Bench::config());
+        b.run_until_ready(20_000);
+        b.mine_ms(2_000);
+        b.uart.sim.chip_mut(1).inject(Fault::NoResponse {
+            for_us: 120_000_000,
+        });
+        let w = run_window(&mut b, 20);
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(2), Some(&w), None);
+        let h = r.get(Check::Hashrate);
+        assert_eq!(
+            (h.status, h.chip, h.note),
+            (Status::Fail, Some(1), Note::NoReply),
+            "{h:?}"
+        );
+        assert_eq!(r.get(Check::Hashrate).value, Some(0.0));
+    }
+
+    #[test]
+    fn a_weak_domain_fails_the_domain_check_and_names_chip_and_domain() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        // Chip 1, domain 3 at a third of its share: the chip's total
+        // drops to ~83 %, still above the chip limit, so only the domain
+        // check must catch it.
+        b.uart.sim.chip_mut(1).inject(Fault::WeakDomain {
+            domain: 3,
+            per_mille: 333,
+        });
+        b.mine_ms(2_000);
+        let w = run_window(&mut b, 30);
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(4), Some(&w), None);
+        let d = r.get(Check::Domains);
+        assert_eq!(
+            (d.status, d.chip, d.domain),
+            (Status::Fail, Some(1), Some(3)),
+            "{d:?}"
+        );
+        assert!(d.value.unwrap() < 50.0, "{d:?}");
+        assert_eq!(
+            r.get(Check::Hashrate).status,
+            Status::Pass,
+            "{:?}",
+            r.get(Check::Hashrate)
+        );
+        assert_eq!(r.failed(), 1);
+    }
+
+    #[test]
+    fn hash_errors_above_the_chip_limit_fail_the_error_check() {
+        let mut b = Bench::new(2, Bench::config());
+        b.run_until_ready(20_000);
+        b.uart
+            .sim
+            .chip_mut(0)
+            .inject(Fault::HashErrors { per_mille: 50 });
+        b.mine_ms(2_000);
+        let w = run_window(&mut b, 20);
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(2), Some(&w), None);
+        let e = r.get(Check::Errors);
+        assert_eq!((e.status, e.chip), (Status::Fail, Some(0)), "{e:?}");
+        assert!((e.value.unwrap() - 5.0).abs() < 1.0, "{e:?}");
+        // The same chip judged as a BM1373 would pass (8 % limit).
+        let r = judge(Asic::Bm1373, &Limits::DEFAULT, &readings(2), Some(&w), None);
+        assert_eq!(r.get(Check::Errors).status, Status::Pass);
+    }
+}

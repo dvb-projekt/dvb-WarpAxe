@@ -1,0 +1,14 @@
+[package]
+name = "warpaxe-diag"
+description = "What a miner tells support about itself, and what it must not: the diagnostics file's privacy rules (passwords never, addresses and network names masked, the log scrubbed) and the event log's ring (a few dozen events that survive restarts, written rarely). No I/O; host-tested, the firmware calls it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

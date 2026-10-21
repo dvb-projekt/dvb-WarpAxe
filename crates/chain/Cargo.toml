@@ -14,3 +14,5 @@ warpaxe-core = { path = "../core" }
 
 [dev-dependencies]
 warpaxe-sim = { path = "../sim" }
+# The self-test's judgement, driven here against the simulated chain.
+warpaxe-board = { path = "../board" }

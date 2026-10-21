@@ -60,4 +60,13 @@ pub enum Fault {
         /// Errors per mille of the hashes.
         per_mille: u16,
     },
+    /// One hash domain does only part of its share: its counter (and the
+    /// total) advance at `per_mille` of the domain's normal rate. A chip
+    /// with a damaged domain, which the self-test must name.
+    WeakDomain {
+        /// Which domain, 0-based.
+        domain: u8,
+        /// Its remaining share of the normal rate, in ‰.
+        per_mille: u16,
+    },
 }

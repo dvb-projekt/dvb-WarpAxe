@@ -24,6 +24,7 @@ pub mod pca9544;
 pub mod pmbus;
 pub mod power_fault;
 pub mod profile;
+pub mod selftest;
 pub mod setup;
 pub mod ssd1306;
 pub mod tmp1075;

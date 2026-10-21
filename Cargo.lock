@@ -867,6 +867,7 @@ dependencies = [
 name = "warpaxe-chain"
 version = "0.1.0"
 dependencies = [
+ "warpaxe-board",
  "warpaxe-core",
  "warpaxe-sim",
 ]
@@ -887,6 +888,14 @@ dependencies = [
  "serde_json",
  "sha2",
  "warpaxe-stratum",
+]
+
+[[package]]
+name = "warpaxe-diag"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

@@ -87,6 +87,8 @@ pub struct SimChip {
     /// The domain the next counted step goes to (round robin, so the
     /// domain counters stay even at one step per poll).
     next_domain: u8,
+    /// Steps the weak domain has earned but not yet counted (`Fault::WeakDomain`).
+    weak_acc: f64,
     /// Error hashes not yet counted.
     error_acc: f64,
     /// Rate-register reads so far: the windows alternate, short first.
@@ -125,6 +127,7 @@ impl SimChip {
             stats: ChipStats::default(),
             hash_acc: 0.0,
             next_domain: 0,
+            weak_acc: 0.0,
             error_acc: 0.0,
             rate_reads: 0,
         }
@@ -460,10 +463,27 @@ impl SimChip {
         let total = usize::from(reg::TOTAL_COUNT);
         self.regs[total] = self.regs[total].wrapping_add(steps);
         let domains = self.profile.domains.clamp(1, 8);
+        let weak = self.faults.iter().find_map(|f| match f {
+            Fault::WeakDomain { domain, per_mille } => Some((*domain, *per_mille)),
+            _ => None,
+        });
         for _ in 0..steps {
-            let r = usize::from(reg::domain_count(self.next_domain));
-            self.regs[r] = self.regs[r].wrapping_add(1);
+            let d = self.next_domain;
             self.next_domain = (self.next_domain + 1) % domains;
+            if let Some((wd, per_mille)) = weak {
+                if wd == d {
+                    // The weak domain keeps only its share of the steps;
+                    // the rest never happened, in the total either.
+                    self.weak_acc += f64::from(per_mille) / 1000.0;
+                    if self.weak_acc < 1.0 {
+                        self.regs[total] = self.regs[total].wrapping_sub(1);
+                        continue;
+                    }
+                    self.weak_acc -= 1.0;
+                }
+            }
+            let r = usize::from(reg::domain_count(d));
+            self.regs[r] = self.regs[r].wrapping_add(1);
         }
         if let Some(Fault::HashErrors { per_mille }) = self
             .faults

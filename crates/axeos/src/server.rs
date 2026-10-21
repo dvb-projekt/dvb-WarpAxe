@@ -47,6 +47,8 @@ enum ChipFaultReq {
     DuplicateNonce { per_mille: u16 },
     RegReadCorrupt { reg: u8 },
     BaudSwitchIgnored,
+    HashErrors { per_mille: u16 },
+    WeakDomain { domain: u8, per_mille: u16 },
 }
 
 impl From<ChipFaultReq> for Fault {
@@ -59,6 +61,10 @@ impl From<ChipFaultReq> for Fault {
             ChipFaultReq::DuplicateNonce { per_mille } => Fault::DuplicateNonce { per_mille },
             ChipFaultReq::RegReadCorrupt { reg } => Fault::RegReadCorrupt { reg },
             ChipFaultReq::BaudSwitchIgnored => Fault::BaudSwitchIgnored,
+            ChipFaultReq::HashErrors { per_mille } => Fault::HashErrors { per_mille },
+            ChipFaultReq::WeakDomain { domain, per_mille } => {
+                Fault::WeakDomain { domain, per_mille }
+            }
         }
     }
 }
