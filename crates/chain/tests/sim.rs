@@ -908,13 +908,13 @@ mod selftest_window {
         b.uart
             .sim
             .chip_mut(0)
-            .inject(Fault::HashErrors { per_mille: 50 });
+            .inject(Fault::HashErrors { per_mille: 70 });
         b.mine_ms(2_000);
         let w = run_window(&mut b, 20);
         let r = judge(Asic::Bm1370, &Limits::DEFAULT, &readings(2), Some(&w), None);
         let e = r.get(Check::Errors);
         assert_eq!((e.status, e.chip), (Status::Fail, Some(0)), "{e:?}");
-        assert!((e.value.unwrap() - 5.0).abs() < 1.0, "{e:?}");
+        assert!((e.value.unwrap() - 7.0).abs() < 1.0, "{e:?}");
         // The same chip judged as a BM1373 would pass (8 % limit).
         let r = judge(Asic::Bm1373, &Limits::DEFAULT, &readings(2), Some(&w), None);
         assert_eq!(r.get(Check::Errors).status, Status::Pass);
