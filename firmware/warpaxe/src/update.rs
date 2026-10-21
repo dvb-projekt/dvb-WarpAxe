@@ -575,6 +575,10 @@ pub fn writing() -> bool {
 /// needs, and it exists whatever the heap looks like after hours of
 /// mining. A written image ends in a restart; a failed write reports
 /// and the task waits for the next job.
+/// The priority a firmware write runs at: ESP-IDF's pthread default,
+/// what the writer thread had up to v0.1.31.
+const WRITER_PRIORITY: u32 = 5;
+
 pub fn serve_writes() -> ! {
     loop {
         let work = {
@@ -612,7 +616,19 @@ pub fn serve_writes() -> ! {
             std::thread::sleep(delay);
         }
         log::info!("{origin}: writing {} bytes on the main task", image.len());
-        match crate::api::flash_image(&image) {
+        // The main task runs at priority 1 on CPU 0, below the mining and
+        // network threads: a write took ~100 s on a NerdQAxe++ instead of
+        // the ~35 s of the old writer thread at the pthread default of 5
+        // (2026-10-20). The write gets that priority back for its length;
+        // the task waits for the next job at its own again.
+        let written = {
+            let _boost = diag::PriorityBoost::raise(WRITER_PRIORITY);
+            let t0 = std::time::Instant::now();
+            let r = crate::api::flash_image(&image);
+            log::info!("{origin}: write took {} s", t0.elapsed().as_secs());
+            r
+        };
+        match written {
             Ok(()) => {
                 log::info!(
                     "{origin}: written and verified, restarting ({} bytes of the writer's stack never used)",
