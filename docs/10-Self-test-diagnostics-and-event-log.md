@@ -85,7 +85,7 @@ no restart, no mock job; about 80 s:
 | chips | the chain hashes and found = expected (config `asicCount`, else the profile) | the board has no chain (devkit) | ESP-Miner stops at a mismatch |
 | hashrate | every chip's window average ≥ 80 % of small cores × clock | | ESP-Miner wants ≥ 85 % from nonces; the fleet's counters sit at 99–101 % (BM1370/73) and 88 % (BM1397), so 80 % leaves the BM1397 room and still catches a chip at half rate |
 | domains | every domain's average ≥ 67 % of the chip's share; samples above 3× the share dropped | the chip has no domain counters (BM1397) | ESP-Miner's 33 % tolerance and 3× plausibility |
-| errors | every chip's error rate over the window ≤ 3 % (BM1370), ≤ 8 % (BM1373) | no error counter (BM1397) | ESP-Miner has none; the fleet runs 0–1.3 % (BM1370) and 3–6 % (BM1373, docs/05) |
+| errors | every chip's error rate over the window ≤ 5 % (BM1370), ≤ 8 % (BM1373) | no error counter (BM1397) | ESP-Miner has none; the fleet runs 0–1.3 % (BM1370 at stock and max points), 2.6 % at WarpTune's eco point (the Nano), 3–6 % (BM1373, docs/05). The rate rises as the voltage drops, so it is a tuning figure as much as a hardware one: the line sits well above any tuned point, and the measured value is always in the report, so a 2.6 % reads as what it is |
 | coreVoltage | the regulator's output within ± 5 % of the set value | no regulator (NerdNOS, devkit) | ESP-Miner ± 10 % of the default; the fleet reads back within 0.5 % |
 | regulator | no fault condition (AxeOS `power_fault` as a fault, or a stop with cause `power`; a temperature warning is not a fault) | no regulator | ESP-Miner `test_vreg_faults` |
 | fan | ≥ 500 rpm at 100 %, and at least 10 % faster than before when the duty before was under 90 %; a second output is judged only when something spins on it, an empty header is a note | no fan the firmware drives (NerdNOS, devkit) | ESP-Miner's lowest floor (500); the reaction is new |
@@ -283,10 +283,35 @@ The next crash is a new `bootId`, so the banner comes back.
   config states and the log formatting. Since the fix ("selftest: the window and the report on the heap …") the window lives in a
   `Box`, the thread has 16 KB, and the log line at the end says how
   much of it was never used, so the next run measures the real need.
-- Still to confirm on devices: the fan reaction on a Bitaxe (EMC2101
-  tach at 100 %), a Nerd board (both outputs; the empty M1 header as a
-  note), the Nano (two tachs) and the Gaia's BM1373 error rate under
-  the 8 % line.
+- **The second run on .42** (image 4c0ec36 with the fix, Oliver's OK,
+  dvb-WarpAxe #2): PASS, 9 checks, 73 s, no restart. `10240 of 16384
+  bytes of the thread's stack never used`: the peak is about 6 KB, so
+  the 8 KB of the first run were too little even with the window on
+  the heap in reserve; 16 KB stays (PSRAM, nothing else wants it).
+  The figures at 575 MHz / 1060 mV: chips 1 of 1, hashrate 98.7 %,
+  domains 97.6 %, errors 0.04 %, core 1056 mV (set 1060), regulator
+  clear, fan 2446 → 4707 rpm at 100 %, chip 62.1 °C, input 5.19 V.
+- **The other three boards** (same day, image 4c0ec36, all PASS, no
+  restart; "never used" 10 244–10 468 of 16 384 bytes, so the peak
+  stays at about 6 KB on every board):
+
+  | Board | Point | Chips | Hashrate | Domains | Errors | Core | Fan at 100 % | Chip / VR °C | Input |
+  |---|---|---|---|---|---|---|---|---|---|
+  | .41 NerdQAxe++ | 675 MHz / 1170 mV | 4 | 96.2 % | 94.8 % | 1.02 % | 1169 mV | 1128 → 2839 rpm, M1 empty (`secondFanMissing`, a note) | 55.1 / 48 | 12.06 V |
+  | .44 BitForge Nano | 425 MHz / 1000 mV | 2 | 99.1 % | 97.0 % | 2.59 % | 996 mV | 2018 → 5079 rpm (both tachs) | 54.4 / 63 | 12.29 V |
+  | .40 NerdAxe Gaia (BM1373) | 350 MHz / 950 mV | 1 | 101.7 % | 99.1 % | 4.71 % | 945 mV | 5493 → 7814 rpm | 60.6 / 69 | 12.08 V |
+
+  The Nano's 2.59 % sat just under the 3 % line the BM1370 had: it
+  runs at WarpTune's eco point, where a lower voltage raises the error
+  rate, and nothing is wrong with the chips. The line is 5 % since
+  then (`Limits::DEFAULT`): a self-test asks whether the hardware
+  works, and a figure that fails at an honest eco point would say the
+  wrong thing; a chip with a real problem errs far beyond that (the
+  value and the worst chip are in the report either way, and
+  `errorPercentage1m` is what a tuner acts on). A third verdict
+  ("warning") between pass and fail was the alternative; it would have
+  added a status value to the API that WarpTune v1.42 already reads,
+  and a colour to every list, for one check.
 
 ## Image size
 
@@ -344,7 +369,7 @@ mind: the fan, flash, secrets.
   the test runs hides the progress screen, and the result still shows
   when it is in (acknowledged per run id and state).
 
-Open for Oliver: the limits (80 / 67 / 3 and 8 / ±5 / ±10 / 500 rpm)
+Open for Oliver: the limits (80 / 67 / 5 and 8 / ±5 / ±10 / 500 rpm)
 before the first device runs; whether the NerdOS boards' `CHIPS OFF`
 display wording should follow the web UI (unrelated, noted by the
 Portuguese proofreader); and whether a self-test should be offered on
