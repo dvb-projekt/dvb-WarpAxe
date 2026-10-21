@@ -1423,7 +1423,11 @@ fn diagnostics(
     let name = format!(
         "attachment; filename=\"warpaxe-diagnostics-{}-{}.json\"",
         net::mdns::label(&cfg.hostname),
-        if now > 0 { now.to_string() } else { format!("up{}", diag::uptime_s()) }
+        if now > 0 {
+            now.to_string()
+        } else {
+            format!("up{}", diag::uptime_s())
+        }
     );
     let mut r = req.into_response(
         200,
@@ -1444,7 +1448,9 @@ fn diagnostics(
         scrub.apply_json(&mut v);
         let text = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".into());
         let text = if scrub.leaks(&text) {
-            log::error!("diagnostics: section {key} still carried a secret after scrubbing; left out");
+            log::error!(
+                "diagnostics: section {key} still carried a secret after scrubbing; left out"
+            );
             "\"left out: a secret would have leaked\"".to_string()
         } else {
             text
@@ -1455,15 +1461,19 @@ fn diagnostics(
         r.write_all(text.as_bytes())?;
         Ok(())
     };
-    section(&mut r, "file", json!({
-        "what": "WarpAxe diagnostics file. No passwords; worker addresses and the Wi-Fi name are masked. Send it to support as it is.",
-        "generatedAt": (now > 0).then_some(now), "uptimeSeconds": diag::uptime_s(),
-        "resetReason": diag::reset_reason(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
-        "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
-        "coreDump": diag::core_dump().map(|_| "stored on the miner: GET /api/v1/coredump (ELF)"),
-        "installRecord": config::install_record(),
-        "memory": {"freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(), "largestFreeInternal": diag::largest_free_internal(), "httpHandlers": handler_count()},
-    }))?;
+    section(
+        &mut r,
+        "file",
+        json!({
+            "what": "WarpAxe diagnostics file. No passwords; worker addresses and the Wi-Fi name are masked. Send it to support as it is.",
+            "generatedAt": (now > 0).then_some(now), "uptimeSeconds": diag::uptime_s(),
+            "resetReason": diag::reset_reason(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
+            "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
+            "coreDump": diag::core_dump().map(|_| "stored on the miner: GET /api/v1/coredump (ELF)"),
+            "installRecord": config::install_record(),
+            "memory": {"freeHeap": diag::free_heap(), "freeHeapInternal": diag::free_heap_internal(), "largestFreeInternal": diag::largest_free_internal(), "httpHandlers": handler_count()},
+        }),
+    )?;
     // Everything /api/system/info says (firmware, board, chips, hash
     // counters, pool, regulator, temperatures, fans), with the worker
     // addresses and the Wi-Fi name masked by the scrubber.

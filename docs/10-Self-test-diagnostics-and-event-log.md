@@ -135,8 +135,9 @@ verdict and the first failed check, or "9/9 OK").
   fans pinned; the thread releases it on every exit path too (a drop
   guard). The PID keeps computing against the real temperature
   meanwhile and takes over again on the next pass.
-- The thread runs on a PSRAM stack (8 KB) and writes no flash; the
-  result goes into the event log through the queue below.
+- The thread runs on a PSRAM stack (16 KB; the window and the
+  report on the heap) and writes no flash; the result goes into the
+  event log through the queue below.
 
 ## The diagnostics file
 
@@ -267,8 +268,22 @@ The next crash is a new `bootId`, so the banner comes back.
   (`lcd-ev-selftest-*`, `oled-ev-selftest-*`, with the real judgement on
   sample readings): `docs/screenshots/lcd-selftest.png`,
   `oled-selftest.png`.
-- Not done: a run on a device (flashing waits for Oliver's OK). The
-  first device run should confirm the fan reaction on a Bitaxe (EMC2101
+- **The first device run** (dvb-WarpAxe #2, 2026-10-21, .42 Bitaxe
+  Gamma on the test stand, image 69d4fcae1 = this branch plus main):
+  `POST /api/v1/selftest` answered 202 with an empty body, the next
+  requests came back empty, and the miner restarted with reset reason
+  `panic` and no core dump; the event log recorded `boot: panic`. That
+  is what a stack overflow in a task whose stack sits in PSRAM looks
+  like: `CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY` aborts at the next
+  context switch, and the core-dump writer cannot read a PSRAM stack
+  with the cache off, so nothing is stored. The self-test thread had
+  8 KB, and the hash window (`Window`, 1.3 KB: 16 chips × 8 domains of
+  sums and counts) sat on that stack several times over as it was
+  built, returned and matched on, next to the cloned board, miner and
+  config states and the log formatting. Since the fix ("selftest: the window and the report on the heap …") the window lives in a
+  `Box`, the thread has 16 KB, and the log line at the end says how
+  much of it was never used, so the next run measures the real need.
+- Still to confirm on devices: the fan reaction on a Bitaxe (EMC2101
   tach at 100 %), a Nerd board (both outputs; the empty M1 header as a
   note), the Nano (two tachs) and the Gaia's BM1373 error rate under
   the 8 % line.

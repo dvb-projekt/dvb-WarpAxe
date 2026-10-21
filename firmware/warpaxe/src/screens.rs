@@ -372,7 +372,9 @@ impl Ui {
         }
         if let Some(s) = crate::selftest::shown() {
             // Dismissed while running: the result still shows once it is in.
-            let acked = self.acked_selftest.is_some_and(|(id, done)| id == s.id && (done || s.running));
+            let acked = self
+                .acked_selftest
+                .is_some_and(|(id, done)| id == s.id && (done || s.running));
             if !acked {
                 return Some(Event::SelfTest(s.id));
             }
@@ -1718,7 +1720,8 @@ fn step_name(step: &str, progress: u8) -> String {
         "hashrate" => {
             let s = crate::selftest::WINDOW_S;
             let done = u32::from(progress.saturating_sub(5)) * s / 80;
-            l("Hash counters {s} s", "Hash-Zähler {s} s").replace("{s}", &format!("{}", s.saturating_sub(done.min(s))))
+            l("Hash counters {s} s", "Hash-Zähler {s} s")
+                .replace("{s}", &format!("{}", s.saturating_sub(done.min(s))))
         }
         "fan" => l("Fan test", "Lüftertest").to_string(),
         "judge" => l("Evaluating", "Auswertung").to_string(),
@@ -1735,19 +1738,54 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
     };
     c.fill(gfx::rgb(0x0b, 0x0c, 0x14));
     badge(c);
-    c.text(&LABEL12, 82, 17, gfx::PLASMA, &l("SELF-TEST", "SELBSTTEST").to_uppercase(), Align::Left);
+    c.text(
+        &LABEL12,
+        82,
+        17,
+        gfx::PLASMA,
+        &l("SELF-TEST", "SELBSTTEST").to_uppercase(),
+        Align::Left,
+    );
     if let Some(tc) = clock_text() {
         c.text(&MONO11, 308, 18, gfx::MUTE, &tc, Align::Right);
     }
     c.rect(12, 25, 298, 1, gfx::WHITE, 16);
     if s.running {
         let pulse = 0.5 + 0.5 * (t * 2.5).sin();
-        c.disc(W as f32 / 2.0, 58.0, 5.0 + 2.0 * pulse, gfx::PLASMA, (120.0 + 135.0 * pulse) as u8);
-        c.text(&TITLE, W / 2, 96, gfx::FG, &format!("{} %", s.progress), Align::Center);
+        c.disc(
+            W as f32 / 2.0,
+            58.0,
+            5.0 + 2.0 * pulse,
+            gfx::PLASMA,
+            (120.0 + 135.0 * pulse) as u8,
+        );
+        c.text(
+            &TITLE,
+            W / 2,
+            96,
+            gfx::FG,
+            &format!("{} %", s.progress),
+            Align::Center,
+        );
         // The bar.
         c.rect(40, 110, 240, 6, gfx::WHITE, 24);
-        c.rect(40, 110, 240 * i32::from(s.progress) / 100, 6, gfx::PLASMA, 255);
-        fit_text(c, &[&LABEL11, &LABEL10], W / 2, 134, gfx::MUTE, &step_name(s.step, s.progress), W - 16);
+        c.rect(
+            40,
+            110,
+            240 * i32::from(s.progress) / 100,
+            6,
+            gfx::PLASMA,
+            255,
+        );
+        fit_text(
+            c,
+            &[&LABEL11, &LABEL10],
+            W / 2,
+            134,
+            gfx::MUTE,
+            &step_name(s.step, s.progress),
+            W - 16,
+        );
         fit_text(
             c,
             &[&LABEL10, &MONO9],
@@ -1760,33 +1798,82 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
         return;
     }
     let Some(r) = s.report else {
-        c.text(&TITLE, W / 2, 80, gfx::WARN, l("CANCELLED", "ABGEBROCHEN"), Align::Center);
+        c.text(
+            &TITLE,
+            W / 2,
+            80,
+            gfx::WARN,
+            l("CANCELLED", "ABGEBROCHEN"),
+            Align::Center,
+        );
         let why = match s.aborted {
-            Some("pointChanged") => l("Clock or voltage changed during the test", "Takt oder Spannung im Test geändert"),
-            Some("chainStopped") => l("The chips went off during the test", "Die Chips gingen während des Tests aus"),
-            _ => l("Cancelled in the web UI", "In der Weboberfläche abgebrochen"),
+            Some("pointChanged") => l(
+                "Clock or voltage changed during the test",
+                "Takt oder Spannung im Test geändert",
+            ),
+            Some("chainStopped") => l(
+                "The chips went off during the test",
+                "Die Chips gingen während des Tests aus",
+            ),
+            _ => l(
+                "Cancelled in the web UI",
+                "In der Weboberfläche abgebrochen",
+            ),
         };
-        fit_text(c, &[&LABEL11, &LABEL10, &MONO9], W / 2, 108, gfx::MUTE, why, W - 16);
-        c.text(&LABEL10, W / 2, 156, gfx::DIM, l("Press a key to close", "Zum Schließen Taste drücken"), Align::Center);
+        fit_text(
+            c,
+            &[&LABEL11, &LABEL10, &MONO9],
+            W / 2,
+            108,
+            gfx::MUTE,
+            why,
+            W - 16,
+        );
+        c.text(
+            &LABEL10,
+            W / 2,
+            156,
+            gfx::DIM,
+            l("Press a key to close", "Zum Schließen Taste drücken"),
+            Align::Center,
+        );
         return;
     };
-    let (word, col) = if r.passed() { ("PASS", gfx::OK) } else { ("FAIL", gfx::ERR) };
+    let (word, col) = if r.passed() {
+        ("PASS", gfx::OK)
+    } else {
+        ("FAIL", gfx::ERR)
+    };
     c.text(&TITLE, 12, 56, col, word, Align::Left);
     let line = if r.passed() {
-        l("{n} of {m} checks passed", "{n} von {m} Prüfungen bestanden")
-            .replace("{n}", &r.judged().to_string())
-            .replace("{m}", &r.judged().to_string())
+        l(
+            "{n} of {m} checks passed",
+            "{n} von {m} Prüfungen bestanden",
+        )
+        .replace("{n}", &r.judged().to_string())
+        .replace("{m}", &r.judged().to_string())
     } else {
-        l("{n} of {m} checks failed", "{n} von {m} Prüfungen nicht bestanden")
-            .replace("{n}", &r.failed().to_string())
-            .replace("{m}", &r.judged().to_string())
+        l(
+            "{n} of {m} checks failed",
+            "{n} von {m} Prüfungen nicht bestanden",
+        )
+        .replace("{n}", &r.failed().to_string())
+        .replace("{m}", &r.judged().to_string())
     };
     let wx = TITLE.width(word) + 24;
-    let lf: &gfx::font::Font = if LABEL11.width(&line) <= W - 12 - wx { &LABEL11 } else { &LABEL10 };
+    let lf: &gfx::font::Font = if LABEL11.width(&line) <= W - 12 - wx {
+        &LABEL11
+    } else {
+        &LABEL10
+    };
     c.text(lf, wx, 56, gfx::MUTE, &line, Align::Left);
     c.rect(12, 64, 298, 1, gfx::WHITE, 16);
     for (i, o) in r.outcomes.iter().enumerate() {
-        let (col_x, row) = if i < 5 { (12, i as i32) } else { (168, i as i32 - 5) };
+        let (col_x, row) = if i < 5 {
+            (12, i as i32)
+        } else {
+            (168, i as i32 - 5)
+        };
         let y = 82 + row * 15;
         let (mark_col, label_col) = match o.status {
             Status::Pass => (gfx::OK, gfx::FG),
@@ -1814,10 +1901,21 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
                 name.push_str(&format!("D{d}"));
             }
         }
-        let f: &gfx::font::Font = if LABEL11.width(&name) <= 118 { &LABEL11 } else { &LABEL10 };
+        let f: &gfx::font::Font = if LABEL11.width(&name) <= 118 {
+            &LABEL11
+        } else {
+            &LABEL10
+        };
         c.text(f, col_x + 14, y, label_col, &name, Align::Left);
     }
-    c.text(&LABEL10, W / 2, 163, gfx::DIM, l("Press a key to close", "Zum Schließen Taste drücken"), Align::Center);
+    c.text(
+        &LABEL10,
+        W / 2,
+        163,
+        gfx::DIM,
+        l("Press a key to close", "Zum Schließen Taste drücken"),
+        Align::Center,
+    );
 }
 
 fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
@@ -2204,7 +2302,15 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
                 oled_center(o, 19, &oled_str(&step_name(s.step, s.progress)));
             } else if let Some(r) = s.report {
                 let word = if r.passed() { "PASS" } else { "FAIL" };
-                oled_center(o, 6, &if blink || r.passed() { format!("{title} {word}") } else { title.clone() });
+                oled_center(
+                    o,
+                    6,
+                    &if blink || r.passed() {
+                        format!("{title} {word}")
+                    } else {
+                        title.clone()
+                    },
+                );
                 let line = match r.outcomes.iter().find(|x| x.status == Status::Fail) {
                     None => format!("{}/{} OK", r.judged(), r.judged()),
                     Some(x) => {
