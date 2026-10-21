@@ -498,5 +498,7 @@
   "evk_selftest": "自检",
   "crash_title": "矿机已崩溃",
   "crash_s": "上次重启：{r}，{t}。请下载诊断文件并发送给技术支持。",
-  "crash_dismiss": "关闭"
+  "crash_dismiss": "关闭",
+  "dg_core_old": "已存储的核心转储（{kb} KB）来自更早的一次崩溃或其他固件版本；上一次崩溃没有写入核心转储。",
+  "crash_nodump": "这次崩溃没有写入核心转储。"
 }

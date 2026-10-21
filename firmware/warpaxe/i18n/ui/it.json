@@ -498,5 +498,7 @@
   "evk_selftest": "Autotest",
   "crash_title": "Il miner è andato in crash",
   "crash_s": "Ultimo riavvio: {r}, {t}. Scarica il file di diagnostica e invialo al supporto.",
-  "crash_dismiss": "Nascondi"
+  "crash_dismiss": "Nascondi",
+  "dg_core_old": "Il core dump salvato ({kb} KB) risale a un crash precedente o a un altro firmware; l’ultimo crash non ne ha scritto nessuno.",
+  "crash_nodump": "Per questo crash non è stato scritto alcun core dump."
 }

@@ -498,5 +498,7 @@
   "evk_selftest": "Autotest",
   "crash_title": "El minero se ha bloqueado",
   "crash_s": "Último reinicio: {r}, {t}. Descarga el archivo de diagnóstico y envíalo al soporte.",
-  "crash_dismiss": "Ocultar"
+  "crash_dismiss": "Ocultar",
+  "dg_core_old": "El volcado de memoria (core dump) guardado ({kb} KB) es de un fallo anterior o de otro firmware; el último fallo no escribió ninguno.",
+  "crash_nodump": "No se escribió ningún volcado de memoria (core dump) para este fallo."
 }

@@ -498,5 +498,7 @@
   "evk_selftest": "Autoteste",
   "crash_title": "O minerador travou",
   "crash_s": "Último reinício: {r}, {t}. Baixe o arquivo de diagnóstico e envie-o ao suporte.",
-  "crash_dismiss": "Ocultar"
+  "crash_dismiss": "Ocultar",
+  "dg_core_old": "O core dump armazenado ({kb} KB) é de um travamento anterior ou de outro firmware; o último travamento não gravou nenhum.",
+  "crash_nodump": "Nenhum core dump foi gravado para este travamento."
 }
