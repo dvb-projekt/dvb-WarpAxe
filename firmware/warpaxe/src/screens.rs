@@ -1732,7 +1732,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
             let l2 = if b.overheat_latched {
                 l(
                     "Fans 100 % · clear it in the web UI under System",
-                    "Lüfter 100 % · Freigabe im Web-UI unter System",
+                    "Lüfter 100 % · Freigabe unter System (Weboberfläche)",
                 )
             } else if power {
                 l(
@@ -1774,7 +1774,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
             );
             let l = l(
                 "Device stays reachable · switch on in the web UI",
-                "Gerät bleibt erreichbar · Einschalten im Web-UI",
+                "Gerät bleibt erreichbar · Einschalten in der Weboberfläche",
             );
             fit_text(
                 c,

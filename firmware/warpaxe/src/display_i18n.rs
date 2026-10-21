@@ -17,7 +17,7 @@ static ES: &[(&str, &str)] = &[
     ("Candidates", "Candidatos"),
     (
         "Chip {t} °C · core voltage off",
-        "Chip {t} °C · voltaje núcleo cortado",
+        "Chip {t} °C · voltaje del núcleo cortado",
     ),
     ("Clock", "Frecuencia"),
     ("Core", "Núcleo"),
@@ -25,7 +25,7 @@ static ES: &[(&str, &str)] = &[
     ("Device", "Dispositivo"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Sigue accesible · enciéndelo en la interfaz web",
+        "Sigue accesible · enciende los chips en la interfaz web",
     ),
     ("EFFICIENCY", "EFICIENCIA"),
     (
@@ -63,7 +63,7 @@ static ES: &[(&str, &str)] = &[
     ("INPUT", "ENTRADA"),
     ("Input", "Entrada"),
     ("Join {n}", "Conéctate a {n}"),
-    ("Log", "Log"),
+    ("Log", "Registro"),
     ("Network difficulty", "Dificultad de red"),
     ("Network hashrate", "Hashrate de red"),
     ("OVERHEAT", "SOBRECALENTADO"),
@@ -83,7 +83,7 @@ static ES: &[(&str, &str)] = &[
     ("Regulator", "Regulador"),
     (
         "Regulator fault · core voltage off",
-        "Fallo regulador · voltaje núcleo cortado",
+        "Fallo regulador · voltaje del núcleo cortado",
     ),
     ("Restart clock", "Frec. al reiniciar"),
     ("Shutdown {h} °C", "Apagado a {h} °C"),
@@ -126,7 +126,7 @@ static FR: &[(&str, &str)] = &[
     ("Device", "Appareil"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Appareil joignable · rallumer via l'interface web",
+        "Appareil joignable · rallumer les puces via l’interface web",
     ),
     ("EFFICIENCY", "EFFICACITÉ"),
     (
@@ -142,7 +142,7 @@ static FR: &[(&str, &str)] = &[
     ("Fan M2", "Ventil. M2"),
     (
         "Fans 100 % · clear it in the web UI under System",
-        "Ventil. 100 % · débloquer dans l'interface web > Système",
+        "Ventil. 100 % · débloquer dans l’interface web > Système",
     ),
     (
         "Fans 100 % · starts again once cooled",
@@ -211,7 +211,7 @@ static IT: &[(&str, &str)] = &[
     ("Best diff", "Miglior diff."),
     (
         "Best diff (session / all-time)",
-        "Miglior diff (sessione / totale)",
+        "Miglior diff (sessione / di sempre)",
     ),
     ("Block", "Blocco"),
     ("CHIPS OFF", "CHIP SPENTI"),
@@ -227,7 +227,7 @@ static IT: &[(&str, &str)] = &[
     ("Device", "Dispositivo"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Dispositivo raggiungibile · accendi nella web UI",
+        "Dispositivo raggiungibile · accendi dall’interfaccia web",
     ),
     ("EFFICIENCY", "EFFICIENZA"),
     (
@@ -243,7 +243,7 @@ static IT: &[(&str, &str)] = &[
     ("Fan M2", "Ventola M2"),
     (
         "Fans 100 % · clear it in the web UI under System",
-        "Ventole 100 % · sblocca nella web UI in Sistema",
+        "Ventole 100 % · sblocca nell’interfaccia web in Sistema",
     ),
     (
         "Fans 100 % · starts again once cooled",
@@ -312,7 +312,7 @@ static PT: &[(&str, &str)] = &[
     ("Best diff", "Melhor dif."),
     (
         "Best diff (session / all-time)",
-        "Melhor diff (sessão / total)",
+        "Melhor diff (sessão / histórica)",
     ),
     ("Block", "Bloco"),
     ("CHIPS OFF", "CHIPS PARADOS"),
@@ -322,7 +322,7 @@ static PT: &[(&str, &str)] = &[
         "Chip {t} °C · core voltage off",
         "Chip {t} °C · tensão do núcleo cortada",
     ),
-    ("Clock", "Clock"),
+    ("Clock", "Frequência"),
     ("Core", "Núcleo"),
     ("Current", "Corrente"),
     ("Device", "Dispositivo"),
@@ -344,15 +344,15 @@ static PT: &[(&str, &str)] = &[
     ("Fan M2", "Vent. M2"),
     (
         "Fans 100 % · clear it in the web UI under System",
-        "Ventoinhas 100 % · liberar na interface web em Sistema",
+        "Ventoinhas 100% · liberar na interface web em Sistema",
     ),
     (
         "Fans 100 % · starts again once cooled",
-        "Ventoinhas 100 % · religa após esfriar",
+        "Ventoinhas 100% · religa após esfriar",
     ),
     (
         "Fans 100 % · tries again after a minute",
-        "Ventoinhas 100 % · tenta de novo em um minuto",
+        "Ventoinhas 100% · tenta de novo em um minuto",
     ),
     (
         "Fans automatic · target {t} °C · shutdown {h} °C",
@@ -360,7 +360,7 @@ static PT: &[(&str, &str)] = &[
     ),
     (
         "Fans fixed {p} % · shutdown {h} °C",
-        "Ventoinhas fixas {p} % · desliga em {h} °C",
+        "Ventoinhas fixas {p}% · desliga em {h} °C",
     ),
     ("Fees", "Taxas"),
     ("INPUT", "ENTRADA"),
@@ -388,7 +388,7 @@ static PT: &[(&str, &str)] = &[
         "Regulator fault · core voltage off",
         "Falha do regulador · tensão do núcleo cortada",
     ),
-    ("Restart clock", "Clock inicial"),
+    ("Restart clock", "Freq. inicial"),
     ("Shutdown {h} °C", "Desliga em {h} °C"),
     ("THEN OPEN", "DEPOIS ABRA"),
     ("UPTIME", "TEMPO ATIVO"),
@@ -402,7 +402,7 @@ static PT: &[(&str, &str)] = &[
         "then open http://192.168.4.1",
         "depois abra http://192.168.4.1",
     ),
-    ("{p} % · do not power off", "{p} % · não desligue"),
+    ("{p} % · do not power off", "{p}% · não desligue"),
 ];
 
 /// The translation of an English display text, if the language has one.
