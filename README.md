@@ -125,7 +125,7 @@ draw:
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
   hundreds of pool shares.
-- **A running self-test** (`selfTest.state`): WarpTune (from v1.42)
+- **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
   holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.
 
