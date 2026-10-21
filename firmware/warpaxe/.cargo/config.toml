@@ -8,6 +8,11 @@ rustflags = ["--cfg", "espidf_time64"]
 
 [unstable]
 build-std = ["std", "panic_abort"]
+# std without its backtrace symbolizer (gimli, addr2line, rustc-demangle,
+# miniz_oxide): it needs debug info the image never carries, so on the miner
+# it could only print addresses anyway, and it cost about 132 KB of the image
+# (measured 2026-10-19). Panic messages and the ESP-IDF core dump stay.
+build-std-features = []
 
 [env]
 MCU = "esp32s3"
