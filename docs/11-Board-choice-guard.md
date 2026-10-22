@@ -215,8 +215,12 @@ limit), with a warning.
 - `PATCH /api/system {boardModel}`: 400 for a name the firmware does not
   know; a known name is saved, marked pending in NVS and logged
   (`board: <name> chosen by hand`), and verified or refused at the next
-  start. `POST /api/v1/chips/on` answers 409 while a refused choice holds
-  the chips off.
+  start. The verified board's own name is a no-op (seen on the Gaia,
+  2026-10-22); `{"boardModel": "<its name>", "reverify": true}` marks it
+  pending all the same, which is how a fleet board is put through the
+  check, the counted first start and the self-test on purpose (the probe
+  then also logs `READ_VIN`). `POST /api/v1/chips/on` answers 409 while
+  a refused choice holds the chips off.
 - Web UI: the choice card lists the boards that fit; *Show all boards*
   with a warning; a refused board shows the reason and the boards that
   fit; a mismatch shows what answered, with *Restart and try again*; a

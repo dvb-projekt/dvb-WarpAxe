@@ -1111,45 +1111,48 @@ impl Thermal {
 /// profile's pins, before anything (the display first) needs it.
 pub fn init_bus(mut i2c0: I2C0) {
     let cfg = config::get();
+    let verified = config::verified_board();
     let profile = match Profile::by_name(&cfg.board_model) {
-        Some(p) if config::verified_board().as_deref() == Some(p.name) => {
-            set_choice(Some(Choice::Verified));
-            p
-        }
-        // A boardModel saved by a firmware before v0.1.35 (no `boardok`
-        // entry at all): it has run on this board, taken as verified.
-        // Only a choice made under this firmware (the entry present but
-        // not this name: the detection and PATCH write BOARD_PENDING)
-        // goes through the check.
-        Some(p) if config::verified_board().is_none() => {
-            log::info!(
-                "board: {} from an earlier version's settings: taken as verified",
-                p.name
-            );
-            if let Err(e) = config::set_verified_board(p.name) {
-                log::warn!("board: saving the verified board failed: {e}");
+        Some(p) => match choice::start_mode(verified.as_deref(), p.name) {
+            choice::Start::Verified => {
+                set_choice(Some(Choice::Verified));
+                p
             }
-            set_choice(Some(Choice::Verified));
-            p
-        }
-        // Named in the settings (chosen in the web UI or set by PATCH)
-        // but never verified here: the bus must agree before any of its
-        // pins is driven, and its first chain start counts the chips
-        // (choice_pending).
-        Some(p) => {
+            // A boardModel saved by a firmware before v0.1.35 (no `boardok`
+            // entry at all): it has run on this board, taken as verified.
+            // Only a choice made under this firmware (the entry present but
+            // not this name: the detection and PATCH write BOARD_PENDING)
+            // goes through the check.
+            choice::Start::Migrate => {
+                log::info!(
+                    "board: {} from an earlier version's settings: taken as verified",
+                    p.name
+                );
+                if let Err(e) = config::set_verified_board(p.name) {
+                    log::warn!("board: saving the verified board failed: {e}");
+                }
+                set_choice(Some(Choice::Verified));
+                p
+            }
+            // Named in the settings (chosen in the web UI or set by PATCH,
+            // or the verified board itself with `reverify`) but not verified
+            // here: the bus must agree before any of its pins is driven,
+            // and its first chain start counts the chips (choice_pending).
+            choice::Start::Check => {
             log::warn!(
                 "board: {} from the settings is not verified on this board yet: reading the bus first",
                 p.name
             );
             let found = gather(&mut i2c0);
-            gate(
-                p,
-                &found,
-                "chosen",
-                "named in the settings, not verified on this board yet",
-                Vec::new(),
-            )
-        }
+                gate(
+                    p,
+                    &found,
+                    "chosen",
+                    "named in the settings, not verified on this board yet",
+                    Vec::new(),
+                )
+            }
+        },
         None => {
             if !cfg.board_model.is_empty() {
                 log::warn!("board: unknown boardModel {:?}, detecting", cfg.board_model);

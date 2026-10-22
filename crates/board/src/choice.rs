@@ -384,6 +384,44 @@ pub fn cautious_core_mv(profile: &Profile, e: &Evidence, configured_mv: u16) -> 
     low.max(profile.regulator_min_core_mv())
 }
 
+/// What `boardok` in NVS holds for a choice made under this firmware
+/// that has not passed its first start yet (never a profile name).
+pub const PENDING: &str = "pending";
+
+/// How a boot treats the board named in the settings, from what the
+/// NVS entry `boardok` holds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Start {
+    /// The entry names this board: it passed its first start here.
+    Verified,
+    /// No entry at all: a `boardModel` saved by a firmware before the
+    /// guard existed, which has run on this board. Taken as verified
+    /// and written.
+    Migrate,
+    /// The entry is present but not this name (the detection and a
+    /// choice write [`PENDING`]): the bus check and the counted first
+    /// start.
+    Check,
+}
+
+/// The start mode for the board `chosen` by the settings.
+pub fn start_mode(verified: Option<&str>, chosen: &str) -> Start {
+    match verified {
+        Some(v) if v == chosen => Start::Verified,
+        None => Start::Migrate,
+        Some(_) => Start::Check,
+    }
+}
+
+/// Whether a `PATCH boardModel` must mark the choice pending: always for
+/// another board than the verified one; for the verified board itself
+/// only on request (`reverify`), which is how a fleet board is put
+/// through the check on purpose (the hardware test of 2026-10-22: a
+/// plain PATCH of the verified name was a no-op).
+pub fn choice_needs_check(verified: Option<&str>, chosen: &str, reverify: bool) -> bool {
+    reverify || verified != Some(chosen)
+}
+
 /// What the first chain start after a choice found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FirstStart {
@@ -1061,6 +1099,50 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_start_mode_and_the_patch_rule() {
+        assert_eq!(
+            start_mode(Some("nerdaxe-gaia"), "nerdaxe-gaia"),
+            Start::Verified
+        );
+        assert_eq!(start_mode(None, "nerdaxe-gaia"), Start::Migrate);
+        assert_eq!(start_mode(Some(PENDING), "nerdaxe-gaia"), Start::Check);
+        assert_eq!(
+            start_mode(Some("bitaxe-gamma"), "nerdaxe-gaia"),
+            Start::Check,
+            "another board verified: this one is checked"
+        );
+        // A PATCH of another board always marks it pending; the verified
+        // board only when asked to re-verify.
+        assert!(choice_needs_check(
+            Some("nerdaxe-gaia"),
+            "bitaxe-gamma",
+            false
+        ));
+        assert!(!choice_needs_check(
+            Some("nerdaxe-gaia"),
+            "nerdaxe-gaia",
+            false
+        ));
+        assert!(choice_needs_check(
+            Some("nerdaxe-gaia"),
+            "nerdaxe-gaia",
+            true
+        ));
+        assert!(
+            choice_needs_check(None, "nerdaxe-gaia", false),
+            "nothing verified yet"
+        );
+        assert!(choice_needs_check(Some(PENDING), "nerdaxe-gaia", false));
+        // The marker is no profile name.
+        assert!(ALL.iter().all(|p| p.name != PENDING));
+        assert_eq!(
+            start_mode(Some(PENDING), PENDING),
+            Start::Verified,
+            "never reached: not in ALL"
+        );
     }
 
     #[test]

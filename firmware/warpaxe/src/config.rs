@@ -727,7 +727,7 @@ const BOARD_OK_KEY: &str = "boardok";
 
 /// What `boardok` holds for a choice made under this firmware that has
 /// not passed its first start yet (never a profile name).
-pub const BOARD_PENDING: &str = "pending";
+pub const BOARD_PENDING: &str = warpaxe_board::choice::PENDING;
 
 pub fn verified_board() -> Option<String> {
     nvs_get_str(BOARD_OK_KEY, 48)

@@ -760,10 +760,19 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     // not verified until its first start passes
                     // (board::verify_choice; the name in NVS stays the
                     // old one until then).
+                    // `reverify: true` next to the verified board's own
+                    // name puts it through the check and the counted
+                    // first start again (a fleet board on purpose).
                     if let Some(name) = v.get("boardModel").and_then(|b| b.as_str()) {
-                        if config::verified_board().as_deref() != Some(name) {
+                        let reverify = v.get("reverify").and_then(|r| r.as_bool()).unwrap_or(false);
+                        if warpaxe_board::choice::choice_needs_check(
+                            config::verified_board().as_deref(),
+                            name,
+                            reverify,
+                        ) {
                             log::warn!(
-                                "api: board {name} chosen by hand from {who} (running as {}): checked at the next start",
+                                "api: board {name} {} from {who} (running as {}): checked at the next start",
+                                if reverify { "to be verified again" } else { "chosen by hand" },
                                 board::profile().name
                             );
                             // The entry present but not a name: a choice
@@ -772,7 +781,14 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                             if let Err(e) = config::set_verified_board(config::BOARD_PENDING) {
                                 log::warn!("api: marking the choice pending failed: {e}");
                             }
-                            events::record("board", format!("{name} chosen by hand"));
+                            events::record(
+                                "board",
+                                if reverify {
+                                    format!("{name} to be verified again")
+                                } else {
+                                    format!("{name} chosen by hand")
+                                },
+                            );
                             events::flush();
                         }
                     }
