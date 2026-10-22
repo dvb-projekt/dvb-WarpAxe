@@ -333,6 +333,13 @@ fn asic_options() -> Option<serde_json::Value> {
 /// A PATCH outside the board's absolute limits is refused whole, as
 /// NerdOS `validateVoltage` / `absMaxAsicFrequency` do.
 fn limits_refuse(v: &serde_json::Value) -> Option<String> {
+    // A board name this firmware does not know never reaches the config:
+    // the next boot would fall back to detection and lose the choice.
+    if let Some(name) = v.get("boardModel").and_then(|b| b.as_str()) {
+        if warpaxe_board::Profile::by_name(name).is_none() {
+            return Some(format!("unknown boardModel {name:?}"));
+        }
+    }
     let p = choices();
     if let Some(f) = v.get("frequency").and_then(|f| f.as_u64()) {
         if p.abs_max_frequency_mhz > 0 && f > u64::from(p.abs_max_frequency_mhz) {
@@ -749,6 +756,20 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             {
                 Ok(cfg) => {
                     crate::display::touch();
+                    // A board chosen by hand: said so in the event log, and
+                    // not verified until its first start passes
+                    // (board::verify_choice; the name in NVS stays the
+                    // old one until then).
+                    if let Some(name) = v.get("boardModel").and_then(|b| b.as_str()) {
+                        if config::verified_board().as_deref() != Some(name) {
+                            log::warn!(
+                                "api: board {name} chosen by hand from {who} (running as {}): checked at the next start",
+                                board::profile().name
+                            );
+                            events::record("board", format!("{name} chosen by hand"));
+                            events::flush();
+                        }
+                    }
                     let keys: Vec<String> = v
                         .as_object()
                         .map(|o| o.keys().cloned().collect())

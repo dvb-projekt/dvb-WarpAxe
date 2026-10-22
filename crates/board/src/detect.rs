@@ -37,9 +37,12 @@ pub mod addr {
     pub const INA260: u8 = 0x40;
     /// PCA9544 I²C mux in front of the Nano's two EMC2101.
     pub const PCA9544: u8 = 0x70;
+    /// TPS53647 / TPS53667 multi-phase regulator (the Nerd multi-chip
+    /// boards); its device code tells the two apart.
+    pub const TPS5364X: u8 = 0x71;
     /// Every address probed, in order.
-    pub const ALL: [u8; 8] = [
-        TPS546, EMC2101, EMC2302, TMP1075, FXL6408, SSD1306, INA260, PCA9544,
+    pub const ALL: [u8; 9] = [
+        TPS546, EMC2101, EMC2302, TMP1075, FXL6408, SSD1306, INA260, PCA9544, TPS5364X,
     ];
 }
 
@@ -107,17 +110,19 @@ pub fn from_stock_choice(boardversion: Option<&str>) -> Option<&'static Profile>
 }
 
 /// From the chips that answered on the Bitaxe pair (47/48) and on the
-/// Nerd pair (44/43).
-pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
+/// Nerd pair (44/43), and the input voltage the TPS546 reads (READ_VIN,
+/// read-only), which tells a 5 V carrier from a 12 V one.
+pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8], vin_v: Option<f32>) -> Detection {
     let has = |bus: &[u8], a: u8| bus.contains(&a);
     // The Nano's EMC2101 hide behind the mux; the INA260 and the mux
-    // itself answer on the Bitaxe pins. Never run: one click.
+    // itself answer on the Bitaxe pins. No other board has them: taken
+    // (runs on our bench since 2026-09-29).
     if has(bitaxe_bus, addr::TPS546)
         && has(bitaxe_bus, addr::PCA9544)
         && has(bitaxe_bus, addr::INA260)
     {
-        return Detection::Choose(
-            &[&BITFORGE_NANO],
+        return Detection::Board(
+            &BITFORGE_NANO,
             "TPS546, INA260 and a PCA9544 mux on the Bitaxe bus",
         );
     }
@@ -133,11 +138,24 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8]) -> Detection {
     }
     if has(nerd_bus, addr::TPS546) && has(nerd_bus, addr::EMC2101) {
         // NerdAxe Gamma (BM1370, 5 V) and NerdAxe Gaia (BM1373, 12 V) look
-        // the same on the bus; one click decides, never automatic.
-        return Detection::Choose(
-            &[&NERDAXE_GAMMA, &NERDAXE_GAIA],
-            "TPS546 and EMC2101 on the Nerd bus",
-        );
+        // the same on the bus; the regulator's input voltage tells them
+        // apart. The Gaia runs on our bench (since 2026-09-29): taken on
+        // 12 V. The Gamma has never run: offered on 5 V. Without a
+        // reading, one click decides.
+        return match vin_v {
+            Some(v) if crate::choice::vin_fits(12, v) => Detection::Board(
+                &NERDAXE_GAIA,
+                "TPS546 and EMC2101 on the Nerd bus, 12 V at the regulator",
+            ),
+            Some(v) if crate::choice::vin_fits(5, v) => Detection::Choose(
+                &[&NERDAXE_GAMMA],
+                "TPS546 and EMC2101 on the Nerd bus, 5 V at the regulator",
+            ),
+            _ => Detection::Choose(
+                &[&NERDAXE_GAMMA, &NERDAXE_GAIA],
+                "TPS546 and EMC2101 on the Nerd bus",
+            ),
+        };
     }
     if has(nerd_bus, addr::EMC2302) && has(nerd_bus, addr::TMP1075) {
         if has(nerd_bus, addr::TPS546) {
@@ -228,15 +246,22 @@ pub fn detect(
     stock: (Option<&str>, Option<&str>, Option<&str>),
     bitaxe_bus: &[u8],
     nerd_bus: &[u8],
+    vin_v: Option<f32>,
 ) -> Detection {
-    // Both sources only ever name a tested board outright (the Bitaxe
-    // Gamma); everything else comes back as a choice.
+    // The stock keys only ever name a tested board outright (the Bitaxe
+    // Gamma); the bus takes the Nano, the Gaia and the Gamma on its own.
     if let Some(p) = from_stock(stock.0, stock.1, stock.2) {
         return Detection::Board(p, "board model stored by the stock firmware (AxeOS)");
     }
     // Board versions of boards that have never run WarpAxe: offered,
-    // not taken.
+    // not taken — unless the bus names the same board on its own (the
+    // Nano's 800 next to its mux and input monitor).
     if let Some(p) = from_stock_choice(stock.2) {
+        if let Detection::Board(b, why) = from_bus(bitaxe_bus, nerd_bus, vin_v) {
+            if b.name == p.name {
+                return Detection::Board(b, why);
+            }
+        }
         return Detection::Choose(
             core::slice::from_ref(match p.name {
                 "bitaxe-gamma-duo" => &&BITAXE_GAMMA_DUO,
@@ -248,7 +273,7 @@ pub fn detect(
             "board version stored by the stock firmware",
         );
     }
-    from_bus(bitaxe_bus, nerd_bus)
+    from_bus(bitaxe_bus, nerd_bus, vin_v)
 }
 
 #[cfg(test)]
@@ -289,7 +314,7 @@ mod tests {
 
     #[test]
     fn a_gamma_from_axeos_nvs_is_taken() {
-        let d = detect((Some("gamma"), Some("BM1370"), Some("602")), &[], &[]);
+        let d = detect((Some("gamma"), Some("BM1370"), Some("602")), &[], &[], None);
         assert!(matches!(d, Detection::Board(p, _) if p.name == "bitaxe-gamma"));
     }
 
@@ -301,13 +326,18 @@ mod tests {
 
     #[test]
     fn a_gamma_from_its_chips_is_taken() {
-        let d = detect(NONE, &[addr::TPS546, addr::EMC2101, addr::SSD1306], &[]);
+        let d = detect(
+            NONE,
+            &[addr::TPS546, addr::EMC2101, addr::SSD1306],
+            &[],
+            None,
+        );
         assert!(matches!(d, Detection::Board(p, _) if p.name == "bitaxe-gamma"));
     }
 
     #[test]
     fn nerd_boards_are_offered_not_taken() {
-        match detect(NONE, &[], &[addr::EMC2302, addr::TMP1075]) {
+        match detect(NONE, &[], &[addr::EMC2302, addr::TMP1075], None) {
             Detection::Choose(c, _) => {
                 assert_eq!(
                     c.iter().map(|p| p.name).collect::<Vec<_>>(),
@@ -316,14 +346,57 @@ mod tests {
             }
             d => panic!("{d:?}"),
         }
-        match detect(NONE, &[], &[addr::EMC2302, addr::TMP1075, addr::FXL6408]) {
+        match detect(
+            NONE,
+            &[],
+            &[addr::EMC2302, addr::TMP1075, addr::FXL6408],
+            None,
+        ) {
             Detection::Choose(c, _) => assert_eq!(c.len(), 2),
             d => panic!("{d:?}"),
         }
-        match detect(NONE, &[], &[addr::TPS546, addr::EMC2101]) {
+        // The regulator's address answering changes nothing: NerdOS
+        // reads it only after the LDO is up, so the probe may not see it.
+        match detect(
+            NONE,
+            &[],
+            &[addr::EMC2302, addr::TMP1075, addr::TPS5364X],
+            None,
+        ) {
+            Detection::Choose(c, _) => assert_eq!(c.len(), 2),
+            d => panic!("{d:?}"),
+        }
+        match detect(NONE, &[], &[addr::TPS546, addr::EMC2101], None) {
             Detection::Choose(c, _) => assert_eq!(c[0].name, "nerdaxe-gamma"),
             d => panic!("{d:?}"),
         }
+    }
+
+    /// The Gaia and the NerdAxe Gamma share the bus; the regulator's
+    /// input voltage decides. 12 V: the Gaia, taken (tested). 5 V: the
+    /// Gamma, offered (never run). No reading: both offered.
+    #[test]
+    fn the_gaia_is_taken_on_12_v_the_nerdaxe_gamma_offered_on_5_v() {
+        let bus = [addr::TPS546, addr::EMC2101];
+        assert!(matches!(
+            detect(NONE, &[], &bus, Some(12.1)),
+            Detection::Board(p, _) if p.name == "nerdaxe-gaia"
+        ));
+        assert!(matches!(
+            detect(NONE, &[], &bus, Some(5.05)),
+            Detection::Choose([p], _) if p.name == "nerdaxe-gamma"
+        ));
+        assert!(matches!(
+            detect(NONE, &[], &bus, None),
+            Detection::Choose([a, b], _) if a.name == "nerdaxe-gamma" && b.name == "nerdaxe-gaia"
+        ));
+        // A reading that fits neither class: offered, as without one.
+        assert!(matches!(
+            detect(NONE, &[], &bus, Some(8.0)),
+            Detection::Choose([_, _], _)
+        ));
+        assert!(TESTED.contains(&NERDAXE_GAIA.name));
+        assert!(!TESTED.contains(&NERDAXE_GAMMA.name));
     }
 
     #[test]
@@ -333,28 +406,47 @@ mod tests {
 
     #[test]
     fn a_rev7_nerdqaxe_is_offered_not_taken() {
-        let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075, addr::TPS546]);
+        let d = detect(
+            NONE,
+            &[],
+            &[addr::EMC2302, addr::TMP1075, addr::TPS546],
+            None,
+        );
         assert!(matches!(d, Detection::Choose([p], _) if p.name == NERDQAXE_PLUSPLUS_REV7.name));
         assert!(!TESTED.contains(&NERDQAXE_PLUSPLUS_REV7.name), "never run");
     }
 
+    /// The mux and the input monitor exist on no other board: taken from
+    /// the bus (tested since 2026-09-29). The stock firmware's board
+    /// version 800 alone (no bus probe to confirm it) is still only
+    /// offered; with the bus agreeing it is taken.
     #[test]
-    fn a_nano_is_offered_from_its_board_version_or_its_bus_never_taken() {
+    fn a_nano_is_taken_from_its_bus_and_offered_from_its_board_version_alone() {
         let d = detect(
             (Some("BITFORGE_NANO"), Some("BM1370"), Some("800")),
             &[],
             &[],
+            None,
         );
         assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
-        let d = detect(NONE, &[addr::TPS546, addr::INA260, addr::PCA9544], &[]);
-        assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
-        assert!(
-            TESTED.contains(&BITFORGE_NANO.name),
-            "runs on our bench, still offered"
+        let nano = [addr::TPS546, addr::INA260, addr::PCA9544];
+        let d = detect(
+            (Some("BITFORGE_NANO"), Some("BM1370"), Some("800")),
+            &nano,
+            &[],
+            Some(12.2),
         );
+        assert!(matches!(d, Detection::Board(p, _) if p.name == BITFORGE_NANO.name));
+        let d = detect(NONE, &nano, &[], None);
+        assert!(matches!(d, Detection::Board(p, _) if p.name == BITFORGE_NANO.name));
+        assert!(TESTED.contains(&BITFORGE_NANO.name));
         // A Gamma still needs its EMC2101 on the root bus.
-        let d = detect(NONE, &[addr::TPS546, addr::EMC2101], &[]);
+        let d = detect(NONE, &[addr::TPS546, addr::EMC2101], &[], None);
         assert!(matches!(d, Detection::Board(p, _) if p.name == BITAXE_GAMMA.name));
+        // Mux without the monitor, or the other way round: nothing is
+        // taken, and a Gamma is not named either.
+        let d = detect(NONE, &[addr::TPS546, addr::PCA9544], &[], None);
+        assert_eq!(d, Detection::Choose(&[], "no known chips answered"));
     }
 
     #[test]
@@ -365,7 +457,7 @@ mod tests {
             ("1201", "bitaxe-naja-duo"),
             ("1300", "bitaxe-gamma-hex"),
         ] {
-            let d = detect((Some("GammaDuo"), Some("BM1370"), Some(v)), &[], &[]);
+            let d = detect((Some("GammaDuo"), Some("BM1370"), Some(v)), &[], &[], None);
             assert!(
                 matches!(d, Detection::Choose([p], _) if p.name == name),
                 "{v}"
@@ -373,23 +465,23 @@ mod tests {
             assert!(!TESTED.contains(&name));
         }
         // 650 lies inside the Gamma's 600 range but is the Duo.
-        let d = detect((Some("gamma"), Some("BM1370"), Some("650")), &[], &[]);
+        let d = detect((Some("gamma"), Some("BM1370"), Some("650")), &[], &[], None);
         assert!(matches!(d, Detection::Choose([p], _) if p.name == "bitaxe-gamma-duo"));
-        let d = detect(NONE, &[addr::TPS546, addr::EMC2103], &[]);
+        let d = detect(NONE, &[addr::TPS546, addr::EMC2103], &[], None);
         assert!(matches!(d, Detection::Choose([p], _) if p.name == "bitaxe-gamma-turbo"));
-        let d = detect(NONE, &[], &[addr::TPS546, addr::EMC2103]);
+        let d = detect(NONE, &[], &[addr::TPS546, addr::EMC2103], None);
         assert!(
             matches!(d, Detection::Choose([a, b], _) if a.name == "bitaxe-naja-duo" && b.name == "bitaxe-gamma-hex")
         );
         // A Nerd board with a TMP1075 next to the same address stays a Nerd board.
-        let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075]);
+        let d = detect(NONE, &[], &[addr::EMC2302, addr::TMP1075], None);
         assert!(matches!(d, Detection::Choose([a, ..], _) if a.name == "nerdqaxe-plusplus"));
     }
 
     #[test]
     fn nothing_on_either_bus_offers_nothing() {
         assert_eq!(
-            detect(NONE, &[], &[]),
+            detect(NONE, &[], &[], None),
             Detection::Choose(&[], "no known chips answered")
         );
     }

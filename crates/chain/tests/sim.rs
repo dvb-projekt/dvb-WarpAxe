@@ -920,3 +920,99 @@ mod selftest_window {
         assert_eq!(r.get(Check::Errors).status, Status::Pass);
     }
 }
+
+/// The first chain start after a board choice (firmware `board::gate`,
+/// `miner.rs`): the enumeration decides whether the choice stands.
+mod board_choice {
+    use super::*;
+    use warpaxe_board::choice::{first_start_verdict, FirstStart};
+
+    fn enumerated(b: &Bench) -> Option<u8> {
+        b.events.iter().find_map(|e| match e {
+            Event::Enumerated { count } => Some(*count),
+            _ => None,
+        })
+    }
+
+    fn unexpected(b: &Bench) -> Option<u16> {
+        b.events.iter().find_map(|e| match e {
+            Event::UnexpectedChip { chip_id } => Some(*chip_id),
+            _ => None,
+        })
+    }
+
+    /// Two BM1370 answer where the chosen profile has four (a NerdQAxe++
+    /// picked for a two-chip board): the count refuses the choice; the
+    /// same chain under a two-chip profile is verified.
+    #[test]
+    fn a_wrong_chip_count_refuses_the_choice() {
+        let mut b = Bench::new(2, Bench::config());
+        b.run_until_ready(20_000);
+        let count = enumerated(&b).expect("enumerated");
+        assert_eq!(count, 2);
+        assert_eq!(unexpected(&b), None);
+        assert_eq!(
+            first_start_verdict(count, 4, unexpected(&b)),
+            FirstStart::WrongCount {
+                found: 2,
+                expected: 4
+            }
+        );
+        assert_eq!(
+            first_start_verdict(count, 2, unexpected(&b)),
+            FirstStart::Verified { chips: 2 }
+        );
+    }
+
+    /// Chips of another type under the chosen profile's driver (a Naja
+    /// Duo picked as a Gamma Hex, a Q1373 as a Q1370, or the other way
+    /// round): nothing is counted. The BM1373 answers the BM1370 driver
+    /// with its 9-byte id frames, which the 11-byte decoder cannot read
+    /// (NoChips); the BM1370's 11-byte frames under the BM1373 driver
+    /// carry an id the profile does not know (UnexpectedChip, then
+    /// NoChips). Either way the verdict refuses the choice.
+    #[test]
+    fn a_chip_of_another_type_refuses_the_choice() {
+        for (driver, chips) in [(&BM1370, &BM1373), (&BM1373, &BM1370)] {
+            let mut drv = Chain::new(driver, Config::for_profile(driver));
+            drv.start(0);
+            let mut b = Bench {
+                drv,
+                uart: SimUart::with(chips, 2, 7),
+                now: 0,
+                events: Vec::new(),
+                works: 0,
+            };
+            b.run_until_ready(20_000);
+            assert_eq!(enumerated(&b), None, "{} under {}", chips.name, driver.name);
+            assert!(
+                b.has(|e| matches!(e, Event::InitFailed(InitError::NoChips))),
+                "{} under {}: {:?}",
+                chips.name,
+                driver.name,
+                b.events
+            );
+            let verdict = first_start_verdict(0, 6, unexpected(&b));
+            assert!(
+                matches!(verdict, FirstStart::NoChips | FirstStart::WrongChip { .. }),
+                "{verdict:?}"
+            );
+            eprintln!("{} under {}: {verdict:?}", chips.name, driver.name);
+        }
+    }
+
+    /// A dead chain (nothing answers) is not a wrong board by itself:
+    /// the firmware gives it three inits, then refuses with NoChips.
+    #[test]
+    fn a_silent_chain_counts_as_no_chips() {
+        let mut b = Bench::new(1, Bench::config());
+        b.uart
+            .sim
+            .chip_mut(0)
+            .inject(Fault::NoResponse { for_us: 60_000_000 });
+        b.run_until_ready(20_000);
+        assert_eq!(b.drv.phase(), Phase::Failed);
+        assert_eq!(enumerated(&b), None);
+        assert_eq!(first_start_verdict(0, 1, None), FirstStart::NoChips);
+    }
+}

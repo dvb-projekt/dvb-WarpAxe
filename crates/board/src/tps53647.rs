@@ -48,6 +48,9 @@ const MFR_20_PHASES: u8 = 0xE4;
 const MFR_24_PHASE_ENABLE: u8 = 0xE8;
 /// Device code, [`DEVICE_CODE`].
 const MFR_44_DEVICE_CODE: u8 = 0xFC;
+/// The same command for a bare probe (the first-start detection reads
+/// it without the driver, before any board is chosen).
+pub const DEVICE_CODE_CMD: u8 = MFR_44_DEVICE_CODE;
 
 /// ON_OFF_CONFIG as NerdOS writes it (0b0001_0111): the EN pin
 /// controls the output, active high, with PMBus OPERATION ignored.

@@ -9,6 +9,7 @@
 //! function where they matter.
 #![cfg_attr(not(test), no_std)]
 
+pub mod choice;
 pub mod detect;
 pub mod emc2101;
 pub mod emc2103;

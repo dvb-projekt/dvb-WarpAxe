@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
+use warpaxe_board::choice::{self, FirstStart};
 use warpaxe_chain::{Chain, Config as ChainConfig, Event, Phase};
 use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job, WorkGate};
@@ -308,6 +309,12 @@ fn run(mut uart: ChipUart) {
     // TX driven low while the chips sit without their I/O rails
     // (board::parks_uart), back on the UART before the next reset pulse.
     let mut parked = false;
+    // A board not verified yet (board::choice_pending): the chain comes
+    // up at the cautious voltage and its enumeration decides whether the
+    // choice stands. Three inits without a chip refuse it; a passed
+    // count runs the self-test once, a little after the chain is up.
+    let mut first_start_attempts: u8 = 0;
+    let mut selftest_due: Option<Instant> = None;
     loop {
         if board::chain_stopped() {
             if !parked && board::parks_uart() {
@@ -529,7 +536,28 @@ fn run(mut uart: ChipUart) {
                             }
                         }
                     }
-                    Event::Enumerated { count } => log::info!("miner: {count} chip(s) answered"),
+                    Event::Enumerated { count } => {
+                        log::info!("miner: {count} chip(s) answered");
+                        if board::choice_pending() {
+                            match choice::first_start_verdict(count, board::chips_expected(), None)
+                            {
+                                FirstStart::Verified { chips } => {
+                                    board::verify_choice(chips);
+                                    selftest_due = Some(Instant::now() + Duration::from_secs(20));
+                                }
+                                v => board::reject_choice(v),
+                            }
+                        }
+                    }
+                    Event::UnexpectedChip { chip_id } => {
+                        log::warn!(
+                            "miner: a chip answered as {chip_id:#06x}, not a {}",
+                            board::chip().name
+                        );
+                        if board::choice_pending() {
+                            board::reject_choice(FirstStart::WrongChip { chip_id });
+                        }
+                    }
                     Event::ChipCountMismatch { expected, found } => {
                         log::warn!("miner: expected {expected} chips, found {found}")
                     }
@@ -551,6 +579,16 @@ fn run(mut uart: ChipUart) {
                                 d.frames, d.dropped, d.crc_failures
                             );
                         });
+                        if board::choice_pending() {
+                            first_start_attempts += 1;
+                            if first_start_attempts >= 3 {
+                                board::reject_choice(FirstStart::NoChips);
+                            } else {
+                                log::warn!(
+                                    "miner: first start attempt {first_start_attempts} of 3 found no chips"
+                                );
+                            }
+                        }
                     }
                     Event::ChipSilent { index } => {
                         log::warn!("miner: chip {index} silent");
@@ -564,6 +602,14 @@ fn run(mut uart: ChipUart) {
                         log::warn!("miner: clock {hz} Hz unreachable")
                     }
                     _ => {}
+                }
+            }
+
+            if selftest_due.is_some_and(|t| Instant::now() >= t) {
+                selftest_due = None;
+                match crate::selftest::start() {
+                    Ok(id) => log::info!("miner: self-test {id} started after the first start"),
+                    Err(e) => log::warn!("miner: self-test after the first start not started: {e}"),
                 }
             }
 

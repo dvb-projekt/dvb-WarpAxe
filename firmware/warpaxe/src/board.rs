@@ -33,6 +33,8 @@ use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
+use warpaxe_board::choice::{self, FirstStart};
+use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
@@ -256,9 +258,157 @@ pub fn overheat() -> bool {
     OVERHEAT.load(Ordering::Relaxed)
 }
 
-/// Chips switched off by hand.
+/// Chips switched off by hand, or held off because the chosen board was
+/// refused ([`choice_blocked`]: nothing but a restart or another choice
+/// lets them on again).
 pub fn shutdown() -> bool {
-    SHUTDOWN.load(Ordering::Relaxed)
+    SHUTDOWN.load(Ordering::Relaxed) || choice_blocked()
+}
+
+/// Where the board choice stands. `None` while no board is chosen (the
+/// first start's choice state, an unsupported board).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Choice {
+    /// Its chips have been counted on this board.
+    Verified,
+    /// Fits the bus; the chain comes up at the cautious voltage and the
+    /// enumeration decides.
+    Pending,
+    /// Does not fit what answered on the bus: nothing was switched on.
+    Rejected,
+    /// The chips did not answer as the profile says: switched off again.
+    Mismatch,
+}
+
+static CHOICE: Mutex<Option<Choice>> = Mutex::new(None);
+/// The core voltage of a pending first start, mV (0 = the profile's own).
+static CAUTIOUS_MV: AtomicU16 = AtomicU16::new(0);
+
+pub fn choice() -> Option<Choice> {
+    *CHOICE.lock().unwrap()
+}
+
+fn set_choice(c: Option<Choice>) {
+    *CHOICE.lock().unwrap() = c;
+    let mut d = DETECT.lock().unwrap();
+    if let Some(d) = d.as_mut() {
+        d.choice = c;
+    }
+}
+
+/// The chain is on its first start under this board: counted, not yet
+/// verified.
+pub fn choice_pending() -> bool {
+    choice() == Some(Choice::Pending)
+}
+
+/// The chosen board was refused: the chips stay off whatever
+/// `/api/v1/chips/on` says, until a restart or another choice.
+pub fn choice_blocked() -> bool {
+    matches!(choice(), Some(Choice::Rejected | Choice::Mismatch))
+}
+
+/// The core voltage the chain is brought up with: the profile's bring-up
+/// voltage (or the configured point, if higher); on a first start the
+/// cautious one from `warpaxe_board::choice::cautious_core_mv`, which is
+/// never above the bring-up voltage of a sibling the bus cannot tell this
+/// board from.
+pub fn bring_up_mv(profile: &Profile, configured_mv: u16) -> u16 {
+    let normal = profile.init_core_mv.max(configured_mv);
+    match (choice(), CAUTIOUS_MV.load(Ordering::Relaxed)) {
+        (Some(Choice::Pending), mv) if mv > 0 => mv.min(normal),
+        _ => normal,
+    }
+}
+
+/// The enumeration matched the profile: the board is verified (kept in
+/// NVS, so later boots start as usual), and the core voltage goes from
+/// the cautious value to the configured point. Called from the miner
+/// thread (internal stack: the NVS write is allowed there).
+pub fn verify_choice(chips: u8) {
+    let p = profile();
+    if let Err(e) = config::set_verified_board(p.name) {
+        log::warn!("board: saving the verified board failed: {e}");
+    }
+    set_choice(Some(Choice::Verified));
+    log::warn!(
+        "board: {} verified: {chips} chip(s) answered as the profile says",
+        p.name
+    );
+    crate::events::record("board", format!("{} verified, {chips} chips", p.name));
+    let core = config::get().core_voltage;
+    request_core_mv(core);
+}
+
+/// The enumeration did not match the profile: the chips go off again
+/// (the board loop switches the rail off and holds the reset) and the
+/// web UI says what answered, with the boards that fit. Nothing is
+/// saved; the next restart tries the same choice once more, another
+/// choice goes through the bus check first.
+pub fn reject_choice(verdict: FirstStart) {
+    let p = profile();
+    let (kind, text, found, expected, chip_id) = match verdict {
+        FirstStart::Verified { .. } => return,
+        FirstStart::WrongCount { found, expected } => (
+            "count",
+            format!("{found} chip(s) answered, a {} has {expected}", p.model),
+            Some(found),
+            Some(expected),
+            None,
+        ),
+        FirstStart::WrongChip { chip_id } => (
+            "chip",
+            format!(
+                "a chip answered as {chip_id:#06x}, not a {}",
+                chip().name
+            ),
+            None,
+            None,
+            Some(chip_id),
+        ),
+        FirstStart::NoChips => (
+            "none",
+            "no chip answered in three attempts".to_string(),
+            Some(0),
+            Some(chips_expected()),
+            None,
+        ),
+    };
+    set_choice(Some(Choice::Mismatch));
+    log::error!(
+        "board: {} refused at its first start: {text}; chips off until another board is chosen or the miner restarts",
+        p.name
+    );
+    crate::events::record("board", format!("{} refused: {text}", p.name));
+    let found_bus = FOUND.lock().unwrap().clone().unwrap_or_default();
+    let candidates: Vec<&'static str> = choice::candidates(&found_bus.evidence())
+        .map(|c| c.name)
+        .collect();
+    let mut d = DETECT.lock().unwrap();
+    let info = d.get_or_insert_with(|| DetectInfo {
+        status: "mismatch",
+        why: "",
+        candidates: Vec::new(),
+        imported: Vec::new(),
+        model: None,
+        chosen: Some(p.name),
+        choice: Some(Choice::Mismatch),
+        reason: None,
+        detail: None,
+        cautious_mv: 0,
+        bus: found_bus.json(),
+    });
+    info.status = "mismatch";
+    info.why = "the chips did not answer as the chosen board's profile says";
+    info.chosen = Some(p.name);
+    info.choice = Some(Choice::Mismatch);
+    info.candidates = candidates;
+    info.detail = Some(serde_json::json!({
+        "kind": kind, "found": found, "expected": expected,
+        "chipId": chip_id.map(|c| format!("{c:#06x}")),
+        "chip": chip().name,
+    }));
 }
 
 /// The chain must not run: overheat, a manual shutdown, or the core rail
@@ -431,6 +581,11 @@ pub fn request_core_mv(mv: u16) {
 /// must not sit at the bring-up voltage (1000 mV on a Gaia, above its
 /// 970 mV cap) while the miner retries.
 pub fn chain_ready() {
+    // On a first start the cautious voltage holds until the enumeration
+    // is judged (verify_choice requests the configured point).
+    if choice_pending() {
+        return;
+    }
     let core = config::get().core_voltage;
     if profile().init_core_mv > core {
         request_core_mv(core);
@@ -908,7 +1063,28 @@ impl Thermal {
 pub fn init_bus(mut i2c0: I2C0) {
     let cfg = config::get();
     let profile = match Profile::by_name(&cfg.board_model) {
-        Some(p) => p,
+        Some(p) if config::verified_board().as_deref() == Some(p.name) => {
+            set_choice(Some(Choice::Verified));
+            p
+        }
+        // Named in the settings (chosen in the web UI, set by PATCH, or
+        // saved by a firmware before v0.1.35) but never verified here:
+        // the bus must agree before any of its pins is driven, and its
+        // first chain start counts the chips (choice_pending).
+        Some(p) => {
+            log::warn!(
+                "board: {} from the settings is not verified on this board yet: reading the bus first",
+                p.name
+            );
+            let found = gather(&mut i2c0);
+            gate(
+                p,
+                &found,
+                "chosen",
+                "named in the settings, not verified on this board yet",
+                Vec::new(),
+            )
+        }
         None => {
             if !cfg.board_model.is_empty() {
                 log::warn!("board: unknown boardModel {:?}, detecting", cfg.board_model);
@@ -1048,7 +1224,7 @@ fn start_bitaxe(profile: &'static Profile, bus: SharedI2c) {
                     s.vr_status = status;
                     s.vr_part = "TPS546".into();
                 });
-                let mv = profile.init_core_mv.max(cfg.core_voltage);
+                let mv = bring_up_mv(profile, cfg.core_voltage);
                 let volts = profile.vout_for_core_mv(mv);
                 match vr.set_vout(volts) {
                     Ok(()) => log::info!("board: core {mv} mV"),
@@ -1281,7 +1457,7 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
         let cmd = vr.last_command();
         return fail(format!("tps5364x init at {cmd:#04x}: {e:?}"));
     }
-    let mv = profile.init_core_mv.max(cfg.core_voltage);
+    let mv = bring_up_mv(profile, cfg.core_voltage);
     en.set(true);
     if let Err(e) = vr.set_vout(profile.vout_for_core_mv(mv)) {
         en.set(false);
@@ -1490,7 +1666,7 @@ fn start_tps546_nerd(profile: &'static Profile, bus: SharedI2c) {
         std::thread::sleep(Duration::from_millis(u64::from(profile.reset_low_ms)));
         release_ms = profile.reset_release_ms;
     }
-    let mv = profile.init_core_mv.max(cfg.core_voltage);
+    let mv = bring_up_mv(profile, cfg.core_voltage);
     if let Err(e) = vr.set_vout(profile.vout_for_core_mv(mv)) {
         if let Some(en) = &en {
             en.set(false);
@@ -1534,7 +1710,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     pid.reset(100.0, profile.fan_target_c);
     let mut pid_vr = FanPid::new(f32::from(cfg.min_fan_speed));
     pid_vr.reset(100.0, vr_fan_target_c(profile));
-    let mut applied_mv = cfg.core_voltage.max(profile.init_core_mv);
+    let mut applied_mv = bring_up_mv(profile, cfg.core_voltage);
     // A core voltage the regulator refused is tried again once a second,
     // and logged once per value.
     let mut core_retry_at = Instant::now();
@@ -2068,11 +2244,15 @@ fn plausible(v: Option<f32>, lo: f32, hi: f32, what: &str) -> Option<f32> {
     None
 }
 
-/// Outcome of a first-start detection, for the API and the web UI.
+/// Outcome of a first-start detection or of a board choice, for the API
+/// and the web UI.
 #[derive(Clone, Debug, Serialize)]
 pub struct DetectInfo {
-    /// "detected" (board taken) or "choose" (chips stay off until one is
-    /// picked).
+    /// "detected" (taken by the detection, this boot), "chosen" (named
+    /// in the settings, verified on this boot or not), "choose" (chips
+    /// stay off until one is picked), "unsupported", "rejected" (the
+    /// chosen board does not fit the bus) or "mismatch" (its chips did
+    /// not answer as the profile says).
     pub status: &'static str,
     pub why: &'static str,
     /// Board names that fit, best guess first.
@@ -2081,16 +2261,224 @@ pub struct DetectInfo {
     pub imported: Vec<&'static str>,
     /// "unsupported": the board that was recognised.
     pub model: Option<&'static str>,
+    /// The board under test: the one named in the settings or taken by
+    /// the detection.
+    pub chosen: Option<&'static str>,
+    /// Where its verification stands.
+    pub choice: Option<Choice>,
+    /// "rejected": why (`warpaxe_board::choice::Reason` as JSON).
+    pub reason: Option<serde_json::Value>,
+    /// "mismatch": what the enumeration found.
+    pub detail: Option<serde_json::Value>,
+    /// The core voltage of the pending first start, mV (0 = the
+    /// profile's own).
+    #[serde(rename = "cautiousMv")]
+    pub cautious_mv: u16,
+    /// What the probe found, read-only.
+    pub bus: serde_json::Value,
 }
 
 static DETECT: Mutex<Option<DetectInfo>> = Mutex::new(None);
+
+/// What the first-start probe found on both pin pairs, kept for the
+/// plausibility check of a chosen board and for the API.
+#[derive(Clone, Debug, Default)]
+struct Found {
+    bitaxe: Vec<u8>,
+    nerd: Vec<u8>,
+    /// The Nerd pair was probed at all (not when the Bitaxe pair named
+    /// the board on its own: GPIO43/44 are the console UART there).
+    nerd_probed: bool,
+    vin_v: Option<f32>,
+    code: Option<u16>,
+    thermistor: bool,
+}
+
+impl Found {
+    fn evidence(&self) -> choice::Evidence<'_> {
+        choice::Evidence {
+            bitaxe_bus: &self.bitaxe,
+            nerd_bus: &self.nerd,
+            vin_v: self.vin_v,
+            tps5364x_code: self.code,
+            thermistor: self.thermistor,
+        }
+    }
+
+    fn json(&self) -> serde_json::Value {
+        let hex = |v: &[u8]| v.iter().map(|a| format!("{a:#04x}")).collect::<Vec<_>>();
+        serde_json::json!({
+            "bitaxe": hex(&self.bitaxe), "nerd": hex(&self.nerd), "nerdProbed": self.nerd_probed,
+            "vin": self.vin_v, "tps5364xCode": self.code.map(|c| format!("{c:#06x}")),
+            "thermistor": self.thermistor,
+        })
+    }
+}
+
+static FOUND: Mutex<Option<Found>> = Mutex::new(None);
+
+/// What one pin pair answered.
+struct Probe {
+    found: Vec<u8>,
+    /// READ_VIN of a TPS546 that answered, V (a plausible value only).
+    vin_v: Option<f32>,
+    /// MFR_SPECIFIC_44 of a TPS5364x that answered.
+    code: Option<u16>,
+}
+
+/// Both pin pairs (the Nerd pair only when the Bitaxe pair did not name
+/// the board on its own), plus the NerdNOS's thermistor when nothing
+/// answered anywhere. Read-only, as `probe` is.
+fn gather(i2c0: &mut I2C0) -> Found {
+    let b = probe(i2c0, 47, 48);
+    let mut f = Found {
+        bitaxe: b.found,
+        vin_v: b.vin_v,
+        code: b.code,
+        ..Default::default()
+    };
+    if !matches!(
+        detect::from_bus(&f.bitaxe, &[], f.vin_v),
+        Detection::Board(..)
+    ) {
+        let n = probe(i2c0, 44, 43);
+        f.nerd_probed = true;
+        f.nerd = n.found;
+        f.vin_v = f.vin_v.or(n.vin_v);
+        f.code = f.code.or(n.code);
+    }
+    if f.bitaxe.is_empty() && f.nerd.is_empty() {
+        // The NerdNOS carrier's thermistor divider on GPIO2, read once
+        // (read-only; a bare board's pin floats).
+        let (samples, ntc) = crate::ntc::probe(warpaxe_board::ntc::Config::NERDNOS);
+        log::info!(
+            "board: GPIO2 reads {samples:?} mV: {}",
+            match ntc {
+                Some(t) => format!("a thermistor at {t:.1} °C (NerdNOS?)"),
+                None => "no thermistor divider".into(),
+            }
+        );
+        f.thermistor = ntc.is_some();
+    }
+    *FOUND.lock().unwrap() = Some(f.clone());
+    f
+}
+
+/// A reason the chosen board does not fit, for the API.
+fn reason_json(r: choice::Reason) -> serde_json::Value {
+    let mut v = serde_json::json!({ "code": r.code() });
+    if let Some(p) = r.part() {
+        v["part"] = serde_json::Value::from(p.name());
+        v["addr"] = serde_json::Value::from(format!("{:#04x}", p.addr()));
+    }
+    if let choice::Reason::InputVoltage { read_dv, nominal_v } = r {
+        v["readV"] = serde_json::Value::from(f32::from(read_dv) / 10.0);
+        v["nominalV"] = serde_json::Value::from(nominal_v);
+    }
+    v
+}
+
+fn reason_text(r: choice::Reason) -> String {
+    match r {
+        choice::Reason::Missing(p) => format!("the {} did not answer", p.name()),
+        choice::Reason::Unexpected(p) => format!("a {} answered, which it does not have", p.name()),
+        choice::Reason::InputVoltage { read_dv, nominal_v } => format!(
+            "the regulator reads {:.1} V in, the board runs on {nominal_v} V",
+            f32::from(read_dv) / 10.0
+        ),
+        choice::Reason::PartsAnswered => "parts answered on the I²C bus, which it has none of".into(),
+        choice::Reason::NoThermistor => "no thermistor divider on GPIO2".into(),
+    }
+}
+
+/// A board named in the settings or taken by the detection, before any
+/// of its pins is driven: refused when the bus says otherwise (the chips
+/// stay off, the web UI shows why and what fits), else on its way to a
+/// first start at the cautious voltage. A board without a chain (the
+/// devkit) has nothing to count and is verified here.
+fn gate(
+    p: &'static Profile,
+    found: &Found,
+    status: &'static str,
+    why: &'static str,
+    imported: Vec<&'static str>,
+) -> &'static Profile {
+    let cfg = config::get();
+    let e = found.evidence();
+    match choice::check(p, &e) {
+        Ok(()) => {
+            let mv = choice::cautious_core_mv(p, &e, cfg.core_voltage);
+            CAUTIOUS_MV.store(mv, Ordering::Relaxed);
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status,
+                why,
+                candidates: vec![p.name],
+                imported,
+                model: None,
+                chosen: Some(p.name),
+                choice: None,
+                reason: None,
+                detail: None,
+                cautious_mv: mv,
+                bus: found.json(),
+            });
+            if p.asic_count == 0 {
+                if let Err(e) = config::set_verified_board(p.name) {
+                    log::warn!("board: saving the verified board failed: {e}");
+                }
+                set_choice(Some(Choice::Verified));
+                log::info!("board: {} fits the bus; no chain to count", p.name);
+            } else {
+                set_choice(Some(Choice::Pending));
+                let at = if mv > 0 {
+                    format!(" at {mv} mV")
+                } else {
+                    String::new()
+                };
+                log::warn!(
+                    "board: {} fits the bus; first start{at}, the chips are counted against the profile",
+                    p.name
+                );
+                crate::events::record("board", format!("{} first start{at}", p.name));
+            }
+            p
+        }
+        Err(r) => {
+            let candidates: Vec<&'static Profile> = choice::candidates(&e).collect();
+            let names: Vec<&'static str> = candidates.iter().map(|c| c.name).collect();
+            log::error!(
+                "board: {} refused: {}; fits: {names:?}; chips stay off until a board is chosen",
+                p.name,
+                reason_text(r)
+            );
+            crate::events::record("board", format!("{} refused: {}", p.name, reason_text(r)));
+            *DETECT.lock().unwrap() = Some(DetectInfo {
+                status: "rejected",
+                why: "the chosen board does not fit what answered on the bus",
+                candidates: names,
+                imported,
+                model: None,
+                chosen: Some(p.name),
+                choice: None,
+                reason: Some(reason_json(r)),
+                detail: None,
+                cautious_mv: 0,
+                bus: found.json(),
+            });
+            set_choice(Some(Choice::Rejected));
+            warpaxe_board::profile::undetected_for(&candidates)
+        }
+    }
+}
 
 pub fn detect_info() -> Option<DetectInfo> {
     DETECT.lock().unwrap().clone()
 }
 
-/// Which chips answer on a pin pair (read-only address probes).
-fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
+/// Which chips answer on a pin pair (read-only address probes), with the
+/// TPS546's input voltage and the TPS5364x's device code where they
+/// answered.
+fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Probe {
     // SAFETY: the two pairs probed drive no power or reset line on any
     // supported board (warpaxe_board::detect); the pins are released when
     // the driver drops.
@@ -2101,27 +2489,48 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
         scl_pin,
         &I2cConfig::new().baudrate(Hertz(100_000)),
     ) else {
-        return Vec::new();
+        return Probe {
+            found: Vec::new(),
+            vin_v: None,
+            code: None,
+        };
     };
     use warpaxe_board::pmbus as pm;
     /// PMBus CAPABILITY (not used anywhere else).
     const CAPABILITY: u8 = 0x19;
     let mut found = Vec::new();
+    let mut vin_v = None;
+    let mut code = None;
     let tps546 = warpaxe_board::detect::addr::TPS546;
+    let tps5364x = warpaxe_board::detect::addr::TPS5364X;
     for a in warpaxe_board::detect::addr::ALL {
-        let mut b = [0u8; 1];
+        let mut b = [0u8; 2];
         // A TPS546 may not acknowledge a bare read (the BitForge Nano's
-        // does not): ask it for its PMBus CAPABILITY instead.
+        // does not): ask it for its PMBus CAPABILITY instead. The
+        // TPS5364x is asked for its device code, which also tells the
+        // TPS53647 from the TPS53667.
         let ok = if a == tps546 {
-            bus.write_read(a, &[CAPABILITY], &mut b, 20).is_ok()
+            bus.write_read(a, &[CAPABILITY], &mut b[..1], 20).is_ok()
+        } else if a == tps5364x {
+            let ok = bus
+                .write_read(a, &[tps53647::DEVICE_CODE_CMD], &mut b, 20)
+                .is_ok();
+            if ok {
+                code = Some(u16::from_le_bytes(b));
+            }
+            ok
         } else {
-            bus.read(a, &mut b, 20).is_ok()
+            bus.read(a, &mut b[..1], 20).is_ok()
         };
         if ok {
             found.push(a);
         }
     }
-    log::info!("board: probe {sda}/{scl}: {found:02x?}");
+    log::info!(
+        "board: probe {sda}/{scl}: {found:02x?}{}",
+        code.map(|c| format!(", TPS5364x device code {c:#06x}"))
+            .unwrap_or_default()
+    );
     if found.contains(&tps546) {
         // What the stock firmware left in the regulator (kept while the
         // 12 V stays), before our init overwrites it.
@@ -2151,11 +2560,21 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
             ("SYNC_CONFIG", 0xE4, 1),
             ("STACK_CONFIG", 0xEC, 2),
             ("PIN_DETECT_OVERRIDE", 0xEE, 2),
+            ("READ_VIN", pm::READ_VIN, 2),
         ] {
             let mut b = [0u8; 2];
             let r = bus.write_read(tps546, &[cmd], &mut b[..len], 20);
             if cmd == pm::OPERATION && r.is_ok() {
                 on = b[0] & 0x80 != 0;
+            }
+            if cmd == pm::READ_VIN && r.is_ok() {
+                // The input class (5 or 12 V) tells a NerdAxe Gamma from
+                // a Gaia; a part still coming up answers garbage, which
+                // is no reading.
+                let v = pm::linear11_to_f32(u16::from_le_bytes(b));
+                if v.is_finite() && (1.0..=60.0).contains(&v) {
+                    vin_v = Some(v);
+                }
             }
             match (r, len) {
                 (Ok(()), 1) => out += &format!(" {name}={:02x}", b[0]),
@@ -2183,7 +2602,11 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
             }
         }
     }
-    found
+    Probe {
+        found,
+        vin_v,
+        code,
+    }
 }
 
 /// No board configured: take settings from the stock firmware, then find
@@ -2191,7 +2614,6 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Vec<u8> {
 /// never run WarpAxe) is offered in the web UI; until then nothing is
 /// powered.
 fn first_start(i2c0: &mut I2C0) -> &'static Profile {
-    use warpaxe_board::detect::{self, Detection};
     let stock = config::Stock::open();
     let imported = config::import_stock(&stock);
     if !imported.is_empty() {
@@ -2206,18 +2628,11 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
         stock.str("boardversion"),
     );
     let stock_keys = (keys.0.as_deref(), keys.1.as_deref(), keys.2.as_deref());
-    let d = match detect::from_stock(stock_keys.0, stock_keys.1, stock_keys.2) {
-        Some(_) => detect::detect(stock_keys, &[], &[]),
-        None => {
-            let bitaxe = probe(i2c0, 47, 48);
-            let nerd = if matches!(detect::from_bus(&bitaxe, &[]), Detection::Board(..)) {
-                Vec::new()
-            } else {
-                probe(i2c0, 44, 43)
-            };
-            detect::detect(stock_keys, &bitaxe, &nerd)
-        }
-    };
+    // The bus is read even when the stock keys name the board: the
+    // probe switches off a core rail the stock firmware left on, and the
+    // board taken is checked against the bus like a chosen one.
+    let found = gather(i2c0);
+    let d = detect::detect(stock_keys, &found.bitaxe, &found.nerd, found.vin_v);
     match d {
         Detection::Board(p, why) => {
             log::warn!("board: detected {} ({why})", p.name);
@@ -2226,14 +2641,7 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             if let Err(e) = config::save(&cfg) {
                 log::warn!("board: saving the detected board failed: {e}");
             }
-            *DETECT.lock().unwrap() = Some(DetectInfo {
-                status: "detected",
-                why,
-                candidates: vec![p.name],
-                imported,
-                model: None,
-            });
-            p
+            gate(p, &found, "detected", why, imported)
         }
         Detection::Choose(c, why) => {
             // Nothing on either bus and no stock firmware keys: possibly a
@@ -2249,16 +2657,9 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
             let mut c = c;
             let mut why = why;
             if c.is_empty() && stock_keys == (None, None, None) {
-                // The NerdNOS carrier's thermistor divider on GPIO2, read
-                // once (read-only; a bare board's pin floats).
-                let (samples, ntc) = crate::ntc::probe(warpaxe_board::ntc::Config::NERDNOS);
-                log::info!(
-                    "board: GPIO2 reads {samples:?} mV: {}",
-                    match ntc {
-                        Some(t) => format!("a thermistor at {t:.1} °C (NerdNOS?)"),
-                        None => "no thermistor divider".into(),
-                    }
-                );
+                // The NerdNOS carrier's thermistor divider on GPIO2 (read
+                // by `gather`, read-only; a bare board's pin floats).
+                let ntc = found.thermistor.then_some(());
                 // The worker name the wallet gets: a chip board must not
                 // share the devkit's at the pool (its VarDiff is keyed by
                 // the full name).
@@ -2304,14 +2705,7 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                         if let Err(e) = config::save(&cfg) {
                             log::warn!("board: saving the {} profile failed: {e}", p.name);
                         }
-                        *DETECT.lock().unwrap() = Some(DetectInfo {
-                            status: "detected",
-                            why,
-                            candidates: vec![p.name],
-                            imported,
-                            model: None,
-                        });
-                        return p;
+                        return gate(p, &found, "detected", why, imported);
                     }
                     Detection::Choose(c2, why2) => {
                         c = c2;
@@ -2332,6 +2726,12 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 candidates: c.iter().map(|p| p.name).collect(),
                 imported,
                 model: None,
+                chosen: None,
+                choice: None,
+                reason: None,
+                detail: None,
+                cautious_mv: 0,
+                bus: found.json(),
             });
             p
         }
@@ -2343,6 +2743,12 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
                 candidates: Vec::new(),
                 imported,
                 model: Some(model),
+                chosen: None,
+                choice: None,
+                reason: None,
+                detail: None,
+                cautious_mv: 0,
+                bus: found.json(),
             });
             &warpaxe_board::profile::UNDETECTED
         }

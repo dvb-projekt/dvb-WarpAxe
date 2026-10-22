@@ -719,6 +719,22 @@ pub fn nvs_set_str(key: &str, value: &str) -> Result<(), String> {
     nvs.set_str(key, value).map_err(|e| e.to_string())
 }
 
+/// The board the chips have been counted on (`board::verify_choice`):
+/// its profile name, or `None` until a first start passed. A `boardModel`
+/// that is not this name starts cautiously and is checked against the
+/// bus first (`warpaxe_board::choice`).
+const BOARD_OK_KEY: &str = "boardok";
+
+pub fn verified_board() -> Option<String> {
+    nvs_get_str(BOARD_OK_KEY, 48)
+}
+
+/// Record the board as verified. A flash write: internal-stack callers
+/// only (the miner thread).
+pub fn set_verified_board(name: &str) -> Result<(), String> {
+    nvs_set_str(BOARD_OK_KEY, name)
+}
+
 impl Config {
     /// The config as the API may show it: secrets replaced by a marker
     /// that says whether one is set. Never return the real ones.
