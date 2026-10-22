@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-444%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-467%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.34-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.35-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.34).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.35).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,8 +58,8 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-21, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
-v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
+As of 2026-10-22, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+v2.15.4 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
 
 | | AxeOS | NerdOS | WarpAxe |
@@ -71,7 +71,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
 | An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
 | Images | factory image per board version (update image shared) | one per board | **one for all boards** |
-| Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe); a board chosen by hand is checked against the bus before any of its pins is driven, and its chips are counted at a cautious voltage before the choice counts ([`docs/11`](docs/11-Board-choice-guard.md)) |
+| Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe); a board chosen by hand is checked against the bus before any of its pins is driven, and its chips are counted at a cautious voltage before the choice is confirmed ([`docs/11`](docs/11-Board-choice-guard.md)) |
 | Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools including AxeOS 2.15's saved list, hostname, clock and voltage, fans and temperature limits, display) |
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
@@ -79,7 +79,7 @@ v2.15.3 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAx
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
-| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests) in NVS |
+| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks) in NVS, shown in the web UI's language |
 | Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
@@ -284,6 +284,15 @@ back at any time with `GET /api/v1/display/frame`.
   regulator are 10 °C below their limits (at least 60 s off; after a lost
   sensor only with real readings back); the third stop within an hour stays
   off until it is cleared by hand.
+- **Board-choice guard**: a board is checked against the I²C bus before
+  any of its pins is driven, by the parts its profile needs and the ones
+  it must not see (the regulator's input voltage tells the NerdAxe Gaia
+  from the NerdAxe Gamma); its first start runs at a cautious voltage and
+  counts the chips, and a wrong count or chip type switches the rail off
+  again. A missing sensor on a new choice is refused as well. `PATCH
+  /api/system {"boardModel": "<name>", "reverify": true}` puts a verified
+  board through the check again
+  ([`docs/11`](docs/11-Board-choice-guard.md)).
 - Plausibility windows for every reading: a
   regulator that answers garbage while it powers up is reported as "no
   reading", never as a value a tuner could act on.
@@ -300,8 +309,8 @@ back at any time with `GET /api/v1/display/frame`.
 ### Web UI and API
 - One UI for every board, series colour and chip grid on the type plate;
   English, German, Spanish, French, Italian, Brazilian Portuguese,
-  Japanese and Chinese, each reviewed by a native speaker (the device
-  display in the six Latin-script ones).
+  Japanese and Chinese, each translated and then proofread on its own as a
+  whole (the device display in the six Latin-script ones).
 - Dashboard and Pool page in the warp design: one hero with the hashrate,
   its share of the expected rate and the 1 h / 3 h history (hashrate as a
   two-minute average, temperature in steps of at least 0.5 °C, so counting
@@ -412,7 +421,9 @@ back at any time with `GET /api/v1/display/frame`.
   the time), and `psuWatts` (the rated output of the miner's power supply,
   entered once in Settings, so WarpTune knows its 80% limit without its
   own configuration; several miners on one supply each get their share of
-  its rating; null while unknown), and `mdnsHostname` / `fullHostname`
+  its rating; null while unknown), `boardDetect` (on a board's first
+  start: the board found or chosen, where its check stands, the cautious
+  voltage, and why a board was refused), and `mdnsHostname` / `fullHostname`
   (the name the miner announces over mDNS, as AxeOS reports it).
 - **Setup hotspot**: with no network in the settings, or none reached within
   three minutes of a start, the miner opens `WarpAxe-XXXX` — WPA2, with a
@@ -463,7 +474,8 @@ back at any time with `GET /api/v1/display/frame`.
   by itself when the time is up), chip and regulator temperatures under
   their stop lines, the input voltage. One PASS/FAIL with every check's figure in the web UI,
   on the display and in the API; a clock or voltage change during the
-  test ends it. The limits and where they come from:
+  test ends it. It also runs once by itself after a board's verified first start.
+  The limits and where they come from:
   [`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md).
 - **Diagnostics file** (`GET /api/v1/diagnostics`): one JSON with the
   firmware, board, self-test result, hash counters, pool status,
@@ -473,9 +485,11 @@ back at any time with `GET /api/v1/display/frame`.
   knows before it is written.
 - **Event log** across restarts: the last 32 events (restart with its
   reason, overheat stop with its cause, regulator fault, pool switch,
-  update or rollback, silent chip, self-test result) with time and
-  uptime, under System, in `/api/v1/state`, `/api/v1/events` and in the
-  file. Written on
+  update or rollback, silent chip, self-test result, board check) with
+  time and uptime, under System, in `/api/v1/state`, `/api/v1/events` and
+  in the file. The web UI shows each event's details in its own language;
+  the API and the file keep the English text in `d`, with a short code
+  and the values beside it (`c`, `p`). Written on
   events only, never on a timer, from threads with an internal stack.
 - **After a crash** (panic or watchdog) the web UI shows a banner until
   it is dismissed: the reason and the time, a button for the diagnostics
@@ -637,18 +651,21 @@ up and updates itself:
    loop) and finds the **board**: from the model AxeOS stored at
    the factory, or from the chips that answer on the board's I²C bus
    (read-only probes on pins that switch nothing). A board found for sure
-   (a Bitaxe Gamma, a BitForge Nano, a NerdAxe Gaia) starts mining at
-   once. Otherwise — the NerdQAxe++ and the NerdOctaxe look alike on the
+   (a Bitaxe Gamma, a BitForge Nano, a NerdAxe Gaia) starts at once.
+   Otherwise — the NerdQAxe++ and the NerdOctaxe look alike on the
    bus, and a board that has never run WarpAxe is only offered — the web
    UI asks once which board it is, listing only the boards that fit, and
    the chips stay off until you answer. A core rail the stock firmware
    left on is switched off meanwhile; the display already runs, so the
-   setup hotspot's name and password show while you choose. A board you
-   chose is checked against the bus at the next start before any of its
-   pins is driven, and its chips come up at the lowest voltage of its
-   look-alikes until their number and type match the profile; a board
-   that does not fit is refused with the reason, and the chips stay off
-   ([`docs/11`](docs/11-Board-choice-guard.md)).
+   setup hotspot's name and password show while you choose. Every board,
+   found or chosen, is checked against the bus before any of its pins is
+   driven; its chips then come up at a cautious voltage (the lowest of
+   the boards that look alike on the bus) and are counted. When their
+   number and type match the profile, the board counts as verified, the
+   configured voltage applies and the self-test runs once by itself; a
+   board that does not fit is refused with the reason, and the chips stay
+   off. A board set up by an earlier WarpAxe version is taken as verified
+   on the update ([`docs/11`](docs/11-Board-choice-guard.md)).
 4. Open the web UI at the miner's address — or, on boards with native USB,
    at `http://192.168.7.1` over the USB cable (the miner shows up as a USB
    network adapter; a second WarpAxe on the same computer needs another
@@ -768,10 +785,13 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   — an update refused with 45 KB free but no contiguous 16 KB block, and why the main
   task writes the firmware now;
 - [`docs/10-Self-test-diagnostics-and-event-log.md`](docs/10-Self-test-diagnostics-and-event-log.md)
-- [`docs/11-Board-choice-guard.md`](docs/11-Board-choice-guard.md)
   — the self-test against ESP-Miner's, its checks and limits and the
   runs on four boards; the diagnostics file's privacy rules; the event
-  log's flash wear; the crash banner.
+  log's flash wear; the crash banner;
+- [`docs/11-Board-choice-guard.md`](docs/11-Board-choice-guard.md)
+  — how a found or chosen board is checked against the bus before its
+  chips get power, the cautious first start and the chip count, every
+  wrong pair of boards and what refuses it.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;

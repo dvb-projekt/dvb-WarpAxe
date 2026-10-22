@@ -195,10 +195,11 @@ with one dead chip, or whose sensor had died, would have been switched
 off and kept off at the update: finding 1 below.)
 
 A board whose sensor or regulator has died is refused only when it is
-chosen anew; the web UI then says which part did not answer. **Open for
-Oliver:** whether a refusal for a missing *sensor* (not the regulator)
-should instead degrade as the running path does (fans at full, no chip
-limit), with a warning.
+chosen anew; the web UI then says which part did not answer. A missing
+*sensor* (not only the regulator) is refused too rather than degraded as
+the running path does (fans at full, no chip limit): on a new install a
+silent sensor more likely means the wrong board than a broken one
+(decided 2026-10-22).
 
 ## Web UI, API, events
 
