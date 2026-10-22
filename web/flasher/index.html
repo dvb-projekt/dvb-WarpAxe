@@ -131,7 +131,7 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
     <div class="card"><div class="ico">🌡️</div><h3 data-t="lp_c6h"></h3><p data-t="lp_c6p"></p></div>
   </div>
 
-  <details class="card fl">
+  <details class="card fl" id="features">
     <summary><h2 data-t="fl_h"></h2></summary>
     <p class="mute" data-t="fl_status"></p>
     <div class="flg">
@@ -1539,6 +1539,10 @@ $("rsgo").addEventListener("click", async () => {
   }
 });
 if (location.hash === "#restore") $("restore").scrollIntoView();
+// #features opens the feature list, as on warppool.org's own pages.
+const openFeatures = () => { if (location.hash === "#features") { $("features").open = true; $("features").scrollIntoView(); } };
+openFeatures();
+addEventListener("hashchange", openFeatures);
 </script>
 </body>
 </html>
