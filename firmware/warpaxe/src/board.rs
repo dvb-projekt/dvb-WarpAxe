@@ -1794,10 +1794,12 @@ fn spawn_run(profile: &'static Profile, vr: Option<Regulator>, thermal: Option<T
     BOARD_THREAD.store(true, Ordering::Relaxed);
     std::thread::Builder::new()
         .name("board".into())
-        // 8 KB: 6 KB overflowed on a NerdQAxe++ about a minute after
+        // 10 KB: 6 KB overflowed on a NerdQAxe++ about a minute after
         // boot once the event details grew (v0.1.35 candidate,
-        // 2026-10-22); run() logs its low-water mark.
-        .stack_size(8192)
+        // 2026-10-22); at 8 KB the low-water mark was 2 KB on the common
+        // path alone, before any power fault or overheat event. run()
+        // logs its low-water mark.
+        .stack_size(10 * 1024)
         .spawn(move || run(profile, vr, thermal))
         .expect("board thread");
 }
@@ -1828,7 +1830,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut no_sensor_warned = false;
     let t0 = Instant::now();
     // The least stack this thread has had left, logged at each new low by
-    // 256 bytes: the 6 KB it had overflowed (spawn_run).
+    // 256 bytes (spawn_run).
     let mut stack_low = u32::MAX;
     // Fans at full until the chips have warmed up (fan::Warmup); the PID
     // takes over from there.
