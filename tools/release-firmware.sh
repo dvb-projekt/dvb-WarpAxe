@@ -132,9 +132,17 @@ if [ "${SKIP_SOAK:-0}" != 1 ]; then
     # overrides the path, SKIP_TUNE_PROBE=1 skips it.
     WP="${WARPPOOL_REPO:-$HOME/code/dvb-WarpPool}"
     if [ "${SKIP_TUNE_PROBE:-0}" != 1 ] && [ -f "$WP/Cargo.toml" ]; then
-        cargo run -q --release --manifest-path "$WP/Cargo.toml" -p dvb-warppool-tune -- \
-            probe "${SOAK_HOST:-192.168.178.41}" --check \
-            || { echo "WarpTune cannot read or tune ${SOAK_HOST:-192.168.178.41} on this image: not published" >&2; exit 1; }
+        # Three tries: one HTTP request right after the soak can fail
+        # on its own (v0.1.35's first run, 2026-10-22); a parse or tuning
+        # failure fails all three.
+        PROBED=0
+        for try in 1 2 3; do
+            if cargo run -q --release --manifest-path "$WP/Cargo.toml" -p dvb-warppool-tune -- \
+                probe "${SOAK_HOST:-192.168.178.41}" --check; then PROBED=1; break; fi
+            echo "WarpTune probe try $try failed" >&2
+            sleep 15
+        done
+        [ "$PROBED" = 1 ] || { echo "WarpTune cannot read or tune ${SOAK_HOST:-192.168.178.41} on this image: not published" >&2; exit 1; }
     fi
 fi
 # The boards the release ran on (see the header). The devkit's id comes
