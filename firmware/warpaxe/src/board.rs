@@ -1794,7 +1794,10 @@ fn spawn_run(profile: &'static Profile, vr: Option<Regulator>, thermal: Option<T
     BOARD_THREAD.store(true, Ordering::Relaxed);
     std::thread::Builder::new()
         .name("board".into())
-        .stack_size(6144)
+        // 8 KB: 6 KB overflowed on a NerdQAxe++ about a minute after
+        // boot once the event details grew (v0.1.35 candidate,
+        // 2026-10-22); run() logs its low-water mark.
+        .stack_size(8192)
         .spawn(move || run(profile, vr, thermal))
         .expect("board thread");
 }
@@ -1824,6 +1827,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp_seen = false;
     let mut no_sensor_warned = false;
     let t0 = Instant::now();
+    // The least stack this thread has had left, logged at each new low by
+    // 256 bytes: the 6 KB it had overflowed (spawn_run).
+    let mut stack_low = u32::MAX;
     // Fans at full until the chips have warmed up (fan::Warmup); the PID
     // takes over from there.
     let mut warmup: Option<Warmup> = Some(Warmup::start(0));
@@ -1840,6 +1846,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
             last_sample = Instant::now();
+            let unused = crate::diag::stack_unused();
+            if unused.saturating_add(256) <= stack_low {
+                stack_low = unused;
+                log::info!("board: {unused} bytes of the thread's stack never used so far");
+            }
             cfg = config::get();
             pid.set_min_percent(f32::from(cfg.min_fan_speed));
             pid_vr.set_min_percent(f32::from(cfg.min_fan_speed));
