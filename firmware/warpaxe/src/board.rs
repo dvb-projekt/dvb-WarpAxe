@@ -2670,21 +2670,11 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Probe {
             ("SYNC_CONFIG", 0xE4, 1),
             ("STACK_CONFIG", 0xEC, 2),
             ("PIN_DETECT_OVERRIDE", 0xEE, 2),
-            ("READ_VIN", pm::READ_VIN, 2),
         ] {
             let mut b = [0u8; 2];
             let r = bus.write_read(tps546, &[cmd], &mut b[..len], 20);
             if cmd == pm::OPERATION && r.is_ok() {
                 on = b[0] & 0x80 != 0;
-            }
-            if cmd == pm::READ_VIN && r.is_ok() {
-                // The input class (5 or 12 V) tells a NerdAxe Gamma from
-                // a Gaia; a part still coming up answers garbage, which
-                // is no reading.
-                let v = pm::linear11_to_f32(u16::from_le_bytes(b));
-                if v.is_finite() && (1.0..=60.0).contains(&v) {
-                    vin_v = Some(v);
-                }
             }
             match (r, len) {
                 (Ok(()), 1) => out += &format!(" {name}={:02x}", b[0]),
@@ -2699,6 +2689,24 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Probe {
         }
         if !out.is_empty() {
             log::info!("board: TPS546 as found:{out}");
+        }
+        // The input voltage on its own line, in volts (the as-found line
+        // above was cut after this value in the web log, 2026-10-22). The
+        // input class (5 or 12 V) tells a NerdAxe Gamma from a Gaia; a
+        // part still coming up answers garbage, which is no reading.
+        let mut b = [0u8; 2];
+        match bus.write_read(tps546, &[pm::READ_VIN], &mut b, 20) {
+            Ok(()) => {
+                let raw = u16::from_le_bytes(b);
+                let v = pm::linear11_to_f32(raw);
+                if v.is_finite() && (1.0..=60.0).contains(&v) {
+                    vin_v = Some(v);
+                    log::info!("board: TPS546 READ_VIN {v:.2} V (raw {raw:#06x})");
+                } else {
+                    log::warn!("board: TPS546 READ_VIN implausible: {v} V (raw {raw:#06x})");
+                }
+            }
+            Err(e) => log::warn!("board: TPS546 READ_VIN failed: {e}"),
         }
         // A stock firmware that was mining when the ESP restarted leaves
         // the core rail on: the chips sit powered, with nothing watching
