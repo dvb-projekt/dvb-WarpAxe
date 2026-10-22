@@ -181,3 +181,13 @@ for f in $ASSETS; do
         -F "attachment=@$OUT/$f" "$API/releases/$ID/assets?name=$f" >/dev/null
 done
 echo "release $TAG (id $ID) published: update (warpaxe.bin + .sha256 + .sig), first-install parts, tested-on.txt (${TESTED:-none})"
+# Keep the ELF the image was made from: a core dump names the ELF's
+# SHA-256, and a rebuild never matches it (esp_app_desc carries the build
+# time), so without this file a dump from the field cannot be decoded.
+# Kept on the release machine, not published (37 MB with debug info).
+ELF_DIR="${RELEASE_ELF_DIR:-$HOME/.config/warppool/warpaxe-release-elf}/$TAG"
+mkdir -p "$ELF_DIR"
+gzip -c "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" > "$ELF_DIR/warpaxe.elf.gz"
+shasum -a 256 "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" | cut -d' ' -f1 > "$ELF_DIR/warpaxe.elf.sha256"
+cp "$OUT/warpaxe.bin" "$ELF_DIR/"
+echo "elf kept in $ELF_DIR (sha256 $(cut -c1-9 "$ELF_DIR/warpaxe.elf.sha256"))"
