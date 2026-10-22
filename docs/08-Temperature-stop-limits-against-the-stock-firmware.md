@@ -40,7 +40,7 @@ line above.
 | bitaxe-gamma, -duo, -turbo, naja-duo, gamma-hex | 75 (was 90) | 105 (was 145) | ESP-Miner's compare lines |
 | bitforge-nano | 75 (was 90) | 105 (was 145) | ForgeOS closed; taken as ESP-Miner's until read off the board |
 | nerdaxe-gamma | 70 (was 90) | 105 (was 145) | chip as NerdOS; regulator: NerdOS has no stop, WarpAxe keeps AxeOS's 105 on the same TPS546 — **deliberate deviation, Oliver's call** |
-| nerdaxe-gaia | 75 (unchanged) | 105 (unchanged) | chip = the reference board's NVS, not the Kconfig 70 — **kept, open for Oliver** |
+| nerdaxe-gaia | 75 (unchanged) | 105 (unchanged) | chip = the reference board's NVS, not the Kconfig 70 — kept, decided by Oliver (below) |
 | nerdqaxe-plusplus, nerdoctaxe-gamma, q1370, q1373 | 70 | 70 | unchanged, NerdOS |
 | nerdqaxe-plusplus-rev7 | 70 | 70 (was 105) | the 105 in the profile was NerdOS's dashboard figure, not its stop |
 | nerdnos | 80 | 105 (was 145, reported only) | no regulator temperature |
