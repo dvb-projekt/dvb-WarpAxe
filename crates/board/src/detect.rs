@@ -43,8 +43,18 @@ pub mod addr {
     ];
 }
 
-/// Boards that have run WarpAxe; only these are taken without asking.
-pub const TESTED: &[&str] = &["bitaxe-gamma", "nerdqaxe-plusplus", "nerdoctaxe-gamma"];
+/// Boards that have run WarpAxe on our bench (the web UI marks the others
+/// "untested"). A board joins once it has mined for days and passed the
+/// self-test; whether a first start takes it without asking is decided by
+/// the detection below, not by this list.
+pub const TESTED: &[&str] = &[
+    "bitaxe-gamma",
+    "nerdqaxe-plusplus",
+    "nerdoctaxe-gamma",
+    "bitforge-nano",
+    "nerdaxe-gaia",
+    "nerdnos",
+];
 
 /// The outcome of a first-start detection.
 #[derive(Debug, Clone, PartialEq)]
@@ -338,7 +348,10 @@ mod tests {
         assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
         let d = detect(NONE, &[addr::TPS546, addr::INA260, addr::PCA9544], &[]);
         assert!(matches!(d, Detection::Choose([p], _) if p.name == BITFORGE_NANO.name));
-        assert!(!TESTED.contains(&BITFORGE_NANO.name));
+        assert!(
+            TESTED.contains(&BITFORGE_NANO.name),
+            "runs on our bench, still offered"
+        );
         // A Gamma still needs its EMC2101 on the root bus.
         let d = detect(NONE, &[addr::TPS546, addr::EMC2101], &[]);
         assert!(matches!(d, Detection::Board(p, _) if p.name == BITAXE_GAMMA.name));
@@ -401,6 +414,6 @@ mod tests {
             bare_board(false, false, None),
             Detection::Choose(&[], "no known chips answered")
         );
-        assert!(!TESTED.contains(&NERDNOS.name), "never run");
+        assert!(TESTED.contains(&NERDNOS.name));
     }
 }
