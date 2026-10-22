@@ -20,6 +20,8 @@ use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver, I2C0};
 use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::sys::{self, EspError};
 use serde::Serialize;
+use warpaxe_board::choice::{self, FirstStart};
+use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2103::Emc2103;
 use warpaxe_board::emc2302::{Emc2302, Fan};
@@ -33,8 +35,6 @@ use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::Tps546;
-use warpaxe_board::choice::{self, FirstStart};
-use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
@@ -370,14 +370,17 @@ pub fn verify_choice(chips: u8, expected: u8) {
         );
         crate::events::record(
             "board",
-            format!("{} verified, {chips} of {expected} chips", p.name),
+            warpaxe_diag::events::detail::verified(p.name, chips, expected),
         );
     } else {
         log::info!(
             "board: {} verified: {chips} chip(s) answered as the profile says",
             p.name
         );
-        crate::events::record("board", format!("{} verified, {chips} chips", p.name));
+        crate::events::record(
+            "board",
+            warpaxe_diag::events::detail::verified(p.name, chips, expected),
+        );
     }
 }
 
@@ -388,21 +391,20 @@ pub fn verify_choice(chips: u8, expected: u8) {
 /// choice goes through the bus check first.
 pub fn reject_choice(verdict: FirstStart) {
     let p = profile();
-    let (kind, text, found, expected, chip_id) = match verdict {
+    let (kind, text, event, found, expected, chip_id) = match verdict {
         FirstStart::Verified { .. } | FirstStart::ShortCount { .. } => return,
         FirstStart::WrongCount { found, expected } => (
             "count",
             format!("{found} chip(s) answered, a {} has {expected}", p.model),
+            warpaxe_diag::events::detail::refused_count(p.name, found, expected),
             Some(found),
             Some(expected),
             None,
         ),
         FirstStart::WrongChip { chip_id } => (
             "chip",
-            format!(
-                "a chip answered as {chip_id:#06x}, not a {}",
-                chip().name
-            ),
+            format!("a chip answered as {chip_id:#06x}, not a {}", chip().name),
+            warpaxe_diag::events::detail::refused_chip(p.name, chip_id, chip().name),
             None,
             None,
             Some(chip_id),
@@ -410,6 +412,7 @@ pub fn reject_choice(verdict: FirstStart) {
         FirstStart::NoChips => (
             "none",
             "no chip answered in three attempts".to_string(),
+            warpaxe_diag::events::detail::refused_none(p.name),
             Some(0),
             Some(chips_expected()),
             None,
@@ -420,7 +423,7 @@ pub fn reject_choice(verdict: FirstStart) {
         "board: {} refused at its first start: {text}; chips off until another board is chosen or the miner restarts",
         p.name
     );
-    crate::events::record("board", format!("{} refused: {text}", p.name));
+    crate::events::record("board", event);
     let found_bus = FOUND.lock().unwrap().clone().unwrap_or_default();
     let candidates: Vec<&'static str> = choice::candidates(&found_bus.evidence())
         .map(|c| c.name)
@@ -1139,11 +1142,11 @@ pub fn init_bus(mut i2c0: I2C0) {
             // here: the bus must agree before any of its pins is driven,
             // and its first chain start counts the chips (choice_pending).
             choice::Start::Check => {
-            log::warn!(
+                log::warn!(
                 "board: {} from the settings is not verified on this board yet: reading the bus first",
                 p.name
             );
-            let found = gather(&mut i2c0);
+                let found = gather(&mut i2c0);
                 gate(
                     p,
                     &found,
@@ -1188,8 +1191,8 @@ pub fn init_bus(mut i2c0: I2C0) {
         let cfg = config::get();
         let floor = profile.regulator_min_core_mv();
         let ceiling = profile.abs_max_core_mv;
-        let outside = (floor > 0 && cfg.core_voltage < floor)
-            || (ceiling > 0 && cfg.core_voltage > ceiling);
+        let outside =
+            (floor > 0 && cfg.core_voltage < floor) || (ceiling > 0 && cfg.core_voltage > ceiling);
         if outside && cfg.core_voltage != profile.default_core_mv {
             let mut fixed = cfg;
             log::warn!(
@@ -2009,27 +2012,27 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     update(|s| s.last_error = "temp: sensor lost, core voltage off".into());
                     crate::events::record(
                         "overheat",
-                        format!("no chip temperature for {temp_lost_s} s, chips off"),
+                        warpaxe_diag::events::detail::blind(temp_lost_s),
                     );
                 } else if cause == Cause::PowerFault {
                     log::error!(
                         "board: regulator fault: core voltage off, retry after {} s",
                         warpaxe_board::overheat::MIN_OFF_S
                     );
-                    let what = state().power_fault.unwrap_or_default();
-                    crate::events::record("power", format!("regulator fault: {what}"));
+                    let codes = state().power_fault_codes;
+                    crate::events::record("power", warpaxe_diag::events::detail::power(&codes));
                 } else {
                     log::error!(
                         "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
                         profile.vr_stop_c
                     );
-                    let t = temp.map_or("–".to_string(), |t| format!("{t:.0}"));
-                    let v = vr_temp.map_or("–".to_string(), |t| format!("{t}"));
                     crate::events::record(
                         "overheat",
-                        format!(
-                            "chip {t} °C (limit {chip_limit:.0}), regulator {v} °C (limit {:.0}), chips off",
-                            profile.vr_stop_c
+                        warpaxe_diag::events::detail::hot(
+                            temp,
+                            chip_limit,
+                            vr_temp.map(i32::from),
+                            profile.vr_stop_c,
                         ),
                     );
                 }
@@ -2478,7 +2481,9 @@ fn reason_text(r: choice::Reason) -> String {
             "the regulator reads {:.1} V in, the board runs on {nominal_v} V",
             f32::from(read_dv) / 10.0
         ),
-        choice::Reason::PartsAnswered => "parts answered on the I²C bus, which it has none of".into(),
+        choice::Reason::PartsAnswered => {
+            "parts answered on the I²C bus, which it has none of".into()
+        }
         choice::Reason::NoThermistor => "no thermistor divider on GPIO2".into(),
     }
 }
@@ -2539,7 +2544,10 @@ fn gate(
                     "board: {} fits the bus; first start{at}, the chips are counted against the profile",
                     p.name
                 );
-                crate::events::record("board", format!("{} first start{at}", p.name));
+                crate::events::record(
+                    "board",
+                    warpaxe_diag::events::detail::first_start(p.name, mv),
+                );
                 crate::events::flush();
             }
             p
@@ -2552,7 +2560,7 @@ fn gate(
                 p.name,
                 reason_text(r)
             );
-            crate::events::record("board", format!("{} refused: {}", p.name, reason_text(r)));
+            crate::events::record("board", warpaxe_diag::events::detail::refused(p.name, r));
             // On the main task, before the restart the web UI will ask
             // for; without a board thread nothing else flushes.
             crate::events::flush();
@@ -2720,11 +2728,7 @@ fn probe(i2c0: &mut I2C0, sda: i32, scl: i32) -> Probe {
             }
         }
     }
-    Probe {
-        found,
-        vin_v,
-        code,
-    }
+    Probe { found, vin_v, code }
 }
 
 /// No board configured: take settings from the stock firmware, then find

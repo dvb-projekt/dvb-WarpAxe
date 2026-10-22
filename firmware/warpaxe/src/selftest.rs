@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use warpaxe_board::selftest::{
-    judge, BoardReadings, Check, FanReadings, Limits, Note, Report, Status, Window, CHECKS,
+    judge, BoardReadings, FanReadings, Limits, Note, Report, Window, CHECKS,
 };
 
 use crate::{board, config, diag, events, miner};
@@ -345,8 +345,8 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
                         .collect()
                 })
                 .unwrap_or_default();
-            let summary = summary(&report);
-            log::info!("selftest: run {id} {summary}");
+            let summary = warpaxe_diag::events::detail::selftest(&report);
+            log::info!("selftest: run {id} {}", summary.text());
             events::record("selftest", summary);
             (State::Done, Some(report), chips, Some(b), fan)
         }
@@ -362,44 +362,6 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
         r.duration_s = took.as_secs() as u32;
     });
     crate::display::touch();
-}
-
-/// One line for the log and the event log: `PASS, 9 checks` or
-/// `FAIL: hashrate chip 2 61 %, fan 0 rpm`.
-fn summary(r: &Report) -> String {
-    if r.passed() {
-        return format!("PASS, {} checks", r.judged());
-    }
-    let parts: Vec<String> = r
-        .outcomes
-        .iter()
-        .filter(|o| o.status == Status::Fail)
-        .map(|o| {
-            let mut s = o.check.id().to_string();
-            if let Some(c) = o.chip {
-                s.push_str(&format!(" chip {c}"));
-            }
-            if let Some(d) = o.domain {
-                s.push_str(&format!(" domain {d}"));
-            }
-            match (o.check, o.value) {
-                (Check::Hashrate | Check::Domains | Check::Errors, Some(v)) => {
-                    s.push_str(&format!(" {v:.0} %"))
-                }
-                (Check::Fan, Some(v)) => s.push_str(&format!(" {v:.0} rpm")),
-                (Check::CoreVoltage, Some(v)) => s.push_str(&format!(" {v:.0} mV")),
-                (Check::InputVoltage, Some(v)) => s.push_str(&format!(" {v:.2} V")),
-                (Check::Temperature, Some(v)) => s.push_str(&format!(" {v:.0} °C")),
-                (Check::Chips, Some(v)) => s.push_str(&format!(" {v:.0} found")),
-                _ => {}
-            }
-            if o.note != Note::None {
-                s.push_str(&format!(" ({})", o.note.id()));
-            }
-            s
-        })
-        .collect();
-    format!("FAIL: {}", parts.join(", "))
 }
 
 fn f(v: Option<f32>) -> serde_json::Value {

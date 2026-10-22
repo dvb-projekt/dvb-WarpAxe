@@ -84,6 +84,11 @@ impl Condition {
         }
     }
 
+    /// The condition a [`Condition::code`] names.
+    pub fn from_code(code: &str) -> Option<Condition> {
+        Condition::ALL.into_iter().find(|c| c.code() == code)
+    }
+
     /// The text AxeOS logs for it (its `TPS546_parse_status`).
     pub fn describe(self) -> &'static str {
         match self {
@@ -261,6 +266,14 @@ mod tests {
             f.insert(*c);
         }
         f
+    }
+
+    #[test]
+    fn every_code_names_its_condition_back() {
+        for c in Condition::ALL {
+            assert_eq!(Condition::from_code(c.code()), Some(c));
+        }
+        assert_eq!(Condition::from_code("nope"), None);
     }
 
     #[test]

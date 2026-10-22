@@ -182,30 +182,21 @@ fn main() {
         .filter(|e| e.k == "boot")
         .map(|e| e.d.clone())
         .collect();
+    use warpaxe_diag::events::detail;
     let boot_detail = match diag::check_core_dump(&earlier) {
-        Some((tag, true)) => format!("{} {tag}", diag::reset_reason()),
+        Some((tag, true)) => detail::boot(diag::reset_reason(), Some((&tag, true))),
         Some((tag, false)) if diag::last_run_crashed() => {
-            format!("{} no dump ({tag} old)", diag::reset_reason())
+            detail::boot(diag::reset_reason(), Some((&tag, false)))
         }
-        _ => diag::reset_reason().to_string(),
+        _ => detail::boot(diag::reset_reason(), None),
     };
     events::record("boot", boot_detail);
     match update::ota_state() {
-        "aborted" => events::record(
-            "rollback",
-            "the last update did not boot: back on the previous image",
+        "aborted" => events::record("rollback", detail::rollback()),
+        "pending-verify" => events::record(
+            "update",
+            detail::installed(api::VERSION, &config::last_install()),
         ),
-        "pending-verify" => {
-            let r = config::last_install();
-            events::record(
-                "update",
-                if r.is_empty() {
-                    format!("{} installed", api::VERSION)
-                } else {
-                    r
-                },
-            )
-        }
         _ => {}
     }
     events::flush();

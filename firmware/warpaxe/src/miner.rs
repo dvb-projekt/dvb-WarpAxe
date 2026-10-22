@@ -293,7 +293,7 @@ fn silent_event(index: u8) {
     }
     *slot = now;
     drop(last);
-    crate::events::record("chain", format!("chip {index} silent"));
+    crate::events::record("chain", warpaxe_diag::events::detail::chip_silent(index));
 }
 
 pub fn start(uart: ChipUart) {
@@ -886,7 +886,7 @@ fn run(mut uart: ChipUart) {
                     );
                     crate::events::record(
                         "chain",
-                        format!("all {n} chips silent for 60 s at {mv} mV, chain restarted"),
+                        warpaxe_diag::events::detail::chain_restart(n, mv),
                     );
                     break;
                 }

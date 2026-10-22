@@ -15,7 +15,7 @@
 
 use std::sync::Mutex;
 
-use warpaxe_diag::events::{Event, Ring};
+use warpaxe_diag::events::{Detail, Event, Ring};
 
 use crate::{clock, config, diag};
 
@@ -37,16 +37,17 @@ pub fn init() {
 
 /// Note an event: queued for the next `flush`, and in the log at once.
 /// `kind` is one of boot, overheat, power, pool, update, rollback, chain,
-/// selftest; `detail` one short line.
-pub fn record(kind: &'static str, detail: impl Into<String>) {
-    let detail = detail.into();
-    log::info!("event: {kind}: {detail}");
-    PENDING.lock().unwrap().push(Event {
-        t: clock::unix_now().unwrap_or(0),
-        u: diag::uptime_s(),
-        k: kind.into(),
-        d: detail,
-    });
+/// selftest, board; `detail` one of `warpaxe_diag::events::detail` (a
+/// code and its values, which the web UI says in its own language), or
+/// `Detail::from` one short line of text.
+pub fn record(kind: &'static str, detail: Detail) {
+    log::info!("event: {kind}: {}", detail.text());
+    PENDING.lock().unwrap().push(Event::new(
+        clock::unix_now().unwrap_or(0),
+        diag::uptime_s(),
+        kind,
+        detail,
+    ));
 }
 
 /// Store the queued events. From a thread with an internal stack only.
@@ -73,15 +74,16 @@ pub fn flush() {
     }
 }
 
-/// The events, oldest first: the stored ring plus what is still queued.
+/// The events, oldest first: the stored ring plus what is still queued,
+/// each with its English text in `d` (`Event::for_api`).
 pub fn list() -> Vec<Event> {
     let mut v: Vec<Event> = RING
         .lock()
         .unwrap()
         .as_ref()
-        .map(|r| r.events().to_vec())
+        .map(|r| r.events().iter().map(Event::for_api).collect())
         .unwrap_or_default();
-    v.extend(PENDING.lock().unwrap().iter().cloned());
+    v.extend(PENDING.lock().unwrap().iter().map(Event::for_api));
     v
 }
 

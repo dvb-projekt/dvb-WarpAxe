@@ -10,6 +10,10 @@
 //! whose stack is in internal RAM only (`firmware/warpaxe/src/events.rs`).
 
 use serde::{Deserialize, Serialize};
+use serde_json::{json, Map, Value};
+use warpaxe_board::power_fault::Condition;
+use warpaxe_board::profile::Profile;
+use warpaxe_board::selftest::{Check, Report, Status};
 
 /// Events kept.
 pub const CAPACITY: usize = 32;
@@ -21,8 +25,30 @@ pub const MAX_BYTES: usize = 3200;
 pub const COALESCE_S: u64 = 60;
 /// An event's detail is cut to this many characters.
 pub const MAX_DETAIL: usize = 48;
+/// A coded event is trimmed to at most this many stored bytes where it
+/// can be (a list shortened to one entry, long names cut). A plain
+/// detail cut to [`MAX_DETAIL`] stores up to ~105 bytes; most coded
+/// events store 55–95, so a ring of everyday events keeps all
+/// [`CAPACITY`], and one made only of the longest (failed self-tests
+/// with three failed checks, say) still keeps 26 or more within
+/// [`MAX_BYTES`].
+pub const MAX_EVENT_BYTES: usize = 120;
+/// A name among a coded event's values (board, pool) is cut to this
+/// many characters.
+pub const MAX_NAME: usize = 32;
+/// A failed self-test keeps at most this many failed checks in its
+/// event; the self-test card has the whole report.
+pub const MAX_FAILS: usize = 2;
 
 /// One event. Short keys: the string is stored as is.
+///
+/// A coded event carries its detail as a code `c` and the values `p`
+/// the text is made of, so the web UI can say it in its own language;
+/// its English text is made from them ([`Event::text`]). Stored, a coded
+/// event's `d` is empty (an older image reads the ring all the same,
+/// with an empty detail); in the API `d` is the English text, as it
+/// always was ([`Event::for_api`]). Events stored before the codes have
+/// a `d` only.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 pub struct Event {
     /// Unix seconds when it happened; 0 before NTP set the clock.
@@ -30,10 +56,549 @@ pub struct Event {
     /// Uptime seconds when it happened.
     pub u: u64,
     /// The kind: `boot`, `overheat`, `power`, `pool`, `update`,
-    /// `rollback`, `chain`, `selftest`.
+    /// `rollback`, `chain`, `selftest`, `board`.
     pub k: String,
-    /// What exactly, one short line.
+    /// What exactly, one short line in English.
     pub d: String,
+    /// The detail's code (see [`detail`]), empty for a plain detail.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub c: String,
+    /// The detail's values, by the names its texts use.
+    #[serde(default, skip_serializing_if = "Map::is_empty")]
+    pub p: Map<String, Value>,
+}
+
+impl Event {
+    /// An event of `kind` with `detail`, at `t` (unix seconds) and `u`
+    /// (uptime seconds).
+    pub fn new(t: u64, u: u64, kind: &str, detail: Detail) -> Self {
+        Event {
+            t,
+            u,
+            k: kind.into(),
+            d: detail.d,
+            c: detail.c.into(),
+            p: detail.p,
+        }
+    }
+
+    /// The detail in English: made from the code and values when the
+    /// event has them, else the stored text.
+    pub fn text(&self) -> String {
+        if self.c.is_empty() {
+            return self.d.clone();
+        }
+        english(&self.c, &self.p).unwrap_or_else(|| {
+            if self.d.is_empty() {
+                self.c.clone()
+            } else {
+                self.d.clone()
+            }
+        })
+    }
+
+    /// The event as the API shows it: `d` the English text, the code and
+    /// values beside it.
+    pub fn for_api(&self) -> Event {
+        Event {
+            d: self.text(),
+            ..self.clone()
+        }
+    }
+
+    fn stored_len(&self) -> usize {
+        serde_json::to_string(self).map_or(0, |s| s.len())
+    }
+
+    /// Bring a coded event towards [`MAX_EVENT_BYTES`]: a list loses its
+    /// last entries (one stays), then the longest name is cut.
+    fn fit(&mut self) {
+        while self.stored_len() > MAX_EVENT_BYTES {
+            if let Some(Value::Array(a)) = self.p.get_mut("f") {
+                if a.len() > 1 {
+                    a.pop();
+                    continue;
+                }
+            }
+            // Only names are cut: a core dump's tag must stay whole (a
+            // later boot looks for it), codes must stay codes.
+            let longest = self
+                .p
+                .iter()
+                .filter(|(k, _)| matches!(k.as_str(), "m" | "p"))
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.chars().count())))
+                .max_by_key(|(_, n)| *n);
+            match longest {
+                Some((k, n)) if n > 12 => {
+                    let s = self.p[&k].as_str().unwrap_or_default();
+                    let cut = cut(s, n - 4);
+                    self.p.insert(k, Value::String(cut));
+                }
+                _ => return,
+            }
+        }
+    }
+}
+
+/// What an event says: a code with its values, or (from older call
+/// sites and for anything without a code) one line of text.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Detail {
+    c: &'static str,
+    p: Map<String, Value>,
+    d: String,
+}
+
+impl Detail {
+    /// The detail in English, as the API and the log show it.
+    pub fn text(&self) -> String {
+        if self.c.is_empty() {
+            self.d.clone()
+        } else {
+            english(self.c, &self.p).unwrap_or_else(|| self.c.into())
+        }
+    }
+
+    /// The code, empty for a plain text.
+    pub fn code(&self) -> &'static str {
+        self.c
+    }
+}
+
+impl From<String> for Detail {
+    fn from(d: String) -> Self {
+        Detail {
+            c: "",
+            p: Map::new(),
+            d,
+        }
+    }
+}
+
+impl From<&str> for Detail {
+    fn from(d: &str) -> Self {
+        Detail::from(d.to_string())
+    }
+}
+
+fn cut(s: &str, n: usize) -> String {
+    if s.chars().count() <= n {
+        s.into()
+    } else {
+        s.chars().take(n.saturating_sub(1)).collect::<String>() + "…"
+    }
+}
+
+fn coded(c: &'static str, p: &[(&str, Value)]) -> Detail {
+    let p = p.iter().map(|(k, v)| (k.to_string(), v.clone())).collect();
+    Detail {
+        c,
+        p,
+        d: String::new(),
+    }
+}
+
+/// A name among the values, cut to [`MAX_NAME`].
+fn name(s: &str) -> Value {
+    Value::String(cut(s, MAX_NAME))
+}
+
+/// A measured figure, to two decimals (an f32 widened as is would store
+/// 4.849999904632568 for 4.85).
+fn fig(v: f32) -> Value {
+    if v.is_finite() {
+        json!(((f64::from(v)) * 100.0).round() / 100.0)
+    } else {
+        Value::Null
+    }
+}
+
+/// The details the firmware records, one constructor each. The code is
+/// what the web UI translates (`evd_<code>`); the value names are the
+/// placeholders of its texts.
+pub mod detail {
+    use super::*;
+
+    /// A chip stopped answering.
+    pub fn chip_silent(chip: u8) -> Detail {
+        coded("chip_silent", &[("c", Value::from(chip))])
+    }
+
+    /// All chips silent for a minute: the chain was restarted.
+    pub fn chain_restart(chips: u8, mv: u16) -> Detail {
+        coded(
+            "chain_restart",
+            &[("n", Value::from(chips)), ("mv", Value::from(mv))],
+        )
+    }
+
+    /// The main pool failed `fails` times: on the fallback.
+    pub fn pool_fallback(fails: u32) -> Detail {
+        coded("pool_fallback", &[("n", Value::from(fails))])
+    }
+
+    /// The main pool answers again.
+    pub fn pool_back() -> Detail {
+        coded("pool_back", &[])
+    }
+
+    /// A saved pool was made the main pool.
+    pub fn pool_saved(pool: &str) -> Detail {
+        coded("pool_saved", &[("p", name(pool))])
+    }
+
+    /// A restart, with the reset reason (`power-on`, `software`, `panic`,
+    /// `int-wdt`, …) and, after a crash, the stored core dump's tag and
+    /// whether it is this crash's (`current`) or an older one.
+    pub fn boot(reason: &str, dump: Option<(&str, bool)>) -> Detail {
+        match dump {
+            None => coded("boot", &[("r", Value::from(reason))]),
+            Some((tag, true)) => coded(
+                "boot_dump",
+                &[("r", Value::from(reason)), ("tag", Value::from(tag))],
+            ),
+            Some((tag, false)) => coded(
+                "boot_old_dump",
+                &[("r", Value::from(reason)), ("tag", Value::from(tag))],
+            ),
+        }
+    }
+
+    /// The last update did not boot: back on the previous image.
+    pub fn rollback() -> Detail {
+        coded("rollback", &[])
+    }
+
+    /// An online update installed: `record` is the install record
+    /// (`<tag> <signature>`, the signature `verified` or `missing`), or
+    /// empty after an install without one, then `version` names it.
+    pub fn installed(version: &str, record: &str) -> Detail {
+        match record.split_once(' ') {
+            Some((tag, sig)) if !tag.is_empty() && !sig.is_empty() => {
+                coded("install_rec", &[("v", name(tag)), ("s", name(sig))])
+            }
+            _ if record.is_empty() => coded("installed", &[("v", name(version))]),
+            _ => Detail::from(record),
+        }
+    }
+
+    /// The board passed its first start with `chips` chips, `expected`
+    /// in its profile.
+    pub fn verified(board: &str, chips: u8, expected: u8) -> Detail {
+        if chips < expected {
+            coded(
+                "verified_short",
+                &[
+                    ("m", name(board)),
+                    ("n", Value::from(chips)),
+                    ("e", Value::from(expected)),
+                ],
+            )
+        } else {
+            coded("verified", &[("m", name(board)), ("n", Value::from(chips))])
+        }
+    }
+
+    /// Refused at the first start: `found` chips answered, the board
+    /// has `expected` (its model, for the text, from its profile).
+    pub fn refused_count(board: &str, found: u8, expected: u8) -> Detail {
+        coded(
+            "mm_count",
+            &[
+                ("m", name(board)),
+                ("f", Value::from(found)),
+                ("e", Value::from(expected)),
+            ],
+        )
+    }
+
+    /// Refused at the first start: a chip answered with another ID.
+    pub fn refused_chip(board: &str, chip_id: u16, chip: &str) -> Detail {
+        coded(
+            "mm_chip",
+            &[
+                ("m", name(board)),
+                ("id", Value::from(format!("{chip_id:#06x}"))),
+                ("c", Value::from(chip)),
+            ],
+        )
+    }
+
+    /// Refused at the first start: no chip answered.
+    pub fn refused_none(board: &str) -> Detail {
+        coded("mm_none", &[("m", name(board))])
+    }
+
+    /// Refused before power: the bus says otherwise.
+    pub fn refused(board: &str, r: warpaxe_board::choice::Reason) -> Detail {
+        use warpaxe_board::choice::Reason;
+        let m = name(board);
+        match r {
+            Reason::Missing(p) => coded("r_missing", &[("m", m), ("p", Value::from(p.name()))]),
+            Reason::Unexpected(p) => {
+                coded("r_unexpected", &[("m", m), ("p", Value::from(p.name()))])
+            }
+            Reason::InputVoltage { read_dv, nominal_v } => coded(
+                "r_vin",
+                &[
+                    ("m", m),
+                    ("v", Value::from(f64::from(read_dv) / 10.0)),
+                    ("n", Value::from(nominal_v)),
+                ],
+            ),
+            Reason::PartsAnswered => coded("r_parts", &[("m", m)]),
+            Reason::NoThermistor => coded("r_ntc", &[("m", m)]),
+        }
+    }
+
+    /// The board fits the bus: its first start, at `mv` (0: the
+    /// profile's own voltage).
+    pub fn first_start(board: &str, mv: u16) -> Detail {
+        if mv > 0 {
+            coded("first_mv", &[("m", name(board)), ("mv", Value::from(mv))])
+        } else {
+            coded("first", &[("m", name(board))])
+        }
+    }
+
+    /// A board chosen in the web UI (`reverify`: the verified one, to be
+    /// checked again).
+    pub fn chosen(board: &str, reverify: bool) -> Detail {
+        coded(
+            if reverify { "reverify" } else { "by_hand" },
+            &[("m", name(board))],
+        )
+    }
+
+    /// No chip temperature for `s` seconds: chips off.
+    pub fn blind(s: u32) -> Detail {
+        coded("blind", &[("s", Value::from(s))])
+    }
+
+    /// An overheat stop: chip and regulator temperature (`None`: no
+    /// reading) and their limits.
+    pub fn hot(chip: Option<f32>, chip_limit: f32, vr: Option<i32>, vr_limit: f32) -> Detail {
+        coded(
+            "hot",
+            &[
+                (
+                    "t",
+                    Value::from(chip.filter(|t| t.is_finite()).map(|t| t.round() as i32)),
+                ),
+                ("l", Value::from(chip_limit.round() as i32)),
+                ("v", Value::from(vr)),
+                ("vl", Value::from(vr_limit.round() as i32)),
+            ],
+        )
+    }
+
+    /// A regulator fault, the conditions by their codes
+    /// ([`Condition::code`]).
+    pub fn power(codes: &[&str]) -> Detail {
+        coded("power", &[("f", Value::from(codes))])
+    }
+
+    /// A self-test's verdict: the checks judged when it passed, else the
+    /// failed ones (at most [`MAX_FAILS`], with their count).
+    pub fn selftest(r: &Report) -> Detail {
+        if r.passed() {
+            return coded("st_pass", &[("n", Value::from(r.judged()))]);
+        }
+        let fails: Vec<Value> = r
+            .outcomes
+            .iter()
+            .filter(|o| o.status == Status::Fail)
+            .take(MAX_FAILS)
+            .map(|o| {
+                // [check, value, chip, domain, note], trailing blanks
+                // left out; the value to the precision the text shows.
+                let value = match (o.check, o.value) {
+                    (Check::InputVoltage, Some(v)) => fig(v),
+                    (_, Some(v)) if v.is_finite() => json!(v.round() as i64),
+                    _ => Value::Null,
+                };
+                let mut a = vec![
+                    json!(o.check.id()),
+                    value,
+                    o.chip.map_or(Value::Null, |c| json!(c)),
+                    o.domain.map_or(Value::Null, |d| json!(d)),
+                    json!(o.note.id()),
+                ];
+                while a.len() > 1
+                    && a.last()
+                        .is_some_and(|v| v.is_null() || v.as_str() == Some(""))
+                {
+                    a.pop();
+                }
+                Value::Array(a)
+            })
+            .collect();
+        coded(
+            "st_fail",
+            &[("n", Value::from(r.failed())), ("f", Value::from(fails))],
+        )
+    }
+}
+
+/// A value as the English text shows it.
+fn show(v: Option<&Value>) -> String {
+    match v {
+        Some(Value::String(s)) => s.clone(),
+        Some(Value::Number(n)) => n.to_string(),
+        Some(Value::Bool(b)) => b.to_string(),
+        _ => "–".into(),
+    }
+}
+
+/// One failed check (`[check, value, chip, domain, note]`) as the
+/// English text shows it: `hashrate chip 3 62 % (noReply)`.
+fn english_fail(a: &[Value]) -> String {
+    let id = a.first().and_then(Value::as_str).unwrap_or_default();
+    let mut s = id.to_string();
+    if let Some(c) = a.get(2).filter(|v| !v.is_null()) {
+        s.push_str(&format!(" chip {}", show(Some(c))));
+    }
+    if let Some(d) = a.get(3).filter(|v| !v.is_null()) {
+        s.push_str(&format!(" domain {}", show(Some(d))));
+    }
+    if let Some(v) = a.get(1).and_then(Value::as_f64) {
+        let check = [
+            Check::Hashrate,
+            Check::Domains,
+            Check::Errors,
+            Check::Fan,
+            Check::CoreVoltage,
+            Check::InputVoltage,
+            Check::Temperature,
+            Check::Chips,
+        ]
+        .into_iter()
+        .find(|c| c.id() == id);
+        match check {
+            Some(Check::Hashrate | Check::Domains | Check::Errors) => {
+                s.push_str(&format!(" {v:.0} %"))
+            }
+            Some(Check::Fan) => s.push_str(&format!(" {v:.0} rpm")),
+            Some(Check::CoreVoltage) => s.push_str(&format!(" {v:.0} mV")),
+            Some(Check::InputVoltage) => s.push_str(&format!(" {v:.2} V")),
+            Some(Check::Temperature) => s.push_str(&format!(" {v:.0} °C")),
+            Some(Check::Chips) => s.push_str(&format!(" {v:.0} found")),
+            _ => {}
+        }
+    }
+    if let Some(n) = a.get(4).and_then(Value::as_str).filter(|n| !n.is_empty()) {
+        s.push_str(&format!(" ({n})"));
+    }
+    s
+}
+
+/// The English text of a coded detail; `None` for a code this image
+/// does not know (written by a newer one).
+pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
+    let g = |k: &str| show(p.get(k));
+    Some(match c {
+        "chip_silent" => format!("chip {} silent", g("c")),
+        "chain_restart" => format!(
+            "all {} chips silent for 60 s at {} mV, chain restarted",
+            g("n"),
+            g("mv")
+        ),
+        "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
+        "pool_back" => "main pool answers again, back from the fallback".into(),
+        "pool_saved" => format!("saved pool {} used", g("p")),
+        "boot" => g("r"),
+        "boot_dump" => format!("{} {}", g("r"), g("tag")),
+        "boot_old_dump" => format!("{} no dump ({} old)", g("r"), g("tag")),
+        "rollback" => "the last update did not boot: back on the previous image".into(),
+        "installed" => format!("{} installed", g("v")),
+        "install_rec" => format!("{} {}", g("v"), g("s")),
+        "verified" => format!("{} verified, {} chips", g("m"), g("n")),
+        "verified_short" => format!("{} verified, {} of {} chips", g("m"), g("n"), g("e")),
+        "mm_count" => {
+            let m = g("m");
+            let model = Profile::by_name(&m).map_or(m.as_str(), |p| p.model);
+            format!(
+                "{m} refused: {} chip(s) answered, a {model} has {}",
+                g("f"),
+                g("e")
+            )
+        }
+        "mm_chip" => format!(
+            "{} refused: a chip answered as {}, not a {}",
+            g("m"),
+            g("id"),
+            g("c")
+        ),
+        "mm_none" => format!("{} refused: no chip answered in three attempts", g("m")),
+        "r_missing" => format!("{} refused: the {} did not answer", g("m"), g("p")),
+        "r_unexpected" => format!(
+            "{} refused: a {} answered, which it does not have",
+            g("m"),
+            g("p")
+        ),
+        "r_vin" => format!(
+            "{} refused: the regulator reads {:.1} V in, the board runs on {} V",
+            g("m"),
+            p.get("v").and_then(Value::as_f64).unwrap_or(0.0),
+            g("n")
+        ),
+        "r_parts" => format!(
+            "{} refused: parts answered on the I²C bus, which it has none of",
+            g("m")
+        ),
+        "r_ntc" => format!("{} refused: no thermistor divider on GPIO2", g("m")),
+        "first" => format!("{} first start", g("m")),
+        "first_mv" => format!("{} first start at {} mV", g("m"), g("mv")),
+        "reverify" => format!("{} to be verified again", g("m")),
+        "by_hand" => format!("{} chosen by hand", g("m")),
+        "blind" => format!("no chip temperature for {} s, chips off", g("s")),
+        "hot" => format!(
+            "chip {} °C (limit {}), regulator {} °C (limit {}), chips off",
+            g("t"),
+            g("l"),
+            g("v"),
+            g("vl")
+        ),
+        "power" => {
+            let what: Vec<&str> = p
+                .get("f")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(|c| match Condition::from_code(c) {
+                            Some(cond) => cond.describe(),
+                            None => c,
+                        })
+                        .collect()
+                })
+                .unwrap_or_default();
+            format!("regulator fault: {}", what.join("; "))
+        }
+        "st_pass" => format!("PASS, {} checks", g("n")),
+        "st_fail" => {
+            let fails: Vec<String> = p
+                .get("f")
+                .and_then(Value::as_array)
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_array)
+                        .map(|a| english_fail(a))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let more = p
+                .get("n")
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n as usize > fails.len());
+            format!(
+                "FAIL: {}{}",
+                fails.join(", "),
+                if more { ", …" } else { "" }
+            )
+        }
+        _ => return None,
+    })
 }
 
 /// The ring.
@@ -74,13 +639,22 @@ impl Ring {
     }
 
     /// Add an event; `false` when it was coalesced with the previous one
-    /// (nothing to store then). The detail is cut to [`MAX_DETAIL`].
+    /// (nothing to store then). A plain detail is cut to [`MAX_DETAIL`],
+    /// a coded one trimmed towards [`MAX_EVENT_BYTES`].
     pub fn push(&mut self, mut e: Event) -> bool {
         if e.d.chars().count() > MAX_DETAIL {
-            e.d = e.d.chars().take(MAX_DETAIL - 1).collect::<String>() + "…";
+            e.d = cut(&e.d, MAX_DETAIL);
+        }
+        if !e.c.is_empty() {
+            e.fit();
         }
         if let Some(last) = self.events.last() {
-            if last.k == e.k && last.d == e.d && e.u.saturating_sub(last.u) < COALESCE_S {
+            if last.k == e.k
+                && last.d == e.d
+                && last.c == e.c
+                && last.p == e.p
+                && e.u.saturating_sub(last.u) < COALESCE_S
+            {
                 return false;
             }
         }
@@ -110,12 +684,7 @@ mod tests {
     use super::*;
 
     fn ev(u: u64, k: &str, d: &str) -> Event {
-        Event {
-            t: 1_760_000_000 + u,
-            u,
-            k: k.into(),
-            d: d.into(),
-        }
+        Event::new(1_760_000_000 + u, u, k, Detail::from(d))
     }
 
     #[test]
@@ -170,6 +739,336 @@ mod tests {
         // Details at the cap plus ASCII-only kinds: a full ring of the
         // longest events still stores whole.
         assert!(r.to_json().len() <= MAX_BYTES);
+    }
+
+    fn st(check: Check, status: Status, value: Option<f32>) -> warpaxe_board::selftest::Outcome {
+        warpaxe_board::selftest::Outcome {
+            check,
+            status,
+            value,
+            limit: None,
+            value2: None,
+            limit2: None,
+            chip: None,
+            domain: None,
+            note: warpaxe_board::selftest::Note::None,
+        }
+    }
+
+    /// A failed check: which, its value, chip, domain and note.
+    type Fail = (
+        Check,
+        Option<f32>,
+        Option<u8>,
+        Option<u8>,
+        warpaxe_board::selftest::Note,
+    );
+
+    fn report(fails: &[Fail]) -> Report {
+        let outcomes =
+            warpaxe_board::selftest::CHECKS.map(|c| match fails.iter().find(|f| f.0 == c) {
+                Some(&(_, v, chip, domain, note)) => warpaxe_board::selftest::Outcome {
+                    chip,
+                    domain,
+                    note,
+                    ..st(c, Status::Fail, v)
+                },
+                None if c == Check::Regulator => st(c, Status::Skip, None),
+                None => st(c, Status::Pass, Some(1.0)),
+            });
+        Report { outcomes }
+    }
+
+    #[test]
+    fn every_coded_detail_reads_in_english_as_the_text_it_replaces() {
+        use warpaxe_board::choice::{Part, Reason};
+        use warpaxe_board::selftest::Note;
+        let cases: Vec<(Detail, &str)> =
+            vec![
+            (detail::chip_silent(3), "chip 3 silent"),
+            (
+                detail::chain_restart(4, 1150),
+                "all 4 chips silent for 60 s at 1150 mV, chain restarted",
+            ),
+            (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
+            (detail::pool_back(), "main pool answers again, back from the fallback"),
+            (detail::pool_saved("Braiins"), "saved pool Braiins used"),
+            (detail::boot("power-on", None), "power-on"),
+            (
+                detail::boot("panic", Some(("dump:3f2a9c1b0@4037a1b2", true))),
+                "panic dump:3f2a9c1b0@4037a1b2",
+            ),
+            (
+                detail::boot("int-wdt", Some(("dump:3f2a9c1b0@4037a1b2", false))),
+                "int-wdt no dump (dump:3f2a9c1b0@4037a1b2 old)",
+            ),
+            (
+                detail::rollback(),
+                "the last update did not boot: back on the previous image",
+            ),
+            (detail::installed("v0.1.35", ""), "v0.1.35 installed"),
+            (detail::installed("v0.1.35", "v0.1.35 verified"), "v0.1.35 verified"),
+            (detail::installed("v0.1.35", "odd"), "odd"),
+            (detail::verified("nerdaxe-gaia", 1, 1), "nerdaxe-gaia verified, 1 chips"),
+            (
+                detail::verified("nerdqaxe++", 3, 4),
+                "nerdqaxe++ verified, 3 of 4 chips",
+            ),
+            (
+                detail::refused_count("nerdqaxe-plusplus", 2, 4),
+                "nerdqaxe-plusplus refused: 2 chip(s) answered, a NerdQAxe++ has 4",
+            ),
+            (
+                detail::refused_chip("gamma", 0x1368, "BM1370"),
+                "gamma refused: a chip answered as 0x1368, not a BM1370",
+            ),
+            (
+                detail::refused_none("gamma"),
+                "gamma refused: no chip answered in three attempts",
+            ),
+            (
+                detail::refused("gamma", Reason::Missing(Part::Tps546)),
+                "gamma refused: the TPS546 did not answer",
+            ),
+            (
+                detail::refused("gamma", Reason::Unexpected(Part::Emc2302)),
+                "gamma refused: a EMC2302 answered, which it does not have",
+            ),
+            (
+                detail::refused("gamma", Reason::InputVoltage { read_dv: 51, nominal_v: 12 }),
+                "gamma refused: the regulator reads 5.1 V in, the board runs on 12 V",
+            ),
+            (
+                detail::refused("gamma", Reason::InputVoltage { read_dv: 120, nominal_v: 5 }),
+                "gamma refused: the regulator reads 12.0 V in, the board runs on 5 V",
+            ),
+            (
+                detail::refused("nano", Reason::PartsAnswered),
+                "nano refused: parts answered on the I²C bus, which it has none of",
+            ),
+            (
+                detail::refused("nano", Reason::NoThermistor),
+                "nano refused: no thermistor divider on GPIO2",
+            ),
+            (detail::first_start("nerdaxe-gaia", 1000), "nerdaxe-gaia first start at 1000 mV"),
+            (detail::first_start("devkit", 0), "devkit first start"),
+            (detail::chosen("gamma", true), "gamma to be verified again"),
+            (detail::chosen("gamma", false), "gamma chosen by hand"),
+            (detail::blind(30), "no chip temperature for 30 s, chips off"),
+            (
+                detail::hot(Some(76.4), 75.0, Some(60), 105.0),
+                "chip 76 °C (limit 75), regulator 60 °C (limit 105), chips off",
+            ),
+            (
+                detail::hot(None, 75.0, None, 105.0),
+                "chip – °C (limit 75), regulator – °C (limit 105), chips off",
+            ),
+            (
+                detail::power(&["vout_ov", "temp"]),
+                "regulator fault: An output overvoltage fault has occurred; Overtemperature fault",
+            ),
+            (detail::selftest(&report(&[])), "PASS, 8 checks"),
+            (
+                detail::selftest(&report(&[
+                    (Check::Hashrate, Some(62.4), Some(3), None, Note::None),
+                    (Check::InputVoltage, Some(4.85), None, None, Note::None),
+                ])),
+                "FAIL: hashrate chip 3 62 %, inputVoltage 4.85 V",
+            ),
+            (
+                detail::selftest(&report(&[
+                    (Check::Chips, Some(3.0), None, None, Note::None),
+                    (Check::Domains, Some(40.0), Some(2), Some(1), Note::NoReply),
+                    (Check::Fan, None, None, None, Note::NoReading),
+                    (Check::Temperature, Some(91.0), None, None, Note::Overheat),
+                ])),
+                "FAIL: chips 3 found, domains chip 2 domain 1 40 % (noReply), …",
+            ),
+        ];
+        for (i, (d, want)) in cases.into_iter().enumerate() {
+            assert_eq!(d.text(), want, "case {i}");
+            // Stored and read back, the event says the same.
+            let mut r = Ring::new();
+            r.push(Event::new(1, i as u64 * 100, "x", d.clone()));
+            let back = Ring::from_json(&r.to_json());
+            assert_eq!(back.events()[0].text(), want, "case {i} stored");
+            assert_eq!(back.events()[0].for_api().d, want, "case {i} api");
+        }
+    }
+
+    #[test]
+    fn a_coded_event_stores_no_text_and_an_older_image_still_reads_it() {
+        let mut r = Ring::new();
+        r.push(ev(5, "boot", "power-on"));
+        r.push(Event::new(9, 9, "chain", detail::chip_silent(3)));
+        let s = r.to_json();
+        assert!(
+            s.ends_with(r#"{"t":9,"u":9,"k":"chain","d":"","c":"chip_silent","p":{"c":3}}]"#),
+            "{s}"
+        );
+        // An image from before the codes: the four fields only.
+        #[derive(Deserialize)]
+        #[allow(dead_code)]
+        struct Old {
+            t: u64,
+            u: u64,
+            k: String,
+            d: String,
+        }
+        let old: Vec<Old> = serde_json::from_str(&s).unwrap();
+        assert_eq!(old.len(), 2);
+        assert_eq!(old[0].d, "power-on");
+        // An event stored before the codes reads as it was.
+        let back = Ring::from_json(&s);
+        assert_eq!(back.events()[0].c, "");
+        assert_eq!(back.events()[0].text(), "power-on");
+        let api = serde_json::to_value(back.events()[0].for_api()).unwrap();
+        assert_eq!(
+            api,
+            json!({"t": 1_760_000_005u64, "u": 5, "k": "boot", "d": "power-on"})
+        );
+        let api = serde_json::to_value(back.events()[1].for_api()).unwrap();
+        assert_eq!(
+            api,
+            json!({"t": 9, "u": 9, "k": "chain", "d": "chip 3 silent", "c": "chip_silent", "p": {"c": 3}})
+        );
+        // A code from a newer image: its stored text, else the code.
+        let e = Event {
+            c: "later".into(),
+            ..ev(1, "boot", "")
+        };
+        assert_eq!(e.text(), "later");
+    }
+
+    #[test]
+    fn coded_repeats_coalesce_and_other_values_do_not() {
+        let mut r = Ring::new();
+        assert!(r.push(Event::new(0, 100, "chain", detail::chip_silent(3))));
+        assert!(!r.push(Event::new(0, 130, "chain", detail::chip_silent(3))));
+        assert!(r.push(Event::new(0, 131, "chain", detail::chip_silent(4))));
+        assert_eq!(r.events().len(), 2);
+    }
+
+    #[test]
+    fn a_ring_of_the_longest_coded_events_fits_the_nvs_entry() {
+        use warpaxe_board::choice::{Part, Reason};
+        use warpaxe_board::selftest::Note;
+        // The longest board name, a pool name past the cut.
+        let (b, pool) = ("nerdqaxe-plusplus-rev7", "x".repeat(80));
+        let worst: Vec<(&str, Detail)> = vec![
+            (
+                "overheat",
+                detail::hot(Some(105.0), 105.0, Some(125), 145.0),
+            ),
+            ("board", detail::refused_count(b, 12, 12)),
+            (
+                "board",
+                detail::refused(b, Reason::Unexpected(Part::Tps53667)),
+            ),
+            (
+                "board",
+                detail::refused(
+                    b,
+                    Reason::InputVoltage {
+                        read_dv: 255,
+                        nominal_v: 12,
+                    },
+                ),
+            ),
+            ("board", detail::verified(b, 11, 12)),
+            ("board", detail::chosen(b, true)),
+            ("pool", detail::pool_saved(&pool)),
+            (
+                "boot",
+                detail::boot("task-wdt", Some(("dump:3f2a9c1b0@4037a1b2", false))),
+            ),
+            (
+                "power",
+                detail::power(&["off", "vout_ov", "iout_oc", "vin_uv", "temp", "temp_warn"]),
+            ),
+            ("chain", detail::chain_restart(12, 1350)),
+            (
+                "update",
+                detail::installed("v0.1.35", "v0.1.35-rc.12 verified"),
+            ),
+            (
+                "selftest",
+                detail::selftest(&report(&[
+                    (Check::Hashrate, Some(62.4), Some(11), None, Note::NoReply),
+                    (Check::Domains, Some(40.0), Some(11), Some(3), Note::NoReply),
+                    (Check::InputVoltage, Some(4.85), None, None, Note::NoReading),
+                ])),
+            ),
+        ];
+        // Each at most MAX_EVENT_BYTES, uptimes of months included.
+        for (k, d) in &worst {
+            let mut r = Ring::new();
+            r.push(Event::new(1_790_000_000, 99_999_999, k, d.clone()));
+            let n = r.to_json().len() - 2;
+            assert!(n <= MAX_EVENT_BYTES, "{k} {}: {n}", d.code());
+        }
+        // A ring of them all, in turn: most of it kept.
+        let mut r = Ring::new();
+        for i in 0..CAPACITY {
+            let (k, d) = &worst[i % worst.len()];
+            r.push(Event::new(
+                1_790_000_000 + i as u64,
+                10_000_000 + i as u64 * 100,
+                k,
+                d.clone(),
+            ));
+        }
+        let s = r.to_json();
+        assert!(s.len() <= MAX_BYTES, "{}", s.len());
+        assert!(Ring::from_json(&s).events().len() >= 26);
+        // Everyday events, a month up: all kept.
+        let everyday = [
+            ("boot", detail::boot("power-on", None)),
+            ("chain", detail::chip_silent(11)),
+            ("pool", detail::pool_fallback(3)),
+            ("pool", detail::pool_back()),
+            ("board", detail::first_start(b, 1150)),
+            ("board", detail::verified(b, 4, 4)),
+            ("selftest", detail::selftest(&report(&[]))),
+            ("overheat", detail::hot(Some(76.0), 75.0, Some(60), 105.0)),
+            ("update", detail::installed("v0.1.35", "v0.1.35 verified")),
+        ];
+        let mut r = Ring::new();
+        for i in 0..CAPACITY {
+            let (k, d) = &everyday[i % everyday.len()];
+            r.push(Event::new(
+                1_790_000_000 + i as u64,
+                2_600_000 + i as u64 * 100,
+                k,
+                d.clone(),
+            ));
+        }
+        let s = r.to_json();
+        assert!(s.len() <= MAX_BYTES, "{}", s.len());
+        assert_eq!(Ring::from_json(&s).events().len(), CAPACITY);
+        // A ring of only the longest kind: still most of it.
+        for (k, d) in worst {
+            let mut r = Ring::new();
+            for i in 0..CAPACITY as u64 {
+                r.push(Event::new(
+                    1_790_000_000 + i,
+                    10_000_000 + i * 100,
+                    k,
+                    d.clone(),
+                ));
+            }
+            let s = r.to_json();
+            assert!(s.len() <= MAX_BYTES, "{k} {}: {}", d.code(), s.len());
+            let back = Ring::from_json(&s);
+            assert!(
+                back.events().len() >= 26,
+                "{k} {}: {}",
+                d.code(),
+                back.events().len()
+            );
+            // Trimmed, it still reads.
+            assert!(!back.events()[0].text().is_empty());
+        }
     }
 
     #[test]

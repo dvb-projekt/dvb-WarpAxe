@@ -783,11 +783,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                             }
                             events::record(
                                 "board",
-                                if reverify {
-                                    format!("{name} to be verified again")
-                                } else {
-                                    format!("{name} chosen by hand")
-                                },
+                                warpaxe_diag::events::detail::chosen(&name, reverify),
                             );
                             events::flush();
                         }
@@ -1133,7 +1129,10 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                         Ok(_) => {
                             log::info!("pools: {who} switched to saved pool {:?}", p.name);
                             config::record_patch(&who, &[format!("pool:{}", p.name)]);
-                            crate::events::record("pool", format!("saved pool {} used", p.name));
+                            crate::events::record(
+                                "pool",
+                                warpaxe_diag::events::detail::pool_saved(&p.name),
+                            );
                             crate::events::flush();
                             crate::display::touch();
                             stratum::reconnect();
