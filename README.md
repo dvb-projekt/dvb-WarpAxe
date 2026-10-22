@@ -157,8 +157,13 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, way back to the stock firmware, live log" width="760"><br>
-  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off while the device stays reachable, reset an overheat stop), the way back to the stock firmware and the live log.</em>
+  <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, self-test, diagnostics file and event log, way back to the stock firmware, live log" width="760"><br>
+  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off while the device stays reachable, reset an overheat stop), the self-test with a ✓ or ✗ per check, the diagnostics file, the event log (in the web UI's language), the way back to the stock firmware and the live log.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/web-board-choice.png" alt="First start: the boards that fit, with a Show all boards button" width="760"><br>
+  <em>First start on a board WarpAxe cannot identify with certainty — only the boards that fit what answered on the bus are listed, the rest are behind "Show all boards"; the chips stay off until a board is chosen and, after the restart, has passed the bus check.</em>
 </p>
 
 <p align="center">
