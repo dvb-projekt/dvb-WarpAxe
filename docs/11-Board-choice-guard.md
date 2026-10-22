@@ -45,7 +45,7 @@ board that has already been verified.
 
    | Profile needs on its own bus | must answer | must be silent | input class |
    |---|---|---|---|
-   | TPS546 regulator (`Vr::Tps546*`) | TPS546 0x24 | — | 5 or 12 V from `READ_VIN` (0.75–1.35 × nominal) |
+   | TPS546 regulator (`Vr::Tps546*`) | TPS546 0x24 | — | 5 or 12 V from `READ_VIN` (0.75–1.35 × nominal), only where another profile on the same bus shows the same parts on the other class (the NerdAxe Gamma and the Gaia) |
    | TPS5364x regulator | — | TPS546 0x24 (a Rev 7) | — |
    | INA260 (Nano) | INA260 0x40 | — | |
    | FXL6408 expander (Q13xx) | FXL6408 0x43 | — | |
@@ -67,20 +67,37 @@ board that has already been verified.
 3. **A cautious first start, then the count.** A profile that fits brings
    its chain up at the lowest bring-up voltage of any board the bus
    cannot tell it from (`choice::cautious_core_mv`: the profile's own
-   bring-up or configured point, capped at every sibling's bring-up
-   voltage, floored at the regulator's clean range). The enumeration then
-   decides (`choice::first_start_verdict`, applied in `miner.rs` on
-   `Event::Enumerated` / `UnexpectedChip` / `InitFailed`):
+   bring-up voltage, or the configured point when that is lower; never
+   above the profile's own bring-up, never above any sibling's bring-up,
+   never below the regulator's clean range). A configured point above
+   the bring-up voltage (an overclock, or a voltage left over from the
+   board configured before) applies only once the choice is verified;
+   one outside the profile's own window (`regulatorMinMv` … `absMaxCoreMv`)
+   is reset to the factory point at that start, as the clock already is.
+   The enumeration then decides (`choice::first_start_verdict`, applied
+   in `miner.rs` on `Event::Enumerated` / `UnexpectedChip` /
+   `InitFailed`), always against the profile's own chip count, never the
+   configured `asicCount` (that is the one tell the NerdQAxe++ / Octaxe
+   pair has):
 
-   - the count equals the profile's (or the configured `asicCount`) →
-     **verified**: the name is written to NVS (`boardok`), the core
-     voltage goes to the configured point, and 20 s later the self-test
-     runs once (its result lands in the event log as before);
-   - another count, a chip id the profile does not carry, or no chip in
-     three inits → **refused**: the chips are switched off again (rail
-     off, reset held) and stay off whatever `/api/v1/chips/on` says, until
-     a restart (the same choice is tried once more) or another choice in
-     the web UI. Nothing is saved.
+   - the count equals the profile's → **verified**: the name is written
+     to NVS (`boardok`), the configured core voltage applies once the
+     chain init is over (`chain_ready`, as NerdOS sets its final voltage
+     after the init), and 20 s later the self-test runs once (its result
+     lands in the event log as before);
+   - fewer chips than the profile has, and no board that fits the bus
+     has that count (an Octaxe with seven) → **verified with a warning**
+     (`verified, 7 of 8 chips` in the event log): a dead chip or a bad
+     contact, not another board; the self-test then says which;
+   - more chips than the profile has, exactly a sibling's count (four on
+     an Octaxe profile: the NerdQAxe++; one on a Gamma Duo profile: the
+     Gamma), a chip id the profile does not carry, or no chip in three
+     inits → **refused**: the chips are switched off again (rail off,
+     reset held) and stay off whatever `/api/v1/chips/on` says (it
+     answers 409), until a restart (the same choice is tried once more)
+     or another choice in the web UI. Nothing is saved. A regulator that
+     did not come up is a board fault, not a verdict: the choice stays
+     pending and the board's error shows as before.
 
    A board without a chain (the devkit) is verified at the check. A board
    whose name is already in `boardok` starts as before; the probe is not
@@ -101,17 +118,19 @@ profiles) and tries every other profile on it. The outcome, 2026-10-22:
 | NerdQAxe++ → Octaxe with the six-phase TPS53667 | refused at the check: device code 0x01F8 |
 | Gamma → Nano | refused: the PCA9544 mux answered |
 | Gamma ↔ Gamma Turbo | refused: EMC2103 vs EMC2101 |
-| Gamma ↔ Gamma Duo | **sibling**: same regulator window, one domain, 1150 mV bring-up both; the count (1 vs 2) refuses the wrong one |
-| Naja Duo ↔ Gamma Hex | **sibling**: two domains both; first start at 1000 mV × 2 = 2.0 V (the Naja's bring-up; the Hex's own is 2.4 V); the chip type (BM1373 vs BM1370) and the count (2 vs 6) refuse the wrong one |
-| NerdQAxe++ ↔ Octaxe with the four-phase TPS53647 | **sibling**: one domain both; first start at 1200 mV (both bring up at 1200 / 1210); the count (4 vs 8) refuses the wrong one |
+| Gamma ↔ Gamma Duo | **sibling**: same regulator window, one domain, 1150 mV bring-up both; the count refuses the wrong one (a Duo profile on a Gamma counts one, the Gamma's count; a Gamma profile on a Duo counts two, more than it has) |
+| Naja Duo ↔ Gamma Hex | **sibling**: two domains both; first start at 1000 mV × 2 = 2.0 V (the Naja's bring-up; the Hex's own is 2.4 V); the chip type (BM1373 vs BM1370) refuses the wrong one before any count |
+| NerdQAxe++ ↔ Octaxe with the four-phase TPS53647 | **sibling**: one domain both; first start at 1200 mV (both bring up at 1200 / 1210); the count refuses the wrong one (an Octaxe profile on a NerdQAxe++ counts four, the sibling's count; a NerdQAxe++ profile on an Octaxe counts eight, more than it has) |
 | Q1370 ↔ Q1373 | **sibling**: one domain both, four chips both; first start at 1050 mV (the Q1373's bring-up; the Q1370's own is 1200); the chip type refuses the wrong one |
 | NerdNOS → T-Display-S3 devkit | **sibling** without a regulator: the ESP hashes on its CPU, the chip stays in reset |
 
 The test asserts for every accepted pair that the chosen profile has no
 more voltage domains in series than the real board, that the cautious
 VOUT is at or below the real board's own bring-up VOUT, and that the
-chip type or the count differs (or neither has a regulator). A new
-profile that creates a new ambiguity fails this test.
+chip type or the count differs (or neither has a regulator); a second
+test (`every_sibling_pair_is_told_apart_by_count_or_chip_type`) runs the
+count rule on each pair and expects a refusal. A new profile that
+creates a new ambiguity fails these tests.
 
 ### Does a sibling ever get too much voltage?
 
@@ -165,16 +184,21 @@ used to run as one, with a warning; now the count refuses it.
 
 ## After the update
 
-A board that ran under an earlier version has no `boardok` entry, so its
-first start under v0.1.35 is a cautious one: the probe (as on its very
-first start), the check, the chain at the cautious voltage until the
-count matches, then one self-test. For the fleet that means no change in
-voltage (every board is either unique on the bus or has the same bring-up
-voltage as its sibling, see the table) and one self-test about 20 s after
-the chain is up. A board whose sensor or regulator has died since would
-be refused instead of running without it; the web UI then says which part
-did not answer. **Open for Oliver:** keep this, or treat a `boardModel`
-saved by an earlier version as verified (one line in `board::init_bus`).
+A `boardModel` saved by a firmware before v0.1.35 has no `boardok` entry
+at all: it has run on this board, so `board::init_bus` takes it as
+verified, writes the entry and starts as before. Nothing changes for the
+fleet. Only a choice made under this firmware goes through the check:
+the detection and `PATCH boardModel` write `boardok = "pending"` first,
+so the entry is present but not the name. (First version of this branch
+gated every board without the entry; the audit showed that a fleet board
+with one dead chip, or whose sensor had died, would have been switched
+off and kept off at the update: finding 1 below.)
+
+A board whose sensor or regulator has died is refused only when it is
+chosen anew; the web UI then says which part did not answer. **Open for
+Oliver:** whether a refusal for a missing *sensor* (not the regulator)
+should instead degrade as the running path does (fans at full, no chip
+limit), with a warning.
 
 ## Web UI, API, events
 
@@ -189,8 +213,10 @@ saved by an earlier version as verified (one line in `board::init_bus`).
   `thermistor`). `boardDetect` is `null` on a verified board's later
   boots, as before.
 - `PATCH /api/system {boardModel}`: 400 for a name the firmware does not
-  know; a known name is saved and logged (`board: <name> chosen by
-  hand`), and verified or refused at the next start.
+  know; a known name is saved, marked pending in NVS and logged
+  (`board: <name> chosen by hand`), and verified or refused at the next
+  start. `POST /api/v1/chips/on` answers 409 while a refused choice holds
+  the chips off.
 - Web UI: the choice card lists the boards that fit; *Show all boards*
   with a warning; a refused board shows the reason and the boards that
   fit; a mismatch shows what answered, with *Restart and try again*; a
@@ -220,15 +246,82 @@ saved by an earlier version as verified (one line in `board::init_bus`).
 
 - The check and the probe are read-only (the one write, OPERATION off
   for a rail the stock firmware left on, is the first start's own since
-  v0.1.15).
+  v0.1.15; the 150 ms pulse on GPIO13 to read the NerdNOS rail on a board
+  where nothing answered is the first start's own since v0.1.22).
 - No profile pin is driven before the check passed: `board::gate` runs
   inside `board::init_bus`, `board::quiesce` and `board::start` come
   after.
 - The cautious voltage is never above the profile's own bring-up voltage
-  and never below the regulator's clean range (`regulator_min_core_mv`).
+  (a configured point above it waits for the verification, and a PATCH
+  of `coreVoltage` during the first start is capped at it), never above
+  a sibling's, and never below the regulator's clean range
+  (`regulator_min_core_mv`).
 - Stop limits, fan logic and the self-test are unchanged; the self-test
   after a verified first start is the ordinary one (`POST
   /api/v1/selftest`), started 20 s after the chain is up.
 - Nothing was flashed and no device was restarted for this work; the
   first device runs are Oliver's call (a wrong choice is never tried on
   real hardware, only here and in the host tests).
+
+## Image size
+
+`warpaxe.bin` 2,855,360 B, 31.4 KB over the v0.1.34 release (2,823,968 B):
+the choice module, the probe's two extra reads, the gate and the UI
+texts in eight languages. Above the 30 KB line agreed for one change,
+by 1.4 KB; reported with the handover.
+
+## Audit
+
+An independent read-only review of the branch (2026-10-22, every area:
+power path, verdict, threading and flash, the update on the fleet, the
+probe, API and web UI, docs) found twelve points; all are in this state
+of the branch:
+
+1. **High.** Every fleet board (no `boardok`) would have gone through the
+   gate and the count at the update; one with a dead chip or a dead
+   sensor would have been switched off and kept off. Fixed: a
+   `boardModel` from an earlier version is taken as verified; only a
+   choice made under this firmware (marked `pending` in NVS by the
+   detection and by PATCH) is checked. And the count refuses only
+   another board's count (more than the profile has, or exactly a
+   sibling's); fewer chips verify with a warning.
+2. The cautious voltage took a configured point above the profile's
+   bring-up (a Turbo at 1250, a Rev 7's 1300 mV left in the config for a
+   Nano). Fixed: capped at the bring-up voltage; a point outside the
+   profile's window is reset to the factory point at that start.
+3. The configured `asicCount` could make a NerdQAxe++ profile verify on
+   an Octaxe. Fixed: the verdict uses the profile's own count.
+4. The `READ_VIN` class check refused every TPS546 board on an odd
+   reading, though only the NerdAxe Gamma / Gaia pair needs it. Fixed:
+   applied only where two profiles share their parts across classes.
+5. The `refused` event never reached flash (no board thread to flush it).
+   Fixed: flushed on the main task in `gate`.
+6. `POST /api/v1/chips/on` claimed success while the chips stayed
+   blocked. Fixed: 409 with the choice state.
+7. Three failed inits refused the choice even when the regulator had not
+   come up. Fixed: no verdict without the regulator; the choice stays
+   pending and the board error shows.
+8. A `PATCH coreVoltage` during the first start bypassed the cautious
+   cap. Fixed: capped in `request_core_mv` while pending.
+9. The configured voltage was applied at `Enumerated`, during the chip
+   init. Fixed: `chain_ready` applies it after the init, as before.
+10. Values the UI inserts from `reason` and `detail` were not escaped
+    (firmware constants today). Fixed: `esc()` on each.
+11. Docs claims: the cautious cap (now true), the fleet's "no change"
+    (now true by the migration), the devkit-on-NerdNOS wording (the
+    chip is unpowered, not held in reset), the GPIO13 pulse (noted
+    above). `verify_choice` logged at warn level (now info).
+12. The choice state was a mutex read in the miner's loop. Fixed: an
+    atomic.
+
+Clean: the ordering of the power path (no pin, regulator write or
+voltage before `gate`; a refused choice cannot be powered through
+`chips/on`, the overheat reset or the board loop), the verdict mechanics,
+threading and flash (NVS writes on the main task, the miner thread and
+the HTTP task only; no lock-order cycle), the probe's read-only
+transactions and the other pin pair on every board, the API shape against
+the web UI, the eight languages. Not verifiable on the host: the Nano's
+and the Gamma's `READ_VIN` (no longer judged, but logged in the probe
+line), the Gaia's EMC2101 answering with the LDO undriven (the pre-change
+detection relied on the same probe and found it).
+

@@ -311,7 +311,11 @@ pub fn check(profile: &Profile, e: &Evidence) -> Result<(), Reason> {
     if let Some(p) = n.present().find(|p| !bus.contains(&p.addr())) {
         return Err(Reason::Missing(p));
     }
-    if n.vin_v > 0 {
+    // The input class only where it tells two profiles apart (the
+    // NerdAxe Gamma and the Gaia share their parts); elsewhere a sagging
+    // supply or a reading the part has not settled must not refuse a
+    // board its parts already named.
+    if n.vin_v > 0 && class_ambiguous(profile) {
         if let Some(v) = e.vin_v {
             if !vin_fits(n.vin_v, v) {
                 return Err(Reason::InputVoltage {
@@ -322,6 +326,18 @@ pub fn check(profile: &Profile, e: &Evidence) -> Result<(), Reason> {
         }
     }
     Ok(())
+}
+
+/// Another profile on the same bus shows the same parts but runs on
+/// another input class: only then does READ_VIN decide.
+pub fn class_ambiguous(p: &Profile) -> bool {
+    let mine = needs(p);
+    ALL.iter().any(|q| {
+        q.name != p.name
+            && bus_of(q) == bus_of(p)
+            && q.nominal_voltage_v != p.nominal_voltage_v
+            && needs(q).present == mine.present
+    })
 }
 
 /// Every profile that fits the evidence, boards with chips first and
@@ -344,17 +360,22 @@ pub fn bring_up_mv(p: &Profile) -> u16 {
 }
 
 /// The core voltage for the first chain start after a choice: the
-/// profile's own bring-up (its init voltage, or the configured point if
-/// higher), but never above the bring-up voltage of any sibling the
-/// bus cannot tell it from, and never below the regulator's floor. So a
-/// Gamma Hex chosen on a Naja Duo starts at the Naja's 1000 mV, a
-/// Q1370 on a Q1373 at the Q1373's 1050 mV; the chip count and the chip
-/// id then decide whether the choice stands. 0 without a regulator.
+/// profile's own bring-up voltage (or the configured point, if that is
+/// lower than the bring-up and above the init voltage), never above the
+/// bring-up voltage of any sibling the bus cannot tell it from, and
+/// never below the regulator's floor. A configured point above the
+/// profile's bring-up (tuned for the board that was configured before,
+/// or an overclock) waits until the choice is verified. So a Gamma Hex
+/// chosen on a Naja Duo starts at the Naja's 1000 mV, a Q1370 on a Q1373
+/// at the Q1373's 1050 mV; the chip count and the chip id then decide
+/// whether the choice stands. 0 without a regulator.
 pub fn cautious_core_mv(profile: &Profile, e: &Evidence, configured_mv: u16) -> u16 {
     if profile.vr == Vr::None {
         return 0;
     }
-    let normal = profile.init_core_mv.max(configured_mv);
+    let normal = profile
+        .init_core_mv
+        .max(configured_mv.min(bring_up_mv(profile)));
     let siblings_low = candidates(e)
         .filter(|c| c.name != profile.name && c.vr != Vr::None)
         .map(bring_up_mv)
@@ -379,8 +400,18 @@ pub enum FirstStart {
     },
     /// Nothing answered.
     NoChips,
-    /// The count is not the profile's.
+    /// The count is another board's: more chips than the profile has,
+    /// or exactly a sibling's count.
     WrongCount {
+        /// How many answered.
+        found: u8,
+        /// How many the profile has.
+        expected: u8,
+    },
+    /// Fewer chips than the profile has, and no sibling has that count:
+    /// a dead chip or a bad contact, not another board. The choice
+    /// stands, with a warning.
+    ShortCount {
         /// How many answered.
         found: u8,
         /// How many the profile has.
@@ -390,8 +421,16 @@ pub enum FirstStart {
 
 /// Judge the enumeration: a chip id the profile does not carry rules the
 /// choice out first, then no chips at all, then the count against the
-/// profile's (0 = discover: any count passes).
-pub fn first_start_verdict(found: u8, expected: u8, unexpected_chip: Option<u16>) -> FirstStart {
+/// profile's (0 = discover: any count passes). `sibling_counts` are the
+/// chip counts of the other boards that fit the bus: a count that is one
+/// of those, or more chips than the profile has, means another board; a
+/// smaller count that is nobody's means missing chips (ShortCount).
+pub fn first_start_verdict(
+    found: u8,
+    expected: u8,
+    unexpected_chip: Option<u16>,
+    sibling_counts: &[u8],
+) -> FirstStart {
     if let Some(chip_id) = unexpected_chip {
         return FirstStart::WrongChip { chip_id };
     }
@@ -399,7 +438,10 @@ pub fn first_start_verdict(found: u8, expected: u8, unexpected_chip: Option<u16>
         return FirstStart::NoChips;
     }
     if expected > 0 && found != expected {
-        return FirstStart::WrongCount { found, expected };
+        if found > expected || sibling_counts.contains(&found) {
+            return FirstStart::WrongCount { found, expected };
+        }
+        return FirstStart::ShortCount { found, expected };
     }
     FirstStart::Verified { chips: found }
 }
@@ -711,12 +753,24 @@ mod tests {
         assert_eq!(mv(&BITFORGE_NANO, "bitforge-nano"), 1150);
         assert_eq!(mv(&NERDAXE_GAIA, "nerdaxe-gaia"), 1000);
         assert_eq!(mv(&NERDNOS, "nerdnos"), 0);
-        // The configured point counts when it is above the init voltage
-        // (a Turbo at 1250), the regulator floor always.
+        // A configured point above the profile's bring-up voltage (a
+        // Turbo tuned to 1250, or a point left over from another board)
+        // waits until the choice is verified; one below the init voltage
+        // does not pull the bring-up down.
         let r = real("bitaxe-gamma-turbo");
         assert_eq!(
             cautious_core_mv(&BITAXE_GAMMA_TURBO, &evidence(&r), 1250),
-            1250
+            1150
+        );
+        assert_eq!(
+            cautious_core_mv(&BITAXE_GAMMA_TURBO, &evidence(&r), 1100),
+            1100
+        );
+        let r = real("bitforge-nano");
+        assert_eq!(
+            cautious_core_mv(&BITFORGE_NANO, &evidence(&r), 1300),
+            1150,
+            "a Rev 7's 1300 mV left in the config"
         );
         let r = real("nerdaxe-gaia");
         assert_eq!(
@@ -791,6 +845,28 @@ mod tests {
                 nominal_v: 12
             })
         );
+        // Only that pair is judged by the input class: a Nano, a Turbo
+        // or a Hex whose regulator reads an odd VIN keeps running on
+        // what its parts say.
+        assert!(class_ambiguous(&NERDAXE_GAMMA) && class_ambiguous(&NERDAXE_GAIA));
+        for p in [
+            &BITFORGE_NANO,
+            &BITAXE_GAMMA,
+            &BITAXE_GAMMA_TURBO,
+            &BITAXE_GAMMA_HEX,
+            &NERDQAXE_PLUSPLUS_REV7,
+        ] {
+            assert!(!class_ambiguous(p), "{}", p.name);
+            let r = reals()
+                .into_iter()
+                .find(|r| r.board.name == p.name)
+                .unwrap();
+            let e = Evidence {
+                vin_v: Some(7.5),
+                ..evidence(&r)
+            };
+            assert_eq!(check(p, &e), Ok(()), "{}", p.name);
+        }
         // A bare profile on a board with chips, and a NerdNOS on a bare
         // T-Display.
         assert_eq!(
@@ -911,30 +987,80 @@ mod tests {
     #[test]
     fn the_first_start_verdict() {
         assert_eq!(
-            first_start_verdict(4, 4, None),
+            first_start_verdict(4, 4, None, &[8]),
             FirstStart::Verified { chips: 4 }
         );
         assert_eq!(
-            first_start_verdict(2, 0, None),
+            first_start_verdict(2, 0, None, &[]),
             FirstStart::Verified { chips: 2 }
         );
+        // An Octaxe chosen on a NerdQAxe++: four chips, the sibling's count.
         assert_eq!(
-            first_start_verdict(2, 4, None),
+            first_start_verdict(4, 8, None, &[4]),
             FirstStart::WrongCount {
-                found: 2,
+                found: 4,
+                expected: 8
+            }
+        );
+        // A NerdQAxe++ chosen on an Octaxe: more chips than it has.
+        assert_eq!(
+            first_start_verdict(8, 4, None, &[8]),
+            FirstStart::WrongCount {
+                found: 8,
                 expected: 4
             }
         );
-        assert_eq!(first_start_verdict(0, 1, None), FirstStart::NoChips);
+        // A Gamma Duo chosen on a Gamma: one chip, the Gamma's count.
         assert_eq!(
-            first_start_verdict(2, 2, Some(0x1373)),
+            first_start_verdict(1, 2, None, &[1]),
+            FirstStart::WrongCount {
+                found: 1,
+                expected: 2
+            }
+        );
+        // An Octaxe with a dead chip: seven is nobody's count.
+        assert_eq!(
+            first_start_verdict(7, 8, None, &[4]),
+            FirstStart::ShortCount {
+                found: 7,
+                expected: 8
+            }
+        );
+        assert_eq!(first_start_verdict(0, 1, None, &[]), FirstStart::NoChips);
+        assert_eq!(
+            first_start_verdict(2, 2, Some(0x1373), &[]),
             FirstStart::WrongChip { chip_id: 0x1373 }
         );
         assert_eq!(
-            first_start_verdict(0, 2, Some(0x1373)),
+            first_start_verdict(0, 2, Some(0x1373), &[]),
             FirstStart::WrongChip { chip_id: 0x1373 },
             "the chip id before the count"
         );
+    }
+
+    /// For every sibling pair the enumeration tells the boards apart
+    /// with the rule above: the real board's count is either more than
+    /// the chosen profile's or exactly a sibling's.
+    #[test]
+    fn every_sibling_pair_is_told_apart_by_count_or_chip_type() {
+        for (chosen, real) in SIBLINGS {
+            let c = ALL.iter().find(|p| p.name == *chosen).unwrap();
+            let r = reals().into_iter().find(|r| r.board.name == *real).unwrap();
+            if c.asic == r.board.asic && c.vr != Vr::None {
+                let e = evidence(&r);
+                let siblings: Vec<u8> = candidates(&e)
+                    .filter(|p| p.name != c.name)
+                    .map(|p| p.asic_count)
+                    .collect();
+                assert!(
+                    matches!(
+                        first_start_verdict(r.board.asic_count, c.asic_count, None, &siblings),
+                        FirstStart::WrongCount { .. }
+                    ),
+                    "{chosen} on {real}"
+                );
+            }
+        }
     }
 
     #[test]

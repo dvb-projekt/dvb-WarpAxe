@@ -725,6 +725,10 @@ pub fn nvs_set_str(key: &str, value: &str) -> Result<(), String> {
 /// bus first (`warpaxe_board::choice`).
 const BOARD_OK_KEY: &str = "boardok";
 
+/// What `boardok` holds for a choice made under this firmware that has
+/// not passed its first start yet (never a profile name).
+pub const BOARD_PENDING: &str = "pending";
+
 pub fn verified_board() -> Option<String> {
     nvs_get_str(BOARD_OK_KEY, 48)
 }

@@ -951,15 +951,24 @@ mod board_choice {
         let count = enumerated(&b).expect("enumerated");
         assert_eq!(count, 2);
         assert_eq!(unexpected(&b), None);
+        // Two is a sibling's count (a two-chip board on the same bus):
+        // another board. Nobody's count: chips missing, the choice stands.
         assert_eq!(
-            first_start_verdict(count, 4, unexpected(&b)),
+            first_start_verdict(count, 4, unexpected(&b), &[2]),
             FirstStart::WrongCount {
                 found: 2,
                 expected: 4
             }
         );
         assert_eq!(
-            first_start_verdict(count, 2, unexpected(&b)),
+            first_start_verdict(count, 4, unexpected(&b), &[]),
+            FirstStart::ShortCount {
+                found: 2,
+                expected: 4
+            }
+        );
+        assert_eq!(
+            first_start_verdict(count, 2, unexpected(&b), &[]),
             FirstStart::Verified { chips: 2 }
         );
     }
@@ -992,7 +1001,7 @@ mod board_choice {
                 driver.name,
                 b.events
             );
-            let verdict = first_start_verdict(0, 6, unexpected(&b));
+            let verdict = first_start_verdict(0, 6, unexpected(&b), &[2]);
             assert!(
                 matches!(verdict, FirstStart::NoChips | FirstStart::WrongChip { .. }),
                 "{verdict:?}"
@@ -1013,6 +1022,6 @@ mod board_choice {
         b.run_until_ready(20_000);
         assert_eq!(b.drv.phase(), Phase::Failed);
         assert_eq!(enumerated(&b), None);
-        assert_eq!(first_start_verdict(0, 1, None), FirstStart::NoChips);
+        assert_eq!(first_start_verdict(0, 1, None, &[]), FirstStart::NoChips);
     }
 }

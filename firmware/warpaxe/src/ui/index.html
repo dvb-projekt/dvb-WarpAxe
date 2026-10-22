@@ -1149,17 +1149,17 @@ let bdShowAll = false;
 function bdModel(n) { const m = (info?.boardModels || []).find(b => b.name === n); return m ? m.model : (n || ""); }
 function bdReason(r, m) {
   if (!r) return "";
-  if (r.code === "missing") return t("bd_r_missing", {p: r.part, m});
-  if (r.code === "unexpected") return t("bd_r_unexpected", {p: r.part, m});
-  if (r.code === "inputVoltage") return t("bd_r_vin", {v: r.readV, n: r.nominalV, m});
+  if (r.code === "missing") return t("bd_r_missing", {p: esc(r.part), m});
+  if (r.code === "unexpected") return t("bd_r_unexpected", {p: esc(r.part), m});
+  if (r.code === "inputVoltage") return t("bd_r_vin", {v: esc(r.readV), n: esc(r.nominalV), m});
   if (r.code === "partsAnswered") return t("bd_r_parts", {m});
   if (r.code === "noThermistor") return t("bd_r_ntc", {m});
   return esc(r.code);
 }
 function bdMismatch(x, m) {
   if (!x) return "";
-  if (x.kind === "count") return t("bd_mm_count", {f: x.found, e: x.expected, m});
-  if (x.kind === "chip") return t("bd_mm_chip", {id: x.chipId, c: x.chip, m});
+  if (x.kind === "count") return t("bd_mm_count", {f: esc(x.found), e: esc(x.expected), m});
+  if (x.kind === "chip") return t("bd_mm_chip", {id: esc(x.chipId), c: esc(x.chip), m});
   return t("bd_mm_none", {m});
 }
 /* A board taken by the detection or named in the settings, on its first

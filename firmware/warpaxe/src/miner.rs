@@ -539,10 +539,19 @@ fn run(mut uart: ChipUart) {
                     Event::Enumerated { count } => {
                         log::info!("miner: {count} chip(s) answered");
                         if board::choice_pending() {
-                            match choice::first_start_verdict(count, board::chips_expected(), None)
-                            {
-                                FirstStart::Verified { chips } => {
-                                    board::verify_choice(chips);
+                            // Against the profile's own count, never the
+                            // configured asicCount: that is the one tell
+                            // the NerdQAxe++/Octaxe pair has.
+                            let expected = board::profile().asic_count;
+                            match choice::first_start_verdict(
+                                count,
+                                expected,
+                                None,
+                                &board::sibling_counts(),
+                            ) {
+                                FirstStart::Verified { chips }
+                                | FirstStart::ShortCount { found: chips, .. } => {
+                                    board::verify_choice(chips, expected);
                                     selftest_due = Some(Instant::now() + Duration::from_secs(20));
                                 }
                                 v => board::reject_choice(v),
@@ -580,13 +589,24 @@ fn run(mut uart: ChipUart) {
                             );
                         });
                         if board::choice_pending() {
-                            first_start_attempts += 1;
-                            if first_start_attempts >= 3 {
-                                board::reject_choice(FirstStart::NoChips);
-                            } else {
+                            // A regulator that did not come up is a board
+                            // fault, not a wrong board: no verdict then.
+                            let no_regulator = (profile.tps546().is_some()
+                                || profile.tps53647().is_some())
+                                && !board::state().has_vr;
+                            if no_regulator {
                                 log::warn!(
-                                    "miner: first start attempt {first_start_attempts} of 3 found no chips"
+                                    "miner: first start without the regulator up: the choice stays pending"
                                 );
+                            } else {
+                                first_start_attempts += 1;
+                                if first_start_attempts >= 3 {
+                                    board::reject_choice(FirstStart::NoChips);
+                                } else {
+                                    log::warn!(
+                                        "miner: first start attempt {first_start_attempts} of 3 found no chips"
+                                    );
+                                }
                             }
                         }
                     }

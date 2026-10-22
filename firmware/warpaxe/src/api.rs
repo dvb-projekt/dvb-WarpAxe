@@ -766,6 +766,12 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                                 "api: board {name} chosen by hand from {who} (running as {}): checked at the next start",
                                 board::profile().name
                             );
+                            // The entry present but not a name: a choice
+                            // under this firmware, to be verified
+                            // (board::init_bus).
+                            if let Err(e) = config::set_verified_board(config::BOARD_PENDING) {
+                                log::warn!("api: marking the choice pending failed: {e}");
+                            }
                             events::record("board", format!("{name} chosen by hand"));
                             events::flush();
                         }
@@ -890,6 +896,15 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
     server.fn_handler("/api/v1/chips/on", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        // A refused board choice holds the chips off until a restart or
+        // another choice: say so instead of claiming they are on.
+        if board::choice_blocked() {
+            return reply_json(
+                req,
+                409,
+                &json!({"shutdown": true, "error": "the chosen board was refused; restart or choose another board", "boardChoice": board::choice()}),
+            );
+        }
         board::set_shutdown(false);
         reply_json(req, 200, &json!({"shutdown": false}))
     })?;

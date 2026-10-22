@@ -10,7 +10,7 @@
 //! carriers everything behind an FXL6408 expander). The Nerd power-up
 //! follows NerdOS `NerdQaxePlus::initAsics`.
 
-use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -281,20 +281,48 @@ pub enum Choice {
     Mismatch,
 }
 
-static CHOICE: Mutex<Option<Choice>> = Mutex::new(None);
+/// `choice()` as a number (read in the miner's loop and under the state
+/// lock, so no mutex): 0 none, then the variants in order.
+static CHOICE: AtomicU8 = AtomicU8::new(0);
 /// The core voltage of a pending first start, mV (0 = the profile's own).
 static CAUTIOUS_MV: AtomicU16 = AtomicU16::new(0);
 
 pub fn choice() -> Option<Choice> {
-    *CHOICE.lock().unwrap()
+    match CHOICE.load(Ordering::Relaxed) {
+        1 => Some(Choice::Verified),
+        2 => Some(Choice::Pending),
+        3 => Some(Choice::Rejected),
+        4 => Some(Choice::Mismatch),
+        _ => None,
+    }
 }
 
 fn set_choice(c: Option<Choice>) {
-    *CHOICE.lock().unwrap() = c;
+    CHOICE.store(
+        match c {
+            None => 0,
+            Some(Choice::Verified) => 1,
+            Some(Choice::Pending) => 2,
+            Some(Choice::Rejected) => 3,
+            Some(Choice::Mismatch) => 4,
+        },
+        Ordering::Relaxed,
+    );
     let mut d = DETECT.lock().unwrap();
     if let Some(d) = d.as_mut() {
         d.choice = c;
     }
+}
+
+/// The chip counts of the other boards that fit what the probe found:
+/// a first start that counts exactly one of these is the other board.
+pub fn sibling_counts() -> Vec<u8> {
+    let found = FOUND.lock().unwrap().clone().unwrap_or_default();
+    let me = profile().name;
+    choice::candidates(&found.evidence())
+        .filter(|c| c.name != me)
+        .map(|c| c.asic_count)
+        .collect()
 }
 
 /// The chain is on its first start under this board: counted, not yet
@@ -322,23 +350,35 @@ pub fn bring_up_mv(profile: &Profile, configured_mv: u16) -> u16 {
     }
 }
 
-/// The enumeration matched the profile: the board is verified (kept in
-/// NVS, so later boots start as usual), and the core voltage goes from
-/// the cautious value to the configured point. Called from the miner
-/// thread (internal stack: the NVS write is allowed there).
-pub fn verify_choice(chips: u8) {
+/// The enumeration matched the profile (or fell short by a count that is
+/// no sibling's: chips missing, not another board): the board is
+/// verified, kept in NVS so later boots start as usual. The core voltage
+/// goes from the cautious value to the configured point once the chain
+/// init is over (`chain_ready`, as NerdOS sets its final voltage after
+/// the init). Called from the miner thread (internal stack: the NVS
+/// write is allowed there).
+pub fn verify_choice(chips: u8, expected: u8) {
     let p = profile();
     if let Err(e) = config::set_verified_board(p.name) {
         log::warn!("board: saving the verified board failed: {e}");
     }
     set_choice(Some(Choice::Verified));
-    log::warn!(
-        "board: {} verified: {chips} chip(s) answered as the profile says",
-        p.name
-    );
-    crate::events::record("board", format!("{} verified, {chips} chips", p.name));
-    let core = config::get().core_voltage;
-    request_core_mv(core);
+    if chips < expected {
+        log::warn!(
+            "board: {} verified with {chips} of {expected} chips: no other board has that count; check the chain",
+            p.name
+        );
+        crate::events::record(
+            "board",
+            format!("{} verified, {chips} of {expected} chips", p.name),
+        );
+    } else {
+        log::info!(
+            "board: {} verified: {chips} chip(s) answered as the profile says",
+            p.name
+        );
+        crate::events::record("board", format!("{} verified, {chips} chips", p.name));
+    }
 }
 
 /// The enumeration did not match the profile: the chips go off again
@@ -349,7 +389,7 @@ pub fn verify_choice(chips: u8) {
 pub fn reject_choice(verdict: FirstStart) {
     let p = profile();
     let (kind, text, found, expected, chip_id) = match verdict {
-        FirstStart::Verified { .. } => return,
+        FirstStart::Verified { .. } | FirstStart::ShortCount { .. } => return,
         FirstStart::WrongCount { found, expected } => (
             "count",
             format!("{found} chip(s) answered, a {} has {expected}", p.model),
@@ -572,6 +612,15 @@ pub fn reset_overheat() {
 
 /// A new core voltage from `PATCH /api/system`, applied by the board task.
 pub fn request_core_mv(mv: u16) {
+    // During a pending first start nothing goes above the cautious
+    // voltage (a PATCH meanwhile is applied once the choice is verified:
+    // chain_ready requests the configured point).
+    let cap = CAUTIOUS_MV.load(Ordering::Relaxed);
+    let mv = if choice_pending() && cap > 0 {
+        mv.min(cap)
+    } else {
+        mv
+    };
     WANTED_MV.store(mv, Ordering::Relaxed);
 }
 
@@ -582,12 +631,12 @@ pub fn request_core_mv(mv: u16) {
 /// 970 mV cap) while the miner retries.
 pub fn chain_ready() {
     // On a first start the cautious voltage holds until the enumeration
-    // is judged (verify_choice requests the configured point).
+    // is judged; once verified, the configured point applies from here.
     if choice_pending() {
         return;
     }
     let core = config::get().core_voltage;
-    if profile().init_core_mv > core {
+    if profile().init_core_mv > core || CAUTIOUS_MV.swap(0, Ordering::Relaxed) > 0 {
         request_core_mv(core);
     }
 }
@@ -1067,10 +1116,26 @@ pub fn init_bus(mut i2c0: I2C0) {
             set_choice(Some(Choice::Verified));
             p
         }
-        // Named in the settings (chosen in the web UI, set by PATCH, or
-        // saved by a firmware before v0.1.35) but never verified here:
-        // the bus must agree before any of its pins is driven, and its
-        // first chain start counts the chips (choice_pending).
+        // A boardModel saved by a firmware before v0.1.35 (no `boardok`
+        // entry at all): it has run on this board, taken as verified.
+        // Only a choice made under this firmware (the entry present but
+        // not this name: the detection and PATCH write BOARD_PENDING)
+        // goes through the check.
+        Some(p) if config::verified_board().is_none() => {
+            log::info!(
+                "board: {} from an earlier version's settings: taken as verified",
+                p.name
+            );
+            if let Err(e) = config::set_verified_board(p.name) {
+                log::warn!("board: saving the verified board failed: {e}");
+            }
+            set_choice(Some(Choice::Verified));
+            p
+        }
+        // Named in the settings (chosen in the web UI or set by PATCH)
+        // but never verified here: the bus must agree before any of its
+        // pins is driven, and its first chain start counts the chips
+        // (choice_pending).
         Some(p) => {
             log::warn!(
                 "board: {} from the settings is not verified on this board yet: reading the bus first",
@@ -1110,6 +1175,30 @@ pub fn init_bus(mut i2c0: I2C0) {
         fixed.frequency = profile.default_frequency_mhz;
         if let Err(e) = config::save(&fixed) {
             log::warn!("board: saving the clock failed: {e}");
+        }
+    }
+    // A core voltage from another board's settings (a Rev 7's 1300 mV
+    // before the Nano was chosen) must not become the point the verified
+    // first start goes to: outside the profile's own window it is reset
+    // to the factory point, as the clock is.
+    if choice_pending() {
+        let cfg = config::get();
+        let floor = profile.regulator_min_core_mv();
+        let ceiling = profile.abs_max_core_mv;
+        let outside = (floor > 0 && cfg.core_voltage < floor)
+            || (ceiling > 0 && cfg.core_voltage > ceiling);
+        if outside && cfg.core_voltage != profile.default_core_mv {
+            let mut fixed = cfg;
+            log::warn!(
+                "board: core voltage {} mV is outside {}'s {floor}–{ceiling} mV: starting at its default {} mV",
+                fixed.core_voltage,
+                profile.name,
+                profile.default_core_mv
+            );
+            fixed.core_voltage = profile.default_core_mv;
+            if let Err(e) = config::save(&fixed) {
+                log::warn!("board: saving the core voltage failed: {e}");
+            }
         }
     }
     update(|s| {
@@ -2429,6 +2518,14 @@ fn gate(
                 set_choice(Some(Choice::Verified));
                 log::info!("board: {} fits the bus; no chain to count", p.name);
             } else {
+                // The entry present but not a name: a choice made under
+                // this firmware, not yet verified (init_bus tells it from
+                // a boardModel an earlier version saved).
+                if config::verified_board().as_deref() != Some(config::BOARD_PENDING) {
+                    if let Err(e) = config::set_verified_board(config::BOARD_PENDING) {
+                        log::warn!("board: marking the choice pending failed: {e}");
+                    }
+                }
                 set_choice(Some(Choice::Pending));
                 let at = if mv > 0 {
                     format!(" at {mv} mV")
@@ -2440,6 +2537,7 @@ fn gate(
                     p.name
                 );
                 crate::events::record("board", format!("{} first start{at}", p.name));
+                crate::events::flush();
             }
             p
         }
@@ -2452,6 +2550,9 @@ fn gate(
                 reason_text(r)
             );
             crate::events::record("board", format!("{} refused: {}", p.name, reason_text(r)));
+            // On the main task, before the restart the web UI will ask
+            // for; without a board thread nothing else flushes.
+            crate::events::flush();
             *DETECT.lock().unwrap() = Some(DetectInfo {
                 status: "rejected",
                 why: "the chosen board does not fit what answered on the bus",
@@ -2472,7 +2573,13 @@ fn gate(
 }
 
 pub fn detect_info() -> Option<DetectInfo> {
-    DETECT.lock().unwrap().clone()
+    let d = DETECT.lock().unwrap().clone()?;
+    // A board from the settings that passed its first start: nothing to
+    // show, as before (`boardDetect` was null for a configured board).
+    if d.status == "chosen" && d.choice == Some(Choice::Verified) {
+        return None;
+    }
+    Some(d)
 }
 
 /// Which chips answer on a pin pair (read-only address probes), with the
