@@ -114,11 +114,18 @@ impl Event {
     /// last entries (one stays), then the longest name is cut.
     fn fit(&mut self) {
         while self.stored_len() > MAX_EVENT_BYTES {
-            if let Some(Value::Array(a)) = self.p.get_mut("f") {
-                if a.len() > 1 {
+            let len = match self.p.get("f") {
+                Some(Value::Array(a)) => a.len(),
+                _ => 0,
+            };
+            if len > 1 {
+                // The full count stays, so the text says something is
+                // left out.
+                self.p.entry("n").or_insert(Value::from(len));
+                if let Some(Value::Array(a)) = self.p.get_mut("f") {
                     a.pop();
-                    continue;
                 }
+                continue;
             }
             // Only names are cut: a core dump's tag must stay whole (a
             // later boot looks for it), codes must stay codes.
@@ -153,10 +160,15 @@ impl Detail {
     /// The detail in English, as the API and the log show it.
     pub fn text(&self) -> String {
         if self.c.is_empty() {
-            self.d.clone()
-        } else {
-            english(self.c, &self.p).unwrap_or_else(|| self.c.into())
+            return self.d.clone();
         }
+        english(self.c, &self.p).unwrap_or_else(|| {
+            if self.d.is_empty() {
+                self.c.into()
+            } else {
+                self.d.clone()
+            }
+        })
     }
 
     /// The code, empty for a plain text.
@@ -205,11 +217,20 @@ fn name(s: &str) -> Value {
 
 /// A measured figure, to two decimals (an f32 widened as is would store
 /// 4.849999904632568 for 4.85).
-fn fig(v: f32) -> Value {
-    if v.is_finite() {
-        json!(((f64::from(v)) * 100.0).round() / 100.0)
-    } else {
-        Value::Null
+/// A figure as the English text always printed it (`{:.0}`, `{:.2}`:
+/// half to even, `-0`, `NaN`): a number where that reads back as one,
+/// else the printed string, so the text stays word for word.
+fn fig(v: f32, decimals: usize) -> Value {
+    let s = format!("{v:.decimals$}");
+    match s.parse::<f64>() {
+        Ok(f) if f.is_finite() && !(f == 0.0 && s.starts_with('-')) => {
+            if decimals == 0 {
+                Value::from(f as i64)
+            } else {
+                Value::from(f)
+            }
+        }
+        _ => Value::String(s),
     }
 }
 
@@ -250,17 +271,22 @@ pub mod detail {
     /// A restart, with the reset reason (`power-on`, `software`, `panic`,
     /// `int-wdt`, …) and, after a crash, the stored core dump's tag and
     /// whether it is this crash's (`current`) or an older one.
+    ///
+    /// Stored as the code plus the English text, no values: an older
+    /// image that rewrites the ring keeps `d` (and drops `c`), and a later
+    /// boot finds the dump's tag in `d` either way (diag::check_core_dump
+    /// looks for it there). The reason is the text's first word, the tag
+    /// the `dump:…` in it; the text is never cut.
     pub fn boot(reason: &str, dump: Option<(&str, bool)>) -> Detail {
-        match dump {
-            None => coded("boot", &[("r", Value::from(reason))]),
-            Some((tag, true)) => coded(
-                "boot_dump",
-                &[("r", Value::from(reason)), ("tag", Value::from(tag))],
-            ),
-            Some((tag, false)) => coded(
-                "boot_old_dump",
-                &[("r", Value::from(reason)), ("tag", Value::from(tag))],
-            ),
+        let (c, d) = match dump {
+            None => ("boot", reason.to_string()),
+            Some((tag, true)) => ("boot_dump", format!("{reason} {tag}")),
+            Some((tag, false)) => ("boot_old_dump", format!("{reason} no dump ({tag} old)")),
+        };
+        Detail {
+            c,
+            p: Map::new(),
+            d,
         }
     }
 
@@ -381,13 +407,10 @@ pub mod detail {
         coded(
             "hot",
             &[
-                (
-                    "t",
-                    Value::from(chip.filter(|t| t.is_finite()).map(|t| t.round() as i32)),
-                ),
-                ("l", Value::from(chip_limit.round() as i32)),
+                ("t", chip.map_or(Value::Null, |t| fig(t, 0))),
+                ("l", fig(chip_limit, 0)),
                 ("v", Value::from(vr)),
-                ("vl", Value::from(vr_limit.round() as i32)),
+                ("vl", fig(vr_limit, 0)),
             ],
         )
     }
@@ -413,8 +436,8 @@ pub mod detail {
                 // [check, value, chip, domain, note], trailing blanks
                 // left out; the value to the precision the text shows.
                 let value = match (o.check, o.value) {
-                    (Check::InputVoltage, Some(v)) => fig(v),
-                    (_, Some(v)) if v.is_finite() => json!(v.round() as i64),
+                    (Check::InputVoltage, Some(v)) => fig(v, 2),
+                    (_, Some(v)) => fig(v, 0),
                     _ => Value::Null,
                 };
                 let mut a = vec![
@@ -461,7 +484,13 @@ fn english_fail(a: &[Value]) -> String {
     if let Some(d) = a.get(3).filter(|v| !v.is_null()) {
         s.push_str(&format!(" domain {}", show(Some(d))));
     }
-    if let Some(v) = a.get(1).and_then(Value::as_f64) {
+    if let Some(v) = a.get(1).filter(|v| !v.is_null()) {
+        // A number printed at the check's precision; a string (`-0`,
+        // `NaN`) as it was printed.
+        let num = |d: usize| match v.as_f64() {
+            Some(f) => format!("{f:.d$}"),
+            None => show(Some(v)),
+        };
         let check = [
             Check::Hashrate,
             Check::Domains,
@@ -476,13 +505,13 @@ fn english_fail(a: &[Value]) -> String {
         .find(|c| c.id() == id);
         match check {
             Some(Check::Hashrate | Check::Domains | Check::Errors) => {
-                s.push_str(&format!(" {v:.0} %"))
+                s.push_str(&format!(" {} %", num(0)))
             }
-            Some(Check::Fan) => s.push_str(&format!(" {v:.0} rpm")),
-            Some(Check::CoreVoltage) => s.push_str(&format!(" {v:.0} mV")),
-            Some(Check::InputVoltage) => s.push_str(&format!(" {v:.2} V")),
-            Some(Check::Temperature) => s.push_str(&format!(" {v:.0} °C")),
-            Some(Check::Chips) => s.push_str(&format!(" {v:.0} found")),
+            Some(Check::Fan) => s.push_str(&format!(" {} rpm", num(0))),
+            Some(Check::CoreVoltage) => s.push_str(&format!(" {} mV", num(0))),
+            Some(Check::InputVoltage) => s.push_str(&format!(" {} V", num(2))),
+            Some(Check::Temperature) => s.push_str(&format!(" {} °C", num(0))),
+            Some(Check::Chips) => s.push_str(&format!(" {} found", num(0))),
             _ => {}
         }
     }
@@ -506,9 +535,8 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
         "pool_back" => "main pool answers again, back from the fallback".into(),
         "pool_saved" => format!("saved pool {} used", g("p")),
-        "boot" => g("r"),
-        "boot_dump" => format!("{} {}", g("r"), g("tag")),
-        "boot_old_dump" => format!("{} no dump ({} old)", g("r"), g("tag")),
+        // The text is stored with the code (detail::boot).
+        "boot" | "boot_dump" | "boot_old_dump" => return None,
         "rollback" => "the last update did not boot: back on the previous image".into(),
         "installed" => format!("{} installed", g("v")),
         "install_rec" => format!("{} {}", g("v"), g("s")),
@@ -573,7 +601,15 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
                         .collect()
                 })
                 .unwrap_or_default();
-            format!("regulator fault: {}", what.join("; "))
+            let more = p
+                .get("n")
+                .and_then(Value::as_u64)
+                .is_some_and(|n| n as usize > what.len());
+            format!(
+                "regulator fault: {}{}",
+                what.join("; "),
+                if more { "; …" } else { "" }
+            )
         }
         "st_pass" => format!("PASS, {} checks", g("n")),
         "st_fail" => {
@@ -642,10 +678,13 @@ impl Ring {
     /// (nothing to store then). A plain detail is cut to [`MAX_DETAIL`],
     /// a coded one trimmed towards [`MAX_EVENT_BYTES`].
     pub fn push(&mut self, mut e: Event) -> bool {
-        if e.d.chars().count() > MAX_DETAIL {
-            e.d = cut(&e.d, MAX_DETAIL);
-        }
-        if !e.c.is_empty() {
+        if e.c.is_empty() {
+            if e.d.chars().count() > MAX_DETAIL {
+                e.d = cut(&e.d, MAX_DETAIL);
+            }
+        } else {
+            // A coded event's text (a restart's, with the dump tag) is
+            // never cut.
             e.fit();
         }
         if let Some(last) = self.events.last() {
@@ -1069,6 +1108,113 @@ mod tests {
             // Trimmed, it still reads.
             assert!(!back.events()[0].text().is_empty());
         }
+    }
+
+    #[test]
+    fn a_restart_keeps_its_dump_tag_in_d_through_an_older_image() {
+        let tag = "dump:3f2a9c1b0@4037a1b2";
+        let mut r = Ring::new();
+        r.push(Event::new(
+            1_790_000_000,
+            5,
+            "boot",
+            detail::boot("panic", Some((tag, true))),
+        ));
+        r.push(Event::new(
+            1_790_000_100,
+            5,
+            "boot",
+            detail::boot("task-wdt", Some((tag, false))),
+        ));
+        r.push(Event::new(
+            1_790_000_200,
+            6,
+            "boot",
+            detail::boot("deep-sleep", Some((tag, false))),
+        ));
+        // As this image reads it (main.rs hands the boot events' `d` to
+        // diag::check_core_dump): the tag whole, the code beside it.
+        let found = |ring: &Ring| {
+            ring.events()
+                .iter()
+                .filter(|e| e.k == "boot")
+                .map(|e| e.for_api().d)
+                .filter(|d| d.contains(tag))
+                .count()
+        };
+        assert_eq!(found(&r), 3);
+        assert_eq!(r.events()[2].c, "boot_old_dump");
+        assert_eq!(r.events()[2].d, format!("deep-sleep no dump ({tag} old)"));
+        // An older image reads the ring with four fields and writes it
+        // back so (a rollback); this image reads that again.
+        #[derive(Serialize, Deserialize)]
+        struct Old {
+            t: u64,
+            u: u64,
+            k: String,
+            d: String,
+        }
+        let old: Vec<Old> = serde_json::from_str(&r.to_json()).unwrap();
+        let back = Ring::from_json(&serde_json::to_string(&old).unwrap());
+        assert_eq!(back.events()[0].c, "");
+        assert_eq!(found(&back), 3);
+        assert_eq!(
+            back.events()[1].text(),
+            format!("task-wdt no dump ({tag} old)")
+        );
+    }
+
+    #[test]
+    fn figures_print_as_the_old_format_did_halves_and_minus_zero_included() {
+        for t in [72.5f32, 73.5, -0.4, 0.5, 104.49, f32::NAN] {
+            assert_eq!(
+                detail::hot(Some(t), 75.5, Some(60), 104.5).text(),
+                format!(
+                    "chip {t:.0} °C (limit {:.0}), regulator 60 °C (limit {:.0}), chips off",
+                    75.5f32, 104.5f32
+                ),
+                "{t}"
+            );
+        }
+        for (check, v) in [
+            (Check::Hashrate, 62.5f32),
+            (Check::Temperature, -0.4),
+            (Check::InputVoltage, 4.125),
+            (Check::InputVoltage, 4.85),
+            (Check::Fan, 2500.5),
+        ] {
+            let want = match check {
+                Check::InputVoltage => format!("{} {v:.2} V", check.id()),
+                Check::Hashrate => format!("{} {v:.0} %", check.id()),
+                Check::Temperature => format!("{} {v:.0} °C", check.id()),
+                _ => format!("{} {v:.0} rpm", check.id()),
+            };
+            let r = report(&[(
+                check,
+                Some(v),
+                None,
+                None,
+                warpaxe_board::selftest::Note::None,
+            )]);
+            assert_eq!(detail::selftest(&r).text(), format!("FAIL: {want}"), "{v}");
+        }
+    }
+
+    #[test]
+    fn a_shortened_list_says_so() {
+        let codes = ["off", "vout_ov", "iout_oc", "vin_uv", "temp", "temp_warn"].repeat(3);
+        let mut r = Ring::new();
+        r.push(Event::new(
+            1_790_000_000,
+            99_999_999,
+            "power",
+            detail::power(&codes),
+        ));
+        let e = &r.events()[0];
+        assert!(e.p["f"].as_array().unwrap().len() < codes.len());
+        assert_eq!(e.p["n"], json!(codes.len()));
+        assert!(e.text().ends_with("; …"), "{}", e.text());
+        assert!(!detail::power(&["off"]).text().ends_with('…'));
     }
 
     #[test]

@@ -1130,17 +1130,27 @@ function evText(e) {
   const cjk = lang === "ja" || lang === "zh", cm = cjk ? "、" : ", ", co = cjk ? "：" : lang === "fr" ? " : " : ": ", sc = cjk ? "；" : lang === "fr" ? " ; " : "; ";
   switch (c) {
     case "boot": case "boot_dump": case "boot_old_dump": {
-      const r = "rr_" + String(p.r || "unknown").replace(/-/g, "_");
-      v.r = T.en[r] != null ? t(r) : String(p.r);
-      v.tag = String(p.tag || "").replace(/^dump:/, "");
-      return c === "boot" ? v.r : t("evd_" + c, v);
+      // Stored as text with the code: the reason is its first word, the
+      // tag the dump:… in it.
+      const d = String(e.d || ""), w = d.split(" ")[0], r = "rr_" + w.replace(/-/g, "_"), m = d.match(/dump:([^\s()]+)/);
+      if (!w || T.en[r] == null || (c !== "boot" && !m)) return d;
+      v.r = t(r);
+      if (c === "boot") return v.r;
+      v.tag = m[1];
+      break;
     }
     case "install_rec": return p.s === "verified" ? t("evd_upd_signed", v) : p.s === "missing" ? t("evd_upd_unsigned", v) : t("evd_install_rec", v);
     case "r_vin": v.v = nf(p.v, 1); break;
-    case "power": return (p.f || []).map(x => t("pf_" + x)).join(cm);
+    case "power": {
+      const f = Array.isArray(p.f) ? p.f : [];
+      if (!f.length || f.some(x => T.en["pf_" + x] == null)) return e.d || "";
+      return f.map(x => t("pf_" + x)).join(cm) + (p.n > f.length ? cm + "…" : "");
+    }
     case "st_fail": {
       // [check, value, chip, domain, note]
-      const items = (p.f || []).map(([id, val, chip, dom, note]) => {
+      const f = Array.isArray(p.f) ? p.f : [];
+      if (!f.length || f.some(x => !Array.isArray(x) || T.en["ck_" + x[0]] == null || (x[4] && T.en["nt_" + x[4]] == null))) return e.d || "";
+      const items = f.map(([id, val, chip, dom, note]) => {
         let s = t("ck_" + id);
         if (chip != null) s += cm + t("evd_chip", {c: chip}) + (dom != null ? cm + t("evd_dom", {d: dom}) : "");
         let w = "";
@@ -1152,7 +1162,9 @@ function evText(e) {
       return t("evd_st_fail", {f: items.join(sc)});
     }
   }
-  return t("evd_" + c, v);
+  const s = t("evd_" + c, v);
+  // A value missing (a damaged entry): the English text instead.
+  return /\{\w+\}/.test(s) ? e.d || "" : s;
 }
 function eventsHtml() {
   const ev = (state?.events || []).slice().reverse();
