@@ -1184,6 +1184,9 @@ pub fn init_bus(mut i2c0: I2C0) {
             log::warn!("board: saving the clock failed: {e}");
         }
     }
+    // Stored settings that an update made stale (v0.1.36: the Nano's fan
+    // target on the old diode scale), moved once.
+    config::migrate(profile);
     // A core voltage from another board's settings (a Rev 7's 1300 mV
     // before the Nano was chosen) must not become the point the verified
     // first start goes to: outside the profile's own window it is reset

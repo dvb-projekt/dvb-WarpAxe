@@ -719,6 +719,47 @@ pub fn nvs_set_str(key: &str, value: &str) -> Result<(), String> {
     nvs.set_str(key, value).map_err(|e| e.to_string())
 }
 
+/// One-time moves of stored settings after an update, keyed by a marker
+/// in NVS so each runs once per device. v0.1.36: a Nano's stored fan
+/// target 60 (the old default on the old diode scale) goes back to the
+/// profile's value (`warpaxe_board::profile::migrated_fan_target`).
+/// On the main task (board::init_bus), before the board starts.
+pub fn migrate(profile: &warpaxe_board::Profile) {
+    const NANO_FAN_TARGET_KEY: &str = "mig_nanofan";
+    if profile.name == warpaxe_board::profile::BITFORGE_NANO.name
+        && nvs_get_str(NANO_FAN_TARGET_KEY, 8).is_none()
+    {
+        let cfg = get();
+        // A chip stop set by hand below the line was entered on the old
+        // scale too; there is no default to tell it by, so it stays, said
+        // once.
+        if cfg.overheat_temp != 0 && f32::from(cfg.overheat_temp) < profile.chip_stop_c {
+            log::warn!(
+                "config: the chip stop {} °C was set on the old diode scale (v0.1.35 and before): on the maker's scale it is about 8 °C warmer in real terms; subtract 8 or set it to 0",
+                cfg.overheat_temp
+            );
+        }
+        if let Some(target) =
+            warpaxe_board::profile::migrated_fan_target(profile, cfg.pid_target_temp)
+        {
+            log::warn!(
+                "config: the fan target {} is the old default on the old diode scale: back to the profile's {} °C (v0.1.36)",
+                cfg.pid_target_temp,
+                profile.fan_target_c
+            );
+            let mut fixed = cfg;
+            fixed.pid_target_temp = target;
+            if let Err(e) = save(&fixed) {
+                log::warn!("config: saving the fan target failed: {e}");
+                return;
+            }
+        }
+        if let Err(e) = nvs_set_str(NANO_FAN_TARGET_KEY, "1") {
+            log::warn!("config: marking the fan-target move failed: {e}");
+        }
+    }
+}
+
 /// The board the chips have been counted on (`board::verify_choice`):
 /// its profile name, or `None` until a first start passed. A `boardModel`
 /// that is not this name starts cautiously and is checked against the

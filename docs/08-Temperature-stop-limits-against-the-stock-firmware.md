@@ -105,9 +105,30 @@ it:
 
 - The stops stay 75 / 105 °C and now apply on the maker's scale, as
   ForgeOS applies them (`power_management_task.c` 21, 28, 149–151).
-- The fan target stays 60 °C on that scale: the chip really runs about
-  8 °C warmer than it did under WarpAxe before, which is how it runs
-  under ForgeOS at the same setting; the fans get quieter.
+- The fan target moves with the scale: **52 °C** on the Nano
+  (`fan_target_c`), which is the chip temperature the old 60 °C target
+  held on the 0x24 scale (60 − 8.2). So the fans run as before and the
+  chips stay as cool as under v0.1.35; only the figures shown and the
+  stop lines are on the maker's scale now. The first candidate kept 60
+  on the new scale: on the Nano .44 at Eco 425 / 1000 the error rate
+  went from about 1.5 % to 6 % within ten minutes, the fans sat at 35 %
+  and the core drew 28 A instead of at most 24.9 A (leakage of warmer
+  chips). The earlier claim that this would be "how ForgeOS runs the
+  board" was wrong: ForgeOS has no target but a fan curve (chip 45→75 °C
+  = 35→100 %, `power_management_task.c` 39–86), about 67 % at 60 °C,
+  which keeps the chips cooler than a 60 °C target at 35 %. A Nano that
+  still has the old 60 stored in `pidTargetTemp` is moved back to the
+  profile's value once at the first start of v0.1.36 (`config::migrate`,
+  NVS marker `mig_nanofan`); any other stored value is the owner's and
+  stays. ForgeOS stores no fan target (`nvs_config.h` at v1.7 has only
+  `autofanspeed`, `fanspeed`, `overheat_mode`), so the stored 60 comes
+  from a settings save in the web UI (which stores the shown value, 60
+  when nothing was set), from a PATCH, or from the owner by hand; the
+  same path stores 52 explicitly on the next save, so another move of
+  the Nano's target would need another migration. The regulator target
+  (`vrTargetTemp`, 65 °C) reads the TPS546's own sensor, not the diode;
+  on the Nano both fans follow the chip loop anyway, so it has no effect
+  there.
 - The self-test's temperature check compares the readings against the
   same lines (`chip_limit_c`, `vr_limit_c`), so it needs no new limit;
   the warm-up and overheat logic work on differences (`WARMUP_*`,
@@ -117,9 +138,12 @@ it:
   at the same point. WarpTune's temperature-based steps see that too;
   one new WarpTune calibration on the Nano after v0.1.36 is
   recommended.
-- No Nano constant in the code was derived from the old scale: the
-  stops are ForgeOS's, the fan target is AxeOS's default, the regulator
-  stop reads the TPS546. The historic figures in comments and README
+- The only Nano constant derived from the old scale is the fan target
+  (52 = 60 − 8.2, above); the stops are ForgeOS's, the regulator stop
+  reads the TPS546. A chip stop (`overheat_temp`) set by hand on a Nano
+  below 75 was entered on the old scale and is not moved (there is no
+  default to tell it by): subtract 8 °C or set it to 0; the firmware
+  logs a warning at the first start. The historic figures in comments and README
   (82 °C after the download-mode incident of 2026-10-03) are on the old
   scale, about 74 °C on the new one, and say so now.
 
@@ -143,8 +167,9 @@ at most: just under the warning, 2.4 A under the shutdown. 625 MHz at
 1050 mV drew 33.8–33.9 A; 650 MHz / 1160 mV reached 41.2 A, which the
 new limit no longer allows.
 
-Peaks above the settled reading, a warmer room and the chips running about 8 °C warmer now that the fan
-target applies on the maker's scale all add some current, so Max can touch the warning line and, rarely, the shutdown.
+Peaks above the settled reading and a warmer room add some current (the
+chips themselves run as cool as before: the fan target moved with the
+scale), so Max can touch the warning line and, rarely, the shutdown.
 A shutdown is handled like an overheat stop: chips off, at least 60 s,
 back on; the third stop within an hour keeps the chips off with the
 reason on screen. ForgeOS offers 636 MHz / 1160 mV under the same

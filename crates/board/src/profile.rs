@@ -638,10 +638,11 @@ pub const BITFORGE_NANO: Profile = Profile {
     },
     voltage_domains: 1,
     // The maker's diode tuning (ideality 0x37), not ESP-Miner's 0x24:
-    // the same chip reads about 8 °C lower with it, so the 75 °C line,
-    // the 60 °C fan target and the API's figures are on the scale
-    // ForgeOS runs the board on (`emc2101::Config::BITFORGE_NANO_DIODE`,
-    // measured 2026-10-23; before v0.1.36 the Nano ran on 0x24).
+    // the same chip reads about 8 °C lower with it, so the 75 °C line
+    // and the API's figures are on the scale ForgeOS runs the board on
+    // (`emc2101::Config::BITFORGE_NANO_DIODE`, measured 2026-10-23;
+    // before v0.1.36 the Nano ran on 0x24). The fan target moves with
+    // the scale, see `fan_target_c` below.
     thermal: Thermal::DualEmc2101Mux {
         config: emc2101::Config::BITFORGE_NANO_DIODE,
         mux: pca9544::ADDR,
@@ -663,7 +664,19 @@ pub const BITFORGE_NANO: Profile = Profile {
     chip_stop_c: 75.0,
     vr_stop_c: 105.0,
     temp_offset_c: 0.0,
-    fan_target_c: 60.0,
+    // 52 on the 0x37 scale is the chip temperature the 60 °C target held
+    // on the 0x24 scale up to v0.1.35 (60 − 8.2, see the diode note
+    // above): the fans run as before and the chips stay as cool. The
+    // first v0.1.36 candidate kept 60 on the new scale, and the Nano .44
+    // at Eco 425 / 1000 answered with a 6 % error rate instead of 1.5 %,
+    // the fans at 35 % and the core at 28 A instead of at most 24.9 A
+    // (leakage of warmer chips; 2026-10-23, 10 min). ForgeOS itself runs
+    // no target but a curve (chip 45→75 °C = fan 35→100 %,
+    // `power_management_task.c` 39–86), about 67 % at 60 °C, so it holds
+    // the chips cooler than a 60 °C target would. Oliver, 2026-10-23.
+    // A Nano that still has the old 60 stored goes back to the profile's
+    // value once (`NANO_FAN_TARGET_BEFORE_V0136`, `migrated_fan_target`).
+    fan_target_c: 52.0,
     job_interval_ms: 0,
     frequency_options: &[425, 525, 625],
     voltage_options: &[1000, 1150, 1160],
@@ -1147,6 +1160,24 @@ pub const NERDNOS: Profile = Profile {
     }),
 };
 
+/// The Nano's fan target up to v0.1.35 (AxeOS's default, on the 0x24
+/// diode scale of the time), as a device may still have it stored in
+/// `pidTargetTemp`: a settings save in the web UI stores the shown
+/// value (60 when nothing was set), a PATCH or the owner may have
+/// written it. ForgeOS stores no fan target of its own.
+pub const NANO_FAN_TARGET_BEFORE_V0136: u8 = 60;
+
+/// The one-time move of a Nano's stored fan target to the new diode
+/// scale (v0.1.36): a stored target that is exactly the old default
+/// goes back to 0 (= the profile's `fan_target_c`, 52 on the new
+/// scale), any other stored value is the owner's and stays. `None` =
+/// nothing to change. Other boards never change: their scale did not
+/// move. The regulator target (`vrTargetTemp`) is not touched either: it
+/// reads the TPS546's own sensor, not the diode.
+pub fn migrated_fan_target(p: &Profile, stored_target_c: u8) -> Option<u8> {
+    (p.name == BITFORGE_NANO.name && stored_target_c == NANO_FAN_TARGET_BEFORE_V0136).then_some(0)
+}
+
 /// Not in [`ALL`], so it cannot be configured by name.
 pub const UNDETECTED: Profile = Profile {
     name: "undetected",
@@ -1421,6 +1452,35 @@ mod tests {
         let vr = p.tps546().unwrap();
         assert!(v >= vr.vout_min && v <= vr.vout_max);
         assert!(!p.display_flip);
+    }
+
+    /// v0.1.36: the Nano's fan target follows its diode scale, and a
+    /// stored old default is moved once; anything else stays.
+    #[test]
+    fn the_nano_fan_target_moved_with_its_diode_scale() {
+        assert_eq!(
+            BITFORGE_NANO.fan_target_c, 52.0,
+            "60 on the 0x24 scale, 8.2 °C lower on 0x37"
+        );
+        assert_eq!(NANO_FAN_TARGET_BEFORE_V0136, 60);
+        // Every other board keeps AxeOS's 60 or NerdOS's own value.
+        for p in ALL {
+            if p.name != BITFORGE_NANO.name {
+                assert_ne!(p.fan_target_c, 52.0, "{}", p.name);
+            }
+        }
+        // The stored old default moves to "the profile's"; an owner's
+        // value and the unset 0 stay; other boards never move.
+        assert_eq!(migrated_fan_target(&BITFORGE_NANO, 60), Some(0));
+        assert_eq!(migrated_fan_target(&BITFORGE_NANO, 0), None);
+        assert_eq!(migrated_fan_target(&BITFORGE_NANO, 55), None);
+        assert_eq!(migrated_fan_target(&BITFORGE_NANO, 52), None);
+        assert_eq!(migrated_fan_target(&BITFORGE_NANO, 61), None);
+        for p in ALL {
+            if p.name != BITFORGE_NANO.name {
+                assert_eq!(migrated_fan_target(p, 60), None, "{}", p.name);
+            }
+        }
     }
 
     #[test]
