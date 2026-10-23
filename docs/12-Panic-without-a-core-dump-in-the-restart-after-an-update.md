@@ -213,9 +213,8 @@ on, whatever the cause turns out to be.
    UI, `restart`, `download mode`; the word is the writer's origin and goes
    into the event untranslated). The next boot takes it first thing after
    the config is read, so a crash later in that boot is never blamed on the
-   restart. After a crash reset (panic, interrupt or task watchdog; the RTC
-   watchdog too, except after the way into download mode, where it is how
-   the flashing tool restarts the chip) the event log gets `boot: <image>
+   restart. After a crash reset (panic, interrupt or task watchdog, or the
+   RTC watchdog) the event log gets `boot: <image>
    crashed while restarting (<why>), switching the chips off` or `… in the
    system reset` (codes `rs_crash_chips`, `rs_crash_reset`, in all eight UI
    languages), and the log says the same with the uptime. An update or
@@ -227,7 +226,20 @@ on, whatever the cause turns out to be.
    Two limits: a power cycle that ends a hang in the restart reads as a
    restart without a crash; and a marker left behind by a downgrade to an
    image without this code is read by the next image that has it, about a
-   restart from back then.
+   restart from back then. After the way into download mode no reason
+   counts as a crash of that restart: it ends in the ROM, and the way
+   back is the flashing tool's (the web flasher's RTC watchdog, esptool's
+   USB reset, a power cycle). The .42 came back from an esptool session
+   on 2026-10-23 (candidate 8800aed: `GET /bootloader`, `write_flash`
+   0x8000, `erase_region`, `write_mem` on `RTC_CNTL_OPTION1_REG`, RTS
+   reset) with reset reason `panic`, no last words and no dump. That
+   reason means a software reset with the panic hint in
+   `RTC_CNTL_STORE6_REG` (`0x600080c8`), which only the ESP-IDF panic
+   handler writes and only an app boot clears; whether the app crashed on
+   its way into the ROM or in its first boot after the flash is open (to
+   tell: read that register from download mode, and look for a time gap
+   before the `panic` boot). Either way the marker must not call it a
+   crash of the restart; the generic boot event still names the reason.
 3. **Last words** in RTC slow memory (`warpaxe_glue.c`: the last 256 bytes
    of it, at a fixed address rather than a linker-placed variable, because
    the image that crashes in the restart after an update is not the image
