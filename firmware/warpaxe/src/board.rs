@@ -1038,6 +1038,33 @@ enum Thermal {
     },
 }
 
+/// A test build only (`--features diodeab`, 2026-10-23): every 10th
+/// reading, read both Nano chips once with ForgeOS v1.7's diode
+/// ideality 0x37 and once with ESP-Miner's 0x24, and log the pair. The
+/// sensors are left on 0x24, so fans and stops see what a release sees.
+#[cfg(feature = "diodeab")]
+fn diode_ab(sensors: &mut [Emc2101<Muxed<SharedI2c>>; 2]) {
+    use std::sync::atomic::AtomicU32;
+    static CALLS: AtomicU32 = AtomicU32::new(0);
+    if CALLS.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
+        return;
+    }
+    // 16 conversions a second by default: 250 ms is a fresh reading.
+    let mut read = |ideality: u8| {
+        for s in sensors.iter_mut() {
+            let _ = s.set_ideality(ideality);
+        }
+        std::thread::sleep(Duration::from_millis(250));
+        sensors
+            .iter_mut()
+            .map(|s| s.external_temp_c().ok())
+            .collect::<Vec<_>>()
+    };
+    let forge = read(0x37);
+    let espm = read(0x24);
+    log::info!("diodeab: 0x24 {espm:?} 0x37 {forge:?}");
+}
+
 impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
@@ -1047,6 +1074,8 @@ impl Thermal {
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Emc2103(t) => t.chip_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Nano(sensors) => {
+                #[cfg(feature = "diodeab")]
+                diode_ab(sensors);
                 let mut best: Option<f32> = None;
                 let mut err = String::new();
                 for s in sensors.iter_mut() {

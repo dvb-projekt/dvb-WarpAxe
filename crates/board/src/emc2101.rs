@@ -90,6 +90,11 @@ impl<I: I2c> Emc2101<I> {
         Ok(())
     }
 
+    /// Write the diode ideality register (0x17) now, outside `init`.
+    pub fn set_ideality(&mut self, ideality: u8) -> Result<(), Error<I::Error>> {
+        self.write(REG_IDEALITY, ideality)
+    }
+
     /// Fan duty, 0–100 %; the register holds 0–63.
     pub fn set_fan_percent(&mut self, percent: u8) -> Result<(), Error<I::Error>> {
         let duty = (u16::from(percent.min(100)) * 63 / 100) as u8;
