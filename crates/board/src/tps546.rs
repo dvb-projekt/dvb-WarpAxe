@@ -132,31 +132,29 @@ impl Config {
     /// BitForge Nano: one TPS546D24A on the 12 V rail feeding two BM1370
     /// in parallel (schematic, WantClueTechnologies/BitForge-Nano; the
     /// sense lines go straight to the core rail, no external divider).
-    /// ForgeOS is closed; what it left in the running part on the first
-    /// start (2026-09-29, .44): VOUT_COMMAND 1.148 V, VOUT_MAX 2 V,
-    /// PHASE 0, ON_OFF_CONFIG 0x1F. The part's NVM after a power cycle:
-    /// IOUT OC warn 40 A / fault 52 A, VIN OV fault 21 V, VIN on/off
-    /// 2.75/2.5 V, 900 kHz, scale loop 0.5, OT 125/150 °C. Taken here:
-    /// the NVM's 52 A fault limit (the warning raised to 45 A, see
-    /// below), the Gaia's proven 12 V input window
-    /// (on 10.5 / off 9.5, UV warn 10.5, OV fault 14.8), ESP-Miner's
-    /// 650 kHz, scale loop 0.25 and 1–2 V window (proven on the same
-    /// part with direct sensing), our OT 105/145 °C and the shut-down OC
-    /// response.
+    /// ForgeOS v1.7 (the Nano's stock firmware, open source:
+    /// github.com/wantclue/forge-os, `main/power/vcore.c:20-28`) writes
+    /// VIN OV fault 13.5 V and IOUT OC warn 38 A / fault 40 A on every
+    /// start; the TPS546D24A is a 40 A part. Taken from there: those
+    /// three limits. Kept from before: the Gaia's proven 12 V input
+    /// window (on 10.5 / off 9.5, UV warn 10.5), ESP-Miner's 650 kHz,
+    /// scale loop 0.25 and 1–2 V window (proven on the same part with
+    /// direct sensing), our OT 105/145 °C and the shut-down OC response.
+    /// (Until v0.1.35 WarpAxe ran 45 / 52 A from the part's NVM and
+    /// 14.8 V, before ForgeOS's source was looked at; 2026-10-23.)
     pub const BITFORGE_NANO: Config = Config {
         vin_on: 10.5,
         vin_off: 9.5,
         vin_uv_warn: 10.5,
-        vin_ov_fault: 14.8,
+        vin_ov_fault: 13.5,
         scale_loop: 0.25,
         vout_min: 1.0,
         vout_max: 2.0,
         vout_command: 1.2,
-        // The NVM says 40 A; tuners stop short of the warning line, so
-        // at 40 A the Max preset (625 MHz / 1160 mV, ~38 A) was out of
-        // reach. 45 A lets it run; the part still shuts down at 52 A.
-        iout_oc_warn: 45.0,
-        iout_oc_fault: 52.0,
+        // As the manufacturer: the Max preset (625 MHz / 1160 mV, ~38 A)
+        // sits on the warning line, as ForgeOS's own 636 MHz preset does.
+        iout_oc_warn: 38.0,
+        iout_oc_fault: 40.0,
         frequency_khz: 650,
         phase: 0x00,
         stack_config: 0x0000,

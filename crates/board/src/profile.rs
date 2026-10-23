@@ -609,11 +609,14 @@ pub const BITAXE_GAMMA_HEX: Profile = Profile {
 /// GPIO1, I²C 47/48), one TPS546D24A, an INA260 on the input rail, two
 /// EMC2101 behind a PCA9544 mux (channels 2 and 3, one per chip, each
 /// driving its own fan), no display (schematic
-/// WantClueTechnologies/BitForge-Nano, CERN-OHL-S; ForgeOS itself is
-/// closed). Stock 525 MHz / 1150 mV, 60 W; the clock and voltage
-/// choices are WarpTune's vendor table for the board (425/1000,
-/// 525/1150, 625/1160, up to 700 MHz and 1200 mV). Profile only: never
-/// run under WarpAxe; power comes from the INA260, so no offset.
+/// WantClueTechnologies/BitForge-Nano, CERN-OHL-S; its stock firmware
+/// ForgeOS is open source too, github.com/wantclue/forge-os, GPL-3.0).
+/// Stock 525 MHz / 1150 mV, 60 W (ForgeOS v1.7 reports the 60 W, it
+/// doesn't enforce it). The clock and voltage choices are WarpTune's
+/// vendor table for the board (425/1000, 525/1150, 625/1160, up to
+/// 700 MHz and 1200 mV); ForgeOS's own presets are 430/1000, 525/1150
+/// and 636/1160. Runs under WarpAxe since 2026-09-29; power comes from
+/// the INA260, so no offset.
 pub const BITFORGE_NANO: Profile = Profile {
     name: "bitforge-nano",
     model: "BitForge Nano",
@@ -646,11 +649,11 @@ pub const BITFORGE_NANO: Profile = Profile {
     nominal_voltage_v: 12,
     max_power_w: 60,
     power_offset_w: 0.0,
-    // ForgeOS is closed and its `/api/system/info` is ESP-Miner's
-    // (`overheat_mode`, `boardVersion` 800): taken as ESP-Miner's stops,
-    // 75 / 105, until someone reads them off the board. Under WarpAxe
-    // the board reached 82 °C (regulator 95 °C) before the fans were
-    // fixed, below neither of the old 90 / 145 lines.
+    // ForgeOS v1.7's own stops, read from its source: either chip
+    // > 75 °C, regulator > 105 °C (`main/tasks/power_management_task.c`
+    // 21, 28, 149-151). Under WarpAxe the board reached 82 °C
+    // (regulator 95 °C) before the fans were fixed, below neither of the
+    // old 90 / 145 lines.
     chip_stop_c: 75.0,
     vr_stop_c: 105.0,
     temp_offset_c: 0.0,

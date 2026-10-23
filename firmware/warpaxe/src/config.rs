@@ -1001,7 +1001,7 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             cfg.stratum_user = user;
             cfg.stratum_port = stock.u16("stratumport").unwrap_or(cfg.stratum_port);
             cfg.stratum_pass = stock.str("stratumpass").unwrap_or_else(|| "x".into());
-            cfg.stratum_tls = u8::from(stock.u16("stratumtls") == Some(1));
+            cfg.stratum_tls = stock_tls(stock, "stratumtls");
             // NerdOS keys; AxeOS stores its Sv2 settings under other names.
             if stock.u16("sv2_proto") == Some(1) {
                 cfg.stratum_protocol = "SV2".into();
@@ -1017,7 +1017,7 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             cfg.fallback_user = user;
             cfg.fallback_port = stock.u16("fbstratumport").unwrap_or(cfg.fallback_port);
             cfg.fallback_pass = stock.str("fbstratumpass").unwrap_or_else(|| "x".into());
-            cfg.fallback_tls = u8::from(stock.u16("fbstratumtls") == Some(1));
+            cfg.fallback_tls = stock_tls(stock, "fbstratumtls");
             if stock.u16("fbsv2_proto") == Some(1) {
                 cfg.fallback_protocol = "SV2".into();
             }
@@ -1032,11 +1032,19 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             took.push("hostname");
         }
     }
-    if import_tuning(stock, &mut cfg) {
-        took.push("tuning");
-    }
-    if import_fans(stock, &mut cfg) {
-        took.push("fans");
+    // After an overheat stop ForgeOS (and older AxeOS) leave their
+    // emergency point in NVS: 1000 mV, 50 MHz, fans 100 % manual,
+    // `overheat_mode` 1. That is no point the owner chose, so WarpAxe
+    // keeps its board defaults for clock, voltage and fans instead.
+    if stock.num("overheat_mode") == Some(1.0) {
+        log::warn!("config: the stock firmware was in its overheat mode; clock, voltage and fans not taken over");
+    } else {
+        if import_tuning(stock, &mut cfg) {
+            took.push("tuning");
+        }
+        if import_fans(stock, &mut cfg) {
+            took.push("fans");
+        }
     }
     if import_display(stock, &mut cfg) {
         took.push("display");
@@ -1066,7 +1074,8 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
                 } else {
                     p.pass
                 },
-                tls: u8::from(p.tls == 1),
+                // 2 = the owner's own certificate: TLS with the CA bundle, as `stock_tls`.
+                tls: u8::from(p.tls == 1 || p.tls == 2),
                 protocol: if is_sv2(&p.protocol) {
                     "SV2".into()
                 } else {
@@ -1098,6 +1107,21 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
         }
     }
     took
+}
+
+/// TLS from a stock pool entry: 1 = TLS with the CA bundle, 2 = TLS
+/// with the owner's own certificate (AxeOS, ForgeOS). WarpAxe has no
+/// place for that certificate, so 2 becomes TLS with the CA bundle: a
+/// pool on a private certificate then fails visibly instead of the
+/// connection quietly dropping to plain text.
+fn stock_tls(stock: &Stock, key: &str) -> u8 {
+    match stock.u16(key) {
+        Some(2) => {
+            log::warn!("config: {key} used the owner's own certificate; TLS stays on with the built-in CA bundle");
+            1
+        }
+        v => u8::from(v == Some(1)),
+    }
 }
 
 /// The clock and core voltage the stock firmware ran: the owner's

@@ -18,9 +18,19 @@ pub struct Session {
     pub version_mask: u32,
 }
 
+/// The extranonce2 sizes a pool may ask for, in bytes. Pools use 4 to 8;
+/// a size outside this range is a broken or hostile pool, and an
+/// unchecked one would have the miner allocate whatever it says
+/// (ForgeOS v1.7 checks it the same way).
+pub const EXTRANONCE2_SIZES: core::ops::RangeInclusive<usize> = 1..=16;
+
 impl Session {
-    /// From the `mining.subscribe` result.
+    /// From the `mining.subscribe` result; `None` for an extranonce2 size
+    /// outside [`EXTRANONCE2_SIZES`].
     pub fn new(extranonce1_hex: &str, extranonce2_size: usize) -> Option<Self> {
+        if !EXTRANONCE2_SIZES.contains(&extranonce2_size) {
+            return None;
+        }
         Some(Session {
             extranonce1: hex::decode(extranonce1_hex).ok()?,
             extranonce2_size,
@@ -177,4 +187,18 @@ pub fn hash_difficulty(hash: &[u8; 32]) -> f64 {
     // 0xFFFF << (96 - 32 - 16) as f64
     let diff1 = 65535.0 * 2f64.powi(96 - 48);
     diff1 / num
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_refuses_extranonce2_sizes_out_of_range() {
+        assert!(Session::new("abcd", 0).is_none());
+        assert!(Session::new("abcd", 17).is_none());
+        assert!(Session::new("abcd", usize::MAX).is_none());
+        assert_eq!(Session::new("abcd", 4).unwrap().extranonce2_size, 4);
+        assert_eq!(Session::new("abcd", 16).unwrap().extranonce2_size, 16);
+    }
 }

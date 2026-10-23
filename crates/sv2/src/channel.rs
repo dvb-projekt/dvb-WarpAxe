@@ -316,6 +316,15 @@ impl Client {
             }
             (Phase::Opening, msg::OPEN_EXTENDED_MINING_CHANNEL_SUCCESS) => {
                 let s = OpenExtendedMiningChannelSuccess::decode(p)?;
+                // Sv2 caps the whole extranonce at 32 bytes; anything else
+                // is a broken or hostile pool, and the miner would allocate
+                // whatever it says for every job.
+                if !(1..=32).contains(&s.extranonce_size) {
+                    return Err(Error::Refused(format!(
+                        "channel: extranonce size {}",
+                        s.extranonce_size
+                    )));
+                }
                 self.phase = Phase::Mining;
                 self.channel_id = s.channel_id;
                 self.extranonce_prefix = s.extranonce_prefix.clone();
@@ -574,6 +583,20 @@ mod tests {
         assert_eq!(ev[1], Event::Difficulty(1.0));
         assert!(c.mining());
         c
+    }
+
+    #[test]
+    fn channel_with_an_extranonce_size_out_of_range_is_refused() {
+        for size in [0u16, 33, u16::MAX] {
+            let mut c = Client::new(cfg());
+            let mut out = Vec::new();
+            c.handle(&setup_success(), &mut out).unwrap();
+            assert!(matches!(
+                c.handle(&open_success(&[1, 2, 3, 4], size), &mut out),
+                Err(Error::Refused(_))
+            ));
+            assert!(!c.mining());
+        }
     }
 
     #[test]
