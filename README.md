@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-471%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-477%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.36-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.37-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.36).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.37).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -510,7 +510,21 @@ back at any time with `GET /api/v1/display/frame`.
   file and, if this crash wrote one, one for its core dump. A dump only
   counts as this crash's when the running image wrote it and no earlier
   boot reported it; otherwise the banner says no dump was written, and
-  the Diagnostics card marks a dump left in flash as an older one.
+  the Diagnostics card marks a dump left in flash as an older one. Since
+  v0.1.37 a Rust panic also leaves its last words (task, file and line,
+  message) in memory that survives the reset, and a stack overflow the
+  name of its task; the next boot logs them and the diagnostics file
+  carries them as `lastWords`, with or without a dump. Other crashes (a
+  hardware exception, a watchdog) leave no last words, only the core
+  dump. A crash during a restart (after an update, an upload, a restart
+  from the web UI or on the way into download mode) becomes an event of
+  its own that names the step, and a finished update or upload reports
+  itself as installed on every bootloader, but not after a rollback; both
+  need the restart to be begun by v0.1.37 or later. The core dump
+  partition is 256 KB since v0.1.37 (64 KB before, too small for most of
+  this firmware's dumps); it arrives with one install from the browser
+  (or over USB), not with an online update
+  ([`docs/12`](docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md)).
 
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
@@ -649,11 +663,12 @@ up and updates itself:
    on a computer). It writes bootloader, partition table and app and
    leaves the settings partition alone, so WarpAxe reads what AxeOS or
    NerdOS left there; it checks every part against the flash and restarts
-   the miner when it is done. (A miner that runs WarpAxe from before
-   v0.1.37 and was only ever updated online keeps its old partition table,
-   whose core dump partition of 64 KB is too small for most of this
+   the miner when it is done. (A miner first installed with WarpAxe
+   before v0.1.37 and since updated only online keeps its old partition
+   table, whose core dump partition of 64 KB is too small for most of this
    firmware's crash dumps; one flash from the browser gives it the 256 KB
-   table, docs/12.) The flasher serves the current release; its
+   table and keeps the settings, docs/12.) The flasher serves the current
+   release; its
    image carries the same signature the online update checks. Coming from
    the stock firmware, the flasher usually puts the miner into download
    mode by itself; otherwise hold BOOT, press RST, release BOOT (on a miner
