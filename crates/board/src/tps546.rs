@@ -151,8 +151,11 @@ impl Config {
         vout_min: 1.0,
         vout_max: 2.0,
         vout_command: 1.2,
-        // As the manufacturer: the Max preset (625 MHz / 1160 mV, ~38 A)
-        // sits on the warning line, as ForgeOS's own 636 MHz preset does.
+        // As the manufacturer. The Max preset (625 MHz / 1160 mV) was
+        // measured at 37.1 A on average, 37.6 A at most (WarpTune's
+        // journal on .44): just under the warning, so it may touch it and,
+        // rarely, trip the fault, handled as an overheat stop; ForgeOS's
+        // own 636 MHz preset runs under the same 40 A (docs/08).
         iout_oc_warn: 38.0,
         iout_oc_fault: 40.0,
         frequency_khz: 650,

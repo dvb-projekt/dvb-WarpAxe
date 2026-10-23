@@ -131,6 +131,28 @@ an update path and is worth re-running) its one measurement is done and
 recorded here and in `CloudDocs/.../Testimages/19ca20a-diodeab/`. The
 procedure fits in ten lines if it is ever needed again.
 
+## The Nano's Max preset and the 40 A limit (2026-10-23, v0.1.36)
+
+Since v0.1.36 the Nano's regulator warns at 38 A and shuts down at 40 A,
+as ForgeOS v1.7 writes them (`main/power/vcore.c` 27–28; the TPS546D24A
+is a 40 A part). The Max preset 625 MHz / 1160 mV stays in the choices,
+close to that line. WarpTune's journal on the Nano .44 (settled
+readings of the regulator's output current, 30.09.–22.10., room
+temperature, old diode scale) shows it at 37.1 A on average and 37.6 A
+at most: just under the warning, 2.4 A under the shutdown. 625 MHz at
+1050 mV drew 33.8–33.9 A; 650 MHz / 1160 mV reached 41.2 A, which the
+new limit no longer allows.
+
+Peaks above the settled reading, a warmer room and the chips' ~8 °C
+higher real temperature under the maker's diode scale all add some
+current, so Max can touch the warning line and, rarely, the shutdown.
+A shutdown is handled like an overheat stop: chips off, at least 60 s,
+back on; the third stop within an hour keeps the chips off with the
+reason on screen. ForgeOS offers 636 MHz / 1160 mV under the same
+40 A limit. WarpTune stays below 90 % of the warning line (34.2 A), so a
+tuned Nano does not get there (Oliver's decision 2026-10-23: keep 625
+and say so, rather than drop it).
+
 ## Decided by Oliver (2026-10-20)
 
 1. NerdAxe Gamma and Gaia keep the 105 °C regulator stop that NerdOS
