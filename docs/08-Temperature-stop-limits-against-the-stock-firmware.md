@@ -135,9 +135,12 @@ it:
   `HYSTERESIS_C`) and are scale-free.
 - The API (`temp`, `fans[0]`, the swarm card, the diagnostics file)
   reports the new scale: after the update a Nano shows about 8 °C less
-  at the same point. WarpTune's temperature-based steps see that too;
-  one new WarpTune calibration on the Nano after v0.1.36 is
-  recommended.
+  at the same point. With the fan target at 52 °C the chips run as
+  warm as before, so a WarpTune calibration made under v0.1.35 stays
+  valid (checked on .44: error rate 1.3–1.5 % at 425 MHz / 1000 mV, as
+  before); a new one is optional and only brings the Max preset back to
+  a full clock under WarpTune's current limit. WarpTune's card shows that
+  the fan target changed since the calibration until the next one.
 - The only Nano constant derived from the old scale is the fan target
   (52 = 60 − 8.2, above); the stops are ForgeOS's, the regulator stop
   reads the TPS546. A chip stop (`overheat_temp`) set by hand on a Nano
