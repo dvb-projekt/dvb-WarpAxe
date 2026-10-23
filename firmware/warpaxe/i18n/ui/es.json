@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}, volcado de memoria {tag}",
   "evd_boot_old_dump": "{r}, no se escribió ningún volcado de memoria ({tag} es de un fallo anterior)",
   "evd_rollback": "la última actualización no arrancó: se volvió al firmware anterior",
+  "evd_rs_crash_chips": "{v} se bloqueó durante el reinicio ({w}), mientras se apagaban los chips",
+  "evd_rs_crash_reset": "{v} se bloqueó durante el reinicio ({w}), en el reset del sistema",
   "evd_installed": "{v} instalada",
   "evd_upd_signed": "{v} instalada, firma verificada",
   "evd_upd_unsigned": "{v} instalada sin firma",

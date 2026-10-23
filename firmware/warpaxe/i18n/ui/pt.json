@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}, core dump {tag}",
   "evd_boot_old_dump": "{r}, nenhum core dump gravado ({tag} é de um travamento anterior)",
   "evd_rollback": "a última atualização não iniciou: de volta ao firmware anterior",
+  "evd_rs_crash_chips": "{v} travou durante o reinício ({w}), enquanto os chips eram desligados",
+  "evd_rs_crash_reset": "{v} travou durante o reinício ({w}), no reset do sistema",
   "evd_installed": "{v} instalada",
   "evd_upd_signed": "{v} instalada, assinatura verificada",
   "evd_upd_unsigned": "{v} instalada sem assinatura",

@@ -313,10 +313,12 @@ and the ELF belong together in the release folder.
   `POST /api/v1/selftest` answered 202 with an empty body, the next
   requests came back empty, and the miner restarted with reset reason
   `panic` and no core dump; the event log recorded `boot: panic`. That
-  is what a stack overflow in a task whose stack sits in PSRAM looks
-  like: `CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY` aborts at the next
-  context switch, and the core-dump writer cannot read a PSRAM stack
-  with the cache off, so nothing is stored. The self-test thread had
+  is what a stack overflow looks like:
+  `CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY` aborts at the next
+  context switch. (This note first said the core-dump writer cannot read
+  a PSRAM stack with the cache off; it can, our dumps carry PSRAM
+  segments. The dump was lost because this firmware's dumps are 60–64 KB
+  and the partition was 64 KB: docs/12.) The self-test thread had
   8 KB, and the hash window (`Window`, 1.3 KB: 16 chips × 8 domains of
   sums and counts) sat on that stack several times over as it was
   built, returned and matched on, next to the cloned board, miner and

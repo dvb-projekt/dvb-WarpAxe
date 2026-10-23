@@ -156,11 +156,16 @@ fn main() {
     diag::init_logger();
     diag::start_log_capture();
     diag::mark_boot();
+    // A panic's message goes to RTC memory before the abort, for the
+    // next boot: the console is not readable after a boot's first 30 s,
+    // and a core dump is not always written (docs/12).
+    diag::install_panic_hook();
     info!(
         "{} boot, reset reason {}",
         api::VERSION,
         diag::reset_reason()
     );
+    diag::take_last_words();
 
     let peripherals = Peripherals::take().expect("peripherals");
     let sysloop = EspSystemEventLoop::take().expect("event loop");
@@ -168,6 +173,12 @@ fn main() {
     if let Err(e) = config::init(nvs.clone()) {
         log::error!("config init failed: {e}");
     }
+    // The marker of a restart the previous run began, taken (removed)
+    // before anything else of this boot can crash: a crash from here on
+    // would otherwise be blamed on that restart at the next boot.
+    let restart = config::take_restart().map(|m| {
+        warpaxe_diag::restart::outcome(m, diag::reset_class())
+    });
     // On the main task, before any thread with a PSRAM stack exists: it
     // reads the otadata partition from flash.
     update::init_ota_state();
@@ -191,15 +202,69 @@ fn main() {
         _ => detail::boot(diag::reset_reason(), None),
     };
     events::record("boot", boot_detail);
+    // The marker of a restart the previous run began (update, upload,
+    // restart, download mode; `warpaxe_diag::restart`): a crash reset
+    // after it is a crash in that restart, which the event log says
+    // with the step it got to. A completed restart that installed an
+    // image says so too, on any bootloader: the bootloader's own
+    // "pending verify" below needs its rollback support, which a
+    // bootloader flashed before v0.1.22 has not (a user's "installed"
+    // event was missing for that, docs/12).
+    use warpaxe_diag::restart::Outcome;
+    let mut installed = false;
+    match &restart {
+        Some(Outcome::Completed(m)) => {
+            info!(
+                "restart ({}) begun by {} at uptime {} s: no crash reset",
+                m.why, m.from, m.uptime_s
+            );
+            installed = m.installs() && update::ota_state() != "aborted";
+        }
+        Some(Outcome::Crashed(m)) => {
+            log::error!(
+                "restart ({}) begun by {} at uptime {} s: crashed {} (reset reason {})",
+                m.why,
+                m.from,
+                m.uptime_s,
+                m.step.text(),
+                diag::reset_reason()
+            );
+            events::record("boot", detail::restart_crash(&m.why, &m.from, m.step));
+            // The written image boots all the same after a crash in
+            // the old one's restart: installed, unless the old image is
+            // the one that came back.
+            installed = m.installs() && update::ota_state() != "aborted" && m.from != api::VERSION;
+        }
+        None => {}
+    }
+    if installed {
+        events::record(
+            "update",
+            detail::installed(api::VERSION, &config::last_install()),
+        );
+    }
     match update::ota_state() {
         "aborted" => events::record("rollback", detail::rollback()),
-        "pending-verify" => events::record(
+        "pending-verify" if !installed => events::record(
             "update",
             detail::installed(api::VERSION, &config::last_install()),
         ),
         _ => {}
     }
     events::flush();
+    // The core dump partition: a dump that would not fit is not written
+    // at all, and this firmware's dumps run 60–64 KB. The partition
+    // table is written by a USB flash only (the web flasher, the
+    // factory image); an online update keeps the one in flash.
+    let room = diag::core_dump_room();
+    if room < diag::CORE_DUMP_ROOM_WANTED {
+        log::warn!(
+            "core dump partition {} KB: this firmware's dumps run 60–64 KB, so a crash may leave none; a USB flash of this release's partition table makes it 256 KB (docs/12)",
+            room / 1024
+        );
+    } else {
+        info!("core dump partition {} KB", room / 1024);
+    }
 
     // The fallback for boards that never report a chain (the devkit, chips
     // off on purpose): the image counts as good after three minutes up.

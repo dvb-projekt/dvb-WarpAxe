@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}、コアダンプ {tag}",
   "evd_boot_old_dump": "{r}、コアダンプは書き込まれず（{tag} は以前のクラッシュのもの）",
   "evd_rollback": "直前のアップデートが起動せず、以前のファームウェアに復帰",
+  "evd_rs_crash_chips": "{v} が再起動（{w}）の際、チップの停止処理中にクラッシュ",
+  "evd_rs_crash_reset": "{v} が再起動（{w}）の際、システムリセット中にクラッシュ",
   "evd_installed": "{v} をインストール",
   "evd_upd_signed": "{v} をインストール、署名を確認済み",
   "evd_upd_unsigned": "{v} を署名なしでインストール",

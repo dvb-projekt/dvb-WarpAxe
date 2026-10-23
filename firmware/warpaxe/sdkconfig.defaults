@@ -34,6 +34,9 @@ CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
 # at a time on top (swarm.rs), and a scan must not starve the rest.
 CONFIG_LWIP_MAX_SOCKETS=16
 # A panic writes a core dump to flash and reboots; the next boot shows it.
+# The dump is an ELF of every task's used stack and registers, 60-64 KB on
+# this firmware, and the writer stores nothing when it would not fit the
+# coredump partition (partitions.csv: 256 KB since v0.1.37, 64 KB before).
 CONFIG_ESP_SYSTEM_PANIC_PRINT_REBOOT=y
 CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y

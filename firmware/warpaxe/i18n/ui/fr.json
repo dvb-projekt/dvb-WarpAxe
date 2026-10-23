@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}, core dump {tag}",
   "evd_boot_old_dump": "{r}, aucun core dump écrit ({tag} provient d’un plantage antérieur)",
   "evd_rollback": "la dernière mise à jour n’a pas démarré : retour au firmware précédent",
+  "evd_rs_crash_chips": "{v} a planté pendant le redémarrage ({w}), lors de la coupure des puces",
+  "evd_rs_crash_reset": "{v} a planté pendant le redémarrage ({w}), lors de la réinitialisation du système",
   "evd_installed": "{v} installée",
   "evd_upd_signed": "{v} installée, signature vérifiée",
   "evd_upd_unsigned": "{v} installée sans signature",

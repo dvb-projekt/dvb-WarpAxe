@@ -719,6 +719,43 @@ pub fn nvs_set_str(key: &str, value: &str) -> Result<(), String> {
     nvs.set_str(key, value).map_err(|e| e.to_string())
 }
 
+/// Remove a key of our NVS namespace (a flash write, same rule). Ok
+/// whether or not it was there.
+pub fn nvs_remove(key: &str) -> Result<(), String> {
+    let mut g = NVS.lock().unwrap();
+    let nvs = g.as_mut().ok_or("no NVS")?;
+    nvs.remove(key).map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Note a restart that is about to happen (`warpaxe_diag::restart`): on
+/// the main task, right before the chips go off and again right before
+/// the reset. The next boot takes it (`take_restart`) and tells a
+/// completed restart from one that crashed on the way.
+pub fn note_restart(m: &warpaxe_diag::restart::Marker) {
+    if let Err(e) = nvs_set_str(warpaxe_diag::restart::KEY, &m.to_stored()) {
+        log::warn!("config: storing the restart marker: {e}");
+    }
+}
+
+/// The restart marker the previous run left, removed from NVS; `None`
+/// without one (or with one that does not read, which is removed all
+/// the same). On the main task at boot.
+pub fn take_restart() -> Option<warpaxe_diag::restart::Marker> {
+    use warpaxe_diag::restart::{Marker, KEY, MAX_STORED};
+    let stored = nvs_get_str(KEY, MAX_STORED + 16);
+    // Removed whether or not it read: an entry too long for the buffer
+    // must not sit there for every boot to come.
+    if let Err(e) = nvs_remove(KEY) {
+        log::warn!("config: removing the restart marker: {e}");
+    }
+    let stored = stored?;
+    let m = Marker::parse(&stored);
+    if m.is_none() {
+        log::warn!("config: a restart marker that does not read: {stored:?}");
+    }
+    m
+}
+
 /// One-time moves of stored settings after an update, keyed by a marker
 /// in NVS so each runs once per device. v0.1.36: a Nano's stored fan
 /// target 60 (the old default on the old diode scale) goes back to the

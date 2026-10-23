@@ -141,6 +141,27 @@ int wa_coredump_read(uint32_t addr, void *buf, uint32_t n);
 /// Erase the stored core dump.
 void wa_coredump_erase(void);
 
+/// Size of the core dump partition in bytes (0 if the table has none):
+/// what a dump may be at most. This firmware's dumps run 60–64 KB
+/// (docs/12), so the 64 KB of the tables flashed before v0.1.37 leave
+/// no room to spare.
+uint32_t wa_coredump_room(void);
+
+/// Keep what the crashing code said (a Rust panic's message, the task
+/// whose stack overflowed) in RTC memory, which survives a software or
+/// panic reset. For the next boot's `wa_last_words_take`.
+void wa_last_words_set(const char *text);
+
+/// The last words of the previous run into `buf` (NUL-terminated,
+/// at most n-1 characters) and cleared; 1 if there were any.
+int wa_last_words_take(char *buf, size_t n);
+
+/// The last-words block sits at a fixed address at the top of RTC slow
+/// memory, so an image reads what another image wrote. 1 when this
+/// image's own RTC data ends below it (the linker fills RTC slow memory
+/// from the bottom); 0 would mean the two overlap.
+int wa_last_words_fits(void);
+
 #ifdef __cplusplus
 }
 #endif

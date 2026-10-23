@@ -56,6 +56,20 @@ pub fn reset_was_power_on() -> bool {
     unsafe { sys::esp_reset_reason() == sys::esp_reset_reason_t_ESP_RST_POWERON }
 }
 
+/// The last reset as the restart marker reads it (`warpaxe_diag::restart`):
+/// a crash (panic, interrupt or task watchdog), the RTC watchdog (what a
+/// flashing tool leaves download mode with), or clean.
+pub fn reset_class() -> warpaxe_diag::restart::Reset {
+    use warpaxe_diag::restart::Reset;
+    match unsafe { sys::esp_reset_reason() } {
+        sys::esp_reset_reason_t_ESP_RST_PANIC
+        | sys::esp_reset_reason_t_ESP_RST_INT_WDT
+        | sys::esp_reset_reason_t_ESP_RST_TASK_WDT => Reset::Crash,
+        sys::esp_reset_reason_t_ESP_RST_WDT => Reset::Watchdog,
+        _ => Reset::Clean,
+    }
+}
+
 /// The last run crashed (or was reset by a watchdog).
 pub fn last_run_crashed() -> bool {
     matches!(
@@ -181,6 +195,132 @@ pub fn read_core_dump(addr: u32, buf: &mut [u8]) -> bool {
 
 pub fn erase_core_dump() {
     unsafe { tusb::wa_coredump_erase() };
+}
+
+/// The core dump partition's size, bytes: what a dump may be at most.
+/// Read from the partition table in flash: on the main task at boot,
+/// kept for the API.
+static CORE_DUMP_ROOM: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+
+pub fn core_dump_room() -> u32 {
+    *CORE_DUMP_ROOM.get_or_init(|| unsafe { tusb::wa_coredump_room() })
+}
+
+/// A core dump partition smaller than this leaves no room to spare:
+/// this firmware's dumps run 60–64 KB (four of them measured on
+/// 2026-10-23: 60,644 to 64,292 bytes, 18 to 24 tasks), and the writer
+/// stores nothing at all when the dump would not fit (docs/12).
+pub const CORE_DUMP_ROOM_WANTED: u32 = 128 * 1024;
+
+/// What the crashing code said, if it could: a Rust panic's message
+/// (`install_panic_hook`) or the task whose stack overflowed (the glue's
+/// `vApplicationStackOverflowHook`), kept in RTC memory through the
+/// reset. Set by `take_last_words` at boot, after a crash only.
+static LAST_WORDS: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// Read and clear the last words of the previous run. On the main task
+/// at boot, before anything else can crash. Kept only when the reset
+/// was a crash: words left by an earlier crash would have been taken
+/// at that boot already, so this guards against a reset in between
+/// that kept RTC memory (a software reset) after words were written
+/// but never taken.
+pub fn take_last_words() {
+    if unsafe { tusb::wa_last_words_fits() } == 0 {
+        log::error!("last words: this image's RTC data reaches into the last-words block; none are kept");
+        return;
+    }
+    let mut buf = [0u8; 200];
+    let had = unsafe { tusb::wa_last_words_take(buf.as_mut_ptr() as *mut core::ffi::c_char, buf.len()) } != 0;
+    if !had {
+        return;
+    }
+    let end = buf.iter().position(|&b| b == 0).unwrap_or(buf.len());
+    let words = String::from_utf8_lossy(&buf[..end]).into_owned();
+    if last_run_crashed() {
+        log::error!("last words of the crashed run: {words}");
+        *LAST_WORDS.lock().unwrap() = Some(words);
+    } else {
+        log::warn!("last words found without a crash reset ({words}), ignored");
+    }
+}
+
+/// The previous run's last words, if it crashed and could say any.
+pub fn last_words() -> Option<String> {
+    LAST_WORDS.lock().unwrap().clone()
+}
+
+/// A writer into a fixed buffer, for the panic hook: no allocation,
+/// truncates at the end of the buffer.
+struct Words {
+    buf: [u8; 192],
+    len: usize,
+}
+
+impl core::fmt::Write for Words {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let room = self.buf.len() - 1 - self.len;
+        let n = s.len().min(room);
+        self.buf[self.len..self.len + n].copy_from_slice(&s.as_bytes()[..n]);
+        self.len += n;
+        Ok(())
+    }
+}
+
+/// The last two components of a source path, enough to find the line.
+fn short_path(p: &str) -> &str {
+    let mut cut = p.len();
+    for _ in 0..2 {
+        match p[..cut].rfind('/') {
+            Some(i) => cut = i,
+            None => return p,
+        }
+    }
+    &p[cut + 1..]
+}
+
+/// Format and store a panic's words. Its own frame (the buffer and the
+/// formatter) is gone before the default hook runs with its own, which
+/// matters on the smallest stacks (the system event task has 2,304
+/// bytes). No allocation: the task's name comes from FreeRTOS, which
+/// every task has, where `std::thread::current` would allocate a handle
+/// for a task std did not spawn (the HTTP server's, the event task's).
+#[inline(never)]
+fn store_panic_words(info: &std::panic::PanicHookInfo<'_>) {
+    use core::fmt::Write;
+    let mut w = Words {
+        buf: [0u8; 192],
+        len: 0,
+    };
+    // SAFETY: a null handle names the calling task; the name lives in
+    // its TCB for as long as the task.
+    let name = unsafe { core::ffi::CStr::from_ptr(sys::pcTaskGetName(core::ptr::null_mut())) };
+    let _ = write!(w, "{} panicked", name.to_str().unwrap_or("?"));
+    if let Some(l) = info.location() {
+        let _ = write!(w, " at {}:{}", short_path(l.file()), l.line());
+    }
+    if let Some(m) = info.payload().downcast_ref::<&str>() {
+        let _ = write!(w, ": {m}");
+    } else if let Some(m) = info.payload().downcast_ref::<String>() {
+        let _ = write!(w, ": {m}");
+    }
+    // SAFETY: the buffer is NUL-terminated (one byte kept) and lives for
+    // the call; the glue copies it.
+    unsafe { tusb::wa_last_words_set(w.buf.as_ptr() as *const core::ffi::c_char) };
+}
+
+/// Keep a Rust panic's message for the next boot (`take_last_words`)
+/// before the default hook prints it and the firmware aborts
+/// (`panic_abort`: the ESP-IDF panic handler, the core dump when it
+/// fits, the reset with reason `panic`). The console is unreadable
+/// after a boot's first 30 s (the USB PHY is on USB OTG, docs/12), and
+/// the core dump is not always written, so this is what a user's
+/// diagnostics file can still carry. Installed first thing at boot.
+pub fn install_panic_hook() {
+    let prev = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        store_panic_words(info);
+        prev(info);
+    }));
 }
 
 /// The previous run's crash summary, if there was one.

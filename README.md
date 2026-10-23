@@ -649,7 +649,11 @@ up and updates itself:
    on a computer). It writes bootloader, partition table and app and
    leaves the settings partition alone, so WarpAxe reads what AxeOS or
    NerdOS left there; it checks every part against the flash and restarts
-   the miner when it is done. The flasher serves the current release; its
+   the miner when it is done. (A miner that runs WarpAxe from before
+   v0.1.37 and was only ever updated online keeps its old partition table,
+   whose core dump partition of 64 KB is too small for most of this
+   firmware's crash dumps; one flash from the browser gives it the 256 KB
+   table, docs/12.) The flasher serves the current release; its
    image carries the same signature the online update checks. Coming from
    the stock firmware, the flasher usually puts the miner into download
    mode by itself; otherwise hold BOOT, press RST, release BOOT (on a miner

@@ -30,6 +30,7 @@
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::Duration;
+use warpaxe_diag::restart::{Marker, Step};
 
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
 use esp_idf_svc::http::Method;
@@ -595,14 +596,15 @@ pub fn serve_writes() -> ! {
             Work::Restart(why) => {
                 // The answer goes out first.
                 std::thread::sleep(Duration::from_millis(300));
-                crate::board::prepare_reset(why);
-                diag::restart();
+                restart_now(why);
             }
             Work::Bootloader => {
                 std::thread::sleep(Duration::from_millis(300));
                 // Nothing runs in ROM download mode: the chips must not
                 // sit powered at their last clock meanwhile.
+                let marker = note_restart("download mode");
                 crate::board::prepare_reset("download mode");
+                config::note_restart(&marker.at(Step::Reset));
                 diag::reboot_to_bootloader();
             }
         };
@@ -639,8 +641,7 @@ pub fn serve_writes() -> ! {
                     config::set_last_install(record);
                 }
                 std::thread::sleep(Duration::from_millis(500));
-                crate::board::prepare_reset("update");
-                diag::restart();
+                restart_now(origin);
             }
             Err(e) => {
                 drop(image);
@@ -656,6 +657,28 @@ pub fn serve_writes() -> ! {
             }
         }
     }
+}
+
+/// The restart marker for `why`, stored before the chips go off
+/// (`warpaxe_diag::restart`, docs/12): the next boot reports a restart
+/// that ended in a crash, and an installed image on any bootloader.
+fn note_restart(why: &str) -> Marker {
+    let m = Marker::new(why, crate::api::VERSION, diag::uptime_s());
+    config::note_restart(&m);
+    m
+}
+
+/// The intentional restart, on the main task: the marker, the chips
+/// off (`board::prepare_reset`), the marker again at its second step,
+/// the reset. Nothing on this path can panic (docs/12): the NVS writes
+/// log their errors, the locks cannot be poisoned (the firmware aborts
+/// on a panic, so no thread ever unwinds while holding one), and the
+/// I²C errors of the rail switch-off are logged.
+fn restart_now(why: &str) -> ! {
+    let marker = note_restart(why);
+    crate::board::prepare_reset(why);
+    config::note_restart(&marker.at(Step::Reset));
+    diag::restart()
 }
 
 static MARKED_VALID: AtomicBool = AtomicBool::new(false);

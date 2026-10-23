@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}, core dump {tag}",
   "evd_boot_old_dump": "{r}, nessun core dump scritto ({tag} risale a un crash precedente)",
   "evd_rollback": "l’ultimo aggiornamento non si è avviato: ripristinato il firmware precedente",
+  "evd_rs_crash_chips": "{v} è andata in crash durante il riavvio ({w}), mentre i chip venivano spenti",
+  "evd_rs_crash_reset": "{v} è andata in crash durante il riavvio ({w}), nel reset di sistema",
   "evd_installed": "{v} installata",
   "evd_upd_signed": "{v} installata, firma verificata",
   "evd_upd_unsigned": "{v} installata senza firma",

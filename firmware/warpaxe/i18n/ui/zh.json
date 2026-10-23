@@ -528,6 +528,8 @@
   "evd_boot_dump": "{r}，核心转储 {tag}",
   "evd_boot_old_dump": "{r}，未写入核心转储（{tag} 来自更早的一次崩溃）",
   "evd_rollback": "上次更新未能启动：已回到之前的固件",
+  "evd_rs_crash_chips": "{v} 在重启（{w}）期间关闭芯片时崩溃",
+  "evd_rs_crash_reset": "{v} 在重启（{w}）期间系统复位时崩溃",
   "evd_installed": "已安装 {v}",
   "evd_upd_signed": "已安装 {v}，签名已验证",
   "evd_upd_unsigned": "已安装 {v}，无签名",

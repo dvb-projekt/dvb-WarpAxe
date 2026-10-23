@@ -6,6 +6,8 @@
 #include "esp_log.h"
 #include "esp_core_dump.h"
 #include "esp_flash.h"
+#include "esp_partition.h"
+#include "esp_attr.h"
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -378,6 +380,114 @@ int wa_coredump_read(uint32_t addr, void *buf, uint32_t n)
 void wa_coredump_erase(void)
 {
     esp_core_dump_image_erase();
+}
+
+uint32_t wa_coredump_room(void)
+{
+    const esp_partition_t *p = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_COREDUMP, NULL);
+    return p ? p->size : 0;
+}
+
+// Last words: the panic handler prints to the console, which after the
+// first 30 s of a boot is the USB-Serial/JTAG peripheral with the PHY
+// handed to USB OTG, so nobody reads it; and the core dump needs the
+// partition to be large enough. RTC slow memory keeps its content
+// through every reset but a power-on, so a few words written before
+// the abort survive for the next boot. A magic and a checksum tell them
+// from the noise after a power-on.
+//
+// The block sits at a fixed address, the last 256 bytes of RTC slow
+// memory (0x50000000, 8 KB on the ESP32-S3; no ULP here), not in a
+// linker-placed RTC_NOINIT variable: the one crash this is for happens
+// in the image that is about to be replaced, and the image that reads
+// the words is the new one, whose RTC variables may lie elsewhere. The
+// linker fills RTC slow memory from the bottom (.rtc_noinit, then
+// .rtc.force_slow; 200 bytes in v0.1.37), and wa_last_words_fits checks
+// at boot that it stayed below the block. Everything that can run from
+// a crashing context is in IRAM, like the port's own overflow hook.
+#define WA_LAST_WORDS_MAGIC 0x57414c57u
+#define WA_LAST_WORDS_LEN 192
+#define WA_RTC_SLOW_END 0x50002000u
+#define WA_LAST_WORDS_ADDR (WA_RTC_SLOW_END - 256u)
+
+typedef struct {
+    uint32_t magic;
+    uint32_t sum;
+    char text[WA_LAST_WORDS_LEN];
+} wa_last_words_t;
+
+_Static_assert(sizeof(wa_last_words_t) <= 256, "last words block");
+#define s_last_words (*(volatile wa_last_words_t *) WA_LAST_WORDS_ADDR)
+
+extern char _rtc_force_slow_end[];
+
+int wa_last_words_fits(void)
+{
+    return (uintptr_t) _rtc_force_slow_end <= WA_LAST_WORDS_ADDR;
+}
+
+static IRAM_ATTR uint32_t last_words_sum(volatile const char *t)
+{
+    uint32_t s = 0x811c9dc5u;
+    for (size_t i = 0; i < WA_LAST_WORDS_LEN; i++) {
+        s ^= (uint8_t) t[i];
+        s *= 16777619u;
+    }
+    return s;
+}
+
+void IRAM_ATTR wa_last_words_set(const char *text)
+{
+    size_t i = 0;
+    for (; i + 1 < WA_LAST_WORDS_LEN && text[i]; i++) {
+        s_last_words.text[i] = text[i];
+    }
+    for (; i < WA_LAST_WORDS_LEN; i++) {
+        s_last_words.text[i] = 0;
+    }
+    s_last_words.sum = last_words_sum(s_last_words.text);
+    s_last_words.magic = WA_LAST_WORDS_MAGIC;
+}
+
+int wa_last_words_take(char *buf, size_t n)
+{
+    int had = 0;
+    if (n == 0) {
+        return 0;
+    }
+    buf[0] = 0;
+    if (s_last_words.magic == WA_LAST_WORDS_MAGIC && s_last_words.sum == last_words_sum(s_last_words.text)
+        && s_last_words.text[0]) {
+        size_t i = 0;
+        for (; i + 1 < n && i < WA_LAST_WORDS_LEN && s_last_words.text[i]; i++) {
+            buf[i] = s_last_words.text[i];
+        }
+        buf[i] = 0;
+        had = 1;
+    }
+    s_last_words.magic = 0;
+    s_last_words.text[0] = 0;
+    return had;
+}
+
+// FreeRTOS calls this from the context switch when a task's stack
+// canary is gone (CONFIG_FREERTOS_CHECK_STACKOVERFLOW_CANARY). The
+// port's own version (weak, port.c) aborts with the task's name on the
+// console; this one notes the name in RTC memory first, so the next boot
+// can say which task overflowed even when no core dump gets written.
+void IRAM_ATTR vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName)
+{
+    (void) xTask;
+    static const char head[] = "stack overflow in task ";
+    char buf[sizeof head + CONFIG_FREERTOS_MAX_TASK_NAME_LEN + 1];
+    size_t n = sizeof head - 1;
+    memcpy(buf, head, n);
+    for (size_t i = 0; pcTaskName && pcTaskName[i] && i < CONFIG_FREERTOS_MAX_TASK_NAME_LEN; i++) {
+        buf[n++] = pcTaskName[i];
+    }
+    buf[n] = 0;
+    wa_last_words_set(buf);
+    esp_system_abort(buf);
 }
 
 esp_err_t wa_usb_console_to_cdc(void)

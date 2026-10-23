@@ -295,6 +295,18 @@ pub mod detail {
         coded("rollback", &[])
     }
 
+    /// The restart the image `from` began (for `why`: "update",
+    /// "upload", "restart", "download mode") ended in a crash at
+    /// `step` (`crate::restart`): the next boot found the marker and a
+    /// crash reset.
+    pub fn restart_crash(why: &str, from: &str, step: crate::restart::Step) -> Detail {
+        let c = match step {
+            crate::restart::Step::Chips => "rs_crash_chips",
+            crate::restart::Step::Reset => "rs_crash_reset",
+        };
+        coded(c, &[("w", name(why)), ("v", name(from))])
+    }
+
     /// An online update installed: `record` is the install record
     /// (`<tag> <signature>`, the signature `verified` or `missing`), or
     /// empty after an install without one, then `version` names it.
@@ -540,6 +552,16 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "rollback" => "the last update did not boot: back on the previous image".into(),
         "installed" => format!("{} installed", g("v")),
         "install_rec" => format!("{} {}", g("v"), g("s")),
+        "rs_crash_chips" => format!(
+            "{} crashed while restarting ({}), switching the chips off",
+            g("v"),
+            g("w")
+        ),
+        "rs_crash_reset" => format!(
+            "{} crashed while restarting ({}), in the system reset",
+            g("v"),
+            g("w")
+        ),
         "verified" => format!("{} verified, {} chips", g("m"), g("n")),
         "verified_short" => format!("{} verified, {} of {} chips", g("m"), g("n"), g("e")),
         "mm_count" => {
@@ -778,6 +800,27 @@ mod tests {
         // Details at the cap plus ASCII-only kinds: a full ring of the
         // longest events still stores whole.
         assert!(r.to_json().len() <= MAX_BYTES);
+    }
+
+    #[test]
+    fn a_crash_in_a_restart_says_what_was_restarted_and_how_far_it_got() {
+        use crate::restart::Step;
+        let d = detail::restart_crash("update", "warpaxe 0.1.34", Step::Chips);
+        assert_eq!(d.code(), "rs_crash_chips");
+        assert_eq!(
+            d.text(),
+            "warpaxe 0.1.34 crashed while restarting (update), switching the chips off"
+        );
+        let d = detail::restart_crash("download mode", "warpaxe 0.1.36", Step::Reset);
+        assert_eq!(
+            d.text(),
+            "warpaxe 0.1.36 crashed while restarting (download mode), in the system reset"
+        );
+        // Stored and read back, the text is the same.
+        let mut r = Ring::new();
+        r.push(Event::new(1, 1, "boot", d.clone()));
+        let back = Ring::from_json(&r.to_json());
+        assert_eq!(back.last().map(|e| e.text()), Some(d.text()));
     }
 
     fn st(check: Check, status: Status, value: Option<f32>) -> warpaxe_board::selftest::Outcome {
