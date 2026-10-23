@@ -637,8 +637,13 @@ pub const BITFORGE_NANO: Profile = Profile {
         ina260: ina260::ADDR,
     },
     voltage_domains: 1,
+    // The maker's diode tuning (ideality 0x37), not ESP-Miner's 0x24:
+    // the same chip reads about 8 °C lower with it, so the 75 °C line,
+    // the 60 °C fan target and the API's figures are on the scale
+    // ForgeOS runs the board on (`emc2101::Config::BITFORGE_NANO_DIODE`,
+    // measured 2026-10-23; before v0.1.36 the Nano ran on 0x24).
     thermal: Thermal::DualEmc2101Mux {
-        config: emc2101::Config::BM1370_DIODE,
+        config: emc2101::Config::BITFORGE_NANO_DIODE,
         mux: pca9544::ADDR,
         channels: [2, 3],
     },
@@ -651,9 +656,10 @@ pub const BITFORGE_NANO: Profile = Profile {
     power_offset_w: 0.0,
     // ForgeOS v1.7's own stops, read from its source: either chip
     // > 75 °C, regulator > 105 °C (`main/tasks/power_management_task.c`
-    // 21, 28, 149-151). Under WarpAxe the board reached 82 °C
-    // (regulator 95 °C) before the fans were fixed, below neither of the
-    // old 90 / 145 lines.
+    // 21, 28, 149-151). Under WarpAxe the board reached 82 °C on the
+    // 0x24 diode scale (about 74 °C on the maker's 0x37 scale used since
+    // v0.1.36; regulator 95 °C) before the fans were fixed, below neither
+    // of the old 90 / 145 lines.
     chip_stop_c: 75.0,
     vr_stop_c: 105.0,
     temp_offset_c: 0.0,
@@ -1395,6 +1401,18 @@ mod tests {
             }
         ));
         assert!(p.emc2101().is_none(), "the sensors sit behind the mux");
+        // The maker's diode tuning on the Nano only; every other EMC2101
+        // board keeps ESP-Miner's 0x24.
+        let Thermal::DualEmc2101Mux { config, .. } = p.thermal else {
+            panic!("mux");
+        };
+        assert_eq!(config, emc2101::Config::BITFORGE_NANO_DIODE);
+        assert_eq!(config.ideality, Some(0x37));
+        for q in ALL {
+            if let Some(c) = q.emc2101() {
+                assert_eq!(c.ideality, Some(0x24), "{}", q.name);
+            }
+        }
         assert_eq!(p.display, Display::None);
         assert_eq!(p.power_offset_w, 0.0, "the INA260 measures the input");
         assert!(p.frequency_options.contains(&p.default_frequency_mhz));

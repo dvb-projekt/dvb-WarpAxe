@@ -25,7 +25,8 @@ const TEMP_FAULT_OPEN: i16 = 0x3F8;
 const TEMP_FAULT_SHORT: i16 = 0x3FF;
 
 /// Diode tuning per board: the BM1370 diode wants ideality 0x24 and
-/// no beta compensation (ESP-Miner board table).
+/// no beta compensation (ESP-Miner board table); the BitForge Nano's
+/// maker tunes the same chip's diode to 0x37 ([`Config::BITFORGE_NANO_DIODE`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Config {
     /// Diode ideality factor register, written when set.
@@ -40,6 +41,24 @@ impl Config {
     /// The BM1370's diode as ESP-Miner tunes it: ideality 0x24, beta off.
     pub const BM1370_DIODE: Config = Config {
         ideality: Some(0x24),
+        beta: Some(0x00),
+        temp_offset_c: 0,
+    };
+
+    /// The BM1370 diode as ForgeOS tunes it on the BitForge Nano:
+    /// ideality 0x37 (1.0566), beta off (ForgeOS v1.7 `f75f3ff`,
+    /// `main/ThermalMonitoring/src/ThermalMonitoring.c` 27–28, 43–44;
+    /// values `EMC2101.h` 8, 80; unchanged since v1.0). ESP-Miner's 0x24
+    /// (1.0319) on the same chip reads higher: measured on the Nano .44,
+    /// 2026-10-23, both settings back to back on each chip, 106 pairs,
+    /// warm at 525 MHz / 1150 mV: 0x24 − 0x37 = 8.25 °C on chip 1
+    /// (7.9–8.6) and 8.22 °C on chip 2 (59.1 / 59.9 °C against 51.0 /
+    /// 51.5 °C), error rate unchanged. With 0x37 the 75 °C stop, the fan
+    /// target and the figures in the API are on the maker's scale, as
+    /// ForgeOS and the tuning tools see the board. Taken 2026-10-23
+    /// (Oliver).
+    pub const BITFORGE_NANO_DIODE: Config = Config {
+        ideality: Some(0x37),
         beta: Some(0x00),
         temp_offset_c: 0,
     };
@@ -88,11 +107,6 @@ impl<I: I2c> Emc2101<I> {
             self.write(REG_BETA, b)?;
         }
         Ok(())
-    }
-
-    /// Write the diode ideality register (0x17) now, outside `init`.
-    pub fn set_ideality(&mut self, ideality: u8) -> Result<(), Error<I::Error>> {
-        self.write(REG_IDEALITY, ideality)
     }
 
     /// Fan duty, 0–100 %; the register holds 0–63.
@@ -159,6 +173,29 @@ mod tests {
                 Tx::Write(ADDR, vec![REG_IDEALITY, 0x24]),
                 Tx::Write(ADDR, vec![REG_BETA, 0x00]),
             ]
+        );
+    }
+
+    /// The Nano's sensors get the maker's ideality; every other
+    /// EMC2101 board stays on ESP-Miner's.
+    #[test]
+    fn the_nano_diode_is_forgeos_tuning() {
+        let bus = Bus::new(vec![Tx::WriteRead(ADDR, vec![REG_PART_ID], vec![0x16])]);
+        let mut s = Emc2101::new(bus, Config::BITFORGE_NANO_DIODE);
+        s.init().unwrap();
+        let log = s.release().log;
+        assert_eq!(
+            &log[3..],
+            &[
+                Tx::Write(ADDR, vec![REG_IDEALITY, 0x37]),
+                Tx::Write(ADDR, vec![REG_BETA, 0x00]),
+            ]
+        );
+        assert_eq!(Config::BM1370_DIODE.ideality, Some(0x24));
+        assert_eq!(
+            Config::BITFORGE_NANO_DIODE.temp_offset_c,
+            0,
+            "the scale is the register's, no offset on top"
         );
     }
 

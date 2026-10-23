@@ -79,6 +79,58 @@ Unchanged and checked against the new lines:
   Bitaxe boards it keeps its own defaults ("ESP-Miner hardcodes 75/90").
   Nothing to change there.
 
+## The Nano's diode scale (2026-10-23, v0.1.36)
+
+The EMC2101 reads the BM1370's diode through an ideality setting, and
+the two makers tune it differently: ESP-Miner writes 0x24 (1.0319) on
+every Gamma board (`device_config.h`, v2.15.4), ForgeOS writes **0x37
+(1.0566)** on the Nano since its v1.0 (`main/ThermalMonitoring/src/
+ThermalMonitoring.c` 27–28, 43–44; values `EMC2101.h` 8, 80). A remote
+diode reads roughly in proportion to 1 / ideality, so the same chip at
+the same temperature shows about 2.4 % more kelvin, around 8 °C, under
+0x24. Measured on the Nano .44 on 2026-10-23 (test image `19ca20a`, both
+settings back to back on each chip, 106 pairs, warm at 525 MHz /
+1150 mV): 0x24 − 0x37 = 8.25 °C on chip 1 (7.9–8.6) and 8.22 °C on
+chip 2, for example 59.1 / 59.9 °C against 51.0 / 51.5 °C; the error
+rate did not move.
+
+Until v0.1.35 WarpAxe ran the Nano on 0x24, so its 75 °C line stopped
+the board where ForgeOS would have shown about 67 °C, its 60 °C fan
+target held the chips where ForgeOS shows about 52 °C (louder than
+stock), and the Nano's temperatures were not comparable with a stock
+Nano's in a swarm or a tuner. **Since v0.1.36 the Nano profile uses
+0x37** (`emc2101::Config::BITFORGE_NANO_DIODE`, Oliver's decision
+2026-10-23); every other EMC2101 board keeps 0x24. What follows from
+it:
+
+- The stops stay 75 / 105 °C and now apply on the maker's scale, as
+  ForgeOS applies them (`power_management_task.c` 21, 28, 149–151).
+- The fan target stays 60 °C on that scale: the chip really runs about
+  8 °C warmer than it did under WarpAxe before, which is how it runs
+  under ForgeOS at the same setting; the fans get quieter.
+- The self-test's temperature check compares the readings against the
+  same lines (`chip_limit_c`, `vr_limit_c`), so it needs no new limit;
+  the warm-up and overheat logic work on differences (`WARMUP_*`,
+  `HYSTERESIS_C`) and are scale-free.
+- The API (`temp`, `fans[0]`, the swarm card, the diagnostics file)
+  reports the new scale: after the update a Nano shows about 8 °C less
+  at the same point. WarpTune's temperature-based steps see that too;
+  one WarpTune measurement on the Nano after v0.1.36 is recommended
+  (Warppool #2, with Oliver's OK).
+- No Nano constant in the code was derived from the old scale: the
+  stops are ForgeOS's, the fan target is AxeOS's default, the regulator
+  stop reads the TPS546. The historic figures in comments and README
+  (82 °C after the download-mode incident of 2026-10-03) are on the old
+  scale, about 74 °C on the new one, and say so now.
+
+The A/B test build (`diodeab`, commit `19ca20a`) is not kept: it
+switched the ideality register of running sensors every tenth reading
+with two 250 ms pauses inside the board loop, which has no place in a
+release tree even behind a feature, and unlike `fragtest` (which proves
+an update path and is worth re-running) its one measurement is done and
+recorded here and in `CloudDocs/.../Testimages/19ca20a-diodeab/`. The
+procedure fits in ten lines if it is ever needed again.
+
 ## Decided by Oliver (2026-10-20)
 
 1. NerdAxe Gamma and Gaia keep the 105 °C regulator stop that NerdOS

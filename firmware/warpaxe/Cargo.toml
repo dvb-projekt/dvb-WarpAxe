@@ -70,9 +70,6 @@ shabench = []
 # apart (many small blocks, every other one kept) until no 16 KB piece
 # is left, to prove an update still goes through (docs/09).
 fragtest = []
-# A test build only: logs the Nano's chip temperatures under both diode
-# ideality settings, ESP-Miner's 0x24 and ForgeOS's 0x37 (board.rs).
-diodeab = []
 
 [package.metadata.esp-idf-sys]
 esp_idf_tools_install_dir = "global"

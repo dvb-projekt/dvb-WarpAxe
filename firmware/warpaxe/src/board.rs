@@ -465,8 +465,9 @@ pub fn chain_stopped() -> bool {
 /// OPERATION through a software reset and in ROM download mode, the reset
 /// line floats, and the chips sit powered at their last clock with
 /// nothing watching them until [`start`] runs, seconds after USB and
-/// Wi-Fi (BitForge Nano 2026-10-03: 82 °C chip, 95 °C regulator, 35 W at
-/// uptime 5 s after three minutes of download mode). ESP-Miner holds the
+/// Wi-Fi (BitForge Nano 2026-10-03: 82 °C chip on the 0x24 diode scale
+/// of the time, 95 °C regulator, 35 W at uptime 5 s after three minutes
+/// of download mode). ESP-Miner holds the
 /// reset low first thing in app_main "to minimize ASIC power
 /// consumption"; NerdOS's initBoard drives enable, LDO and reset low.
 pub fn quiesce() {
@@ -1038,33 +1039,6 @@ enum Thermal {
     },
 }
 
-/// A test build only (`--features diodeab`, 2026-10-23): every 10th
-/// reading, read both Nano chips once with ForgeOS v1.7's diode
-/// ideality 0x37 and once with ESP-Miner's 0x24, and log the pair. The
-/// sensors are left on 0x24, so fans and stops see what a release sees.
-#[cfg(feature = "diodeab")]
-fn diode_ab(sensors: &mut [Emc2101<Muxed<SharedI2c>>; 2]) {
-    use std::sync::atomic::AtomicU32;
-    static CALLS: AtomicU32 = AtomicU32::new(0);
-    if CALLS.fetch_add(1, Ordering::Relaxed) % 10 != 0 {
-        return;
-    }
-    // 16 conversions a second by default: 250 ms is a fresh reading.
-    let mut read = |ideality: u8| {
-        for s in sensors.iter_mut() {
-            let _ = s.set_ideality(ideality);
-        }
-        std::thread::sleep(Duration::from_millis(250));
-        sensors
-            .iter_mut()
-            .map(|s| s.external_temp_c().ok())
-            .collect::<Vec<_>>()
-    };
-    let forge = read(0x37);
-    let espm = read(0x24);
-    log::info!("diodeab: 0x24 {espm:?} 0x37 {forge:?}");
-}
-
 impl Thermal {
     fn chip_temp_c(&mut self) -> Result<f32, String> {
         match self {
@@ -1074,8 +1048,6 @@ impl Thermal {
             Thermal::Emc2101(t) => t.external_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Emc2103(t) => t.chip_temp_c().map_err(|e| format!("{e:?}")),
             Thermal::Nano(sensors) => {
-                #[cfg(feature = "diodeab")]
-                diode_ab(sensors);
                 let mut best: Option<f32> = None;
                 let mut err = String::new();
                 for s in sensors.iter_mut() {

@@ -528,8 +528,8 @@ back at any time with `GET /api/v1/display/frame`.
   mode first switch the core voltage off and hold the chips in reset, and
   every boot does so before anything else. A TPS546 keeps its output on
   through an ESP reset, so the chips would otherwise sit powered and
-  unwatched — a BitForge Nano reached 82 °C (regulator 95 °C) after three
-  minutes in download mode.
+  unwatched — a BitForge Nano reached 82 °C (on the diode scale of the
+  time; regulator 95 °C) after three minutes in download mode.
 - **Back to the stock firmware**: *System → Back to the stock firmware*
   explains the way (over USB, with the backup the web flasher saved) and
   opens the flasher's restore section.
