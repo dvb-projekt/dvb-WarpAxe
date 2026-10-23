@@ -227,7 +227,9 @@ pub fn submit_request(
 pub fn parse_subscribe_result(result: &Value) -> Option<(String, usize)> {
     let a = result.as_array()?;
     let extranonce1 = a.get(1)?.as_str()?.to_string();
-    let size = a.get(2)?.as_u64()? as usize;
+    // Exact, not a truncating cast: on the 32-bit target 0x1_0000_0004
+    // would otherwise pass the size check as 4.
+    let size = usize::try_from(a.get(2)?.as_u64()?).ok()?;
     Some((extranonce1, size))
 }
 

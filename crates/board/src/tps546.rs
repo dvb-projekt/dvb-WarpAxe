@@ -770,6 +770,37 @@ mod tests {
         assert!(vr.set_vout(2.4).is_ok());
     }
 
+    /// The Nano's limits are ForgeOS v1.7's (`main/power/vcore.c` 20–28),
+    /// pinned here since v0.1.36: OC warn 38 A / fault 40 A on the 40 A
+    /// part, VIN OV fault 13.5 V.
+    #[test]
+    fn nano_config_writes_forgeos_current_and_input_limits() {
+        let bus = Bus::new(vec![
+            id_ok(),
+            Tx::Write(ADDR, vec![pm::OPERATION, 0x00]),
+            Tx::Write(ADDR, vec![pm::ON_OFF_CONFIG, 0x1B]),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_MODE], vec![0x17]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::BITFORGE_NANO);
+        vr.init().unwrap();
+        let log = vr.release().log;
+        let find = |cmd: u8| {
+            log.iter().find_map(|t| match t {
+                Tx::Write(_, b) if b[0] == cmd => Some(b[1..].to_vec()),
+                _ => None,
+            })
+        };
+        let word = |v: f32| f32_to_linear11(v).to_le_bytes().to_vec();
+        assert_eq!(find(pm::IOUT_OC_WARN_LIMIT), Some(word(38.0)));
+        assert_eq!(find(pm::IOUT_OC_FAULT_LIMIT), Some(word(40.0)));
+        assert_eq!(find(pm::VIN_OV_FAULT_LIMIT), Some(word(13.5)));
+        assert_eq!(find(pm::VIN_ON), Some(word(10.5)));
+        assert_eq!(find(pm::VIN_OFF), Some(word(9.5)));
+        let c = Config::BITFORGE_NANO;
+        assert!(c.iout_oc_warn < c.iout_oc_fault);
+        assert_eq!(c.iout_oc_fault, 40.0, "the TPS546D24A is a 40 A part");
+    }
+
     #[test]
     fn gaia_config_writes_the_12v_window_and_no_pin_detect_override() {
         let bus = Bus::new(vec![

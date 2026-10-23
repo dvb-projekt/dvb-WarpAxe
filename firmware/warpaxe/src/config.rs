@@ -956,7 +956,7 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             } else {
                 p.pass
             };
-            cfg.stratum_tls = u8::from(p.tls == 1);
+            cfg.stratum_tls = tls_from_stock(u16::from(p.tls), "pool");
             if is_sv2(&p.protocol) {
                 cfg.stratum_protocol = "SV2".into();
             }
@@ -981,7 +981,7 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             } else {
                 p.pass
             };
-            cfg.fallback_tls = u8::from(p.tls == 1);
+            cfg.fallback_tls = tls_from_stock(u16::from(p.tls), "fallback pool");
             if is_sv2(&p.protocol) {
                 cfg.fallback_protocol = "SV2".into();
             }
@@ -1074,8 +1074,7 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
                 } else {
                     p.pass
                 },
-                // 2 = the owner's own certificate: TLS with the CA bundle, as `stock_tls`.
-                tls: u8::from(p.tls == 1 || p.tls == 2),
+                tls: tls_from_stock(u16::from(p.tls), "saved pool"),
                 protocol: if is_sv2(&p.protocol) {
                     "SV2".into()
                 } else {
@@ -1115,12 +1114,22 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
 /// pool on a private certificate then fails visibly instead of the
 /// connection quietly dropping to plain text.
 fn stock_tls(stock: &Stock, key: &str) -> u8 {
-    match stock.u16(key) {
-        Some(2) => {
-            log::warn!("config: {key} used the owner's own certificate; TLS stays on with the built-in CA bundle");
+    stock
+        .u16(key)
+        .map_or(0, |v| tls_from_stock(v, key))
+}
+
+/// The same for a value already read (the AxeOS 2.15 pool list and its
+/// active entries), so no path maps the owner's certificate to plain
+/// text (the audit of 2026-10-23 found the active pool did).
+fn tls_from_stock(v: u16, what: &str) -> u8 {
+    match v {
+        1 => 1,
+        2 => {
+            log::warn!("config: {what} used the owner's own certificate; TLS stays on with the built-in CA bundle");
             1
         }
-        v => u8::from(v == Some(1)),
+        _ => 0,
     }
 }
 
