@@ -417,10 +417,22 @@ pub fn install_record() -> String {
 
 /// Record what the online update is about to boot into.
 pub fn set_last_install(record: &str) {
+    let t0 = std::time::Instant::now();
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if let Err(e) = nvs.set_str(LAST_INSTALL_KEY, record) {
             log::warn!("config: storing the install record: {e}");
         }
+    }
+    slow_write("the install record", t0);
+}
+
+/// A flash write on the restart path that took long enough for a page
+/// erase is worth a line: the interrupt watchdog is not fed while a
+/// flash operation runs (docs/12), so the figure says how close it came.
+fn slow_write(what: &str, t0: std::time::Instant) {
+    let ms = t0.elapsed().as_millis();
+    if ms >= 100 {
+        log::warn!("config: storing {what} took {ms} ms (a page erase; the interrupt watchdog allows 1000)");
     }
 }
 
@@ -732,9 +744,11 @@ pub fn nvs_remove(key: &str) -> Result<(), String> {
 /// the reset. The next boot takes it (`take_restart`) and tells a
 /// completed restart from one that crashed on the way.
 pub fn note_restart(m: &warpaxe_diag::restart::Marker) {
+    let t0 = std::time::Instant::now();
     if let Err(e) = nvs_set_str(warpaxe_diag::restart::KEY, &m.to_stored()) {
         log::warn!("config: storing the restart marker: {e}");
     }
+    slow_write("the restart marker", t0);
 }
 
 /// The image that ran last, by the first nine hex digits of its ELF

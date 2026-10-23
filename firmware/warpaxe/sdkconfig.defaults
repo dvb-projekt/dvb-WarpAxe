@@ -42,6 +42,16 @@ CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
 CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
 CONFIG_ESP_COREDUMP_CHECKSUM_CRC32=y
 CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=16
+# The interrupt watchdog is fed only while both CPUs tick. Every flash
+# write or erase stalls CPU1 and holds CPU0's non-IRAM interrupts for its
+# length, so a sector erase longer than the timeout is an int-wdt reset,
+# with no core dump (the chip is still busy when the writer tries). ESP-IDF
+# allows a sector erase 600 ms (GD25Q127 at 125 C), the default timeout is
+# 300 ms: a Gamma hit it in an NVS write right before the reset after an
+# upload, 39 minutes warm (2026-10-23, docs/12). 1000 ms covers every
+# sector erase and the usual block erase of the update's slot; a real
+# interrupt hang still resets within a second (stage 2 at two seconds).
+CONFIG_ESP_INT_WDT_TIMEOUT_MS=1000
 CONFIG_ESP_HTTPD_MAX_URI_LEN=128
 CONFIG_ESP_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y

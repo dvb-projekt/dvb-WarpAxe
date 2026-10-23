@@ -269,6 +269,68 @@ writer dumps every task (`CONFIG_ESP_COREDUMP_MAX_TASKS_NUM` is not used by
 it), and the binary format would drop the register notes but also
 `esp_core_dump_get_summary`, which the boot log and the crash banner use.
 
+## Reproduced: the interrupt watchdog in a flash erase, and why it leaves no dump
+
+2026-10-23, Gamma .42, candidate 8800aed up for 39 minutes, an image
+uploaded through the web UI (`soak-test.py --upload`): the next boot said
+`reset reason int-wdt`, the marker `restart (ota) begun by warpaxe 0.1.37
+at uptime 2363 s: crashed in the system reset`, the event `crashed while
+restarting (ota), in the system reset`, then `installed`; no core dump
+(`coreDumpBytes` null) although the partition was 256 KB, no last words.
+Uploads earlier that day, minutes after a boot, had restarted cleanly.
+
+What the reset reason says, from ESP-IDF v5.3.3 (`esp_system/int_wdt.c`,
+`spi_flash/cache_utils.c`, `spi_flash/spi_flash_chip_generic.c`):
+
+- `int-wdt` is MWDT1's first stage (`CONFIG_ESP_INT_WDT_TIMEOUT_MS`,
+  300 ms). With `CONFIG_ESP_INT_WDT_CHECK_CPU1` it is fed from CPU0's tick
+  only after CPU1's tick has run as well.
+- Every flash write or erase stalls CPU1 (`esp_ipc_isr_stall_other_cpu`)
+  and holds CPU0's non-IRAM interrupts for the operation's length.
+  Nothing feeds the watchdog meanwhile: a single flash operation longer
+  than 300 ms is an `int-wdt` reset, on any dual-core ESP32-S3 with this
+  option. ESP-IDF's own sector-erase timeout is 600 ms (GD25Q127 at
+  125 °C plus 100 ms; typical is 45 ms, longer when the chip is warm
+  and the sector worn), and the 64 KB block erase the update's slot is
+  cleared with may take 4.1 s by the same table.
+- The "system reset" step of the marker holds exactly one such
+  operation: the marker's second NVS write, which erases a page when
+  the one in use is full. `esp_restart` itself runs two shutdown
+  handlers (`esp_wifi_stop`, `esp_sync_timekeeping_timers`; the only
+  ones registered, `esp_register_shutdown_handler` callers in v5.3.3)
+  and disables MWDT1 before it switches interrupts off, so it cannot be
+  the one. The 39 minutes fit: a warm chip erases slower, and a page
+  fills over time.
+- No dump, with 256 KB to spare: the panic lands while the chip is in
+  the middle of that erase. The dump's first flash operation waits for
+  the chip to go idle only `SPI_FLASH_DEFAULT_IDLE_TIMEOUT_MS` (200 ms;
+  `set_write_protect` and `erase_sector` both wait that long), then
+  gives up with `ESP_ERR_TIMEOUT`: "Failed to erase flash", nothing
+  stored. An `int-wdt` inside a flash operation therefore never leaves
+  a dump, whatever the partition's size. The Nano .44's `int-wdt` of
+  2026-10-21 without a dump, under WarpTune's PATCHes (each an NVS
+  write), reads the same way.
+
+Fix: `CONFIG_ESP_INT_WDT_TIMEOUT_MS` 300 → 1000 ms (`sdkconfig.defaults`;
+an app setting, it reaches every miner with the update). That covers
+every sector erase the chip is specified for and the usual block erase
+of the update's slot, and a real interrupt hang still resets within a
+second (the second stage resets at two). The restart path's NVS writes
+log their duration when they took 100 ms or more, so a slow erase shows
+up in the log before it bites. Left as they are: the block erase of the
+update's slot (`esp_ota_begin` with `OTA_SIZE_UNKNOWN` erases the whole
+slot first, 48 blocks of 64 KB, 150 ms typical each); the ESP-IDF
+option `CONFIG_SPI_FLASH_BYPASS_BLOCK_ERASE` would make that 768 sector
+erases, some 30 s longer per update, for a worst case that has not been
+seen. Oliver decides whether that is wanted.
+
+Reproduction plan, with Oliver's OK: on the .42 at an hour's uptime,
+upload the build with the 1000 ms watchdog through the web UI several
+times (each at a long uptime, so the chip is warm and NVS has filled),
+and look for `config: storing the restart marker took N ms` lines and
+for `int-wdt`. The way to force a long erase is many events or config
+patches before the upload, which fill the NVS page the marker lands in.
+
 ## The crash banner after a flash over USB
 
 The web flasher, espflash and `esptool -a watchdog-reset` leave download
@@ -342,8 +404,9 @@ through the marker and the last words on any partition.
 - `warpaxe-diag`: `crashed` (the watchdog on the first boot, on a later
   boot, with an update's marker, after download mode; the crashes that
   always count) and `outcome` after download mode for every reason.
-- The firmware builds; fmt, clippy, the workspace tests, the no_std build,
-  the scenarios and `tools/i18n-apply.py` pass.
+- The firmware builds (the generated `sdkconfig` carries
+  `CONFIG_ESP_INT_WDT_TIMEOUT_MS=1000`); fmt, clippy, the workspace tests,
+  the no_std build, the scenarios and `tools/i18n-apply.py` pass.
 - No device was flashed for this branch.
 
 ## Audit
