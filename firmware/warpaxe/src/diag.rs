@@ -70,15 +70,24 @@ pub fn reset_class() -> warpaxe_diag::restart::Reset {
     }
 }
 
-/// The last run crashed (or was reset by a watchdog).
+/// Set at boot when an RTC-watchdog reset was the flashing tool's way
+/// out of download mode, not a crash (`warpaxe_diag::restart::crashed`).
+static WATCHDOG_FORGIVEN: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+pub fn forgive_watchdog() {
+    WATCHDOG_FORGIVEN.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// The last run crashed (or was reset by a watchdog), unless that
+/// watchdog reset was a flashing tool's (`forgive_watchdog`, decided at
+/// boot in main before anything reads this).
 pub fn last_run_crashed() -> bool {
-    matches!(
-        unsafe { sys::esp_reset_reason() },
-        sys::esp_reset_reason_t_ESP_RST_PANIC
-            | sys::esp_reset_reason_t_ESP_RST_INT_WDT
-            | sys::esp_reset_reason_t_ESP_RST_TASK_WDT
-            | sys::esp_reset_reason_t_ESP_RST_WDT
-    )
+    use warpaxe_diag::restart::Reset;
+    match reset_class() {
+        Reset::Crash => true,
+        Reset::Watchdog => !WATCHDOG_FORGIVEN.load(std::sync::atomic::Ordering::Relaxed),
+        Reset::Clean => false,
+    }
 }
 
 static LAST_CRASH: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);

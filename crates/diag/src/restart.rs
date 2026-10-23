@@ -175,17 +175,52 @@ pub enum Outcome {
     Crashed(Marker),
 }
 
-/// The marker against the reset reason. A crash is a crash; a watchdog
-/// reset is one too, except after the way into download mode, where it
-/// is how the flashing tool restarts the chip. Anything else — the
-/// software reset, but also a power cycle or a USB reset while the
-/// marker sat there — counts as completed: the restart itself did not
-/// crash (a hang ended by a power cycle is not told apart, docs/12).
+/// The marker against the reset reason. A crash is a crash, a watchdog
+/// reset is one too. Anything else — the software reset, but also a
+/// power cycle or a USB reset while the marker sat there — counts as
+/// completed: the restart itself did not crash (a hang ended by a power
+/// cycle is not told apart, docs/12).
+///
+/// After the way into download mode nothing counts as a crash of that
+/// restart, whatever the reason: the restart ends in the ROM, and the
+/// way back is the flashing tool's — an RTC-watchdog reset from the web
+/// flasher, a USB reset from esptool, a power cycle; and a reset reason
+/// hint left in RTC memory before the ROM ran (nothing but an app boot
+/// clears it) is read by the first software reset after it. The
+/// generic boot event still names the reason (the .42 on 2026-10-23
+/// came back with `panic` after an esptool session, docs/12).
 pub fn outcome(m: Marker, reset: Reset) -> Outcome {
+    if m.into_download_mode() {
+        return Outcome::Completed(m);
+    }
     match reset {
-        Reset::Crash => Outcome::Crashed(m),
-        Reset::Watchdog if !m.into_download_mode() => Outcome::Crashed(m),
-        Reset::Watchdog | Reset::Clean => Outcome::Completed(m),
+        Reset::Crash | Reset::Watchdog => Outcome::Crashed(m),
+        Reset::Clean => Outcome::Completed(m),
+    }
+}
+
+/// Whether the last reset was a crash, for the crash banner, the 30 s
+/// on USB-Serial/JTAG and the core dump's verdict. A panic or a task or
+/// interrupt watchdog always is. The RTC watchdog is how the web
+/// flasher, espflash and `esptool -a watchdog-reset` leave download
+/// mode, so it is no crash on the first boot of an image (`first_boot`:
+/// the app's ELF SHA differs from the one stored by the last run, or
+/// none is stored, as after a first install over a stock firmware)
+/// when no restart marker is open, and never after the way into
+/// download mode (that marker's own rule, [`outcome`]). With any other
+/// marker open — an update's, say — the watchdog is a crash of that
+/// restart, first boot or not. Blind spot: a real RTC-watchdog hang in
+/// the first boot of a new image, before the SHA is stored, is forgiven
+/// at the second boot too (docs/12).
+pub fn crashed(reset: Reset, marker: Option<&Marker>, first_boot: bool) -> bool {
+    match reset {
+        Reset::Crash => true,
+        Reset::Clean => false,
+        Reset::Watchdog => match marker {
+            Some(m) if m.into_download_mode() => false,
+            Some(_) => true,
+            None => !first_boot,
+        },
     }
 }
 
@@ -246,6 +281,30 @@ mod tests {
     }
 
     #[test]
+    fn a_watchdog_on_the_first_boot_of_an_image_is_the_flashing_tools_reset() {
+        let update = Marker::new("update", "warpaxe 0.1.36", 10);
+        let download = Marker::new("download mode", "warpaxe 0.1.36", 10);
+        // wdt on the first boot without a marker: the web flasher's reset.
+        assert!(!crashed(Reset::Watchdog, None, true));
+        // wdt on a later boot of the same image: a real watchdog.
+        assert!(crashed(Reset::Watchdog, None, false));
+        // wdt with an update's marker open: a crash of that restart.
+        assert!(crashed(Reset::Watchdog, Some(&update), true));
+        assert!(crashed(Reset::Watchdog, Some(&update), false));
+        // After the way into download mode the tool's reset, whatever
+        // the image.
+        assert!(!crashed(Reset::Watchdog, Some(&download), false));
+        assert!(!crashed(Reset::Watchdog, Some(&download), true));
+        // A panic, an interrupt or a task watchdog: always a crash.
+        assert!(crashed(Reset::Crash, None, true));
+        assert!(crashed(Reset::Crash, Some(&download), true));
+        assert!(crashed(Reset::Crash, Some(&update), true));
+        // The clean reasons never are.
+        assert!(!crashed(Reset::Clean, None, false));
+        assert!(!crashed(Reset::Clean, Some(&update), false));
+    }
+
+    #[test]
     fn the_outcome_follows_the_reset_reason() {
         let m = Marker::new("update", "warpaxe 0.1.34", 100).at(Step::Reset);
         assert_eq!(
@@ -257,14 +316,12 @@ mod tests {
             Outcome::Crashed(m.clone())
         );
         assert_eq!(outcome(m.clone(), Reset::Clean), Outcome::Completed(m));
-        // The flashing tool's watchdog reset after download mode is no
-        // crash; a panic in that restart still is.
+        // After download mode no reason counts as a crash of that
+        // restart: the way back is the flashing tool's.
         let d = Marker::new("download mode", "warpaxe 0.1.36", 5);
-        assert_eq!(
-            outcome(d.clone(), Reset::Watchdog),
-            Outcome::Completed(d.clone())
-        );
-        assert_eq!(outcome(d.clone(), Reset::Crash), Outcome::Crashed(d));
+        for r in [Reset::Watchdog, Reset::Crash, Reset::Clean] {
+            assert_eq!(outcome(d.clone(), r), Outcome::Completed(d.clone()));
+        }
         assert!(Marker::new("update", "", 0).installs());
         assert!(Marker::new("ota", "", 0).installs());
         assert!(!Marker::new("restart", "", 0).installs());

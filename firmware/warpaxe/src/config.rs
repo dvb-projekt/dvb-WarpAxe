@@ -737,6 +737,31 @@ pub fn note_restart(m: &warpaxe_diag::restart::Marker) {
     }
 }
 
+/// The image that ran last, by the first nine hex digits of its ELF
+/// SHA, for `warpaxe_diag::restart::crashed`: a watchdog reset on the
+/// first boot of an image is the flashing tool's, not a crash.
+const LAST_RUN_SHA_KEY: &str = "lastsha";
+
+/// Note this image as the one running; true when it is not the one
+/// that ran last (or none is stored: a first install over a stock
+/// firmware, or an erased NVS). One flash write per new image, none
+/// otherwise. On the main task at boot.
+/// When the SHA cannot be stored (no NVS), the answer is false: the
+/// old rule then applies and a watchdog reset stays a crash, rather
+/// than every boot counting as a first one.
+pub fn note_image(sha: &str) -> bool {
+    if nvs_get_str(LAST_RUN_SHA_KEY, 32).is_some_and(|s| s == sha) {
+        return false;
+    }
+    match nvs_set_str(LAST_RUN_SHA_KEY, sha) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!("config: storing the image's SHA: {e}");
+            false
+        }
+    }
+}
+
 /// The restart marker the previous run left, removed from NVS; `None`
 /// without one (or with one that does not read, which is removed all
 /// the same). On the main task at boot.

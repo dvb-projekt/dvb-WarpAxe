@@ -165,7 +165,6 @@ fn main() {
         api::VERSION,
         diag::reset_reason()
     );
-    diag::take_last_words();
 
     let peripherals = Peripherals::take().expect("peripherals");
     let sysloop = EspSystemEventLoop::take().expect("event loop");
@@ -182,6 +181,41 @@ fn main() {
     // On the main task, before any thread with a PSRAM stack exists: it
     // reads the otadata partition from flash.
     update::init_ota_state();
+    // An RTC-watchdog reset on the first boot of an image with no
+    // restart marker open is how the web flasher, espflash and esptool
+    // leave download mode, not a crash: no banner, no 30 s on
+    // USB-Serial/JTAG, no old dump taken for this reset
+    // (`warpaxe_diag::restart::crashed`, docs/12). Not after a rollback:
+    // the bootloader comes back to this image when the new one failed
+    // to prove itself, and the new image's own end (a panic whose dump
+    // write hung into the RTC watchdog, say) must stay a crash. One NVS
+    // write per new image, here on the main task; the last words are
+    // taken after the decision, so they are kept only for a crash.
+    {
+        use warpaxe_diag::restart::{Outcome, Reset};
+        let first_boot = config::note_image(&diag::app_elf_sha());
+        let marker = restart
+            .as_ref()
+            .map(|o| match o {
+                Outcome::Completed(m) | Outcome::Crashed(m) => m,
+            });
+        let reset = diag::reset_class();
+        if reset == Reset::Watchdog
+            && update::ota_state() != "aborted"
+            && !warpaxe_diag::restart::crashed(reset, marker, first_boot)
+        {
+            diag::forgive_watchdog();
+            info!(
+                "watchdog reset {}: the flashing tool's reset, not a crash",
+                if first_boot && marker.is_none() {
+                    "on the first boot of this image, no restart marker open"
+                } else {
+                    "after the way into download mode"
+                }
+            );
+        }
+    }
+    diag::take_last_words();
     // The event log: read, then this boot and what the bootloader says
     // about the image, written here on the main task's internal stack.
     events::init();

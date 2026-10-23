@@ -269,6 +269,45 @@ writer dumps every task (`CONFIG_ESP_COREDUMP_MAX_TASKS_NUM` is not used by
 it), and the binary format would drop the register notes but also
 `esp_core_dump_get_summary`, which the boot log and the crash banner use.
 
+## The crash banner after a flash over USB
+
+The web flasher, espflash and `esptool -a watchdog-reset` leave download
+mode by arming the RTC watchdog, so the app's first boot after a flash
+reports `wdt`, which the firmware counted as a crash since v0.1.34: the
+crash banner, the 30 s on USB-Serial/JTAG before USB OTG, and a core dump
+left from an earlier crash taken for this reset. A restart marker tells
+the case apart only for a reinstall that began at *System → Download
+mode*; the first install over AxeOS, NerdOS or ForgeOS has none.
+
+From v0.1.37 the firmware stores the first nine hex digits of the running
+image's ELF SHA in NVS (`lastsha`, written once per new image, on the main
+task right after the restart marker is taken) and reads the previous one
+first: an RTC-watchdog reset on the first boot of an image with no restart
+marker open is the flashing tool's reset, not a crash
+(`warpaxe_diag::restart::crashed`, host-tested: the first boot without a
+marker, a later boot of the same image, an update's marker, the way into
+download mode, and panic, interrupt and task watchdog, which are always a
+crash), and not after a rollback either (the bootloader's `aborted`: the
+new image's own end must stay a crash, see below). `crashed` in the API,
+the banner and the JTAG window follow, the boot event does not say "no
+core dump written" for it, and the last words are kept only for a crash;
+the boot event still names `wdt`, and the log says why it was not
+counted. Two cautious misses stay: reflashing the identical image over
+USB without the *Download mode* marker shows the banner, as does
+USB-flashing back the image that last stored the SHA. The bootloader's own image state is no substitute:
+a bootloader without rollback support (before v0.1.22) reports `new` for
+ever, which would forgive every watchdog on such a miner.
+
+Blind spot, accepted: a real RTC-watchdog hang in the very first boot of
+a new image, before the SHA is stored (the first moments of `main`), is
+forgiven at the second boot too. A hang in the restart after an update is
+not affected: its marker is open, and an update's marker with a watchdog
+reset is a crash of that restart. The rollback case is closed by the
+bootloader's state: when a new image took the marker, stored its SHA and
+then ended in the RTC watchdog (the panic handler arms it against a hung
+dump write) before it proved itself, the bootloader boots the old image
+as `aborted`, which forgives nothing.
+
 ## Reproduction (not run: needs Oliver's OK and a word to Warppool #2)
 
 The Gamma .42 is on USB (`/dev/cu.usbmodem9888E00355C81`). Proposed:
@@ -300,6 +339,9 @@ through the marker and the last words on any partition.
   field cutting against the format and the size limit, the outcome
   against the reset reason, the crash detail's English text and its ring
   round trip.
+- `warpaxe-diag`: `crashed` (the watchdog on the first boot, on a later
+  boot, with an update's marker, after download mode; the crashes that
+  always count) and `outcome` after download mode for every reason.
 - The firmware builds; fmt, clippy, the workspace tests, the no_std build,
   the scenarios and `tools/i18n-apply.py` pass.
 - No device was flashed for this branch.
