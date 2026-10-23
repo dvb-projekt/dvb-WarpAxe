@@ -133,7 +133,7 @@ impl Config {
     /// in parallel (schematic, WantClueTechnologies/BitForge-Nano; the
     /// sense lines go straight to the core rail, no external divider).
     /// ForgeOS v1.7 (the Nano's stock firmware, open source:
-    /// github.com/wantclue/forge-os, `main/power/vcore.c:20-28`) writes
+    /// github.com/wantclue/forge-os, `main/power/vcore.c:17-28`) writes
     /// VIN OV fault 13.5 V and IOUT OC warn 38 A / fault 40 A on every
     /// start; the TPS546D24A is a 40 A part. Taken from there: those
     /// three limits. Kept from before: the Gaia's proven 12 V input
@@ -773,7 +773,7 @@ mod tests {
         assert!(vr.set_vout(2.4).is_ok());
     }
 
-    /// The Nano's limits are ForgeOS v1.7's (`main/power/vcore.c` 20–28),
+    /// The Nano's limits are ForgeOS v1.7's (`main/power/vcore.c` 17–28),
     /// pinned here since v0.1.36: OC warn 38 A / fault 40 A on the 40 A
     /// part, VIN OV fault 13.5 V.
     #[test]

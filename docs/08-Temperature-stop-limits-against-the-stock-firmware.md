@@ -115,8 +115,8 @@ it:
 - The API (`temp`, `fans[0]`, the swarm card, the diagnostics file)
   reports the new scale: after the update a Nano shows about 8 °C less
   at the same point. WarpTune's temperature-based steps see that too;
-  one WarpTune measurement on the Nano after v0.1.36 is recommended
-  (Warppool #2, with Oliver's OK).
+  one new WarpTune calibration on the Nano after v0.1.36 is
+  recommended.
 - No Nano constant in the code was derived from the old scale: the
   stops are ForgeOS's, the fan target is AxeOS's default, the regulator
   stop reads the TPS546. The historic figures in comments and README
@@ -128,13 +128,13 @@ switched the ideality register of running sensors every tenth reading
 with two 250 ms pauses inside the board loop, which has no place in a
 release tree even behind a feature, and unlike `fragtest` (which proves
 an update path and is worth re-running) its one measurement is done and
-recorded here and in `CloudDocs/.../Testimages/19ca20a-diodeab/`. The
+recorded here. The
 procedure fits in ten lines if it is ever needed again.
 
 ## The Nano's Max preset and the 40 A limit (2026-10-23, v0.1.36)
 
 Since v0.1.36 the Nano's regulator warns at 38 A and shuts down at 40 A,
-as ForgeOS v1.7 writes them (`main/power/vcore.c` 27–28; the TPS546D24A
+as ForgeOS v1.7 writes them (`main/power/vcore.c` 17–28; the TPS546D24A
 is a 40 A part). The Max preset 625 MHz / 1160 mV stays in the choices,
 close to that line. WarpTune's journal on the Nano .44 (settled
 readings of the regulator's output current, 30.09.–22.10., room
@@ -143,9 +143,8 @@ at most: just under the warning, 2.4 A under the shutdown. 625 MHz at
 1050 mV drew 33.8–33.9 A; 650 MHz / 1160 mV reached 41.2 A, which the
 new limit no longer allows.
 
-Peaks above the settled reading, a warmer room and the chips' ~8 °C
-higher real temperature under the maker's diode scale all add some
-current, so Max can touch the warning line and, rarely, the shutdown.
+Peaks above the settled reading, a warmer room and the chips running about 8 °C warmer now that the fan
+target applies on the maker's scale all add some current, so Max can touch the warning line and, rarely, the shutdown.
 A shutdown is handled like an overheat stop: chips off, at least 60 s,
 back on; the third stop within an hour keeps the chips off with the
 reason on screen. ForgeOS offers 636 MHz / 1160 mV under the same

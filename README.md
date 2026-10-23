@@ -237,7 +237,8 @@ back at any time with `GET /api/v1/display/frame`.
   optional **TLS** (esp-tls, built-in CA bundle, hostname checked). A pool
   the previous firmware ran on TLS with the owner's own certificate stays
   on TLS here, with the built-in CA bundle, rather than dropping to plain
-  text. A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
+  text (a pool on a private certificate then fails to connect; TLS can be
+  switched off for it). A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
   1–32) is refused instead of trusted.
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
