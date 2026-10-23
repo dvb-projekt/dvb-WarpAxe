@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-467%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-471%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.35-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.36-7B5CFF"></a>
 </p>
 
 ---
@@ -32,7 +32,7 @@ authority key checked, Stratum V1 over TLS, a fallback pool that hands back
 to the main pool — and differs where it counts for running a fleet:
 **signed online updates** the miner fetches and checks itself, **one image
 for every board** with the board found on the first start and Wi-Fi and
-pool taken over from the previous AxeOS/NerdOS settings, a
+pool taken over from the previous AxeOS, NerdOS or ForgeOS settings, a
 **password-protected setup hotspot** when there is no network to join, a
 regulator and sensor layer that **rejects implausible readings** instead of
 acting on them, the web UI **over the USB cable** as well as over Wi-Fi, and one web
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.35).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.36).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,52 +58,55 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-22, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
-v2.15.4 and [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
-(NerdOS) v1.1.0.1, from their source. Both move fast; corrections welcome.
+As of 2026-10-22 (ForgeOS 2026-10-23), against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+v2.15.4, [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
+(NerdOS) v1.1.0.1 and [ForgeOS](https://github.com/wantclue/forge-os) v1.7
+(the BitForge Nano's firmware, built on ESP-Miner), from their source. All three
+move fast; corrections welcome.
 
-| | AxeOS | NerdOS | WarpAxe |
-|---|---|---|---|
-| Stratum V2 (Noise, authority key, "require authentication") | yes | yes | yes |
-| Stratum V1 over TLS, certificate checked | yes | yes | yes |
-| Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes |
-| Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from the release page, install on a click) |
-| Update image signature-checked before flashing | no | no | **yes** (BIP-340, key built into the firmware) |
-| An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
-| Images | factory image per board version (update image shared) | one per board | **one for all boards** |
-| Board | set in NVS at the factory | per image | **found on the first start** (factory NVS, read-only I²C probe); a board chosen by hand is checked against the bus before any of its pins is driven, and its chips are counted at a cautious voltage before the choice is confirmed ([`docs/11`](docs/11-Board-choice-guard.md)) |
-| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update and web-flasher reinstall; **taken over from AxeOS/NerdOS** when switching (Wi-Fi, pools including AxeOS 2.15's saved list, hostname, clock and voltage, fans and temperature limits, display) |
-| Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | yes |
-| Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
-| Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
-| Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | yes (next to the hashrate; per chip and domain optional) |
-| Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
-| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
-| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks) in NVS, shown in the web UI's language |
-| Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
-| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS) |
-| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
-| Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
-| Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | **WPA2 hotspot**, password shown only on the device display |
-| Implausible sensor/regulator readings | partly ignored (fan loop) | not found | **rejected** before the control loops see them |
-| Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled; all eight on ESP-Miner's main branch) | total only | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
-| Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | yes (from v0.1.28) |
-| Web UI over the USB cable | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
-| Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | yes |
-| Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
-| Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
-| What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
-| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
-| Web UI languages | English | 9 | 8 |
-| Language, tests | C | C++/C | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards | 6 run, 7 more with a profile (see below) |
+| | AxeOS | NerdOS | ForgeOS | WarpAxe |
+|---|---|---|---|---|
+| Stratum V2 (Noise, authority key, "require authentication") | yes | yes | no | yes |
+| Stratum V1 over TLS, certificate checked | yes | yes | yes (on in the factory settings) | yes |
+| Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
+| Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
+| Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
+| An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
+| Images | factory image per board version (update image shared) | one per board | one factory image (one board), plus a firmware and a web-UI image for updates | **one for all boards** |
+| Board | set in NVS at the factory | per image | set in NVS at the factory (one board) | **found on the first start** (factory NVS, read-only I²C probe); a board chosen by hand is checked against the bus before any of its pins is driven, and its chips are counted at a cautious voltage before the choice is confirmed ([`docs/11`](docs/11-Board-choice-guard.md)) |
+| Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update; reinstalling the factory image resets them | kept on online update and web-flasher reinstall; **taken over from AxeOS, NerdOS and ForgeOS** when switching (Wi-Fi, pools including AxeOS 2.15's saved list, hostname, clock and voltage, fans and temperature limits, display) |
+| Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | no (the page asks for a restart) | yes |
+| Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
+| Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
+| Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | no | yes (next to the hashrate; per chip and domain optional) |
+| Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
+| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
+| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks) in NVS, shown in the web UI's language |
+| Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | no | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
+| Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | chip 75 °C (either of the two chips), regulator 105 °C, fixed | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS); the Nano's chips read on ForgeOS's diode scale since v0.1.36 |
+| Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (restarts at once, without a cool-down, at 1000 mV and 50 MHz with the fans at 100 %; clock and voltage set back by hand) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
+| Regulator fault (PMBus STATUS_WORD) | reported (`power_fault`), no reaction | read once at init, logged | reported (`power_fault`), no reaction | **reported** (`power_fault` with codes, display and web UI) **and treated like an overheat stop**: core voltage off, faults cleared and retried after a minute, the third within an hour stays off |
+| Wi-Fi setup without a network | open hotspot (`Bitaxe_XXXX`), or Bluetooth | open hotspot (`Nerdaxe_XXXX`) | open hotspot (`Nano_XXXX`) for seven minutes after every start, even with Wi-Fi set up; or Bluetooth in the same window | **WPA2 hotspot**, password shown only on the device display |
+| Implausible sensor/regulator readings | partly ignored (fan loop) | not found | partly ignored (fan loop and overheat check skip a failed chip-sensor read) | **rejected** before the control loops see them |
+| Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled; all eight on ESP-Miner's main branch) | total only | total only (counted per chip and domain, errors too, but not shown) | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
+| Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | no (DHCP hostname only) | yes (from v0.1.28) |
+| Web UI over the USB cable | not found | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
+| Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | no | yes |
+| Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | no NTP; set from the pool's job time | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
+| Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | no (a fixed 60 W) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
+| What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | no display; two status LEDs (the share blink can be switched off) | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
+| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
+| Web UI languages | English | 9 | English | 8 |
+| Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
+| Supported boards | ~20 board versions | 11 boards | 1 (BitForge Nano) | 6 run, 7 more with a profile (see below) |
 
-What the stock firmware offers in addition: far more boards and years of use by a
-large community; AxeOS has a scoreboard, themes, the BAP accessory port
-and Wi-Fi setup over Bluetooth; NerdOS has two-factor login for updates,
-dual-pool mining, InfluxDB/Grafana export and alerts. WarpAxe is early; if
-you need any of that,
-stay with the stock firmware.
+What the stock firmware offers in addition: AxeOS and NerdOS support far more
+boards and have years of use by a large community; AxeOS has a scoreboard, themes,
+the BAP accessory port and Wi-Fi setup over Bluetooth; NerdOS has two-factor
+login for updates, dual-pool mining, InfluxDB/Grafana export and alerts; ForgeOS
+has dual-pool mining, Wi-Fi and pool setup over Bluetooth, and share and
+self-test signals on the Nano's two LEDs. WarpAxe is early; if you need any of
+that, stay with the stock firmware.
 
 ## With WarpTune
 
@@ -231,7 +234,11 @@ back at any time with `GET /api/v1/display/frame`.
   from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
   the first start.
 - Stratum V1 with version rolling (BIP 310), `mining.suggest_difficulty`,
-  optional **TLS** (esp-tls, built-in CA bundle, hostname checked).
+  optional **TLS** (esp-tls, built-in CA bundle, hostname checked). A pool
+  the previous firmware ran on TLS with the owner's own certificate stays
+  on TLS here, with the built-in CA bundle, rather than dropping to plain
+  text. A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
+  1–32) is refused instead of trusted.
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
 - **Saved pools**: up to eight, each with a name and the coin it mines;
@@ -275,7 +282,8 @@ back at any time with `GET /api/v1/display/frame`.
   on a cold board. Boards with one fan for chip and regulator (NerdAxe) run it for
   whichever of the two needs more (regulator target 80 °C).
 - Overheat shutdown of the core voltage at the stock firmware's lines
-  (Bitaxe and BitForge Nano: chip 75 °C, regulator 105 °C as AxeOS stops;
+  (Bitaxe: chip 75 °C, regulator 105 °C as AxeOS stops; BitForge Nano the
+  same, as ForgeOS stops, on ForgeOS's diode scale since v0.1.36;
   NerdQAxe/NerdOctaxe/Q13xx: 70 / 70 as NerdOS; NerdAxe Gamma 70 / 105 and
   NerdAxe Gaia 75 / 105 — NerdOS has no regulator stop on these one-fan
   boards, WarpAxe keeps AxeOS's 105 on the same TPS546; NerdNOS: 80;
@@ -562,7 +570,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
-| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Standard preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; Max 625 MHz / 1160 mV: 2.53 TH/s); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board) |
+| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV, just below ForgeOS's Power preset: 2.53 TH/s at 37–38 A); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers); free clock values with `?oc` as on the Gamma |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
@@ -653,7 +661,9 @@ up and updates itself:
 3. On the first start WarpAxe takes **Wi-Fi, pools, hostname, clock and
    voltage, fan settings, temperature limits and display orientation** from
    the previous firmware (not the fan PID gains, which belong to its own
-   loop) and finds the **board**: from the model AxeOS stored at
+   loop; and not clock, voltage and fans if that firmware was in its
+   overheat mode, whose emergency point no owner chose) and finds the
+   **board**: from the model AxeOS stored at
    the factory, or from the chips that answer on the board's I²C bus
    (read-only probes on pins that switch nothing). A board found for sure
    (a Bitaxe Gamma, a BitForge Nano, a NerdAxe Gaia) starts at once.
