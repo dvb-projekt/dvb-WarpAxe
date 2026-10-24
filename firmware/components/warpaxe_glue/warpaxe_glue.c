@@ -32,12 +32,28 @@ static void free_tx(void *buffer, void *ctx)
     free(buffer);
 }
 
-// A 'B' on the console port reboots into the ROM download mode: the
+// A 'B' on the console port asks for the ROM download mode: the
 // flash-back path without a finger on BOOT and without an IP address.
+// The firmware takes the request (wa_usb_take_bootloader_request) and
+// goes the same way as System -> Download mode: the chips off and a
+// restart marker first. Only if nothing takes it (a firmware that never
+// polls, or one that hangs) does the task below reboot on its own.
+static volatile bool s_boot_req = false;
+
+bool wa_usb_take_bootloader_request(void)
+{
+    if (!s_boot_req) {
+        return false;
+    }
+    s_boot_req = false;
+    return true;
+}
+
 static void bootloader_task(void *arg)
 {
     (void)arg;
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(10000));
+    ESP_LOGW(TAG, "download mode request not taken in 10 s, rebooting directly");
     wa_reboot_to_bootloader();
 }
 
@@ -48,9 +64,10 @@ static void cdc_rx(int itf, cdcacm_event_t *event)
     size_t n = 0;
     if (tinyusb_cdcacm_read(itf, buf, sizeof buf, &n) == ESP_OK) {
         for (size_t i = 0; i < n; i++) {
-            if (buf[i] == 'B') {
-                // This callback runs on the TinyUSB task; the reboot path
-                // uninstalls TinyUSB, so it must run elsewhere.
+            if (buf[i] == 'B' && !s_boot_req) {
+                s_boot_req = true;
+                // This callback runs on the TinyUSB task; the fallback
+                // reboot uninstalls TinyUSB, so it must run elsewhere.
                 xTaskCreate(bootloader_task, "wa_boot", 4096, NULL, 5, NULL);
                 return;
             }

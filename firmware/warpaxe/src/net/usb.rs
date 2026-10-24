@@ -94,8 +94,19 @@ pub fn start_usb() -> Result<(), EspError> {
             host_mac.as_ptr(),
             Some(on_recv),
             null_mut()
-        ))
+        ))?;
     }
+    // A 'B' on the console port: download mode the way the web UI goes
+    // (chips off, restart marker), not straight from the glue.
+    crate::diag::spawn_psram("usb_boot", 4 * 1024, || loop {
+        if unsafe { tusb::wa_usb_take_bootloader_request() } {
+            log::warn!("usb: download mode requested on the console port");
+            crate::update::submit_restart(crate::update::Work::Bootloader);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(200));
+    })
+    .map_err(|_| EspError::from(sys::ESP_ERR_NO_MEM).unwrap())?;
+    Ok(())
 }
 
 /// The netif with DHCP server behind the NCM link. `esp_netif_init` and

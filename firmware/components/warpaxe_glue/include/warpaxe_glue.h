@@ -105,6 +105,10 @@ bool wa_usb_mounted(void);
 /// The host has activated the NCM data interface (TinyUSB's network init
 /// callback fired). Sending before that is not allowed.
 bool wa_usb_net_ready(void);
+/* A 'B' arrived on the console port since the last call: the firmware
+ * should go into download mode its own way (chips off, marker). Without
+ * a taker the glue reboots into download mode itself after 10 s. */
+bool wa_usb_take_bootloader_request(void);
 
 /// The CPU clock in MHz as the ROM counts it.
 int wa_cpu_freq_mhz(void);
