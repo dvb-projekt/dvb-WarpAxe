@@ -226,20 +226,14 @@ on, whatever the cause turns out to be.
    Two limits: a power cycle that ends a hang in the restart reads as a
    restart without a crash; and a marker left behind by a downgrade to an
    image without this code is read by the next image that has it, about a
-   restart from back then. After the way into download mode no reason
-   counts as a crash of that restart: it ends in the ROM, and the way
-   back is the flashing tool's (the web flasher's RTC watchdog, esptool's
-   USB reset, a power cycle). The .42 came back from an esptool session
-   on 2026-10-23 (candidate 8800aed: `GET /bootloader`, `write_flash`
-   0x8000, `erase_region`, `write_mem` on `RTC_CNTL_OPTION1_REG`, RTS
-   reset) with reset reason `panic`, no last words and no dump. That
-   reason means a software reset with the panic hint in
-   `RTC_CNTL_STORE6_REG` (`0x600080c8`), which only the ESP-IDF panic
-   handler writes and only an app boot clears; whether the app crashed on
-   its way into the ROM or in its first boot after the flash is open (to
-   tell: read that register from download mode, and look for a time gap
-   before the `panic` boot). Either way the marker must not call it a
-   crash of the restart; the generic boot event still names the reason.
+   restart from back then. After the way into download mode the RTC
+   watchdog is not a crash of that restart: it ends in the ROM, and the
+   watchdog is how the web flasher, espflash and `esptool -a
+   watchdog-reset` leave download mode (esptool's USB reset and a power
+   cycle are clean reasons anyway). A panic is a crash of that restart
+   all the same, and it was one: see *The way into download mode crashed
+   in the torn-down console* below (v0.1.37 read it as "no crash reset";
+   from v0.1.38 it is the `rs_crash_reset` event like any other).
 3. **Last words** in RTC slow memory (`warpaxe_glue.c`: the last 256 bytes
    of it, at a fixed address rather than a linker-placed variable, because
    the image that crashes in the restart after an update is not the image
@@ -331,6 +325,131 @@ and look for `config: storing the restart marker took N ms` lines and
 for `int-wdt`. The way to force a long erase is many events or config
 patches before the upload, which fill the NVS page the marker lands in.
 
+## The way into download mode crashed in the torn-down console
+
+Found by dvb-WarpAxe #2 on 2026-10-24 while giving the fleet the 256 KB
+table over USB: after `POST /api/v1/bootloader` the .41 (NerdQaxe++) and
+the .45 (NerdOctaxe Gamma), both on v0.1.37 `3e0188b`, sat in ROM download
+mode with `RTC_CNTL_STORE6_REG` = `0x80040004`, the ESP-IDF panic hint
+(`ESP_RST_PANIC`), on every entry (the .41 twice in a row, with an app
+boot between that cleared the hint). No last words, so not a Rust panic;
+no dump, because both still had the 64 KB partition. After the esptool
+session the app came up with reset reason `panic` and the crash banner.
+
+**The chain**, read from the code (all deterministic, no device needed):
+
+1. When USB OTG comes up, `main` moves the console into the CDC port
+   (`wa_usb_console_to_cdc` → `esp_tusb_init_console`: `freopen` of
+   stdin, stdout and stderr onto `/dev/tusb_cdc`). From then on every
+   `ESP_LOG` line and every Rust log line is a `write(2)` into
+   esp_tinyusb's VFS (`tusb_write`): `tud_cdc_n_write_char` into the
+   stream FIFO, then `tud_cdc_n_write_flush`.
+2. `wa_reboot_to_bootloader` (the download-mode path and the `B` on the
+   console port) called `tinyusb_driver_uninstall` first thing. That is
+   `tusb_stop_task` (the TinyUSB task deleted), `tusb_teardown` =
+   `tud_deinit` (the usbd mutex `_usbd_mutex` deleted and set to NULL,
+   the CDC streams' FIFO mutexes deleted, `_usbd_dev` cleared, the
+   interrupt freed), then `usb_del_phy`. Nothing moved the console back.
+3. The next log line, from any task, goes `tusb_write` →
+   `tud_cdc_n_write_flush` → `tu_edpt_stream_write_xfer` → `stream_claim`
+   → `usbd_edpt_claim` → `tu_edpt_claim(ep_state, _usbd_mutex)` →
+   `osal_mutex_lock(NULL)` → `xSemaphoreTake(NULL)` → FreeRTOS's
+   `configASSERT(pxQueue)` → `abort()`: a panic, with the hint, without
+   last words (C, not Rust). There is always such a line: `esp_restart`'s
+   shutdown handler `esp_wifi_stop` alone prints half a dozen
+   (`wifi:state: run -> init`, `wifi:flush txq` …), and during the 50 ms
+   wait before it any task may log. The FIFO write before the flush goes
+   through the deleted FIFO mutex too (freed memory, the handle not
+   cleared), which with heap poisoning off happens to work.
+4. The restart marker was already at its second step ("in the system
+   reset"), so the next boot logged `restart (download mode) begun by
+   warpaxe 0.1.37 at uptime 89 s: no crash reset` — the rule from
+   v0.1.37 that read a download-mode marker as never a crash, written
+   for exactly this symptom before its cause was known.
+
+The update and restart paths never uninstall TinyUSB, which is why they
+end in `software` and only this path panicked. The chain is the same on
+every board; it needs a host on the USB port for nothing (the CDC port
+does not have to be open).
+
+**The fix** (`warpaxe_glue.c`): before TinyUSB goes down, the three
+standard streams go back to `/dev/console` (the USB-Serial/JTAG device
+the boot started on); the `FILE` lock lets a line in flight finish on the
+CDC port first. lwIP's sends (`wa_usb_send`) are refused from that moment
+and one in flight gets 20 ms, since `tinyusb_net_send_async` takes the
+same mutex. `tinyusb_driver_uninstall`'s result is logged, not ignored.
+The lines from the shutdown handlers now go to the USB-Serial/JTAG
+device, whose VFS drops bytes rather than block while no host reads
+(`TX_FLUSH_TIMEOUT_US`, 50 ms); since the host is still re-enumerating
+the port when the reset comes 50 ms later, expect them, and the panic
+text of any later crash on this path, to be lost on the wire most of the
+time. The restart marker and the panic hint are the trace that stays.
+
+**The marker rule** (`warpaxe_diag::restart::outcome`): after a
+download-mode marker the RTC watchdog and the clean reasons complete the
+restart, a panic or a task or interrupt watchdog crashes it. The hint in
+`RTC_CNTL_STORE6_REG` is written by the panic handler alone and cleared
+by nothing but an app boot, so with a download-mode marker it can only
+come from the marker's own run: the way into the ROM crashed, after the
+marker was written. The .41 and .45 would have reported `crashed while
+restarting (download mode), in the system reset`. The banner was right as
+it was: `crashed` for a panic stays, whatever marker is open, and dvb-WarpAxe
+#2's wish that a panic ending at the download-mode entry should not show
+it is met at the root, by not panicking there. A real crash on that path
+must show.
+
+**The reset cause next to the reason**: the app now logs
+`esp_rom_get_reset_reason(0)` with the boot line (`reset reason panic (rtc
+cause 0x03)`) and reports it as `resetCause` in `/api/system/info` and
+the diagnostics file. It would have told the following apart at once. Both
+miners came up as `panic` after the esptool session, i.e. a software
+reset with the old hint, although the session was meant to end in
+esptool's RTS reset (`CORE_USB_UART`, read as `usb`, the hint ignored —
+what `tools/flash-backup.sh` ends with). The sequence was separate
+esptool calls with `--before no_reset --after no_reset`, the last of them
+`write_mem 0x6000812c 0 0x1` (clearing `FORCE_DOWNLOAD_BOOT`), then
+`--after hard_reset read_mac` for the reset. esptool's `--after no_reset`
+with the stub running is `soft_reset(True)`: `flash_finish(reboot)`, the
+stub's software reset "back to the ROM loader" — which works while the
+register still forces download mode, and boots the app the moment it
+does not. So `write_mem … --after no_reset` itself booted the app with
+`CORE_SW` and the hint, and the `read_mac` meant to reset found no
+loader (exit 1). esptool 4.9's `hard_reset` for the ESP32-S3 clears
+`RTC_CNTL_OPTION1_REG` itself before pulling RTS: end a session with
+`--after hard_reset` and leave the `write_mem` out, and the app comes up
+as `usb`.
+
+**Reproduction** (needs Oliver's OK, a device with a 256 KB partition):
+`POST /api/v1/bootloader` on v0.1.37, leave download mode with the RTS
+reset, read `/api/system/info`: `resetReason` `panic`, a current
+`coreDumpBytes`, and `espcoredump.py info_corefile` on it shows
+`xQueueSemaphoreTake` ← `tu_edpt_claim` ← `usbd_edpt_claim` ←
+`tu_edpt_stream_write_xfer` ← `tud_cdc_n_write_flush` ← `tusb_write`
+under a `vprintf`. Then the same on v0.1.38: `software` or `usb`, the
+boot event `restart (download mode) … no crash reset`, no new dump, and a
+monitor on the USB-Serial/JTAG port shows `download mode: console back
+on USB-Serial/JTAG` followed by the Wi-Fi stop lines.
+
+## The Sv2 certificate against a clock NTP has not confirmed
+
+A side finding of the same USB session (dvb-WarpAxe #2, the .45): the
+app came back with a clock that read as set (past 2024, so
+`clock::unix_now` is `Some`) but off far enough to fail the certificate
+window of both Sv2 pools (`InvalidCertificate` at 46 s and 52 s against
+the Umbrel pool, at 64 s against pool.warppool.org), three failures,
+fallback at 64 s, verified at 89 s after the first NTP sync. The time
+comes out of RTC memory across a reset — right after a software reset,
+not to be trusted after minutes in the ROM and a tool's resets.
+
+From v0.1.38 the Sv2 connect waits (the same bounded 20 s as for no
+clock at all) while NTP is configured and has not set the clock this
+boot (`clock::ntp_pending`), says so if it goes ahead anyway, and a
+certificate that fails against such a clock in the boot's first five
+minutes is not counted towards the fallback (`CLOCK_UNSURE`, taken by
+`stratum::run`). The crate's error now tells a certificate failure from
+the rest of the handshake and names the window and the clock
+(`warpaxe_sv2::Error::Certificate`, host-tested).
+
 ## The crash banner after a flash over USB
 
 The web flasher, espflash and `esptool -a watchdog-reset` leave download
@@ -403,7 +522,11 @@ through the marker and the last words on any partition.
   round trip.
 - `warpaxe-diag`: `crashed` (the watchdog on the first boot, on a later
   boot, with an update's marker, after download mode; the crashes that
-  always count) and `outcome` after download mode for every reason.
+  always count) and `outcome` after download mode for every reason (the
+  watchdog and a clean reset complete it, a panic crashes it).
+- `warpaxe-sv2`: a certificate signed by another authority and one
+  checked against a clock a month ahead are `Error::Certificate`, the
+  latter naming the window and the clock.
 - The firmware builds (the generated `sdkconfig` carries
   `CONFIG_ESP_INT_WDT_TIMEOUT_MS=1000`); fmt, clippy, the workspace tests,
   the no_std build, the scenarios and `tools/i18n-apply.py` pass.
@@ -429,3 +552,24 @@ fields cut by bytes, `lastWords` scrubbed. Noted, not changed: a power
 cycle after a hang reads as no crash; a marker survives a downgrade; two
 panics at once garble the words; the restart's purpose stays an English
 word in the translated event.
+
+A second independent read (2026-10-24) of the download-mode fix and the
+Sv2 clock change confirmed the panic chain end to end from the sources
+(including that `tusb_teardown` is the real `tusb_deinit`, that nothing
+logs inside `tud_deinit`, that the Rust logger writes through the same
+stdout `FILE` and lock, and that `/dev/console` is registered in this
+configuration). Fixed from it: the scenario test for a wrong authority
+key accepted only `Handshake`/`BadKey` and would have failed on every run
+in which the flipped key was still on the curve; the wait for NTP's
+confirmation applied to every reconnect for the whole boot when NTP
+never syncs, now to the first five minutes only; the "clock unsure"
+verdict was re-read at failure time instead of with the clock it was
+about, and could outlive a session that ended in a `continue`;
+`freopen`'s result was ignored. Noted, not changed: `tusb_stop_task` is
+a bare `vTaskDelete`, so a TinyUSB task deleted while printing would
+keep the stdout lock (the 20 ms after the sends stop close that window
+in practice); the `B` on the console port enters download mode without
+the restart marker and without switching the chips off; the file
+descriptors behind the three streams change numbers across the
+`freopen`s, which is harmless here (every one of 0–3 ends on the
+console).

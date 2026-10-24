@@ -49,6 +49,18 @@ pub fn reset_reason() -> &'static str {
     }
 }
 
+/// The RTC controller's own reset cause (`soc_reset_reason_t`: 0x01
+/// power-on, 0x03 software, 0x0c CPU software, 0x09/0x10 RTC watchdog,
+/// 0x15/0x16 the USB-Serial/JTAG controller's UART or JTAG side), next
+/// to the IDF's reading above. The IDF turns
+/// a software reset into `panic` when the panic handler's hint sits in
+/// RTC memory, and the hint survives a ROM download-mode session until
+/// an app boots: which reset a flashing tool ends the session with
+/// decides whether an old hint is read then (docs/12).
+pub fn reset_cause() -> u32 {
+    unsafe { sys::esp_rom_get_reset_reason(0) }
+}
+
 /// The chip came up from a power-on (the supply or the EN pin), so the
 /// board's rails were really down. A software, watchdog, USB or JTAG
 /// reset kept the 12 V input and everything fed from it.

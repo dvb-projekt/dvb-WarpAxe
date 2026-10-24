@@ -204,7 +204,7 @@ pub fn system_info() -> serde_json::Value {
         "stratumConnected": stratum::state().authorized,
         "version": VERSION, "gitHash": env!("WARPAXE_GIT"), "runningPartition": crate::update::running_partition(), "otaState": crate::update::ota_state(),
         "fanspeed": if b.has_thermal { b.fan_pct } else { cfg.fanspeed }, "autofanspeed": u8::from(cfg.autofanspeed),
-        "resetReason": diag::reset_reason(),
+        "resetReason": diag::reset_reason(), "resetCause": diag::reset_cause(),
         // The last reset was a crash or a watchdog: the web UI shows a
         // banner once per boot (bootId tells one boot from the next).
         "crashed": diag::last_run_crashed(), "bootId": diag::boot_id(), "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
@@ -1522,7 +1522,7 @@ fn diagnostics(
         json!({
             "what": "WarpAxe diagnostics file. No passwords; worker addresses and the Wi-Fi name are masked. Send it to support as it is.",
             "generatedAt": (now > 0).then_some(now), "uptimeSeconds": diag::uptime_s(),
-            "resetReason": diag::reset_reason(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
+            "resetReason": diag::reset_reason(), "resetCause": diag::reset_cause(), "crashed": diag::last_run_crashed(), "lastCrash": diag::last_crash(),
             "coreDumpBytes": diag::core_dump().map(|(_, n)| n),
             "coreDumpCurrent": diag::core_dump_current(), "coreDumpTag": diag::core_dump_tag(), "appElfSha": diag::app_elf_sha(),
             "coreDumpPartition": diag::core_dump_room(), "lastWords": diag::last_words().map(|w| scrub.apply(&w)),

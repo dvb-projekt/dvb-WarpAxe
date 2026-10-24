@@ -21,6 +21,7 @@
 #include "tinyusb_net.h"
 #include "tusb_cdc_acm.h"
 #include "tusb_console.h"
+#include "esp_vfs_console.h"
 
 static const char *TAG = "wa_usb";
 
@@ -136,9 +137,13 @@ esp_err_t wa_usb_start(const uint8_t host_mac[6], wa_usb_rx_cb_t on_rx, void *ct
     return ESP_OK;
 }
 
+// Set when the way into download mode begins: from then on lwIP's sends
+// stay out of TinyUSB, which is being taken down (its mutex goes away).
+static volatile bool s_usb_down = false;
+
 esp_err_t wa_usb_send(void *buffer, uint16_t len)
 {
-    if (!tud_mounted()) {
+    if (s_usb_down || !tud_mounted()) {
         return ESP_ERR_INVALID_STATE; // no host: drop, never touch the driver
     }
     // Asynchronous: the caller (lwIP's tcpip thread) must never wait for
@@ -186,11 +191,40 @@ int wa_cpu_freq_set(int mhz)
 
 void wa_reboot_to_bootloader(void)
 {
+    // The console moved into the CDC port when USB came up
+    // (wa_usb_console_to_cdc): every ESP_LOG line is a write into
+    // TinyUSB. Once the driver is uninstalled, that write ends in
+    // tu_edpt_claim() on the deleted usbd mutex (NULL) -> configASSERT
+    // -> abort(): the panic on every way into download mode up to
+    // v0.1.37 (the .41 and .45 on 2026-10-24 left the ESP_RST_PANIC hint
+    // in RTC_CNTL_STORE6_REG, docs/12). esp_restart()'s shutdown handler
+    // esp_wifi_stop() alone logs half a dozen lines. So the standard
+    // streams go back to the console device (USB-Serial/JTAG) first; the
+    // FILE lock lets a line in flight finish on the CDC port before the
+    // switch. This is also where the panic text of a later crash on this
+    // path would be read.
+    ESP_LOGI(TAG, "download mode: console back on USB-Serial/JTAG, USB OTG going down");
+    if (!freopen(ESP_VFS_DEV_CONSOLE, "w", stdout) || !freopen(ESP_VFS_DEV_CONSOLE, "w", stderr) ||
+        !freopen(ESP_VFS_DEV_CONSOLE, "r", stdin)) {
+        // A failed freopen leaves a closed stream: printing to it returns
+        // EOF, which is still no crash. The ring keeps this line.
+        ESP_LOGW(TAG, "console: freopen(%s) failed", ESP_VFS_DEV_CONSOLE);
+    }
+    // lwIP's sends take the same mutex: refuse them from here on and let
+    // one in flight finish. The same 20 ms let the TinyUSB task, which
+    // tusb_stop_task() deletes outright, finish a warning it may be
+    // printing for such a send (a task deleted inside a log line would
+    // keep the stdout lock for good).
+    s_usb_down = true;
+    vTaskDelay(pdMS_TO_TICKS(20));
     // Hand the one USB PHY back to USB-Serial/JTAG: the driver's own
     // teardown does that properly (usb_del_phy). The PHY selection lives in
     // the RTC domain and survives a software reset, so without this the
     // ROM's download mode would sit on a PHY nobody is listening to.
-    tinyusb_driver_uninstall();
+    esp_err_t err = tinyusb_driver_uninstall();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "tinyusb_driver_uninstall: %s", esp_err_to_name(err));
+    }
     REG_SET_BIT(RTC_CNTL_USB_CONF_REG, RTC_CNTL_SW_HW_USB_PHY_SEL);
     REG_CLR_BIT(RTC_CNTL_USB_CONF_REG, RTC_CNTL_SW_USB_PHY_SEL);
     vTaskDelay(pdMS_TO_TICKS(50));

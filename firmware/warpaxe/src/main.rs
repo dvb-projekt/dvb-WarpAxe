@@ -161,9 +161,10 @@ fn main() {
     // and a core dump is not always written (docs/12).
     diag::install_panic_hook();
     info!(
-        "{} boot, reset reason {}",
+        "{} boot, reset reason {} (rtc cause 0x{:02x})",
         api::VERSION,
-        diag::reset_reason()
+        diag::reset_reason(),
+        diag::reset_cause()
     );
 
     let peripherals = Peripherals::take().expect("peripherals");

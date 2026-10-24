@@ -181,20 +181,22 @@ pub enum Outcome {
 /// completed: the restart itself did not crash (a hang ended by a power
 /// cycle is not told apart, docs/12).
 ///
-/// After the way into download mode nothing counts as a crash of that
-/// restart, whatever the reason: the restart ends in the ROM, and the
-/// way back is the flashing tool's — an RTC-watchdog reset from the web
-/// flasher, a USB reset from esptool, a power cycle; and a reset reason
-/// hint left in RTC memory before the ROM ran (nothing but an app boot
-/// clears it) is read by the first software reset after it. The
-/// generic boot event still names the reason (the .42 on 2026-10-23
-/// came back with `panic` after an esptool session, docs/12).
+/// After the way into download mode the RTC watchdog is not a crash of
+/// that restart: the restart ends in the ROM, and the watchdog is how the
+/// web flasher, espflash and `esptool -a watchdog-reset` leave download
+/// mode (a USB reset or a power cycle are clean anyway). A panic or a
+/// task or interrupt watchdog is one all the same: their hint in
+/// `RTC_CNTL_STORE6_REG` is written by the panic handler alone and
+/// cleared by nothing but an app boot, so with a download-mode marker it
+/// can only be the marker's own run that crashed, after the marker and
+/// before the ROM (the .41 and .45 on 2026-10-24: the console in the
+/// torn-down CDC port, docs/12). It reaches the app with the first
+/// software reset after the ROM session, however long that took.
 pub fn outcome(m: Marker, reset: Reset) -> Outcome {
-    if m.into_download_mode() {
-        return Outcome::Completed(m);
-    }
     match reset {
-        Reset::Crash | Reset::Watchdog => Outcome::Crashed(m),
+        Reset::Crash => Outcome::Crashed(m),
+        Reset::Watchdog if m.into_download_mode() => Outcome::Completed(m),
+        Reset::Watchdog => Outcome::Crashed(m),
         Reset::Clean => Outcome::Completed(m),
     }
 }
@@ -316,12 +318,14 @@ mod tests {
             Outcome::Crashed(m.clone())
         );
         assert_eq!(outcome(m.clone(), Reset::Clean), Outcome::Completed(m));
-        // After download mode no reason counts as a crash of that
-        // restart: the way back is the flashing tool's.
-        let d = Marker::new("download mode", "warpaxe 0.1.36", 5);
-        for r in [Reset::Watchdog, Reset::Crash, Reset::Clean] {
+        // After download mode the RTC watchdog is the flashing tool's way
+        // back and a USB reset or power cycle are clean; a panic can only
+        // be the marker's own run, on its way into the ROM.
+        let d = Marker::new("download mode", "warpaxe 0.1.36", 5).at(Step::Reset);
+        for r in [Reset::Watchdog, Reset::Clean] {
             assert_eq!(outcome(d.clone(), r), Outcome::Completed(d.clone()));
         }
+        assert_eq!(outcome(d.clone(), Reset::Crash), Outcome::Crashed(d));
         assert!(Marker::new("update", "", 0).installs());
         assert!(Marker::new("ota", "", 0).installs());
         assert!(!Marker::new("restart", "", 0).installs());

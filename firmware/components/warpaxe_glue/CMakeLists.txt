@@ -6,7 +6,7 @@
 # peripheral.
 idf_component_register(SRCS "warpaxe_glue.c" "warpaxe_cpuhash.c" "warpaxe_shabench.c"
                        INCLUDE_DIRS "include"
-                       REQUIRES esp_tinyusb esp_lcd esp_netif esp_event esp_system esp_hw_support espcoredump spi_flash)
+                       REQUIRES esp_tinyusb esp_lcd esp_netif esp_event esp_system esp_hw_support espcoredump spi_flash esp_vfs_console)
 # The hash loop wants speed; the rest of the image keeps the project's
 # size-optimised flags.
 set_source_files_properties(warpaxe_cpuhash.c warpaxe_shabench.c PROPERTIES COMPILE_OPTIONS "-O2")
