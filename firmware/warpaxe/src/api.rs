@@ -1052,17 +1052,29 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                 ),
             ],
         )?;
+        // The passwords, the Wi-Fi name and the worker addresses a task
+        // had in hand go out as `x`, the CRC32 at the end recomputed
+        // (warpaxe_diag::dump); the copy in flash stays as written.
+        let mut masker = warpaxe_diag::dump::DumpMasker::new(dump_texts(&config::get()));
+        let body = size.saturating_sub(warpaxe_diag::dump::CRC_LEN as u32);
         let mut buf = vec![0u8; 4096];
         let mut off = 0u32;
-        while off < size {
-            let n = (size - off).min(buf.len() as u32) as usize;
+        while off < body {
+            let n = (body - off).min(buf.len() as u32) as usize;
             if !diag::read_core_dump(addr + off, &mut buf[..n]) {
                 log::warn!("coredump: flash read failed at {off}");
-                break;
+                return Ok(());
             }
-            r.write_all(&buf[..n])?;
+            r.write_all(&masker.push(&buf[..n]))?;
             off += n as u32;
         }
+        let (rest, crc) = masker.finish();
+        r.write_all(&rest)?;
+        r.write_all(&crc)?;
+        log::info!(
+            "coredump: sent {size} bytes, {} texts masked",
+            masker.masked()
+        );
         Ok::<(), EspIOError>(())
     })?;
     server.fn_handler("/api/v1/coredump", Method::Delete, |req| {
@@ -1463,6 +1475,34 @@ fn scrubber(cfg: &config::Config) -> warpaxe_diag::scrub::Scrubber {
         s = s.secret(&pass);
     }
     s
+}
+
+/// What the core dump download masks: every secret the scrubber knows,
+/// the Wi-Fi name and the worker names (warpaxe_diag::dump).
+fn dump_texts(cfg: &config::Config) -> Vec<String> {
+    let mut t = vec![
+        cfg.wifi_pass.clone(),
+        cfg.stratum_pass.clone(),
+        cfg.fallback_pass.clone(),
+        cfg.ssid.clone(),
+        cfg.stratum_user.clone(),
+        cfg.fallback_user.clone(),
+    ];
+    for p in config::pools() {
+        t.push(p.pass.clone());
+        t.push(p.user.clone());
+    }
+    if let Some((_, pass)) = net::hotspot() {
+        t.push(pass);
+    }
+    // A worker name's address alone, in case a task held it without
+    // the ".worker" part.
+    let addrs: Vec<String> = t
+        .iter()
+        .filter_map(|u| u.split_once('.').map(|(a, _)| a.to_string()))
+        .collect();
+    t.extend(addrs);
+    t
 }
 
 /// `GET /api/v1/diagnostics`: the file, section by section so no whole

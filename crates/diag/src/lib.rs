@@ -12,12 +12,15 @@
 //!   silent chips, self-test results) stored as one NVS string like the
 //!   config patches, written only when an event happens, never on a
 //!   timer, and never twice for the same thing within a minute.
+//! - [`dump`]: the core dump as it is downloaded, with the passwords,
+//!   the Wi-Fi name and the worker's address masked.
 //! - [`restart`]: the marker stored before an intentional restart and
 //!   read at the next boot, so a crash in that restart leaves a trace
 //!   even when no core dump could be written.
 
 #![forbid(unsafe_code)]
 
+pub mod dump;
 pub mod events;
 pub mod restart;
 pub mod scrub;
