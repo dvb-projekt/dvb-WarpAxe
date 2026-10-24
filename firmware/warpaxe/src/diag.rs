@@ -69,16 +69,38 @@ pub fn reset_was_power_on() -> bool {
 }
 
 /// The last reset as the restart marker reads it (`warpaxe_diag::restart`):
-/// a crash (panic, interrupt or task watchdog), the RTC watchdog (what a
-/// flashing tool leaves download mode with), or clean.
+/// a crash, a watchdog without a crash, or clean.
+///
+/// The IDF names `panic`, `int-wdt` and `task-wdt` in two ways. From the
+/// panic handler's hint in RTC memory, in which case the RTC cause is a
+/// software reset (`esp_restart_noos` after the handler ran): this app
+/// crashed, whatever else happened. Or from the RTC cause alone, MWDT0
+/// or MWDT1 having reset the chip with no handler in between: a hang the
+/// watchdog's last stage ended, or a tool's way out of ROM download mode
+/// (esptool 4.9's hard reset from a download mode the app had forced
+/// arrived as MWDT0 on the Nano .44, 2026-10-24, as `usb` on the .41 a
+/// day earlier, as the RTC watchdog from the web flasher). The second
+/// kind is a watchdog like the RTC one: a crash unless a marker or the
+/// first boot of an image says it was the tool's (`restart::crashed`).
 pub fn reset_class() -> warpaxe_diag::restart::Reset {
     use warpaxe_diag::restart::Reset;
-    match unsafe { sys::esp_reset_reason() } {
+    let reason = unsafe { sys::esp_reset_reason() };
+    let crash_reason = matches!(
+        reason,
         sys::esp_reset_reason_t_ESP_RST_PANIC
-        | sys::esp_reset_reason_t_ESP_RST_INT_WDT
-        | sys::esp_reset_reason_t_ESP_RST_TASK_WDT => Reset::Crash,
-        sys::esp_reset_reason_t_ESP_RST_WDT => Reset::Watchdog,
-        _ => Reset::Clean,
+            | sys::esp_reset_reason_t_ESP_RST_INT_WDT
+            | sys::esp_reset_reason_t_ESP_RST_TASK_WDT
+    );
+    let software_cause = matches!(
+        reset_cause(),
+        sys::soc_reset_reason_t_RESET_REASON_CORE_SW | sys::soc_reset_reason_t_RESET_REASON_CPU0_SW
+    );
+    if crash_reason && software_cause {
+        Reset::Crash
+    } else if crash_reason || reason == sys::esp_reset_reason_t_ESP_RST_WDT {
+        Reset::Watchdog
+    } else {
+        Reset::Clean
     }
 }
 

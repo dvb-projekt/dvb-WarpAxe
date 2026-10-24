@@ -386,12 +386,22 @@ text of any later crash on this path, to be lost on the wire most of the
 time. The restart marker and the panic hint are the trace that stays.
 
 **The marker rule** (`warpaxe_diag::restart::outcome`): after a
-download-mode marker the RTC watchdog and the clean reasons complete the
-restart, a panic or a task or interrupt watchdog crashes it. The hint in
-`RTC_CNTL_STORE6_REG` is written by the panic handler alone and cleared
-by nothing but an app boot, so with a download-mode marker it can only
-come from the marker's own run: the way into the ROM crashed, after the
-marker was written. The .41 and .45 would have reported `crashed while
+download-mode marker a watchdog and the clean reasons complete the
+restart, a crash crashes it. What is a crash is decided in
+`diag::reset_class` by the hint: `panic`, `int-wdt` and `task-wdt` with
+the RTC cause `CORE_SW`/`CPU0_SW` come from the panic handler's hint in
+`RTC_CNTL_STORE6_REG`, which that handler alone writes and nothing but an
+app boot clears, so with a download-mode marker it can only come from the
+marker's own run: the way into the ROM crashed, after the marker was
+written. `int-wdt` and `task-wdt` with the cause `MWDT0`/`MWDT1` itself
+had no handler in between and are a watchdog like the RTC one: a tool's
+way out of download mode, or a hang the watchdog's last stage ended,
+told apart by the marker and the first-boot rule as before. The repro on
+the Nano .44 (2026-10-24, dvb-WarpAxe #2) needed this: esptool 4.9's
+`--after hard_reset` out of a download mode the app had forced arrived as
+cause 0x07 (`task-wdt`), while the same reset on the .41 a day earlier
+came as 0x15 (`usb`); the first candidate read the Nano's as a crash of
+the restart. The .41 and .45 would have reported `crashed while
 restarting (download mode), in the system reset`. The banner was right as
 it was: `crashed` for a panic stays, whatever marker is open, and dvb-WarpAxe
 #2's wish that a panic ending at the download-mode entry should not show
@@ -419,16 +429,21 @@ loader (exit 1). esptool 4.9's `hard_reset` for the ESP32-S3 clears
 `--after hard_reset` and leave the `write_mem` out, and the app comes up
 as `usb`.
 
-**Reproduction** (needs Oliver's OK, a device with a 256 KB partition):
-`POST /api/v1/bootloader` on v0.1.37, leave download mode with the RTS
-reset, read `/api/system/info`: `resetReason` `panic`, a current
-`coreDumpBytes`, and `espcoredump.py info_corefile` on it shows
-`xQueueSemaphoreTake` ← `tu_edpt_claim` ← `usbd_edpt_claim` ←
-`tu_edpt_stream_write_xfer` ← `tud_cdc_n_write_flush` ← `tusb_write`
-under a `vprintf`. Then the same on v0.1.38: `software` or `usb`, the
-boot event `restart (download mode) … no crash reset`, no new dump, and a
-monitor on the USB-Serial/JTAG port shows `download mode: console back
-on USB-Serial/JTAG` followed by the Wi-Fi stop lines.
+**Reproduced** (dvb-WarpAxe #2 on the Nano .44, 2026-10-24, Oliver's
+OK, right after its switch to the 256 KB table). v0.1.37 `3e0188b`:
+`POST /api/v1/bootloader` → `RTC_CNTL_STORE6_REG` = `0x80040004`; out by
+esptool 4.9 `--after hard_reset` → a boot with a current dump of 70,852
+bytes (so the 64 KB partition never could have held it), whose backtrace
+is this chain to the letter: `_fflush_r` → `__sflush_r` → `__swrite` →
+`esp_vfs_write` → `tusb_write` (vfs_tinyusb.c:127) →
+`tinyusb_cdcacm_write_queue_char` → `tud_cdc_n_write` →
+`tu_edpt_stream_write` → `tu_edpt_stream_write_xfer` → `stream_claim` →
+`usbd_edpt_claim` → `tu_edpt_claim` → `osal_mutex_lock` →
+`xQueueSemaphoreTake` (queue.c:1713) → `__assert_func` →
+`esp_system_abort`, on the `wifi` task. Candidate `be2d6f1`: the same
+entry → `STORE6` = `0`, no new dump, PASS at 2.28 TH/s afterwards; the
+only flaw was the reset classification above, fixed in the next commit
+and to be re-run on the .44.
 
 ## The Sv2 certificate against a clock NTP has not confirmed
 

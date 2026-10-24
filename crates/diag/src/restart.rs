@@ -155,13 +155,17 @@ pub enum Reset {
     /// A software reset, a power-on, a USB or JTAG reset, a brownout:
     /// not a crash of the restart itself.
     Clean,
-    /// A panic, an interrupt watchdog or a task watchdog: the firmware
+    /// A panic, an interrupt watchdog or a task watchdog that went
+    /// through the panic handler (its hint in RTC memory): the firmware
     /// crashed.
     Crash,
-    /// The RTC (or another system) watchdog. The firmware's own
-    /// restart never ends in one, but a flashing tool does: esptool and
-    /// the web flasher leave ROM download mode by arming the RTC
-    /// watchdog, which reads as `wdt` at the next boot.
+    /// A watchdog that reset the chip on its own, without the panic
+    /// handler: the RTC watchdog, or MWDT0/MWDT1 read from the RTC cause
+    /// alone. The firmware's own restart never ends in one, but a
+    /// flashing tool does: the web flasher leaves ROM download mode by
+    /// arming the RTC watchdog, and esptool's hard reset out of a
+    /// download mode the app forced arrives as MWDT0 on some boards
+    /// (the Nano .44, 2026-10-24), as `usb` on others.
     Watchdog,
 }
 
