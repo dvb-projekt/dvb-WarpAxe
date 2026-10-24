@@ -567,5 +567,10 @@
   "rr_brownout": "供电电压跌落（欠压）",
   "rr_usb": "通过 USB 重启",
   "rr_jtag": "通过 JTAG 重启",
-  "rr_unknown": "原因未知"
+  "rr_unknown": "原因未知",
+  "blk_title": "发现区块！",
+  "blk_s": "高度 {h} · {coin}",
+  "blk_total": "区块数：{n}",
+  "evk_block": "区块",
+  "evd_block_found": "发现区块 {h}（{coin}）"
 }

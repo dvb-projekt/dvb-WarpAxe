@@ -253,6 +253,15 @@ pub mod detail {
         )
     }
 
+    /// A share met the network difficulty: a block at this height of
+    /// this coin.
+    pub fn block_found(height: u64, coin: &str) -> Detail {
+        coded(
+            "block_found",
+            &[("h", Value::from(height)), ("coin", name(coin))],
+        )
+    }
+
     /// The main pool failed `fails` times: on the fallback.
     pub fn pool_fallback(fails: u32) -> Detail {
         coded("pool_fallback", &[("n", Value::from(fails))])
@@ -544,6 +553,7 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("n"),
             g("mv")
         ),
+        "block_found" => format!("block {} found ({})", g("h"), g("coin")),
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
         "pool_back" => "main pool answers again, back from the fallback".into(),
         "pool_saved" => format!("saved pool {} used", g("p")),
@@ -868,6 +878,7 @@ mod tests {
         let cases: Vec<(Detail, &str)> =
             vec![
             (detail::chip_silent(3), "chip 3 silent"),
+            (detail::block_found(54110, "FIX"), "block 54110 found (FIX)"),
             (
                 detail::chain_restart(4, 1150),
                 "all 4 chips silent for 60 s at 1150 mV, chain restarted",

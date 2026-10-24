@@ -567,5 +567,10 @@
   "rr_brownout": "chute de la tension d’alimentation (brownout)",
   "rr_usb": "redémarrage via USB",
   "rr_jtag": "redémarrage via JTAG",
-  "rr_unknown": "cause inconnue"
+  "rr_unknown": "cause inconnue",
+  "blk_title": "Bloc trouvé !",
+  "blk_s": "Hauteur {h} · {coin}",
+  "blk_total": "blocs : {n}",
+  "evk_block": "Bloc",
+  "evd_block_found": "bloc {h} trouvé ({coin})"
 }

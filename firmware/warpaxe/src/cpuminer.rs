@@ -694,6 +694,7 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
             s.blocks_found += 1;
             s.last_block = Some((st.block_height, diag::uptime_s()));
         });
+        crate::miner::block_found(st.block_height);
     }
     if diff >= want {
         let age_n = st.jobs_received.saturating_sub(job.seq);

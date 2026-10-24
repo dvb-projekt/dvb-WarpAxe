@@ -567,5 +567,10 @@
   "rr_brownout": "queda da tensão de alimentação (brownout)",
   "rr_usb": "reinício via USB",
   "rr_jtag": "reinício via JTAG",
-  "rr_unknown": "causa desconhecida"
+  "rr_unknown": "causa desconhecida",
+  "blk_title": "Bloco encontrado!",
+  "blk_s": "Altura {h} · {coin}",
+  "blk_total": "blocos: {n}",
+  "evk_block": "Bloco",
+  "evd_block_found": "bloco {h} encontrado ({coin})"
 }

@@ -37,7 +37,7 @@ pub fn init() {
 
 /// Note an event: queued for the next `flush`, and in the log at once.
 /// `kind` is one of boot, overheat, power, pool, update, rollback, chain,
-/// selftest, board; `detail` one of `warpaxe_diag::events::detail` (a
+/// selftest, board, block; `detail` one of `warpaxe_diag::events::detail` (a
 /// code and its values, which the web UI says in its own language), or
 /// `Detail::from` one short line of text.
 pub fn record(kind: &'static str, detail: Detail) {

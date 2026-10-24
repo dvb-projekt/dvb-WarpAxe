@@ -312,6 +312,12 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     );
     *CONFIG.lock().unwrap() = Some(cfg);
     *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
+    let mut buf = [0u8; 160];
+    *BLOCKS.lock().unwrap() = nvs
+        .get_str(BLOCKS_KEY, &mut buf)
+        .ok()
+        .flatten()
+        .and_then(|s| serde_json::from_str(s.trim_end_matches('\0')).ok());
     *BEST_DIFF_F.lock().unwrap() = nvs
         .get_u64(BEST_F_KEY)
         .ok()
@@ -370,6 +376,45 @@ pub fn raise_best_diff_f(diff: f64) {
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if let Err(e) = nvs.set_u64(BEST_F_KEY, diff.to_bits()) {
             log::warn!("config: storing best diff: {e}");
+        }
+    }
+}
+
+/// Blocks found, kept across reboots: how many, and the last one
+/// (height, unix time or 0 without a clock, coin ticker) for the web UI's
+/// banner. One NVS string, written only when a block is found.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Blocks {
+    pub n: u32,
+    pub h: u64,
+    pub t: u64,
+    pub coin: String,
+}
+static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
+const BLOCKS_KEY: &str = "blocks";
+
+/// The blocks found so far, all time.
+pub fn blocks() -> Blocks {
+    BLOCKS.lock().unwrap().clone().unwrap_or_default()
+}
+
+/// Count a found block and store it. From a thread with an internal
+/// stack (the miner loops, like `raise_best_diff`).
+pub fn record_block(height: u64, unix: u64) {
+    let b = {
+        let mut g = BLOCKS.lock().unwrap();
+        let b = g.get_or_insert_with(Blocks::default);
+        b.n += 1;
+        b.h = height;
+        b.t = unix;
+        b.coin = get().coin_ticker;
+        b.clone()
+    };
+    if let Ok(json) = serde_json::to_string(&b) {
+        if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+            if let Err(e) = nvs.set_str(BLOCKS_KEY, &json) {
+                log::warn!("config: storing the found block: {e}");
+            }
         }
     }
 }

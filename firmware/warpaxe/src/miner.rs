@@ -212,6 +212,17 @@ pub fn reg_scan() -> Option<RegScan> {
     REG_SCAN.lock().unwrap().clone()
 }
 
+/// A block: counted for good (the web UI's banner and all-time count)
+/// and in the event log. From the mining threads, whose stacks are
+/// internal (an NVS write).
+pub fn block_found(height: u64) {
+    config::record_block(height, crate::clock::unix_now().unwrap_or(0));
+    crate::events::record(
+        "block",
+        warpaxe_diag::events::detail::block_found(height, &config::get().coin_ticker),
+    );
+}
+
 /// Which cores the nonces of one chip came from since the chain started
 /// (diagnostics): index = core id from the nonce's high bits, and the
 /// small core id from the job id byte.
@@ -498,6 +509,7 @@ fn run(mut uart: ChipUart) {
                                 s.blocks_found += 1;
                                 s.last_block = Some((st_now.block_height, diag::uptime_s()));
                             });
+                            block_found(st_now.block_height);
                         }
                         if diff >= want {
                             // How old the stratum job is at submit time, in
