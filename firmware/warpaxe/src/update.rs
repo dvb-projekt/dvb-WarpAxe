@@ -139,12 +139,21 @@ pub fn request_check() {
     REQUEST.store(1, Ordering::Relaxed);
 }
 
-/// Start an install of the latest release; false if none is known, or
+/// Start an install of the latest release. Refused while one is queued
+/// or under way (a second click would otherwise queue a retry that runs
+/// as soon as a failed first attempt ends), if no release is known, or
 /// if the release did not run on this board (the devkit, see the module
 /// doc): the watcher decides that at the check, this is the second lock.
-pub fn request_install() -> bool {
-    let Some(r) = state().latest else {
-        return false;
+pub fn request_install() -> Result<(), &'static str> {
+    let s = state();
+    if REQUEST.load(Ordering::Relaxed) == 2
+        || ["downloading", "verifying", "flashing"].contains(&s.phase.as_str())
+        || writing()
+    {
+        return Err("an update is already running");
+    }
+    let Some(r) = s.latest else {
+        return Err("no release known yet: check first");
     };
     if !r.tested_here {
         log::warn!(
@@ -152,10 +161,10 @@ pub fn request_install() -> bool {
             r.tag,
             crate::board::profile().name
         );
-        return false;
+        return Err("this release was not tested on this board");
     }
     REQUEST.store(2, Ordering::Relaxed);
-    true
+    Ok(())
 }
 
 /// Whether `tested-on.txt` (one profile id per line, `#` starts a

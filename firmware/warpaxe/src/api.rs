@@ -1209,18 +1209,15 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     server.fn_handler("/api/v1/update/install", Method::Post, |mut req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let who = peer(&mut req);
-        if crate::update::request_install() {
-            log::warn!(
-                "update: install of {} requested from {who}",
-                crate::update::state().latest.map_or("?".into(), |r| r.tag)
-            );
-            reply_json(req, 200, &json!({"installing": true}))
-        } else {
-            reply_json(
-                req,
-                409,
-                &json!({"error": "no release known yet: check first"}),
-            )
+        match crate::update::request_install() {
+            Ok(()) => {
+                log::warn!(
+                    "update: install of {} requested from {who}",
+                    crate::update::state().latest.map_or("?".into(), |r| r.tag)
+                );
+                reply_json(req, 200, &json!({"installing": true}))
+            }
+            Err(e) => reply_json(req, 409, &json!({"error": e})),
         }
     })?;
 
