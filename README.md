@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-478%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-483%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.37-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.38-7B5CFF"></a>
 </p>
 
 ---
@@ -46,7 +46,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.37).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.38).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -80,7 +80,7 @@ move fast; corrections welcome.
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | no | yes (next to the hashrate; per chip and domain optional) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
-| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download |
+| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks) in NVS, shown in the web UI's language |
 | Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | no | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | chip 75 °C (either of the two chips), regulator 105 °C, fixed | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS); the Nano's chips read on ForgeOS's diode scale since v0.1.36 |
@@ -229,11 +229,11 @@ back at any time with `GET /api/v1/display/frame`.
   ChaCha20-Poly1305), extended channel, the pool's certificate checked
   against its authority key (Base58Check, as pools publish it). "Require
   pool authentication" is on by default: without a key, or before the clock
-  is set by NTP, there is no connection. The connect waits for NTP's first
-  sync of the boot when NTP is on (up to 20 s), and a certificate that
-  fails before it does not count towards the fallback (v0.1.38: a clock
-  carried across a reset in RTC memory can be minutes off after a session
-  in download mode). The TLS switch applies to V1 only;
+  is set by NTP, there is no connection. Since v0.1.38, in the first five
+  minutes after a start, the connect waits up to 20 s for NTP's first sync
+  of the boot when NTP is on, and a certificate that fails before it does
+  not count towards the fallback (a clock carried across a reset in RTC
+  memory can be minutes off after a session in download mode). The TLS switch applies to V1 only;
   V2 is always encrypted. The display shows "V2" with the lock. Settings
   from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
   the first start.
@@ -397,7 +397,8 @@ back at any time with `GET /api/v1/display/frame`.
   list (`/api/v1/swarm`), an Avalon read for it
   (`/api/v1/swarm/cgminer?host=`) and the search for one
   (`/api/v1/swarm/cgminer/scan`), the last crash's core dump
-  (`GET /api/v1/coredump`, an ELF for `espcoredump.py`; `DELETE` erases it),
+  (`GET /api/v1/coredump`, an ELF for `espcoredump.py`, secrets masked;
+  `DELETE` erases it),
   and for diagnosis a read-only chip register scan
   (`/api/v1/chip/regs?chip=0&from=0x80&to=0xbf`) and the nonces per core
   (`/api/v1/chip/cores`).
@@ -427,7 +428,8 @@ back at any time with `GET /api/v1/display/frame`.
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second
   value) and `errorPercentage1m` (over the last full minute, for tuners).
-  Also `otaState` (the running image: `valid`, `pending-verify`, or
+  Also `resetReason` with `resetCause` (the raw RTC reset cause, since
+  v0.1.38), `otaState` (the running image: `valid`, `pending-verify`, or
   `aborted` after a rollback), `dieTempC` (the ESP32-S3's own sensor),
   `yieldPercent` (the nonce-weighted 10-minute rate against small cores ×
   clock, on chips without an error counter such as the BM1397),
@@ -524,11 +526,25 @@ back at any time with `GET /api/v1/display/frame`.
   from the web UI or on the way into download mode) becomes an event of
   its own that names the step, and a finished update or upload reports
   itself as installed on every bootloader, but not after a rollback; both
-  need the restart to be begun by v0.1.37 or later. The core dump
+  need the restart to be begun by v0.1.37 or later. Up to v0.1.37 the way
+  into download mode itself crashed every time (TinyUSB was shut down
+  while the console still wrote to its serial port, an assert); since
+  v0.1.38 the console goes back to USB-Serial/JTAG first. After the way
+  into download mode a panic, or a task or interrupt watchdog the panic
+  handler went through, is a crash of that restart; a watchdog reset
+  without the panic handler is the flashing tool's way out of download
+  mode (esptool's hard reset can arrive as a task watchdog) and is not.
+  The boot line, `/api/system/info` and the diagnostics file carry the raw
+  RTC reset cause as `resetCause`. The core dump
   partition is 256 KB since v0.1.37 (64 KB before, too small for most of
   this firmware's dumps); it arrives with one install from the browser
   (or over USB), not with an online update
   ([`docs/12`](docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md)).
+- **Core dump download** (`GET /api/v1/coredump`): since v0.1.38 the
+  Wi-Fi password, the pool passwords, the hotspot password, the Wi-Fi name
+  and the worker names and addresses are replaced with as many `x`, and
+  the CRC32 is recomputed, so `espcoredump.py` still reads the file; the
+  copy in flash stays as written.
 
 ### Updates
 - **Online update**: the miner checks this repository's releases at start
@@ -538,7 +554,11 @@ back at any time with `GET /api/v1/display/frame`.
   Schnorr with the key built into the firmware, `warpaxe.bin.sig`) and
   installs it. A release without a signature still installs for now and is
   marked as unsigned; that tolerance ends once every release carries one.
-  Nothing installs by itself: an update restarts the miner.
+  Nothing installs by itself: an update restarts the miner. While an
+  install is queued, downloading, verifying or flashing, a second one is
+  refused (409), and the web UI disables the button on the click (since
+  v0.1.38; before, a second click could start the install again after a
+  failed first attempt).
 - **The writer needs no free memory**: the online update, an upload, a
   restart and download mode are carried out by the firmware's main task,
   whose stack exists from boot on, so an update works however fragmented
@@ -556,7 +576,12 @@ back at any time with `GET /api/v1/display/frame`.
   every boot does so before anything else. A TPS546 keeps its output on
   through an ESP reset, so the chips would otherwise sit powered and
   unwatched — a BitForge Nano reached 82 °C (on the diode scale of the
-  time; regulator 95 °C) after three minutes in download mode.
+  time; regulator 95 °C) after three minutes in download mode. On boards
+  with native USB a `B` on the USB console port (the serial port beside
+  the USB network adapter) takes the same way as *System → Download
+  mode* since v0.1.38 — before, it rebooted into the ROM with the chips
+  still powered and no restart marker; if the firmware does not take the
+  request within 10 s, it reboots into download mode directly.
 - **Back to the stock firmware**: *System → Back to the stock firmware*
   explains the way (over USB, with the backup the web flasher saved) and
   opens the flasher's restore section.
@@ -676,7 +701,8 @@ up and updates itself:
    image carries the same signature the online update checks. Coming from
    the stock firmware, the flasher usually puts the miner into download
    mode by itself; otherwise hold BOOT, press RST, release BOOT (on a miner
-   that already runs WarpAxe: *System → Download mode*). A miner that
+   that already runs WarpAxe: *System → Download mode*, or a `B` on its
+   USB console port). A miner that
    stays dark after a cancelled install is still in download mode: take it
    off power completely — power supply **and** USB cable — for a few
    seconds. Without a browser: `warpaxe-factory.bin` from the
@@ -830,7 +856,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/11-Board-choice-guard.md`](docs/11-Board-choice-guard.md)
   — how a found or chosen board is checked against the bus before its
   chips get power, the cautious first start and the chip count, every
-  wrong pair of boards and what refuses it.
+  wrong pair of boards and what refuses it;
+- [`docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md`](docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md)
+  — the crash in the restart after an update that left no dump, the
+  restart marker and last words, the 256 KB core dump partition, and the
+  way into download mode that crashed up to v0.1.37.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
