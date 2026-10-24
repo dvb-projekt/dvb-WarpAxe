@@ -442,8 +442,14 @@ is this chain to the letter: `_fflush_r` → `__sflush_r` → `__swrite` →
 `xQueueSemaphoreTake` (queue.c:1713) → `__assert_func` →
 `esp_system_abort`, on the `wifi` task. Candidate `be2d6f1`: the same
 entry → `STORE6` = `0`, no new dump, PASS at 2.28 TH/s afterwards; the
-only flaw was the reset classification above, fixed in the next commit
-and to be re-run on the .44.
+only flaw was the reset classification above, fixed in the next commit.
+`d122680` on the .44, same entry and exit: `STORE6` = `0`, the boot line
+"reset reason task-wdt (rtc cause 0x07)", then "watchdog reset after the
+way into download mode: the flashing tool's reset, not a crash" and "no
+crash reset", `crashed` false, no new dump. The console `B` (`a724640`)
+passed the same test on the devkit .111 (an earlier `B` within its first
+three minutes rolled back, as an image not yet marked valid should).
+Released in v0.1.38 (`b1c53e8`, 2026-10-24); the whole fleet runs it.
 
 ## The Sv2 certificate against a clock NTP has not confirmed
 
@@ -504,7 +510,7 @@ then ended in the RTC watchdog (the panic handler arms it against a hung
 dump write) before it proved itself, the bootloader boots the old image
 as `aborted`, which forgives nothing.
 
-## Reproduction (not run: needs Oliver's OK and a word to Warppool #2)
+## Reproduction plan of 2026-10-23 (superseded: run on the .42 the same day, see "Reproduced" above)
 
 The Gamma .42 is on USB (`/dev/cu.usbmodem9888E00355C81`). Proposed:
 
