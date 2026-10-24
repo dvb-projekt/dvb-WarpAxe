@@ -18,6 +18,7 @@
 pub mod driver;
 pub mod monitor;
 pub mod uart;
+pub mod worth;
 
 pub use driver::{
     Chain, ChipStatus, Config, Error, Event, Found, InitError, Phase, Stats, Work, WorkRef,
@@ -25,3 +26,4 @@ pub use driver::{
 };
 pub use monitor::{ChipMonitor, HashrateMonitor, Measurement};
 pub use uart::Uart;
+pub use worth::NonceWorth;

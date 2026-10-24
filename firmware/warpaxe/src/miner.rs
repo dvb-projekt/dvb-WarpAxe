@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use warpaxe_board::choice::{self, FirstStart};
-use warpaxe_chain::{Chain, Config as ChainConfig, Event, Phase};
+use warpaxe_chain::{Chain, Config as ChainConfig, Event, NonceWorth, Phase};
 use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job, WorkGate};
 
@@ -413,6 +413,7 @@ fn run(mut uart: ChipUart) {
         let mut jobs: HashMap<u32, (Job, u64, u64)> = HashMap::new();
         let mut gate = WorkGate::new(stratum::state().clean_jobs);
         let mut applied_diff = pool_diff;
+        let mut worth = NonceWorth::new(pool_diff);
         // The pool difficulty last seen and since when: VarDiff has settled
         // after a minute without a change.
         let mut pool_diff_seen = stratum::state().difficulty;
@@ -468,12 +469,14 @@ fn run(mut uart: ChipUart) {
                                 f.work.serial, f.chip, f.core, f.version, job.version, f.nonce, f.ntime, diff, chain.difficulty()
                             )
                         });
-                        // The chips filter at the largest power of two at or
-                        // below the requested difficulty (the ticket mask), so
-                        // that is what each nonce is worth in hashes.
-                        let requested = chain.difficulty().max(1);
-                        let chip_diff = f64::from(1u32 << (31 - requested.leading_zeros()));
-                        hashes += chip_diff * 4_294_967_296.0;
+                        // Each nonce is worth the ticket mask in hashes; right
+                        // after a raise, one still from the lower mask counts
+                        // at that (warpaxe_chain::worth).
+                        // Follows the chain also where it set the mask itself
+                        // (a re-init goes back to the configured one).
+                        worth.set(chain.difficulty(), now);
+                        let chip_diff = f64::from(worth.mask());
+                        hashes += worth.hashes(diff, now);
                         let want = stratum::state().difficulty.max(1.0);
                         let below_ticket = diff < chip_diff;
                         update(|s| {
@@ -739,6 +742,7 @@ fn run(mut uart: ChipUart) {
                 if want != applied_diff {
                     if chain.set_difficulty(&mut uart, want).is_ok() {
                         applied_diff = want;
+                        worth.set(want, now_us());
                         update(|s| s.difficulty = want);
                     }
                 }
