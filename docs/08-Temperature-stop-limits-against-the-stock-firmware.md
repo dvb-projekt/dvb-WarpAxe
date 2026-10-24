@@ -141,6 +141,12 @@ it:
   before); a new one is optional and only brings the Max preset back to
   a full clock under WarpTune's current limit. WarpTune's card shows that
   the fan target changed since the calibration until the next one.
+  The new calibration of .44 (finished 2026-10-23 21:51Z on v0.1.36,
+  applied, kept after the update to v0.1.37): Eco 425 MHz / 1000 mV
+  (30.1 W, 17.4 J/TH; 1000 mV is the firmware floor), Max 625 MHz /
+  1020 mV (about 40.4 W, error rate 0.8 %; 2.2 % at 1010 mV, 6.4 % at
+  1000 mV). Peak core current 32.6 A, under the 38 A limit; regulator
+  76 °C at most, chip 52 °C.
 - The only Nano constant derived from the old scale is the fan target
   (52 = 60 − 8.2, above); the stops are ForgeOS's, the regulator stop
   reads the TPS546. A chip stop (`overheat_temp`) set by hand on a Nano
