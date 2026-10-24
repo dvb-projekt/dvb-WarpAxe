@@ -46,9 +46,13 @@ pub enum Error {
     BadUtf8,
     /// The authority key is not a valid Base58Check x-only key.
     BadKey,
-    /// The Noise handshake failed (wrong authority key, expired
-    /// certificate, garbage from the peer).
+    /// The Noise handshake failed (garbage from the peer, a key that is
+    /// not a point).
     Handshake(String),
+    /// The pool's certificate did not verify at the given time: signed
+    /// by another authority, or the clock outside its validity window
+    /// (the text names the window and the clock).
+    Certificate(String),
     /// A frame did not decrypt: nonce out of step or tampering.
     Decrypt,
     /// A frame announces more payload than the client will hold.
@@ -68,6 +72,7 @@ impl core::fmt::Display for Error {
             Error::BadUtf8 => write!(f, "string field is not utf-8"),
             Error::BadKey => write!(f, "authority key is not a valid base58check key"),
             Error::Handshake(s) => write!(f, "noise handshake: {s}"),
+            Error::Certificate(s) => write!(f, "pool certificate: {s}"),
             Error::Decrypt => write!(f, "frame did not decrypt"),
             Error::FrameTooLarge(n) => write!(f, "frame of {n} bytes too large"),
             Error::Protocol(s) => write!(f, "protocol: {s}"),

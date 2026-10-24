@@ -229,7 +229,11 @@ back at any time with `GET /api/v1/display/frame`.
   ChaCha20-Poly1305), extended channel, the pool's certificate checked
   against its authority key (Base58Check, as pools publish it). "Require
   pool authentication" is on by default: without a key, or before the clock
-  is set by NTP, there is no connection. The TLS switch applies to V1 only;
+  is set by NTP, there is no connection. The connect waits for NTP's first
+  sync of the boot when NTP is on (up to 20 s), and a certificate that
+  fails before it does not count towards the fallback (v0.1.38: a clock
+  carried across a reset in RTC memory can be minutes off after a session
+  in download mode). The TLS switch applies to V1 only;
   V2 is always encrypted. The display shows "V2" with the lock. Settings
   from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
   the first start.

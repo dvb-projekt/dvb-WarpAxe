@@ -332,6 +332,9 @@ fn run() {
             s.authorized = false;
         });
         let started = Instant::now();
+        // Only this session's verdict counts (a `continue` above could
+        // have left the last one's flag standing).
+        CLOCK_UNSURE.store(false, Ordering::Relaxed);
         let result = match v2 {
             Some(v2) => session_v2_on_psram(host.clone(), port, user.clone(), v2, on_fallback),
             None => session(&host, port, tls, &user, &pass, on_fallback),
@@ -368,7 +371,9 @@ fn run() {
             });
         }
         if started.elapsed() < SHORT_SESSION {
-            if !on_fallback {
+            if CLOCK_UNSURE.swap(false, Ordering::Relaxed) {
+                log::warn!("stratum: the pool certificate failed against a clock NTP has not set yet: not counted towards the fallback");
+            } else if !on_fallback {
                 fails += 1;
             }
             pause_unless_reconnect(backoff);
@@ -670,6 +675,13 @@ struct V2Pool {
 
 /// Seconds to wait for SNTP before a certificate check is given up.
 const CLOCK_WAIT_S: u32 = 20;
+/// For this long after boot a pool certificate that fails while NTP has
+/// not set the clock yet is the clock's fault, not the pool's: it does
+/// not count towards the fallback. After that the clock is what it is.
+const CLOCK_GRACE_S: u64 = 300;
+/// Set by a V2 session whose certificate check failed against a clock
+/// NTP had not confirmed; `run` takes it and skips the failure count.
+static CLOCK_UNSURE: AtomicBool = AtomicBool::new(false);
 
 /// The Sv2 session on a thread whose stack lives in PSRAM: the Noise
 /// handshake (secp256k1) wants more stack than the V1 thread carries,
@@ -739,13 +751,26 @@ fn session_v2(
         Some(warpaxe_sv2::authority_key_from_b58(key).map_err(|e| anyhow::anyhow!("sv2: {e}"))?)
     };
     // The certificate carries a validity window; without a clock it
-    // cannot be checked.
+    // cannot be checked, and a clock carried across the reset in RTC
+    // memory is not trusted before NTP has confirmed it this boot. That
+    // second wait is for the boot's first minutes only: with NTP
+    // unreachable for good, every reconnect would otherwise pay it.
+    let early = || diag::uptime_s() < CLOCK_GRACE_S;
     let mut now = clock::unix_now();
     let mut waited = 0;
-    while authority.is_some() && now.is_none() && waited < CLOCK_WAIT_S {
+    while authority.is_some()
+        && (now.is_none() || (clock::ntp_pending() && early()))
+        && waited < CLOCK_WAIT_S
+    {
         std::thread::sleep(Duration::from_secs(1));
         waited += 1;
         now = clock::unix_now();
+    }
+    // Read once, with `now`: a sync between here and the handshake would
+    // otherwise count a failure the stale `now` caused.
+    let clock_unsure = authority.is_some() && now.is_some() && clock::ntp_pending() && early();
+    if clock_unsure {
+        log::warn!("stratum: sv2: NTP has not confirmed the clock yet, checking the pool certificate against it anyway");
     }
     if authority.is_some() && now.is_none() {
         if pool.require_auth {
@@ -772,9 +797,15 @@ fn session_v2(
     stream.send(&act1)?;
     let mut act2 = [0u8; warpaxe_sv2::ACT_2_LEN];
     read_exact(&stream, &mut act2)?;
-    let transport = hs
-        .finish(act2, now)
-        .map_err(|e| anyhow::anyhow!("sv2: {e}"))?;
+    let transport = hs.finish(act2, now).map_err(|e| {
+        // A certificate that fails against a clock NTP has not confirmed
+        // is the clock's doing until proven otherwise: `run` does not
+        // count it towards the fallback.
+        if clock_unsure && matches!(e, warpaxe_sv2::Error::Certificate(_)) {
+            CLOCK_UNSURE.store(true, Ordering::Relaxed);
+        }
+        anyhow::anyhow!("sv2: {e}")
+    })?;
     log::info!(
         "stratum: sv2 handshake done{}",
         if authority.is_some() {

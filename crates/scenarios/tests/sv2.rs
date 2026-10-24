@@ -323,10 +323,13 @@ async fn wrong_authority_key_fails_the_handshake_and_none_skips_the_check() {
             Ok(_) => panic!("a wrong authority key must not verify"),
             Err(e) => e,
         };
+        // A flipped bit gives a key that is not on the curve about half
+        // the time (refused before the handshake), else a certificate
+        // signed by another authority.
         assert!(
             matches!(
                 bad,
-                warpaxe_sv2::Error::Handshake(_) | warpaxe_sv2::Error::BadKey
+                warpaxe_sv2::Error::Certificate(_) | warpaxe_sv2::Error::BadKey
             ),
             "{bad}"
         );

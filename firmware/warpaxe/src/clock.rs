@@ -53,6 +53,16 @@ pub fn unix_now() -> Option<u64> {
     (s > 1_704_067_200).then_some(s)
 }
 
+/// NTP is configured but has not set the clock yet this boot. The time
+/// then comes out of RTC memory across the reset: usually right, but not
+/// to be trusted for a certificate's validity window (the .45 came back
+/// from an esptool session on 2026-10-24 with a clock that read as set
+/// and failed both pools' certificates until the first NTP sync).
+pub fn ntp_pending() -> bool {
+    let cfg = config::get();
+    cfg.use_ntp && !cfg.ntp_server.is_empty() && last_sync().is_none()
+}
+
 /// When SNTP last set the clock this boot, seconds since 1970.
 pub fn last_sync() -> Option<u64> {
     match LAST_SYNC.load(Ordering::Relaxed) {

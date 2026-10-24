@@ -51,12 +51,18 @@ impl Handshake {
     }
 
     /// Finish with the pool's 234 bytes; `now` is the Unix time for the
-    /// certificate validity check (the pool signs a window of days).
+    /// certificate validity check (the pool signs a window of days, with
+    /// 10 s of leeway). A certificate that fails is [`Error::Certificate`]
+    /// with its window and the clock, so the caller can tell a wrong
+    /// clock from a wrong pool.
     pub fn finish(mut self, act2: [u8; ACT_2_LEN], now: u32) -> Result<Transport, Error> {
-        let codec = self
-            .inner
-            .step_2_with_now(act2, now)
-            .map_err(|e| Error::Handshake(format!("{e:?}")))?;
+        let codec = self.inner.step_2_with_now(act2, now).map_err(|e| match e {
+            noise_sv2::Error::InvalidCertificate(m) => Error::Certificate(format!(
+                "not verified: valid {}..{}, clock {now}",
+                m.valid_from, m.not_valid_after
+            )),
+            e => Error::Handshake(format!("{e:?}")),
+        })?;
         Ok(Transport {
             codec,
             rx: Vec::with_capacity(1024),
@@ -191,14 +197,20 @@ mod tests {
             Err(e) => panic!("{e}"),
         };
         let (act2, _) = pool.step_1(act1).unwrap();
-        assert!(matches!(hs.finish(act2, now()), Err(Error::Handshake(_))));
-        // Clock far outside the validity window: refused too.
+        assert!(matches!(hs.finish(act2, now()), Err(Error::Certificate(_))));
+        // Clock far outside the validity window: refused too, and the
+        // error names the window and the clock.
         let (hs, act1) = Handshake::start(Some(pub_)).unwrap();
         let (act2, _) = pool.step_1(act1).unwrap();
-        assert!(matches!(
-            hs.finish(act2, now() + 86_400 * 30),
-            Err(Error::Handshake(_))
-        ));
+        let late = now() + 86_400 * 30;
+        match hs.finish(act2, late) {
+            Err(Error::Certificate(s)) => {
+                assert!(s.contains(&format!("clock {late}")), "{s}");
+                assert!(s.contains("valid "), "{s}");
+            }
+            Err(other) => panic!("{other:?}"),
+            Ok(_) => panic!("a certificate verified against a clock a month ahead"),
+        }
         // Without a key the pool is taken as it is.
         let (hs, act1) = Handshake::start(None).unwrap();
         let (act2, _) = pool.step_1(act1).unwrap();
