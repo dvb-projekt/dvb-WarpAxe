@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-483%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-488%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.38-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.39-7B5CFF"></a>
 </p>
 
 ---
@@ -37,7 +37,8 @@ pool taken over from the previous AxeOS, NerdOS or ForgeOS settings, a
 regulator and sensor layer that **rejects implausible readings** instead of
 acting on them, the web UI **over the USB cable** as well as over Wi-Fi, and one web
 UI in eight languages for the Bitaxe and the Nerd series. The device
-display has animated special screens (yes, a found block gets a warp jump).
+display has animated special screens (yes, a found block gets a warp jump),
+and the web UI shows a found block in a banner.
 See [Compared with the stock firmware](#compared-with-the-stock-firmware)
 for where it is ahead and where it is not.
 
@@ -46,7 +47,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.38).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.39).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -58,7 +59,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-22 (ForgeOS 2026-10-23), against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-10-28, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.4, [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.0.1 and [ForgeOS](https://github.com/wantclue/forge-os) v1.7
 (the BitForge Nano's firmware, built on ESP-Miner), from their source. All three
@@ -78,10 +79,11 @@ move fast; corrections welcome.
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | no (the page asks for a restart) | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
+| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | nothing in the web UI, the API or on the display | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | no | yes (next to the hashrate; per chip and domain optional) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
-| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks) in NVS, shown in the web UI's language |
+| Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
 | Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | no | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | chip 75 °C (either of the two chips), regulator 105 °C, fixed | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS); the Nano's chips read on ForgeOS's diode scale since v0.1.36 |
 | Back on after an overheat stop | yes (≥ 30 s, regulator 10 °C cooler, then voltage 100 mV and clock 100 MHz lower) | no (board error until reboot) | yes (restarts at once, without a cool-down, at 1000 mV and 50 MHz with the fans at 100 %; clock and voltage set back by hand) | yes (≥ 60 s, chip and regulator 10 °C cooler, at the configured point; the third stop within an hour stays off) |
@@ -218,7 +220,10 @@ back at any time with `GET /api/v1/display/frame`.
   version itself: four midstates per job, computed on the ESP32-S3):
   enumeration, baud switch, PLL solved
   (not looked up) and ramped, work dispatch paced per board as its stock
-  firmware does, nonce attribution, stale and duplicate filtering, per-chip
+  firmware does, nonce attribution (for 2 s after the ticket mask is raised,
+  a nonce below the new mask counts at the old one, so a pool ramping up
+  from difficulty 0.001 no longer inflates the hashrate), stale and duplicate
+  filtering, per-chip
   silence watchdog. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
@@ -257,7 +262,10 @@ back at any time with `GET /api/v1/display/frame`.
   sleep on, as its stock firmware does, to keep the heat down.
 - Block height, network difficulty and the pool's coinbase tag read from the
   job; a nonce at or above the network difficulty is reported as a found
-  block.
+  block. Since v0.1.39 the miner keeps the count and the last block
+  (height, time, coin) in NVS and records each block in the event log, and
+  the web UI shows a banner with confetti until it is dismissed in the
+  browser.
 
 ### Board
 - Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
@@ -338,7 +346,8 @@ back at any time with `GET /api/v1/display/frame`.
   NerdAxe an estimate, marked ≈), so a Bitaxe's 40 A of core current does
   not read as drawn from the power supply; a notice asks for the power
   supply's rating (*Settings*, in watts) until it is set or dismissed; the best difficulty since the start next to the all-time
-  best, which survives restarts; the chips' error rate over the last minute
+  best, which survives restarts, and, once the miner has found a block, the
+  number of blocks found; the chips' error rate over the last minute
   next to the expected hashrate, as AxeOS shows it; live log. Optional
   (*Settings → Dashboard*, off by default): the hash counters per chip and
   domain, a weak domain marked in colour, and a total line on boards with
@@ -423,7 +432,10 @@ back at any time with `GET /api/v1/display/frame`.
   (chips without nonces, and chain restarts after a silent minute — in
   all, and in a row at the current core voltage: two or more mean the
   chips do not run at it), `gitHash` (the commit the
-  image was built from), and AxeOS's `hashrateMonitor` (per chip the
+  image was built from), `blockFound` (blocks found since the start),
+  `blocksFoundTotal` (all time) and `lastBlock` (`height`, `time` as Unix
+  time or 0 without a clock, `coin`; null until the first block), both
+  kept across restarts, and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second
@@ -505,7 +517,8 @@ back at any time with `GET /api/v1/display/frame`.
   knows before it is written.
 - **Event log** across restarts: the last 32 events (restart with its
   reason, overheat stop with its cause, regulator fault, pool switch,
-  update or rollback, silent chip, self-test result, board check) with
+  update or rollback, silent chip, self-test result, board check, found
+  block) with
   time and uptime, under System, in `/api/v1/state`, `/api/v1/events` and
   in the file. The web UI shows each event's details in its own language;
   the API and the file keep the English text in `d`, with a short code
@@ -621,7 +634,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102% of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V); taken on the first start since v0.1.35 (TPS546 and EMC2101 on the Nerd pins with 12 V at the regulator; the same parts at 5 V are a NerdAxe Gamma) |
-| NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 | profile only, not run yet |
+| NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 or, on the Q1373, the 6-phase TPS53667 | profile only, not run yet |
 | NerdNOS (T-Display-S3 carrier, rev 1.3) | 1× BM1397 | TPS566247, fixed by resistors (about 1.4 V), enabled by the firmware | **runs** since 2026-10-08: at 300 MHz the pool counted ≈190 GH/s over an hour, the stock firmware ≈180 GH/s on the same pool and clock (±6–9% each); ours runs there, at about 73 °C with a case fan (the board has none of its own); after an overheat stop it comes back one clock step lower; the clock is set by hand, the temperature comes from a thermistor, the power is an estimate; taken on the first start when the thermistor on GPIO2 and the 1.4 V rail on GPIO3 both answer (the buck switched on for 150 ms for the reading, the chip held in reset); the chip runs only from the carrier's own USB-C. Details: [`docs/03`](docs/03-NerdNOS-BM1397-against-the-references.md) |
 | LilyGO T-Display-S3 (NerdMiner hardware) | none: the ESP32-S3's SHA unit and one CPU core | none (USB power) | **experimental**, see below |
 
