@@ -148,7 +148,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-swarm.png" alt="Swarm: the fleet's hashrate, power, efficiency and record difficulty, each miner's share, and one card per miner with sparkline and temperatures" width="760"><br>
-  <em>Swarm — every miner on the network, WarpAxe or stock firmware, read by your browser: the fleet's hashrate and each miner's share of it, sparklines, chip and regulator temperatures against their limits.</em>
+  <em>Swarm — every miner on the network, WarpAxe or stock firmware, read by your browser (an Avalon by this miner, over the Avalon's cgminer API): the fleet's hashrate and each miner's share of it, sparklines, chip and regulator temperatures against their limits.</em>
 </p>
 
 <p align="center">
