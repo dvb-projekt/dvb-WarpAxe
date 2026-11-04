@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-488%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-501%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.39-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
 </p>
 
 ---
@@ -47,7 +47,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.39).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.40).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -59,9 +59,9 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-10-28, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-11-04, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.4, [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
-(NerdOS) v1.1.0.1 and [ForgeOS](https://github.com/wantclue/forge-os) v1.7
+(NerdOS) v1.1.1 and [ForgeOS](https://github.com/wantclue/forge-os) v1.7
 (the BitForge Nano's firmware, built on ESP-Miner), from their source. All three
 move fast; corrections welcome.
 
@@ -69,6 +69,7 @@ move fast; corrections welcome.
 |---|---|---|---|---|
 | Stratum V2 (Noise, authority key, "require authentication") | yes | yes | no | yes |
 | Stratum V1 over TLS, certificate checked | yes | yes | yes (on in the factory settings) | yes |
+| TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1 | ESP-IDF's built-in lists, which still carry `emSign ECC Root CA - G3` | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
@@ -80,7 +81,8 @@ move fast; corrections welcome.
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
 | A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | nothing in the web UI, the API or on the display | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display |
-| Chip error rate on the dashboard | yes (next to the hashrate) | no (per-chip in the API on the `develop` branch only) | no | yes (next to the hashrate; per chip and domain optional) |
+| Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
+| Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
@@ -100,7 +102,7 @@ move fast; corrections welcome.
 | Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | English | 8 |
 | Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards | 1 (BitForge Nano) | 6 run, 7 more with a profile (see below) |
+| Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 6 run, 7 more with a profile (see below) |
 
 What the stock firmware offers in addition: AxeOS and NerdOS support far more
 boards and have years of use by a large community; AxeOS has a scoreboard, themes,
@@ -130,6 +132,11 @@ draw:
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
   hundreds of pool shares.
+- **One chip silent** (`silentChips`, `chipSilentRestarts`,
+  `lastChipSilentRestart`, `chipsGivenUp`, since v0.1.40): WarpTune (from
+  its Block 4 release) judges the hashrate on the chips that run instead of
+  taking the shortfall for a weak clock, and after the firmware's chain
+  restart for that chip settles afresh without a verdict on the step.
 - **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
   holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.
@@ -224,7 +231,14 @@ back at any time with `GET /api/v1/display/frame`.
   a nonce below the new mask counts at the old one, so a pool ramping up
   from difficulty 0.001 no longer inflates the hashrate), stale and duplicate
   filtering, per-chip
-  silence watchdog. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
+  silence watchdog. All chips silent for a minute with work going out:
+  the chain is started over. Since v0.1.40 also one chip silent for ten
+  minutes while the others hash (seen once on a NerdOctaxe after five
+  days at a steady clock; until then it stayed dark until the next boot):
+  at most one such restart an hour over all chips, and a chip that is
+  silent again before it has run an hour after each of three restarts is
+  left alone until the next boot or a new clock or voltage. Both clocks
+  stop while no work goes out, so a pool outage counts for nothing. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
   2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left
@@ -243,9 +257,16 @@ back at any time with `GET /api/v1/display/frame`.
   from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
   the first start.
 - Stratum V1 with version rolling (BIP 310), `mining.suggest_difficulty`,
-  optional **TLS** (esp-tls, built-in CA bundle, hostname checked). A pool
+  optional **TLS** (esp-tls, hostname checked). Since v0.1.40 every TLS
+  connection — the pool, the online update, the price fetch — is checked
+  against one pinned CA bundle, curl's extract of the Mozilla store of
+  20 October 2026, which no longer has the eMudhra root `emSign ECC Root
+  CA - G3` nor `AAA Certificate Services` (ESP-IDF v5.3.3's own lists
+  still carry both;
+  [`firmware/warpaxe/certificates`](firmware/warpaxe/certificates/README.md)).
+  A pool whose only chain runs to a removed root no longer connects. A pool
   the previous firmware ran on TLS with the owner's own certificate stays
-  on TLS here, with the built-in CA bundle, rather than dropping to plain
+  on TLS here, with the pinned CA bundle, rather than dropping to plain
   text (a pool on a private certificate then fails to connect; TLS can be
   switched off for it). A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
   1–32) is refused instead of trusted.
@@ -431,7 +452,12 @@ back at any time with `GET /api/v1/display/frame`.
   `silentChips`, `chainSilentRestarts` and `chainSilentRestartsSameMv`
   (chips without nonces, and chain restarts after a silent minute — in
   all, and in a row at the current core voltage: two or more mean the
-  chips do not run at it), `gitHash` (the commit the
+  chips do not run at it), `chipSilentRestarts`, `lastChipSilentRestart`
+  (`chip` from 0, `mv`, `uptime_s`; null until the first) and
+  `chipsGivenUp` (chain restarts for one silent chip since v0.1.40, the
+  last one, and the chips left alone after three that did not hold;
+  `chainSilentRestarts` keeps counting only the all-chips case),
+  `gitHash` (the commit the
   image was built from), `blockFound` (blocks found since the start),
   `blocksFoundTotal` (all time) and `lastBlock` (`height`, `time` as Unix
   time or 0 without a clock, `coin`; null until the first block), both
@@ -517,8 +543,8 @@ back at any time with `GET /api/v1/display/frame`.
   knows before it is written.
 - **Event log** across restarts: the last 32 events (restart with its
   reason, overheat stop with its cause, regulator fault, pool switch,
-  update or rollback, silent chip, self-test result, board check, found
-  block) with
+  update or rollback, silent chip and a chain restart for it, self-test
+  result, board check, found block) with
   time and uptime, under System, in `/api/v1/state`, `/api/v1/events` and
   in the file. The web UI shows each event's details in its own language;
   the API and the file keep the English text in `d`, with a short code
