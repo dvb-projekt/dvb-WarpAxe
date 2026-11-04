@@ -52,6 +52,11 @@ CONFIG_ESP_COREDUMP_MAX_TASKS_NUM=16
 # sector erase and the usual block erase of the update's slot; a real
 # interrupt hang still resets within a second (stage 2 at two seconds).
 CONFIG_ESP_INT_WDT_TIMEOUT_MS=1000
+# Ethernet over the W5500 HAT (NerdHat, docs/13): the SPI MAC+PHY driver of
+# esp_eth, and with it esp-idf-svc's `SpiEthChipset::W5500`. Compiled into
+# the one image for every board; used only where the board profile names
+# the HAT's pins and a W5500 answers at boot (net/eth.rs).
+CONFIG_ETH_SPI_ETHERNET_W5500=y
 CONFIG_ESP_HTTPD_MAX_URI_LEN=128
 CONFIG_ESP_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y

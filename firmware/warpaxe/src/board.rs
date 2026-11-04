@@ -176,6 +176,44 @@ fn update(f: impl FnOnce(&mut BoardState)) {
     f(g.get_or_insert_with(BoardState::default));
 }
 
+/// The I²C addresses of the TMP451 temperature multiplexers the
+/// NerdOctaxe carries from rev 3.4 (NerdOS `nerdoctaxegamma.h`: chips
+/// 0–3 at 0x4C, chips 4–7 at 0x4E). Their select lines are GPIO2/12,
+/// the Ethernet HAT's SCLK and MOSI.
+const TMP451_MUX_ADDRS: [u8; 2] = [0x4C, 0x4E];
+
+/// The pins to look for the W5500 Ethernet HAT on, once the board is
+/// known: the profile's, unless the board shares them with something
+/// else. On the QAxe pins that is the NerdOctaxe's TMP451 multiplexer
+/// (from rev 3.4): if either multiplexer answers on the board's bus the
+/// HAT is not probed at all, as NerdOS does (`Profile::ethernet_pins`).
+/// Read-only on the bus, nothing is driven. A board whose chips' I/O
+/// rails are off at this point (the LDO is low at boot) can only be
+/// told apart if the TMP451s hang on the always-on 3.3 V, which the
+/// rev 3.4 schematic has to confirm (docs/13).
+pub fn ethernet_pins() -> Option<warpaxe_board::EthPins> {
+    let profile = profile();
+    let pins = profile.ethernet?;
+    let mut mux = false;
+    if pins == warpaxe_board::profile::NERDHAT_QAXE {
+        if let Some(mut bus) = i2c() {
+            for a in TMP451_MUX_ADDRS {
+                let mut id = [0u8; 1];
+                // The manufacturer ID register (0xFE, reads 0x55 on a
+                // TMP451); any answer at the address counts, as in NerdOS.
+                if bus.write_read(a, &[0xFE], &mut id).is_ok() {
+                    log::warn!(
+                        "board: a TMP451 temperature multiplexer answers at {a:#04x} (id {:#04x}): its select lines are the Ethernet HAT's SCLK/MOSI, so no Ethernet on this board",
+                        id[0]
+                    );
+                    mux = true;
+                }
+            }
+        }
+    }
+    profile.ethernet_pins(mux)
+}
+
 /// The board is a T-Display-S3 without chips (profile `t-display-s3`):
 /// the ESP32-S3 hashes by itself (`cpuminer`). Everything that treats a
 /// board differently without a chain keys on this, never on a feature.

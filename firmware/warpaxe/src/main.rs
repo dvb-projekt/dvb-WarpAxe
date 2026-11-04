@@ -5,7 +5,8 @@
 //! previous run is shown and, after a crash, the USB PHY stays on
 //! USB-Serial/JTAG for a while so the board can always be reflashed),
 //! then config, display, the network interfaces as a list (USB always,
-//! Wi-Fi when configured), then the API.
+//! Ethernet when the board has the HAT, Wi-Fi when configured), then the
+//! API.
 
 mod api;
 mod board;
@@ -410,9 +411,23 @@ fn main() {
         log::error!("usb netif failed: {e}");
     }
 
-    // Always: without a network in the config (or one that cannot be
-    // reached after boot) Wi-Fi opens the setup hotspot.
+    // The Ethernet HAT, on the boards with a header for it and only once
+    // the board is known (the pins are power lines on other boards): a
+    // W5500 that answers runs as one more interface, preferred over Wi-Fi.
     let cfg = config::get();
+    set_step("ETHERNET");
+    match board::ethernet_pins() {
+        Some(pins) => net::eth::start(
+            peripherals.spi2,
+            sysloop.clone(),
+            pins,
+            net::mdns::label(&cfg.hostname),
+        ),
+        None => info!("eth: not tried on this board"),
+    }
+    // Always: without a network in the config (or one that cannot be
+    // reached after boot, and no Ethernet link) Wi-Fi opens the setup
+    // hotspot.
     set_step("WIFI");
     net::wifi::start(
         peripherals.modem,

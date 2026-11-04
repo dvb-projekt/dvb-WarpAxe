@@ -71,6 +71,11 @@ pub struct StratumState {
     /// That address is a Bitcoin one (amounts in BTC).
     pub coinbase_bitcoin: bool,
     pub connected: bool,
+    /// The interface address the current (or last) session left from:
+    /// Ethernet's or Wi-Fi's. `net::eth` moves a session that runs over
+    /// Wi-Fi onto the cable once the cable has settled, and ends one
+    /// bound to the cable when the cable goes.
+    pub local_ip: Option<String>,
     pub subscribed: bool,
     pub authorized: bool,
     pub extranonce1: String,
@@ -442,8 +447,10 @@ fn session(
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
     let mut reader = BufReader::new(LinkReader(&stream));
+    let local_ip = stream.local_ip();
     update(|s| {
         s.connected = true;
+        s.local_ip = local_ip;
         s.last_error.clear();
     });
     {
@@ -815,8 +822,10 @@ fn session_v2(
         }
     );
     let transport = Arc::new(Mutex::new(transport));
+    let local_ip = stream.local_ip();
     update(|s| {
         s.connected = true;
+        s.local_ip = local_ip;
         s.last_error.clear();
     });
 

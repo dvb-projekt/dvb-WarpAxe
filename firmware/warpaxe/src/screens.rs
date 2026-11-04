@@ -275,6 +275,13 @@ fn rssi_color(r: i32) -> u16 {
     }
 }
 
+/// The Ethernet link as the display words it: "100 Mbit/s" (or "10"),
+/// "–" before the speed is known.
+fn eth_speed(n: &net::NetState) -> String {
+    n.eth_speed_mbit
+        .map_or("–".into(), |s| format!("{s} Mbit/s"))
+}
+
 fn family_color() -> u16 {
     if board::profile().name.starts_with("bitaxe") {
         gfx::BTC
@@ -1092,11 +1099,7 @@ fn footer(c: &mut Canvas, kind: &str, v: &Live) {
         "worker-ip" => ("worker", None, "ip"),
         _ => ("pool", Some("shares"), "ip"),
     };
-    let ip = n
-        .wifi_ip
-        .clone()
-        .or(n.usb_ip.clone())
-        .unwrap_or_else(|| "–".into());
+    let ip = n.ip().unwrap_or_else(|| "–".into());
     let user = if st.using_fallback {
         &cfg.fallback_user
     } else {
@@ -1428,10 +1431,15 @@ fn device(c: &mut Canvas, pos: usize, total: usize) {
         };
         kv(c, l("Effective", "Ausbeute"), &eff, 44, gfx::FG, r2, e);
         let n = net::state();
-        let (w, wc) = n.wifi_rssi.map_or(("–".into(), gfx::FG), |r| {
-            (format!("{r} dBm"), rssi_color(r))
-        });
-        kv(c, l("Wi-Fi", "WLAN"), &w, 62, wc, r2, e);
+        // The cable when it carries the address, else the Wi-Fi level.
+        if n.eth_connected {
+            kv(c, "Ethernet", &eth_speed(&n), 62, gfx::OK, r2, e);
+        } else {
+            let (w, wc) = n.wifi_rssi.map_or(("–".into(), gfx::FG), |r| {
+                (format!("{r} dBm"), rssi_color(r))
+            });
+            kv(c, l("Wi-Fi", "WLAN"), &w, 62, wc, r2, e);
+        }
     } else {
         let vin = b.vin_mv.map_or("–".into(), |v| {
             format!("{} V", num(f64::from(v) / 1000.0, 2))
@@ -1628,13 +1636,20 @@ fn pool(c: &mut Canvas, pos: usize, total: usize) {
         308,
     );
     c.rect(12, 142, 298, 1, gfx::WHITE, 16);
-    let ip = n
-        .wifi_ip
-        .clone()
-        .or(n.usb_ip.clone())
-        .unwrap_or_else(|| "–".into());
+    let ip = n.ip().unwrap_or_else(|| "–".into());
     c.text(&MONO9, 12, 160, gfx::FG, &ip, Align::Left);
-    if let Some(r) = n.wifi_rssi {
+    // Which way the address came: the cable with its speed, or the
+    // network with its level.
+    if n.eth_connected {
+        c.text(
+            &MONO9,
+            308,
+            160,
+            gfx::OK,
+            &format!("Ethernet · {}", eth_speed(&n)),
+            Align::Right,
+        );
+    } else if let Some(r) = n.wifi_rssi {
         c.text(
             &MONO9,
             308,
@@ -2027,7 +2042,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W - 16,
             );
             let n = net::state();
-            let ip = n.wifi_ip.or(n.usb_ip).unwrap_or_default();
+            let ip = n.ip().unwrap_or_default();
             c.text(&VAL12, W / 2, 128, gfx::FG, &ip, Align::Center);
         }
         Event::Setup => {
@@ -2159,15 +2174,19 @@ fn oled_slide(o: &mut Oled, name: &str) {
         let (a, b2) = match name {
             "pool" => (
                 st.pool.split(':').next().unwrap_or("").to_uppercase(),
-                n.wifi_ip.or(n.usb_ip).unwrap_or_default(),
+                n.ip().unwrap_or_default(),
             ),
             "block" => (
                 format!("BLOCK {}", st.block_height),
                 format!("DIFF {}", si(st.network_difficulty).replace(',', ".")),
             ),
             _ => (
-                n.wifi_rssi
-                    .map_or("WLAN -".into(), |r| format!("WLAN {r} DBM")),
+                if n.eth_connected {
+                    format!("ETHERNET {}", oled_str(&eth_speed(&n)))
+                } else {
+                    n.wifi_rssi
+                        .map_or("WLAN -".into(), |r| format!("WLAN {r} DBM"))
+                },
                 format!(
                     "UP {}",
                     uptime(diag::uptime_s())
@@ -2275,7 +2294,7 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
         Event::ChipsOff => {
             oled_center(o, 6, &oled_str(l("CHIPS OFF", "CHIPS AUS")));
             let n = net::state();
-            oled_center(o, 19, &n.wifi_ip.or(n.usb_ip).unwrap_or_default());
+            oled_center(o, 19, &n.ip().unwrap_or_default());
         }
         Event::Setup => {
             // Two lines only: name, password and address take turns.

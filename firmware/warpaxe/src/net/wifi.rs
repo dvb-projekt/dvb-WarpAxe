@@ -1,7 +1,8 @@
 //! Wi-Fi: the station when the config has a network, and the setup
 //! hotspot when it has none or the network cannot be reached after boot
-//! (`warpaxe_board::setup`). Runs on its own thread; the rest of the
-//! firmware sees the station as one more interface in `net::state()`.
+//! (`warpaxe_board::setup`) and no Ethernet link stands in (`eth.rs`).
+//! Runs on its own thread; the rest of the firmware sees the station as
+//! one more interface in `net::state()`.
 //!
 //! The hotspot is WPA2 with a password made at boot and shown only on the
 //! device display. While it is up, a small DNS responder sends every name
@@ -140,7 +141,16 @@ fn run(
         }
         was_connected = connected;
 
-        match hotspot.tick(has_ssid, t0.elapsed().as_secs() as u32, connected) {
+        // Ethernet counts as the connection the hotspot would stand in
+        // for: with a cable the hotspot never opens, and one that is open
+        // closes once the cable has held for a minute, with or without a
+        // network in the config.
+        let eth = super::state().eth_connected;
+        match hotspot.tick(
+            has_ssid || eth,
+            t0.elapsed().as_secs() as u32,
+            connected || eth,
+        ) {
             Action::Open => {
                 let _ = wifi.stop();
                 match wifi
