@@ -134,7 +134,7 @@ draw:
   hundreds of pool shares.
 - **One chip silent** (`silentChips`, `chipSilentRestarts`,
   `lastChipSilentRestart`, `chipsGivenUp`, since v0.1.40): WarpTune (from
-  its Block 4 release) judges the hashrate on the chips that run instead of
+  v1.47.0) judges the hashrate on the chips that run instead of
   taking the shortfall for a weak clock, and after the firmware's chain
   restart for that chip settles afresh without a verdict on the step.
 - **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
