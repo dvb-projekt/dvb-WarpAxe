@@ -254,10 +254,33 @@ pub mod detail {
         )
     }
 
-    /// Restarts did not keep the chip running: no more for it until
-    /// the next boot.
+    /// Restarts did not keep the chip running: no more for it until a
+    /// new clock or voltage, or the next boot.
     pub fn chip_given_up(chip: u8) -> Detail {
         coded("chip_given_up", &[("c", Value::from(chip))])
+    }
+
+    /// One hash domain of a chip at `percent` of the chip's other
+    /// domains for ten minutes while the chip itself kept answering:
+    /// the chips were switched off and on for it.
+    pub fn domain_latch(chip: u8, domain: u8, percent: u8) -> Detail {
+        coded(
+            "domain_latch",
+            &[
+                ("c", Value::from(chip)),
+                ("d", Value::from(domain)),
+                ("pct", Value::from(percent)),
+            ],
+        )
+    }
+
+    /// Resets did not keep the domain running: no more for it until a
+    /// new clock or voltage, or the next boot.
+    pub fn domain_given_up(chip: u8, domain: u8) -> Detail {
+        coded(
+            "domain_given_up",
+            &[("c", Value::from(chip)), ("d", Value::from(domain))],
+        )
     }
 
     /// All chips silent for a minute: the chain was restarted.
@@ -569,8 +592,19 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("mv")
         ),
         "chip_given_up" => format!(
-            "chip {} still silent after 3 restarts, no more until the next boot",
+            "chip {} still silent after 3 restarts, no more until a new clock, a new voltage or the next boot",
             g("c")
+        ),
+        "domain_latch" => format!(
+            "chip {} domain {} at {} % of the chip's other domains for 10 min, chips switched off and on",
+            g("c"),
+            g("d"),
+            g("pct")
+        ),
+        "domain_given_up" => format!(
+            "chip {} domain {} still stuck after 3 resets, no more until a new clock, a new voltage or the next boot",
+            g("c"),
+            g("d")
         ),
         "chain_restart" => format!(
             "all {} chips silent for 60 s at {} mV, chain restarted",
@@ -913,7 +947,15 @@ mod tests {
             ),
             (
                 detail::chip_given_up(4),
-                "chip 4 still silent after 3 restarts, no more until the next boot",
+                "chip 4 still silent after 3 restarts, no more until a new clock, a new voltage or the next boot",
+            ),
+            (
+                detail::domain_latch(4, 2, 3),
+                "chip 4 domain 2 at 3 % of the chip's other domains for 10 min, chips switched off and on",
+            ),
+            (
+                detail::domain_given_up(4, 2),
+                "chip 4 domain 2 still stuck after 3 resets, no more until a new clock, a new voltage or the next boot",
             ),
             (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
             (detail::pool_back(), "main pool answers again, back from the fallback"),
@@ -1072,6 +1114,12 @@ mod tests {
         assert!(!r.push(Event::new(0, 130, "chain", detail::chip_silent(3))));
         assert!(r.push(Event::new(0, 131, "chain", detail::chip_silent(4))));
         assert_eq!(r.events().len(), 2);
+        // The same domain again within the minute: one event; another
+        // domain of the same chip is another event.
+        assert!(r.push(Event::new(0, 200, "chain", detail::domain_latch(4, 2, 3))));
+        assert!(!r.push(Event::new(0, 230, "chain", detail::domain_latch(4, 2, 3))));
+        assert!(r.push(Event::new(0, 231, "chain", detail::domain_latch(4, 3, 3))));
+        assert_eq!(r.events().len(), 4);
     }
 
     #[test]
@@ -1114,6 +1162,8 @@ mod tests {
             ("chain", detail::chain_restart(12, 1350)),
             ("chain", detail::chip_restart(7, 1210)),
             ("chain", detail::chip_given_up(7)),
+            ("chain", detail::domain_latch(15, 7, 24)),
+            ("chain", detail::domain_given_up(15, 7)),
             (
                 "update",
                 detail::installed("v0.1.35", "v0.1.35-rc.12 verified"),
