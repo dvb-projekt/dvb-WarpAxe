@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-501%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-507%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
 </p>
@@ -264,7 +264,12 @@ back at any time with `GET /api/v1/display/frame`.
   CA - G3` nor `AAA Certificate Services` (ESP-IDF v5.3.3's own lists
   still carry both;
   [`firmware/warpaxe/certificates`](firmware/warpaxe/certificates/README.md)).
-  A pool whose only chain runs to a removed root no longer connects. A pool
+  A root of the bundle that the server sends along, cross-signed by an
+  older root the bundle no longer has (`api.coingecko.com` sends `GTS Root
+  R4` signed by `GlobalSign Root CA`), counts as that root when its name
+  and key match; ESP-IDF's verifier alone rejects such a chain
+  ([`crates/trust`](crates/trust/src/lib.rs)). A pool whose only chain
+  runs to a removed root no longer connects. A pool
   the previous firmware ran on TLS with the owner's own certificate stays
   on TLS here, with the pinned CA bundle, rather than dropping to plain
   text (a pool on a private certificate then fails to connect; TLS can be
