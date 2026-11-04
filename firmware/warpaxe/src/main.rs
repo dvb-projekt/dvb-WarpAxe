@@ -28,6 +28,7 @@ mod screens;
 mod selftest;
 mod stratum;
 mod swarm;
+mod tls_trust;
 mod uart;
 mod update;
 

@@ -162,6 +162,11 @@ mod esptls {
         /// whether to use esp_crt_bundle_attach, see https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/api-reference/protocols/esp_crt_bundle.html
         #[cfg(esp_idf_mbedtls_certificate_bundle)]
         pub use_crt_bundle_attach: bool,
+        /// WarpAxe: an attach function in place of esp_crt_bundle_attach
+        /// (see WARPAXE-PATCH.md); `None` keeps ESP-IDF's.
+        #[cfg(esp_idf_mbedtls_certificate_bundle)]
+        pub crt_bundle_attach:
+            Option<unsafe extern "C" fn(conf: *mut core::ffi::c_void) -> sys::esp_err_t>,
         // TODO ds_data not implemented
         pub is_plain_tcp: bool,
     }
@@ -184,6 +189,8 @@ mod esptls {
                 psk_hint_key: None,
                 #[cfg(esp_idf_mbedtls_certificate_bundle)]
                 use_crt_bundle_attach: true,
+                #[cfg(esp_idf_mbedtls_certificate_bundle)]
+                crt_bundle_attach: None,
                 is_plain_tcp: false,
             }
         }
@@ -263,7 +270,7 @@ mod esptls {
 
             #[cfg(esp_idf_mbedtls_certificate_bundle)]
             if self.use_crt_bundle_attach {
-                rcfg.crt_bundle_attach = Some(sys::esp_crt_bundle_attach);
+                rcfg.crt_bundle_attach = Some(self.crt_bundle_attach.unwrap_or(sys::esp_crt_bundle_attach));
             }
 
             rcfg.is_plain_tcp = self.is_plain_tcp;

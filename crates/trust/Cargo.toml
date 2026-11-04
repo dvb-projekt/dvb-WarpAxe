@@ -1,0 +1,12 @@
+[package]
+name = "warpaxe-trust"
+description = "Trust in a root the TLS server sends along: a certificate whose subject and public key are a root of ESP-IDF's compact CA bundle is that root. No I/O; host-tested, the firmware's TLS verify callback runs it."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]

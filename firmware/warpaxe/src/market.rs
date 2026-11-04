@@ -50,7 +50,7 @@ pub fn start() {
 
 fn get_json(url: &str) -> anyhow::Result<serde_json::Value> {
     let mut c = EspHttpConnection::new(&Configuration {
-        crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+        crt_bundle_attach: Some(crate::tls_trust::attach),
         timeout: Some(Duration::from_secs(10)),
         ..Default::default()
     })?;

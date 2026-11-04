@@ -75,6 +75,9 @@ def check_build(build):
         expected = (Path(tmp) / "x509_crt_bundle").read_bytes()
     if actual.read_bytes() != expected:
         fail("build: the compiled trust store is not the pinned bundle alone")
+    fixture = ROOT / "crates/trust/tests/data/x509_crt_bundle"
+    if fixture.read_bytes() != expected:
+        fail(f"{fixture.relative_to(ROOT)} is not the bundle of {BUNDLE.name}: regenerate it (certificates/README.md)")
     print(f"build: trust store is the pinned bundle alone ({len(expected)} bytes)")
 
 

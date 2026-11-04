@@ -1778,6 +1778,7 @@ dependencies = [
  "warpaxe-ota",
  "warpaxe-stratum",
  "warpaxe-sv2",
+ "warpaxe-trust",
 ]
 
 [[package]]
@@ -1854,6 +1855,10 @@ dependencies = [
  "sha2",
  "warpaxe-stratum",
 ]
+
+[[package]]
+name = "warpaxe-trust"
+version = "0.1.0"
 
 [[package]]
 name = "wasi"

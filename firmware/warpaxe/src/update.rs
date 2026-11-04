@@ -367,7 +367,7 @@ fn get_once(url: &str, max: usize, progress: &mut impl FnMut(usize)) -> anyhow::
     let mut url = url.to_string();
     for _ in 0..5 {
         let mut c = EspHttpConnection::new(&Configuration {
-            crt_bundle_attach: Some(esp_idf_svc::sys::esp_crt_bundle_attach),
+            crt_bundle_attach: Some(crate::tls_trust::attach),
             timeout: Some(Duration::from_secs(20)),
             buffer_size: Some(2048),
             ..Default::default()

@@ -63,6 +63,7 @@ impl Link {
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
         cfg.common_name = Some(host);
+        cfg.crt_bundle_attach = Some(crate::tls_trust::attach);
         cfg.timeout_ms = 10_000;
         let hs = t
             .connect(host, port, &cfg)

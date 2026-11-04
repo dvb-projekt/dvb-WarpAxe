@@ -27,7 +27,15 @@ default lists, not put in their place, so both settings are needed.
 removed roots absent) in CI; with `--build-dir` it also checks a finished
 firmware build, as `tools/release-firmware.sh` does before every release.
 
+The compact form of this file, as ESP-IDF's `gen_crt_bundle.py` writes
+it, is also a test fixture: `crates/trust/tests/data/x509_crt_bundle`
+(the firmware trusts a root of the bundle that a server sends along,
+cross-signed by a root the bundle no longer has, see `crates/trust`).
+`check-ca-bundle.py --build-dir` checks that it matches the build.
+
 To move to a newer extract: put the new `.pem` and `.pem.sha256` here, change
-the file name in `sdkconfig.defaults` and in the check, and build clean
+the file name in `sdkconfig.defaults` and in the check, regenerate the
+fixture (`python3 $IDF_PATH/components/mbedtls/esp_crt_bundle/gen_crt_bundle.py
+--input <pem> -q` in `crates/trust/tests/data`), and build clean
 (`cargo clean -p esp-idf-sys`): ESP-IDF does not pick up a changed sdkconfig
 default in an existing build directory.
