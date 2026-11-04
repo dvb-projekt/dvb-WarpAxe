@@ -4,6 +4,15 @@
 //! root (`warpaxe_trust`). Every TLS client of the firmware attaches
 //! through [`attach`]: the pool (`link`), the online update and the price
 //! fetch.
+//!
+//! Not covered: a server that also sends the old cross-signer on top of
+//! the bundle's root. The callback sees the top certificate first, and
+//! ESP-IDF's lookup fails there before the root below is reached (no such
+//! chain seen so far; api.coingecko.com sends the root as the top).
+//!
+//! `esp_crt_verify_callback` is declared here by hand, as ESP-IDF's own
+//! tests do. On an ESP-IDF upgrade check that its signature is unchanged,
+//! and drop this module once ESP-IDF trusts a sent root itself.
 
 use core::ffi::{c_int, c_void};
 use esp_idf_svc::sys;
@@ -18,9 +27,9 @@ extern "C" {
         flags: *mut u32,
     ) -> c_int;
     #[link_name = "_binary_x509_crt_bundle_start"]
-    static BUNDLE_START: u8;
+    static BUNDLE_START: [u8; 0];
     #[link_name = "_binary_x509_crt_bundle_end"]
-    static BUNDLE_END: u8;
+    static BUNDLE_END: [u8; 0];
 }
 
 /// The bundle embedded in the image, as `esp_crt_bundle_attach` reads it.
@@ -28,8 +37,8 @@ fn bundle() -> Option<warpaxe_trust::Bundle<'static>> {
     // SAFETY: the linker places the generated bundle between the two
     // symbols, read-only, for the life of the program.
     let bytes = unsafe {
-        let start = core::ptr::addr_of!(BUNDLE_START);
-        let end = core::ptr::addr_of!(BUNDLE_END);
+        let start = core::ptr::addr_of!(BUNDLE_START).cast::<u8>();
+        let end = core::ptr::addr_of!(BUNDLE_END).cast::<u8>();
         core::slice::from_raw_parts(start, end as usize - start as usize)
     };
     warpaxe_trust::Bundle::new(bytes)

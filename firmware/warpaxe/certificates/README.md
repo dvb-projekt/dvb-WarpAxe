@@ -33,6 +33,10 @@ it, is also a test fixture: `crates/trust/tests/data/x509_crt_bundle`
 cross-signed by a root the bundle no longer has, see `crates/trust`).
 `check-ca-bundle.py --build-dir` checks that it matches the build.
 
+On an ESP-IDF upgrade: check that `esp_crt_verify_callback` in
+`components/mbedtls/esp_crt_bundle/esp_crt_bundle.c` keeps its signature
+(`firmware/warpaxe/src/tls_trust.rs` declares and calls it).
+
 To move to a newer extract: put the new `.pem` and `.pem.sha256` here, change
 the file name in `sdkconfig.defaults` and in the check, regenerate the
 fixture (`python3 $IDF_PATH/components/mbedtls/esp_crt_bundle/gen_crt_bundle.py
