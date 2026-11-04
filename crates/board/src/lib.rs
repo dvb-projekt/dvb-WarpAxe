@@ -35,5 +35,6 @@ pub mod warm_boot;
 
 pub use i2c::I2c;
 pub use profile::{
-    Asic, PowerEstimate, Profile, Thermal, Vr, VrAlt, BITAXE_GAMMA, NERDNOS, T_DISPLAY_S3_DEVKIT,
+    Asic, EthPins, PowerEstimate, Profile, Thermal, Vr, VrAlt, BITAXE_GAMMA, NERDNOS,
+    T_DISPLAY_S3_DEVKIT,
 };
