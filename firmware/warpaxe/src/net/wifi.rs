@@ -145,12 +145,25 @@ fn run(
         // for: with a cable the hotspot never opens, and one that is open
         // closes once the cable has held for a minute, with or without a
         // network in the config.
-        let eth = super::state().eth_connected;
-        match hotspot.tick(
-            has_ssid || eth,
-            t0.elapsed().as_secs() as u32,
-            connected || eth,
-        ) {
+        let n = super::state();
+        let eth = n.eth_connected;
+        // While the HAT's probe and link are still coming (the first
+        // seconds of a boot), a board without a network in the settings
+        // waits rather than opening the hotspot for a minute and closing
+        // it again once the cable has an address. A fitted HAT counts as
+        // a configured network from then on: with no cable the hotspot
+        // opens after the usual three minutes, not at once.
+        let eth_fitted = n.eth_fitted == Some(true);
+        let action = if !has_ssid && (n.eth_probing || (eth_fitted && n.eth_link && !eth)) {
+            Action::Keep
+        } else {
+            hotspot.tick(
+                has_ssid || eth || eth_fitted,
+                t0.elapsed().as_secs() as u32,
+                connected || eth,
+            )
+        };
+        match action {
             Action::Open => {
                 let _ = wifi.stop();
                 match wifi

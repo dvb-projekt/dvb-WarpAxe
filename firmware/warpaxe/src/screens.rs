@@ -276,10 +276,11 @@ fn rssi_color(r: i32) -> u16 {
 }
 
 /// The Ethernet link as the display words it: "100 Mbit/s" (or "10"),
-/// "–" before the speed is known.
-fn eth_speed(n: &net::NetState) -> String {
+/// `none` before the speed is known (the LCD's dash is not in the OLED
+/// font, which draws it as "?").
+fn eth_speed(n: &net::NetState, none: &str) -> String {
     n.eth_speed_mbit
-        .map_or("–".into(), |s| format!("{s} Mbit/s"))
+        .map_or(none.into(), |s| format!("{s} Mbit/s"))
 }
 
 fn family_color() -> u16 {
@@ -1433,7 +1434,7 @@ fn device(c: &mut Canvas, pos: usize, total: usize) {
         let n = net::state();
         // The cable when it carries the address, else the Wi-Fi level.
         if n.eth_connected {
-            kv(c, "Ethernet", &eth_speed(&n), 62, gfx::OK, r2, e);
+            kv(c, "Ethernet", &eth_speed(&n, "–"), 62, gfx::OK, r2, e);
         } else {
             let (w, wc) = n.wifi_rssi.map_or(("–".into(), gfx::FG), |r| {
                 (format!("{r} dBm"), rssi_color(r))
@@ -1646,7 +1647,7 @@ fn pool(c: &mut Canvas, pos: usize, total: usize) {
             308,
             160,
             gfx::OK,
-            &format!("Ethernet · {}", eth_speed(&n)),
+            &format!("Ethernet · {}", eth_speed(&n, "–")),
             Align::Right,
         );
     } else if let Some(r) = n.wifi_rssi {
@@ -2182,7 +2183,7 @@ fn oled_slide(o: &mut Oled, name: &str) {
             ),
             _ => (
                 if n.eth_connected {
-                    format!("ETHERNET {}", oled_str(&eth_speed(&n)))
+                    format!("ETHERNET {}", oled_str(&eth_speed(&n, "-")))
                 } else {
                     n.wifi_rssi
                         .map_or("WLAN -".into(), |r| format!("WLAN {r} DBM"))

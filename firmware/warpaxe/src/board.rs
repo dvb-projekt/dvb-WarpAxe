@@ -194,6 +194,17 @@ const TMP451_MUX_ADDRS: [u8; 2] = [0x4C, 0x4E];
 pub fn ethernet_pins() -> Option<warpaxe_board::EthPins> {
     let profile = profile();
     let pins = profile.ethernet?;
+    // A board chosen by hand that the bus fits but the chain has not
+    // confirmed yet: the pins are the chosen board's, not necessarily
+    // this board's (a NerdAxe Gamma taken for a Gaia). Ethernet waits for
+    // the next boot, which starts verified.
+    if choice_pending() {
+        log::info!(
+            "eth: not tried while the board choice {} is unverified; from the next boot on",
+            profile.name
+        );
+        return None;
+    }
     let mut mux = false;
     if pins == warpaxe_board::profile::NERDHAT_QAXE {
         if let Some(mut bus) = i2c() {

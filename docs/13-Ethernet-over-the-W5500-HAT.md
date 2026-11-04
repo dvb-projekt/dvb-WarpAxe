@@ -83,8 +83,10 @@ run here.
 In `main.rs`, after the USB netif and before Wi-Fi (`set_step("ETHERNET")`):
 
 1. `board::ethernet_pins()` — the profile's pins, or nothing: a board
-   without the header, the undetected profile of a first start, or a
-   TMP451 answering on the QAxe pins (above).
+   without the header, the undetected profile of a first start, a board
+   chosen by hand whose chain has not confirmed the choice yet (the pins
+   would be the chosen board's; Ethernet starts from the next boot, which
+   runs verified), or a TMP451 answering on the QAxe pins (above).
 2. `net::eth::start` on a thread of its own, 8 KB internal stack:
    - the SPI bus on SPI2 with DMA (frames up to 1.5 KB go in one transfer),
      2 MHz as NerdOS runs the HAT (long wires on a header);
@@ -100,12 +102,24 @@ In `main.rs`, after the USB netif and before Wi-Fi (`set_step("ETHERNET")`):
    - the driver: `EthDriver::new_spi_with_event_source` with
      `SpiEthChipset::W5500`, polling every millisecond where there is no
      interrupt pin (NerdOS `poll_period_ms = 1`; the chip buffers 16 KB),
-     the ESP's efuse Ethernet MAC (`ESP_MAC_ETH`, distinct from the Wi-Fi
-     station's and the USB link's);
+     and the ESP's efuse Ethernet MAC (`ESP_MAC_ETH`, distinct from the
+     Wi-Fi station's and the USB link's) written to the chip. ESP-IDF
+     sets a MAC on its own only for the internal EMAC; a SPI MAC keeps
+     00:00:00:00:00:00 unless the driver is told one, and the W5500's MAC
+     filter would then drop every unicast frame (the audit's first find);
    - the netif: `ETH_DEF`, DHCP client with the miner's hostname, route
      priority 110 (the Wi-Fi station's is 100, the USB netif's 30);
    - then a loop every second: link, address, speed and duplex into
-     `net::state()`, log lines on every change.
+     `net::state()`, log lines on every change. A link that holds no
+     address for 60 s (a port without DHCP, an outage) gets the driver
+     stopped and started again: esp_netif keeps the default route on a
+     netif that is up, address or not, so after one Wi-Fi flap such a
+     link would hold the route away from a working Wi-Fi; stopping takes
+     the netif down and the route moves, starting retries DHCP.
+
+The failure paths are visible: a bus, driver or netif that does not come
+up sets `ethStatus: "Failed"` (the log says which step), distinct from
+"Not fitted".
 
 `esp-idf-svc` 0.51 (the vendored copy) carries the whole W5500 path; the
 only change to the build is `CONFIG_ETH_SPI_ETHERNET_W5500=y` in
@@ -140,10 +154,15 @@ target directory).
   local address on connect.
 - **The setup hotspot** opens only without any connection: the Wi-Fi
   thread feeds `Hotspot::tick` with Ethernet as a connection
-  (`has_ssid || eth`, `connected || eth`). With a cable the hotspot never
-  opens, with or without a network in the settings, and a hotspot that is
-  open closes a minute after the cable has an address. Wi-Fi keeps trying
-  its configured network meanwhile.
+  (`connected || eth`) and a fitted HAT as a configured network
+  (`has_ssid || eth_fitted`), and holds its first ticks while the HAT's
+  probe or a fresh link's DHCP is still pending. So with a cable the
+  hotspot never opens, with or without a network in the settings; a HAT
+  without a cable and no network in the settings opens it after the
+  usual three minutes, not at once; a cable pulled later with no network
+  in the settings opens it at once; a hotspot that is open closes a
+  minute after the cable has an address. Wi-Fi keeps trying its
+  configured network meanwhile.
 - **mDNS** starts once Wi-Fi or Ethernet has an address and announces on
   both; the mDNS component handles the `ETH_DEF` netif on its own
   (`CONFIG_MDNS_PREDEF_NETIF_ETH`), to be confirmed on the device.
@@ -177,9 +196,11 @@ target directory).
 
 ## Image
 
-Release image 2,979,424 bytes against the 3,145,728-byte app slots:
-166 KB of headroom. The delta against `main` e04bfb1 is in the handover
-result note (CloudDocs); most of it is `esp_eth` and the W5500 driver.
+Release image 2,983,728 bytes, against 2,905,280 for `main` e04bfb1 built
+the same way: +78,448 bytes, most of it `esp_eth` and the W5500 driver.
+The release gate of `tools/release-firmware.sh` is 0x2F0000 (3,080,192
+bytes, the NerdMiner config window on a first install): 96,464 bytes
+left under it, 174,912 before this change.
 
 ## Device test (once the HAT is here)
 
@@ -209,29 +230,41 @@ NerdQAxe++ and the Octaxe rev 3.1 follow with the same list.
    Open the web UI on the Ethernet address and on the Wi-Fi address: both
    work. `<hostname>.local` resolves (from a computer on the LAN; check
    which address it gives).
-4. **Pool over the cable**: within 30 s of the address, `eth: the pool
-   session runs over 192.168.x.w after 30 s on the cable: moving it to
-   Ethernet` and one reconnect in `stratum.reconnects`. Then
-   `/api/v1/state` → `stratum.local_ip` is the Ethernet address. Test with
-   the Stratum V1 pool (TLS as configured) and once more with a V2 pool
-   (`sv2_proto`); the local address must be the cable's in both cases.
-5. **Cable out while mining**: `eth: link down`, `eth: address gone…`,
-   `eth: the pool session was on the cable, reconnecting over Wi-Fi`; the
-   next session connects within seconds and `stratum.local_ip` is the
-   Wi-Fi address; shares keep coming; the display's corner goes back to
-   SSID · dBm. One reconnect, not a series.
-6. **Cable back in**: address within a few seconds, one reconnect after
-   30 s, `local_ip` the cable's again. Then pull and re-insert the cable
-   three times within 30 s: no reconnect from the re-insertions beyond
-   the one each removal forces; `stratum.reconnects` grows by at most one
-   per removal.
+4. **Pool over the cable**: 30 s after the address, `stratum: the pool
+   session runs over 192.168.x.w and the Ethernet cable has held
+   192.168.x.y for 30 s: moving it, reconnecting`, one new session in the
+   log. `stratum.reconnects` does not count this (it counts sessions that
+   ended with an error); the log and `/api/v1/state` → `stratum.local_ip`
+   do: the local address is now the Ethernet one. Test with the Stratum
+   V1 pool (TLS as configured) and once more with a V2 pool (`sv2_proto`);
+   the local address must be the cable's in both cases.
+5. **Cable out while mining**: `eth: link down`, `eth: address gone…`;
+   the session's socket is aborted by lwIP and the next session connects
+   within seconds (one `stratum:` error line, `stratum.reconnects` +1);
+   `stratum.local_ip` is the Wi-Fi address; shares keep coming; the
+   display's corner goes back to SSID · dBm. One new session, not a
+   series; `stratum: the pool session was on the Ethernet cable…` appears
+   only if the session was still up when the eth thread noticed.
+6. **Cable back in**: address within a few seconds, one move after 30 s,
+   `local_ip` the cable's again. Then pull and re-insert the cable three
+   times within 30 s: no new session from the re-insertions beyond the
+   one each removal forces (`stratum.reconnects` grows by one per
+   removal, no "moving it" line until the cable has held 30 s).
+6a. **Port without DHCP**: cable into a switch port with no DHCP server
+   (or the router's DHCP paused): `eth: link up`, no address; after 60 s
+   `eth: link up for 60 s without an address: restarting the driver…`,
+   then link up again, and so on every minute; meanwhile the web UI over
+   Wi-Fi and the pool over Wi-Fi keep working (this is the case where the
+   default route would otherwise be stuck on the cable).
 7. **Ethernet only**: clear the Wi-Fi name in the settings (or set a
-   wrong one) and restart with the cable in. No hotspot opens (watch the
-   display for three minutes and the log for `setup hotspot`); the pool
-   connects over the cable; the web UI works on the Ethernet address.
-   Then pull the cable: with no Wi-Fi network the hotspot opens
-   (`ssid_set` false, no connection) and closes a minute after the cable
-   is back.
+   wrong one) and restart with the cable in. No hotspot opens, not even
+   briefly in the first seconds (watch the display for three minutes and
+   the log for `setup hotspot`); the pool connects over the cable; the
+   web UI works on the Ethernet address. Then pull the cable: with no
+   Wi-Fi network the hotspot opens at once and closes a minute after the
+   cable is back. Then restart with the HAT fitted, no cable and no
+   network in the settings: the hotspot opens after three minutes, as on
+   a board without the HAT.
 8. **Update and price**: run an online update check (System tab) and
    watch the price tile; both over the cable (`netInterface: "ethernet"`
    at the time). Install an update over the cable once.
@@ -252,6 +285,9 @@ board itself.
 
 ## Open points
 
+- **A board chosen by hand** runs its first boot without Ethernet (the
+  choice is unverified until the chain has answered); the second boot
+  has it. One more line in the log, nothing to do.
 - **TMP451 at boot.** The mux probe runs with the Octaxe's rails off (the
   LDO is low from `board::quiesce`). NerdOS probes the TMP451s after its
   power-up. If the TMP451s hang on the chips' I/O rail rather than the

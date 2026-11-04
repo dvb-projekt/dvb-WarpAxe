@@ -226,12 +226,18 @@ pub fn system_info() -> serde_json::Value {
     });
     // The W5500 Ethernet HAT (docs/13), outside the big macro (its
     // recursion limit): `ethStatus` is null on a board without the
-    // header, "Not fitted" when no chip answered at boot, "No link"
+    // header, "Not fitted" when no chip answered at boot, "Failed" when
+    // the bus or the driver did not come up (the log says why), "No link"
     // without a cable, "No address" while DHCP runs, "Connected!" with an
     // address. `netInterface` is the default route: ethernet, wifi, usb
     // or null.
+    let eth_status = if n.eth_failed {
+        Some("Failed")
+    } else {
+        n.eth_fitted.map(|f| if !f { "Not fitted" } else if n.eth_connected { "Connected!" } else if n.eth_link { "No address" } else { "No link" })
+    };
     let eth = json!({
-        "ethStatus": n.eth_fitted.map(|f| if !f { "Not fitted" } else if n.eth_connected { "Connected!" } else if n.eth_link { "No address" } else { "No link" }),
+        "ethStatus": eth_status,
         "ethIP": n.eth_ip, "ethMAC": n.eth_mac, "ethSpeed": n.eth_speed_mbit, "ethFullDuplex": n.eth_full_duplex,
         "netInterface": n.active(), "wifiIP": n.wifi_ip,
     });
@@ -525,7 +531,7 @@ pub fn v1_state() -> serde_json::Value {
                      "tx": net::usb::TX_FRAMES.load(Ordering::Relaxed),
                      "dropped": net::usb::TX_DROPPED.load(Ordering::Relaxed) },
             "wifi": { "connected": n.wifi_connected, "ip": n.wifi_ip, "rssi": n.wifi_rssi },
-            "eth": { "fitted": n.eth_fitted, "link": n.eth_link, "connected": n.eth_connected, "ip": n.eth_ip,
+            "eth": { "fitted": n.eth_fitted, "failed": n.eth_failed, "link": n.eth_link, "connected": n.eth_connected, "ip": n.eth_ip,
                      "mac": n.eth_mac, "speed_mbit": n.eth_speed_mbit, "full_duplex": n.eth_full_duplex },
             "active": n.active(),
         },

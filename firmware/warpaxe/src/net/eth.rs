@@ -51,6 +51,13 @@ const VERSION: u8 = 0x04;
 /// and the USB netif's 30: with an address here the default route is the
 /// cable.
 const ROUTE_PRIORITY: u32 = 110;
+/// A link without an address for this long (a port without a DHCP
+/// server, a DHCP outage) and the driver is stopped and started again:
+/// esp_netif keeps the default route on a netif that is up, address or
+/// not, so a link that never gets a lease would otherwise hold the route
+/// away from a working Wi-Fi after one Wi-Fi flap. Stopping takes the
+/// netif down (the route moves), starting retries DHCP.
+const NO_ADDRESS: Duration = Duration::from_secs(60);
 /// Ethernet holds an address this long before a pool session that runs
 /// over Wi-Fi is moved onto it. A cable that comes and goes within the
 /// time causes no reconnect of its own; the session that was on the
@@ -62,10 +69,38 @@ const SETTLE: Duration = Duration::from_secs(30);
 /// once `esp_netif_init` has run and the board is known; the caller has
 /// made sure the pins are free (`board::ethernet_pins`).
 pub fn start(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) {
-    std::thread::Builder::new()
-        .stack_size(8192)
-        .spawn(move || run(spi, sysloop, pins, hostname))
-        .expect("eth thread");
+    super::set_eth(|s| s.eth_probing = true);
+    if let Err(e) = std::thread::Builder::new().stack_size(8192).spawn(move || {
+        run(spi, sysloop, pins, hostname);
+        super::set_eth(|s| s.eth_probing = false);
+    }) {
+        log::error!("eth: thread failed: {e}");
+        super::set_eth(|s| {
+            s.eth_probing = false;
+            s.eth_failed = true;
+        });
+    }
+}
+
+/// The ESP's efuse Ethernet address (ESP_MAC_ETH): distinct from the
+/// Wi-Fi station's, the soft AP's and the USB link's. ESP-IDF sets it on
+/// its own only for the internal EMAC; a SPI MAC like the W5500 keeps
+/// 00:00:00:00:00:00 unless it is written, and with its MAC filter on it
+/// would then drop every unicast frame.
+fn eth_mac() -> [u8; 6] {
+    let mut m = [0u8; 6];
+    // SAFETY: 6-byte out-buffer as the call requires.
+    unsafe {
+        sys::esp_read_mac(m.as_mut_ptr(), sys::esp_mac_type_t_ESP_MAC_ETH);
+    }
+    m
+}
+
+fn mac_text(m: &[u8; 6]) -> String {
+    format!(
+        "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
+        m[0], m[1], m[2], m[3], m[4], m[5]
+    )
 }
 
 /// One W5500 register access on a device of its own on the bus, at the
@@ -105,6 +140,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         Ok(b) => b,
         Err(e) => {
             log::error!("eth: spi bus failed: {e}");
+            super::set_eth(|s| s.eth_failed = true);
             return;
         }
     };
@@ -116,6 +152,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             Ok(d) => d,
             Err(e) => {
                 log::error!("eth: spi device failed: {e}");
+                super::set_eth(|s| s.eth_failed = true);
                 return;
             }
         };
@@ -168,9 +205,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         Some(p) => SpiEventSource::interrupt(unsafe { AnyInputPin::new(i32::from(p)) }),
         None => SpiEventSource::polling(POLL).expect("poll period"),
     };
-    // The MAC stays the driver's: `esp_eth_driver_install` sets the ESP's
-    // efuse Ethernet address (ESP_MAC_ETH), distinct from the Wi-Fi
-    // station's and the USB link's.
+    let mac = eth_mac();
     let driver = match EthDriver::new_spi_with_event_source(
         bus,
         event,
@@ -178,14 +213,14 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         rst,
         SpiEthChipset::W5500,
         Hertz(SPI_HZ),
-        None,
+        Some(&mac),
         None,
         sysloop,
     ) {
         Ok(d) => d,
         Err(e) => {
             log::error!("eth: driver failed: {e}");
-            super::set_eth(|s| s.eth_fitted = Some(false));
+            super::set_eth(|s| s.eth_failed = true);
             return;
         }
     };
@@ -203,27 +238,38 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             Ok(e) => e,
             Err(e) => {
                 log::error!("eth: netif failed: {e}");
+                super::set_eth(|s| s.eth_failed = true);
                 return;
             }
         };
     if let Err(e) = eth.start() {
         log::error!("eth: start failed: {e}");
+        super::set_eth(|s| s.eth_failed = true);
         return;
     }
-    let mac = eth.netif().get_mac().ok().map(|m| {
-        format!(
-            "{:02X}:{:02X}:{:02X}:{:02X}:{:02X}:{:02X}",
-            m[0], m[1], m[2], m[3], m[4], m[5]
-        )
+    // What the netif carries after the glue copied the driver's address:
+    // the one written above, unless something is off.
+    let netif_mac = eth.netif().get_mac().unwrap_or(mac);
+    if netif_mac != mac {
+        log::warn!(
+            "eth: the netif carries {} instead of {}",
+            mac_text(&netif_mac),
+            mac_text(&mac)
+        );
+    }
+    log::info!("eth: started, MAC {}", mac_text(&netif_mac));
+    super::set_eth(|s| {
+        s.eth_mac = Some(mac_text(&netif_mac));
+        s.eth_probing = false;
     });
-    log::info!("eth: started, MAC {}", mac.as_deref().unwrap_or("?"));
-    super::set_eth(|s| s.eth_mac = mac);
 
     let mut was_link = false;
     let mut ip: Option<String> = None;
     // When the address came, for the move of a Wi-Fi pool session.
     let mut ip_since: Option<Instant> = None;
     let mut moved = false;
+    // When the link came up without an address yet (NO_ADDRESS).
+    let mut link_since: Option<Instant> = None;
     loop {
         let link = eth.is_connected().unwrap_or(false);
         let now_ip = if link {
@@ -238,8 +284,10 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         if link != was_link {
             if link {
                 log::info!("eth: link up{}", link_text(&eth));
+                link_since = Some(Instant::now());
             } else {
                 log::warn!("eth: link down");
+                link_since = None;
             }
             was_link = link;
         }
@@ -253,17 +301,43 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 None => {
                     log::warn!("eth: address gone, the default route is Wi-Fi (if up)");
                     ip_since = None;
-                    // A pool session that was on the cable is dead with
-                    // it; end it now rather than after the backoff.
-                    if crate::stratum::state().local_ip == ip {
-                        log::info!(
-                            "eth: the pool session was on the cable, reconnecting over Wi-Fi"
+                    link_since = link.then(Instant::now);
+                    // A pool session still up on the cable's address is
+                    // dead with it: end it now rather than wait for its
+                    // read timeout. Usually lwIP has aborted it already
+                    // (the address change) and the next session is on
+                    // its way over Wi-Fi; `local_ip` is cleared then, so
+                    // that one is left alone.
+                    let st = crate::stratum::state();
+                    if st.connected && st.local_ip == ip {
+                        crate::stratum::reconnect_because(
+                            "the pool session was on the Ethernet cable, which is gone",
                         );
-                        crate::stratum::reconnect();
                     }
                 }
             }
             ip = now_ip;
+        }
+        // A link that never gets an address holds the default route away
+        // from Wi-Fi (esp_netif counts an up netif, address or not):
+        // stop and start the driver, which takes the netif down and
+        // retries DHCP. The netif comes back on the next link-up event.
+        if let (Some(t), None) = (link_since, &ip) {
+            if t.elapsed() >= NO_ADDRESS {
+                log::warn!(
+                    "eth: link up for {} s without an address: restarting the driver so the default route is Wi-Fi meanwhile",
+                    NO_ADDRESS.as_secs()
+                );
+                if let Err(e) = eth.stop() {
+                    log::warn!("eth: stop failed: {e}");
+                }
+                std::thread::sleep(Duration::from_secs(2));
+                if let Err(e) = eth.start() {
+                    log::error!("eth: start failed: {e}");
+                }
+                link_since = None;
+                was_link = false;
+            }
         }
         let (speed, duplex) = if link {
             link_params(&eth)
@@ -283,12 +357,11 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             if !moved && t.elapsed() >= SETTLE {
                 let st = crate::stratum::state();
                 if st.connected && st.local_ip.as_deref() != Some(a.as_str()) {
-                    log::info!(
-                        "eth: the pool session runs over {} after {} s on the cable: moving it to Ethernet",
+                    crate::stratum::reconnect_because(&format!(
+                        "the pool session runs over {} and the Ethernet cable has held {a} for {} s: moving it",
                         st.local_ip.as_deref().unwrap_or("?"),
                         SETTLE.as_secs()
-                    );
-                    crate::stratum::reconnect();
+                    ));
                 }
                 moved = true;
             }

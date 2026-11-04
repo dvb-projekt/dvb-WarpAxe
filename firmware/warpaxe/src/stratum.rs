@@ -261,10 +261,19 @@ static RECONNECT: AtomicBool = AtomicBool::new(false);
 /// seconds instead of at the next reboot (Oliver renamed a worker on
 /// 2026-10-08 and the pool saw it hours later, at an OTA reboot).
 pub fn reconnect() {
+    reconnect_because("pool settings changed");
+}
+
+/// The same for another reason (`net::eth` moves the session between the
+/// cable and Wi-Fi). Not counted in `reconnects`, which counts sessions
+/// that ended with an error.
+pub fn reconnect_because(why: &str) {
     RECONNECT.store(true, Ordering::Relaxed);
     if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
-        log::info!("stratum: pool settings changed, reconnecting");
+        log::info!("stratum: {why}, reconnecting");
         s.shutdown();
+    } else {
+        log::info!("stratum: {why}, the next session takes it into account");
     }
 }
 
@@ -333,6 +342,7 @@ fn run() {
             s.tls = tls && !sv2;
             s.sv2 = sv2;
             s.connected = false;
+            s.local_ip = None;
             s.subscribed = false;
             s.authorized = false;
         });
@@ -372,6 +382,7 @@ fn run() {
             update(|s| {
                 s.last_error = e.to_string();
                 s.connected = false;
+                s.local_ip = None;
                 s.reconnects += 1;
             });
         }

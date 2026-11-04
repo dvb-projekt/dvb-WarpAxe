@@ -40,6 +40,13 @@ pub struct NetState {
     pub eth_speed_mbit: Option<u16>,
     /// Negotiated full duplex, while the link is up.
     pub eth_full_duplex: Option<bool>,
+    /// The probe or the driver start is still running: the setup hotspot
+    /// waits for its verdict before it opens for a board without a
+    /// network in the settings.
+    pub eth_probing: bool,
+    /// The bus, the driver or the netif failed (the log says which): a
+    /// HAT that is there and does not work, or none to be told.
+    pub eth_failed: bool,
 }
 
 impl NetState {
@@ -89,6 +96,8 @@ static STATE: Mutex<NetState> = Mutex::new(NetState {
     eth_mac: None,
     eth_speed_mbit: None,
     eth_full_duplex: None,
+    eth_probing: false,
+    eth_failed: false,
 });
 
 pub fn state() -> NetState {
