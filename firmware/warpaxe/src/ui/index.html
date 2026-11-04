@@ -1320,6 +1320,8 @@ async function watchUpdate() {
   try { const r = await fetch("/api/v1/update", {cache: "no-store", signal: ac.signal}); if (r.ok) u = await r.json(); } catch (e) {}
   clearTimeout(to);
   if (!watch) return;
+  // The card on the System page shows the same phase as the bar.
+  if (u) { upd = u; const e = $("#online"); if (route === "system" && e && !e.contains(document.activeElement)) e.innerHTML = onlineHtml(); }
   const late = Date.now() - watch.t0 > 300000;
   if (u && ["checking", "downloading", "verifying", "flashing"].includes(u.phase)) {
     if (!watch.seen) { watch.seen = true; setWatch(watch); }
