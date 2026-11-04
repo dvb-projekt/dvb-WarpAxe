@@ -33,6 +33,9 @@ jobs:
       - name: Cache cargo
         uses: https://github.com/Swatinem/rust-cache@v2
 
+      - name: Pinned CA bundle
+        run: python3 tools/check-ca-bundle.py
+
       - name: Format check
         run: cargo fmt --all -- --check
 

@@ -45,6 +45,10 @@ git -C "$ROOT" fetch -q origin
 [ -n "$(git -C "$ROOT" branch -r --contains "$COMMIT")" ] || { echo "HEAD is not pushed to any branch" >&2; exit 1; }
 
 (cd "$FW" && cargo build --release)
+# The app trusts the pinned CA bundle alone (firmware/warpaxe/certificates):
+# checked in the build that just ran (the newest esp-idf-sys out directory).
+IDF_OUT=$(ls -td "$FW"/target/xtensa-esp32s3-espidf/release/build/esp-idf-sys-*/out | head -1)
+python3 "$ROOT/tools/check-ca-bundle.py" --build-dir "$IDF_OUT"
 mkdir -p "$OUT"
 espflash save-image --chip esp32s3 --flash-size 16mb \
     "$FW/target/xtensa-esp32s3-espidf/release/warpaxe" "$OUT/warpaxe.bin" >/dev/null
