@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-507%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-533%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
 </p>
@@ -83,6 +83,7 @@ move fast; corrections welcome.
 | A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | nothing in the web UI, the API or on the display | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
+| One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
@@ -137,6 +138,18 @@ draw:
   v1.47.0) judges the hashrate on the chips that run instead of
   taking the shortfall for a weak clock, and after the firmware's chain
   restart for that chip settles afresh without a verdict on the step.
+- **A stuck hash domain** (`domainLatchResets`, `lastDomainLatchReset`,
+  `domainsGivenUp`, since v0.1.41): the firmware switches the chips off
+  and on for it; WarpTune waits while the domain is not given up, and
+  only then takes its own path (a short voltage lift).
+- **Who regulates** (`selfHeals` and `externalRegulator`, since
+  v0.1.41): the firmware lists the cases it heals on its own
+  (`chain_silent`, `chip_silent`, `domain_latch`), so WarpTune waits on
+  those and acts itself on the rest, by the list rather than the
+  version number. WarpTune's heartbeat (`POST /api/v1/regulator
+  {"ttl_s": 600}`, RAM only: no flash write, no display wake) says it
+  is regulating the miner; the firmware's own base regulation, a later
+  block, will stand back while `externalRegulator.active` holds.
 - **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
   holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.
@@ -238,7 +251,21 @@ back at any time with `GET /api/v1/display/frame`.
   at most one such restart an hour over all chips, and a chip that is
   silent again before it has run an hour after each of three restarts is
   left alone until the next boot or a new clock or voltage. Both clocks
-  stop while no work goes out, so a pool outage counts for nothing. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
+  stop while no work goes out, so a pool outage counts for nothing.
+  Since v0.1.41 also one hash domain stuck while its chip hashes (the
+  NerdOctaxe's latch, until then seen only after a warm reboot and in
+  the self-test): a domain under 25 % of the mean of the chip's other
+  domains over ten minutes of fresh counter reads (the window as a
+  whole, since the counters are noisy; a weak domain at 50 % is no
+  latch, the self-test's limit is 67 %) has the chips switched off and
+  on, the way `/api/v1/chips/off` and `/on` do it (chain into reset,
+  core off, 500 ms, LDO off on the Nerd carriers, 5 s down, back on;
+  clock and voltage unchanged), since a reset pulse alone left such a
+  domain dead on the NerdOctaxe. The same limits as for the silent
+  chip: one intervention an hour over both cases, three resets that do
+  not hold and the domain is left alone until a new clock or voltage or
+  the next boot. Four domains on a BM1370, eight on a BM1373; the
+  BM1397 reports none and is not judged. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
   2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left
@@ -425,7 +452,9 @@ back at any time with `GET /api/v1/display/frame`.
   `/api/v2/dashboard` (its `performance` object: hash rates and, per chip,
   the hash rate and the error hash rate), restart, OTA upload.
 - WarpAxe's own: `/api/v1/state`, `/api/v1/history`, `/api/v1/log`, chips
-  off/on, overheat and best-difficulty reset, the self-test (`POST`/`GET`/
+  off/on, a tuner's heartbeat (`POST /api/v1/regulator {"ttl_s": 600}`;
+  60–3600 s, 600 without a value, 0 ends it; RAM only, reported as
+  `externalRegulator {active, expires_in_s}`), overheat and best-difficulty reset, the self-test (`POST`/`GET`/
   `DELETE /api/v1/selftest`), the diagnostics file (`GET
   /api/v1/diagnostics`), the event log (`GET /api/v1/events`), Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
@@ -462,6 +491,14 @@ back at any time with `GET /api/v1/display/frame`.
   `chipsGivenUp` (chain restarts for one silent chip since v0.1.40, the
   last one, and the chips left alone after three that did not hold;
   `chainSilentRestarts` keeps counting only the all-chips case),
+  `domainLatchResets`, `lastDomainLatchReset` (`chip` and `domain` from
+  0, `percent` the domain's share of the mean of the chip's other
+  domains over the ten minutes, `uptime_s`; null until the first) and
+  `domainsGivenUp` (`[{chip, domain}]`; chips off and on for a stuck
+  hash domain since v0.1.41), `selfHeals` (the cases this firmware heals
+  on its own: `["chain_silent", "chip_silent", "domain_latch"]`) and
+  `externalRegulator` (`{active, expires_in_s}`, a tuner's heartbeat;
+  `{false, 0}` without one, also after every boot),
   `gitHash` (the commit the
   image was built from), `blockFound` (blocks found since the start),
   `blocksFoundTotal` (all time) and `lastBlock` (`height`, `time` as Unix

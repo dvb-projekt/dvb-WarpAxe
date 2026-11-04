@@ -43,6 +43,13 @@ const UI_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
 pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
 
+/// The cases this firmware heals on its own (`selfHeals` in
+/// `/api/system/info`): the chain restart after a silent minute of every
+/// chip, the restart for one silent chip (v0.1.40), and the chips off and
+/// on for a stuck hash domain. A fixed list per firmware version; a tuner
+/// decides per case by it, not by the version number.
+const SELF_HEALS: [&str; 3] = ["chain_silent", "chip_silent", "domain_latch"];
+
 /// The chip name the API reports. The devkit (a profile without chips)
 /// names what actually hashes, so an AxeOS-style scanner lists it as
 /// what it is and not as a BM1370 (Warppool, Oliver, 2026-10-05).
@@ -224,6 +231,24 @@ pub fn system_info() -> serde_json::Value {
         "coreDumpPartition": diag::core_dump_room(), "lastWords": diag::last_words().map(|w| scrubber(&cfg).apply(&w)),
         "selfTest": selftest::brief(),
     });
+    // Added after the macro: the object above is at the limit of what
+    // `json!` expands in one go (recursion_limit 512).
+    // Chips switched off and on for one hash domain stuck for ten
+    // minutes while its chip kept hashing, the last one (`percent`: the
+    // domain's share of the mean of the chip's other domains over those
+    // ten minutes), and the domains left alone after three resets that
+    // did not hold (until a new clock or voltage, or the next boot).
+    // Chips and domains from 0.
+    v["domainLatchResets"] = json!(m.domain_latch_resets);
+    v["lastDomainLatchReset"] = m.last_domain_latch_reset.map_or(serde_json::Value::Null, |(chip, domain, percent, at)| json!({"chip": chip, "domain": domain, "percent": percent, "uptime_s": at}));
+    v["domainsGivenUp"] = m.domains_given_up.iter().map(|(c, d)| json!({"chip": c, "domain": d})).collect();
+    // What this firmware heals on its own: a tuner that reads the list
+    // waits for the firmware on these and acts itself on the rest
+    // (concept 2026-11-04, Block 5). Fixed per firmware version.
+    v["selfHeals"] = json!(SELF_HEALS);
+    // WarpTune's heartbeat (`POST /api/v1/regulator`): active while its
+    // time to live runs. Always present.
+    v["externalRegulator"] = crate::regulator::json();
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
     }
@@ -915,6 +940,37 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         board::set_shutdown(true);
         reply_json(req, 200, &json!({"shutdown": true}))
+    })?;
+    // WarpTune's heartbeat: {"ttl_s": 600} (the default without it; 60 to
+    // 3600, clamped; 0 ends it). RAM only: no NVS write, no display wake,
+    // no event. The reply is the same object `/api/system/info` carries
+    // as `externalRegulator`.
+    server.fn_handler("/api/v1/regulator", Method::Post, |mut req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let body = read_body(&mut req, 256)?;
+        let v = if body.iter().all(u8::is_ascii_whitespace) {
+            json!({})
+        } else {
+            match serde_json::from_slice::<serde_json::Value>(&body) {
+                Ok(v) if v.is_object() => v,
+                _ => {
+                    return reply_json(req, 400, &json!({"error": "expected a JSON object, e.g. {\"ttl_s\": 600}"}))
+                }
+            }
+        };
+        let ttl = match v.get("ttl_s") {
+            None | Some(serde_json::Value::Null) => None,
+            Some(t) => match t.as_u64() {
+                Some(t) => Some(t.min(u64::from(u32::MAX)) as u32),
+                None => return reply_json(req, 400, &json!({"error": "ttl_s: a whole number of seconds, 0 to end the heartbeat"})),
+            },
+        };
+        let s = crate::regulator::beat(ttl);
+        reply_json(
+            req,
+            200,
+            &json!({"externalRegulator": {"active": s.active, "expires_in_s": s.expires_in_s}}),
+        )
     })?;
     server.fn_handler("/api/v1/chips/on", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);

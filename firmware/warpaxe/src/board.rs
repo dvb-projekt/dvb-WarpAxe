@@ -140,6 +140,10 @@ static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 static FANS_FULL: AtomicBool = AtomicBool::new(false);
 /// The board thread runs, so it is the one switching the rail.
 static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
+/// Set by [`cycle_chips`]: the shutdown in force is the board's own, to
+/// be lifted once the rails have been down for [`warm_boot::WARM_OFF_MS`].
+/// A shutdown asked for over the API meanwhile clears it and stands.
+static CYCLE: AtomicBool = AtomicBool::new(false);
 /// The self-test's fan step: both outputs at least this duty until the
 /// deadline, then the PID again. Only ever raises the duty.
 static FAN_BOOST: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
@@ -593,11 +597,36 @@ fn rails_low_for_ms() -> u32 {
 /// Switch the chips off (core rail down) or back on; the board loop does
 /// the switching, the miner restarts the chain once the rail is up.
 pub fn set_shutdown(off: bool) {
+    CYCLE.store(false, Ordering::Relaxed);
     SHUTDOWN.store(off, Ordering::Relaxed);
     log::warn!(
         "board: chips switched {} by request",
         if off { "off" } else { "on" }
     );
+}
+
+/// Chips off and back on, the way `/api/v1/chips/off` and `/on` do it,
+/// in one go: the board loop takes the rail down on its next pass
+/// (`Regulator::off`: chain into reset, core off, 500 ms, LDO off on the
+/// Nerd carriers; the Gaia's LDO stays up, see `start_tps546_nerd`),
+/// holds it down for [`warm_boot::WARM_OFF_MS`] (the 5 s that cleared a
+/// latched domain after a warm reboot on the NerdOctaxe, docs/04), and
+/// lifts the shutdown; the miner then pulses the reset and brings the
+/// chain up afresh. For a hash domain stuck mid-run (`miner.rs`, domain
+/// latch): a reset pulse alone leaves the chips powered, and on the
+/// NerdOctaxe-γ a dead domain survived every core off and on that kept
+/// the LDO up (2026-10-09), so the full path is the one to take. Clock
+/// and voltage stay as they are; nothing is written to NVS. Returns
+/// `false` without the board thread (nothing would switch the rail
+/// back on), or while the chips are held off for another reason.
+pub fn cycle_chips(why: &str) -> bool {
+    if !BOARD_THREAD.load(Ordering::Relaxed) || chain_stopped() {
+        return false;
+    }
+    log::warn!("board: {why}: chips off for {} ms, then back on", warm_boot::WARM_OFF_MS);
+    CYCLE.store(true, Ordering::Relaxed);
+    SHUTDOWN.store(true, Ordering::Relaxed);
+    true
 }
 
 /// Clear an overheat without a reboot. If the limit is still crossed, the
@@ -1848,6 +1877,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     if POWERED.load(Ordering::Relaxed) {
         pf.enabled(0);
     }
+    // A `cycle_chips` in progress: when the rail went down for it.
+    let mut cycle_off_at: Option<Instant> = None;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -2153,6 +2184,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
+            if CYCLE.load(Ordering::Relaxed) {
+                cycle_off_at = Some(Instant::now());
+            }
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             // The chip power-enable line first (ESP-Miner's order); on a
             // board without a regulator the chain comes back when the
@@ -2188,6 +2222,20 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 warmup = Some(Warmup::start(t0.elapsed().as_secs() as u32));
                 update(|s| s.fan_warmup = true);
                 log::warn!("board: core voltage back on, {applied_mv} mV");
+            }
+        }
+
+        // The chips' off time of a `cycle_chips` is over: lift its
+        // shutdown (an API request meanwhile has cleared CYCLE and
+        // stands; the loop above switches the rail back on next pass).
+        if let Some(t) = cycle_off_at {
+            if !CYCLE.load(Ordering::Relaxed) {
+                cycle_off_at = None;
+            } else if t.elapsed() >= Duration::from_millis(u64::from(warm_boot::WARM_OFF_MS)) {
+                cycle_off_at = None;
+                CYCLE.store(false, Ordering::Relaxed);
+                SHUTDOWN.store(false, Ordering::Relaxed);
+                log::warn!("board: chips back on after the off/on cycle");
             }
         }
 

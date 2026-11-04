@@ -24,6 +24,7 @@ mod market;
 mod miner;
 mod net;
 mod ntc;
+mod regulator;
 mod screens;
 mod selftest;
 mod stratum;

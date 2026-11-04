@@ -9,7 +9,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use warpaxe_board::choice::{self, FirstStart};
 use warpaxe_chain::{
-    Chain, Config as ChainConfig, Event, LoneSilence, LoneVerdict, NonceWorth, Phase,
+    Chain, ChipMonitor, Config as ChainConfig, DomainLatch, Event, LatchSample, LatchVerdict,
+    LoneSilence, LoneVerdict, NonceWorth, Phase,
 };
 use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job, WorkGate};
@@ -59,6 +60,11 @@ pub struct AsicMonitor {
 /// A counter reading older than this is no longer the chip's rate.
 const COUNTER_FRESH_US: u64 = 5_000_000;
 
+/// The chip answered a counter read within [`COUNTER_FRESH_US`].
+fn counters_fresh(c: &ChipMonitor, now_us: u64) -> bool {
+    c.total.time_us != 0 && now_us.saturating_sub(c.total.time_us) < COUNTER_FRESH_US
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct MinerState {
     pub phase: String,
@@ -96,6 +102,16 @@ pub struct MinerState {
     /// Chips whose restarts did not keep them running: left silent
     /// until the next boot.
     pub chips_given_up: Vec<u8>,
+    /// Times the chips were switched off and on for one hash domain
+    /// stuck for ten minutes while its chip kept hashing
+    /// ([`DomainLatch`]).
+    pub domain_latch_resets: u32,
+    /// The last of those: chip, domain, the domain's share of the chip's
+    /// other domains (%), uptime (s).
+    pub last_domain_latch_reset: Option<(u8, u8, u8, u64)>,
+    /// Domains whose resets did not keep them running: (chip, domain),
+    /// left alone until a new clock or voltage, or the next boot.
+    pub domains_given_up: Vec<(u8, u8)>,
     /// 10-minute window.
     pub hashrate_ghs: f64,
     /// Last 30 s bucket.
@@ -336,8 +352,11 @@ fn run(mut uart: ChipUart) {
     // count runs the self-test once, a little after the chain is up.
     let mut first_start_attempts: u8 = 0;
     let mut selftest_due: Option<Instant> = None;
-    // One chip silent while the others hash: kept across chain restarts.
+    // One chip silent while the others hash, and one hash domain stuck
+    // while its chip hashes: both kept across chain restarts, and both
+    // share the hour between two interventions.
     let mut lone = LoneSilence::new();
+    let mut latch = DomainLatch::new();
     loop {
         if board::chain_stopped() {
             if !parked && board::parks_uart() {
@@ -735,8 +754,7 @@ fn run(mut uart: ChipUart) {
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
                             error_ghs: c.error.ghs,
                             total_1m: c.total.ghs_1m,
-                            fresh: c.total.time_us != 0
-                                && now_read.saturating_sub(c.total.time_us) < COUNTER_FRESH_US,
+                            fresh: counters_fresh(c, now_read),
                         })
                         .collect();
                     // Queued events to flash from this internal stack.
@@ -939,8 +957,10 @@ fn run(mut uart: ChipUart) {
                     });
                 let cfg = config::get();
                 let mv = cfg.core_voltage;
+                let now_s = diag::uptime_s();
                 lone.set_point(cfg.frequency, mv);
-                let verdict = lone.observe(diag::uptime_s(), working, flags);
+                latch.set_point(cfg.frequency, mv);
+                let verdict = lone.observe(now_s, working, flags);
                 // Also after a new point gave given-up chips another chance.
                 let given_up: Vec<u8> = lone.given_up().collect();
                 if state().chips_given_up != given_up {
@@ -948,6 +968,7 @@ fn run(mut uart: ChipUart) {
                 }
                 match verdict {
                     Some(LoneVerdict::Restart { chip }) => {
+                        latch.note_reset(now_s);
                         update(|s| {
                             s.chip_restarts += 1;
                             s.last_chip_restart = Some((chip, mv, diag::uptime_s()));
@@ -967,11 +988,89 @@ fn run(mut uart: ChipUart) {
                     }
                     Some(LoneVerdict::GiveUp { chip }) => {
                         log::warn!(
-                            "miner: chip {chip} still silent after 3 restarts, leaving it until the next boot"
+                            "miner: chip {chip} still silent after 3 restarts, leaving it until a new point or the next boot"
                         );
                         crate::events::record(
                             "chain",
                             warpaxe_diag::events::detail::chip_given_up(chip),
+                        );
+                    }
+                    None => {}
+                }
+                // One hash domain stuck while its chip hashes: the
+                // domain rates the counter reads above filled in, fresh
+                // or not per chip, with the watchdog's silent flag (a
+                // silent chip is the case above, not this one).
+                let mon = chain.monitor();
+                let now_read = now_us();
+                let mut rates = [[0f32; warpaxe_chain::monitor::MAX_DOMAINS]; warpaxe_chain::MAX_CHIPS];
+                let domains = mon.domains().min(warpaxe_chain::monitor::MAX_DOMAINS);
+                for (r, c) in rates.iter_mut().zip(mon.chips()) {
+                    for (d, m) in r.iter_mut().zip(&c.domains).take(domains) {
+                        *d = m.ghs;
+                    }
+                }
+                let mut samples = [LatchSample {
+                    silent: false,
+                    fresh: false,
+                    domains: &[],
+                }; warpaxe_chain::MAX_CHIPS];
+                let n_mon = mon.chips().len().min(samples.len());
+                for (i, ((s, c), r)) in samples
+                    .iter_mut()
+                    .zip(mon.chips())
+                    .zip(&rates)
+                    .enumerate()
+                {
+                    *s = LatchSample {
+                        silent: chain.chips().get(i).is_some_and(|c| c.silent),
+                        fresh: counters_fresh(c, now_read),
+                        domains: &r[..domains],
+                    };
+                }
+                let verdict = latch.observe(now_s, working, &samples[..n_mon]);
+                let given_up: Vec<(u8, u8)> = latch.given_up().collect();
+                if state().domains_given_up != given_up {
+                    update(|s| s.domains_given_up = given_up);
+                }
+                match verdict {
+                    Some(LatchVerdict::Reset {
+                        chip,
+                        domain,
+                        percent,
+                    }) => {
+                        lone.note_restart(now_s);
+                        // The full off/on path; without the board thread
+                        // (nothing to switch the rail) the chain restart
+                        // below is all there is.
+                        let cycled = board::cycle_chips("domain latch");
+                        update(|s| {
+                            s.domain_latch_resets += 1;
+                            s.last_domain_latch_reset = Some((chip, domain, percent, now_s));
+                            s.hashrate_now_ghs = 0.0;
+                            s.last_error = format!(
+                                "chip {chip} domain {domain} at {percent} % of the chip's other domains for 10 min, chips {}",
+                                if cycled { "switched off and on" } else { "restarted" }
+                            );
+                        });
+                        log::warn!(
+                            "miner: chip {chip} domain {domain} at {percent} % of the chip's other domains for 10 min at {} MHz / {mv} mV, chips {}",
+                            cfg.frequency,
+                            if cycled { "off and on" } else { "restarted" }
+                        );
+                        crate::events::record(
+                            "chain",
+                            warpaxe_diag::events::detail::domain_latch(chip, domain, percent),
+                        );
+                        break;
+                    }
+                    Some(LatchVerdict::GiveUp { chip, domain }) => {
+                        log::warn!(
+                            "miner: chip {chip} domain {domain} still stuck after 3 resets, leaving it until a new point or the next boot"
+                        );
+                        crate::events::record(
+                            "chain",
+                            warpaxe_diag::events::detail::domain_given_up(chip, domain),
                         );
                     }
                     None => {}
