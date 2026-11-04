@@ -960,9 +960,11 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         };
         let ttl = match v.get("ttl_s") {
             None | Some(serde_json::Value::Null) => None,
-            Some(t) => match t.as_u64() {
-                Some(t) => Some(t.min(u64::from(u32::MAX)) as u32),
-                None => return reply_json(req, 400, &json!({"error": "ttl_s: a whole number of seconds, 0 to end the heartbeat"})),
+            // Any number at or above 0 (a float is rounded); the clamp
+            // to 60–3600 is the heartbeat's.
+            Some(t) => match t.as_f64() {
+                Some(t) if t >= 0.0 => Some(t.round().min(f64::from(u32::MAX)) as u32),
+                _ => return reply_json(req, 400, &json!({"error": "ttl_s: a number of seconds, 0 to end the heartbeat"})),
             },
         };
         let s = crate::regulator::beat(ttl);

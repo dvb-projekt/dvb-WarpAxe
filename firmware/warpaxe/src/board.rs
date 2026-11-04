@@ -543,6 +543,10 @@ fn rail_off(why: &str) {
 /// after about two seconds, and NerdOS's half second after that.
 pub fn prepare_reset(why: &str) {
     log::warn!("board: {why}: chips off before the reset");
+    // A chips off/on cycle under way must not lift the shutdown while
+    // the reset is being prepared (and leave the chips powered in ROM
+    // download mode, the Nano's 82 °C case of 2026-10-03).
+    CYCLE.store(false, Ordering::Relaxed);
     FANS_FULL.store(true, Ordering::Relaxed);
     SHUTDOWN.store(true, Ordering::Relaxed);
     if BOARD_THREAD.load(Ordering::Relaxed) {
@@ -608,17 +612,22 @@ pub fn set_shutdown(off: bool) {
 /// Chips off and back on, the way `/api/v1/chips/off` and `/on` do it,
 /// in one go: the board loop takes the rail down on its next pass
 /// (`Regulator::off`: chain into reset, core off, 500 ms, LDO off on the
-/// Nerd carriers; the Gaia's LDO stays up, see `start_tps546_nerd`),
-/// holds it down for [`warm_boot::WARM_OFF_MS`] (the 5 s that cleared a
-/// latched domain after a warm reboot on the NerdOctaxe, docs/04), and
+/// TPS5364x Nerd carriers; the Gaia's LDO stays up, see
+/// `start_tps546_nerd`), holds it down for [`warm_boot::WARM_OFF_MS`]
+/// (the five seconds the warm-reboot work settled on, docs/04), and
 /// lifts the shutdown; the miner then pulses the reset and brings the
-/// chain up afresh. For a hash domain stuck mid-run (`miner.rs`, domain
-/// latch): a reset pulse alone leaves the chips powered, and on the
-/// NerdOctaxe-γ a dead domain survived every core off and on that kept
-/// the LDO up (2026-10-09), so the full path is the one to take. Clock
-/// and voltage stay as they are; nothing is written to NVS. Returns
-/// `false` without the board thread (nothing would switch the rail
-/// back on), or while the chips are held off for another reason.
+/// chain up afresh, as after a chain restart. For a hash domain stuck
+/// mid-run (`miner.rs`, domain latch) this is the agreed intervention
+/// (concept 2026-11-04): the strongest re-init the firmware has short
+/// of a new clock or voltage, a superset of the chain restart the
+/// silent-chip case uses (reset pulse and init with the rails up), at
+/// about six seconds' cost. Whether the rails matter for a mid-run
+/// latch is not known: docs/04 found the warm-reboot latch was the
+/// clock-delay trim, and a clock dip brought a dead domain back without
+/// a power cycle; a mid-run latch has no bench yet. Clock and voltage
+/// stay as they are; nothing is written to NVS. Returns `false` without
+/// the board thread (nothing would switch the rail back on), or while
+/// the chips are held off for another reason.
 pub fn cycle_chips(why: &str) -> bool {
     if !BOARD_THREAD.load(Ordering::Relaxed) || chain_stopped() {
         return false;
@@ -2184,9 +2193,6 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
-            if CYCLE.load(Ordering::Relaxed) {
-                cycle_off_at = Some(Instant::now());
-            }
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             // The chip power-enable line first (ESP-Miner's order); on a
             // board without a regulator the chain comes back when the
@@ -2225,6 +2231,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             }
         }
 
+        // A `cycle_chips` and the rail down (this pass or, when another
+        // stop took it down first, an earlier one): its off time starts.
+        if CYCLE.load(Ordering::Relaxed) && !POWERED.load(Ordering::Relaxed) && cycle_off_at.is_none() {
+            cycle_off_at = Some(Instant::now());
+        }
         // The chips' off time of a `cycle_chips` is over: lift its
         // shutdown (an API request meanwhile has cleared CYCLE and
         // stands; the loop above switches the rail back on next pass).

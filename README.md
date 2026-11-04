@@ -259,13 +259,18 @@ back at any time with `GET /api/v1/display/frame`.
   whole, since the counters are noisy; a weak domain at 50 % is no
   latch, the self-test's limit is 67 %) has the chips switched off and
   on, the way `/api/v1/chips/off` and `/on` do it (chain into reset,
-  core off, 500 ms, LDO off on the Nerd carriers, 5 s down, back on;
-  clock and voltage unchanged), since a reset pulse alone left such a
-  domain dead on the NerdOctaxe. The same limits as for the silent
-  chip: one intervention an hour over both cases, three resets that do
-  not hold and the domain is left alone until a new clock or voltage or
-  the next boot. Four domains on a BM1370, eight on a BM1373; the
-  BM1397 reports none and is not judged. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
+  core off, 500 ms, LDO off on the TPS5364x Nerd carriers — the Gaia's
+  stays up —, 5 s down, back on; clock and voltage unchanged): the
+  strongest re-init the firmware has short of a new clock or voltage,
+  which stays WarpTune's (docs/04 found the warm-reboot latch was an
+  init trim and a clock dip brought a dead domain back; a mid-run latch
+  has no bench yet). `shutdown` reads true and the phase `OFF` for the
+  six seconds or so of the intervention, as for a chips-off by hand;
+  the event and `lastDomainLatchReset` say why. The same limits as for
+  the silent chip: one intervention an hour over both cases, three
+  resets that do not hold and the domain is left alone until a new
+  clock or voltage or the next boot. Four domains on a BM1370, eight on
+  a BM1373; the BM1397 reports none and is not judged. A BM1370 on a Nerd carrier (NerdQAxe++, NerdOctaxe, NerdQX)
   is brought up with NerdOS's init, a Bitaxe with ESP-Miner's: the two
   differ in one core-clock trim and two writes since ESP-Miner's August
   2026 change, and on a NerdOctaxe at 700 MHz the ESP-Miner init left

@@ -22,10 +22,11 @@
 //!   given up until a new clock or voltage ([`DomainLatch::set_point`])
 //!   or the next boot.
 //!
-//! The window counts samples, not seconds, so every clock here runs only
-//! while work goes out and the chip answers its counter reads: a pool
-//! outage stops them all. Time (uptime, s) is passed in, so the policy
-//! runs under `cargo test`.
+//! The window and the clean hour count samples, not seconds, so they
+//! run only while work goes out and the chip answers its counter reads:
+//! a pool outage stops them. The hour between two interventions is
+//! uptime, as in [`crate::lone`], since it is shared with it. Time
+//! (uptime, s) is passed in, so the policy runs under `cargo test`.
 
 use crate::monitor::MAX_DOMAINS;
 use crate::MAX_CHIPS;
@@ -99,18 +100,28 @@ impl Window {
     }
 
     /// The domain furthest under the limit, with its share of the mean
-    /// of the others in percent: `None` when none is stuck.
-    fn stuck(&self, domains: usize) -> Option<(u8, u8)> {
-        let total: f32 = self.sum[..domains].iter().sum();
+    /// of the others in percent (rounded down, so a reported figure is
+    /// always under the limit): `None` when none is stuck. Domains
+    /// given up are out of the judgement on both sides: not candidates,
+    /// and not in the mean a sibling is held against (a dead one would
+    /// pull that mean down).
+    fn stuck(&self, domains: usize, given_up: &[bool; MAX_DOMAINS]) -> Option<(u8, u8)> {
+        let judged = (0..domains).filter(|&d| !given_up[d]);
+        let total: f32 = judged.clone().map(|d| self.sum[d]).sum();
+        let count = judged.clone().count();
+        if count < 2 {
+            return None;
+        }
         let mut worst: Option<(u8, u8)> = None;
-        for (d, &own) in self.sum[..domains].iter().enumerate() {
-            let others = (total - own) / (domains - 1) as f32;
+        for d in judged {
+            let own = self.sum[d];
+            let others = (total - own) / (count - 1) as f32;
             if others <= 0.0 {
                 continue;
             }
             let share = own / others * 100.0;
             if share < STUCK_PERCENT as f32 && worst.is_none_or(|(_, p)| share < f32::from(p)) {
-                worst = Some((d as u8, (share + 0.5) as u8));
+                worst = Some((d as u8, share as u8));
             }
         }
         worst
@@ -204,6 +215,7 @@ impl DomainLatch {
         let spaced = self
             .last_reset
             .is_none_or(|t| now_s.saturating_sub(t) >= SPACING_S);
+        let mut gave_up = None;
         for (i, c) in chips[..n].iter().enumerate() {
             let domains = c.domains.len().min(MAX_DOMAINS);
             if c.silent {
@@ -221,7 +233,7 @@ impl DomainLatch {
             }
             let judged = self.windows[i];
             self.windows[i] = Window::EMPTY;
-            let stuck = judged.stuck(domains);
+            let stuck = judged.stuck(domains, &self.given_up[i]);
             // A clean window is credit towards the hour; a stuck one
             // sends the domain's credit back to zero.
             for d in 0..domains {
@@ -239,15 +251,15 @@ impl DomainLatch {
                 continue;
             };
             let di = usize::from(d);
-            if self.given_up[i][di] {
-                continue;
-            }
             if self.tries[i][di] >= MAX_TRIES {
                 self.given_up[i][di] = true;
-                return Some(Verdict::GiveUp {
+                // Reported after the loop, so the chips after this one
+                // keep this second's sample.
+                gave_up.get_or_insert(Verdict::GiveUp {
                     chip: i as u8,
                     domain: d,
                 });
+                continue;
             }
             if !spaced {
                 // Judged again when the next window is full.
@@ -264,7 +276,7 @@ impl DomainLatch {
                 percent,
             });
         }
-        None
+        gave_up
     }
 }
 
@@ -536,23 +548,43 @@ mod tests {
         // after the third is the give-up.
         assert_eq!(t, 2 * SPACING_S + 2 * u64::from(WINDOW_S));
         assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
-        // Given up: nothing more for it, but another domain still gets
-        // its reset.
+        // Given up: nothing more for it, and it is out of the mean its
+        // siblings are held against: domain 3 of the same chip at 30 %
+        // of the two healthy ones (it would pass at 40 % of a mean that
+        // the dead domain pulled down) is no latch; at 20 % it is one,
+        // and so is another chip's domain.
         let mut rates = stuck(5, 1, 0.1);
-        rates[0][3] = 0.0;
-        let v = run(&mut p, t + 1, t + SPACING_S + 1200, &rates);
+        rates[5][3] = 30.0;
+        assert!(run(&mut p, t + 1, t + 2 * SPACING_S, &rates).is_empty());
+        rates[5][3] = 20.0;
+        let v = run(&mut p, t + 2 * SPACING_S + 1, t + 3 * SPACING_S, &rates);
         assert_eq!(
             v.iter()
                 .filter(|(_, v)| matches!(
                     v,
                     Verdict::Reset {
-                        chip: 0,
+                        chip: 5,
                         domain: 3,
-                        ..
+                        percent: 20
                     }
                 ))
                 .count(),
             1,
+            "{v:?}"
+        );
+        let t = t + 3 * SPACING_S;
+        let mut rates = stuck(5, 1, 0.1);
+        rates[0][3] = 0.0;
+        let v = run(&mut p, t + 1, t + SPACING_S + 1200, &rates);
+        assert!(
+            v.iter().any(|(_, v)| matches!(
+                v,
+                Verdict::Reset {
+                    chip: 0,
+                    domain: 3,
+                    ..
+                }
+            )),
             "{v:?}"
         );
         assert!(v.iter().all(|(_, v)| !matches!(

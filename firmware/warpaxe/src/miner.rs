@@ -961,9 +961,10 @@ fn run(mut uart: ChipUart) {
                 lone.set_point(cfg.frequency, mv);
                 latch.set_point(cfg.frequency, mv);
                 let verdict = lone.observe(now_s, working, flags);
+                let shown = state();
                 // Also after a new point gave given-up chips another chance.
                 let given_up: Vec<u8> = lone.given_up().collect();
-                if state().chips_given_up != given_up {
+                if shown.chips_given_up != given_up {
                     update(|s| s.chips_given_up = given_up);
                 }
                 match verdict {
@@ -1007,6 +1008,8 @@ fn run(mut uart: ChipUart) {
                 let domains = mon.domains().min(warpaxe_chain::monitor::MAX_DOMAINS);
                 for (r, c) in rates.iter_mut().zip(mon.chips()) {
                     for (d, m) in r.iter_mut().zip(&c.domains).take(domains) {
+                        // Unscaled (the BM1373's ×2 of `hashrateMonitor`
+                        // cancels in a ratio within one chip).
                         *d = m.ghs;
                     }
                 }
@@ -1028,9 +1031,12 @@ fn run(mut uart: ChipUart) {
                         domains: &r[..domains],
                     };
                 }
-                let verdict = latch.observe(now_s, working, &samples[..n_mon]);
+                // A self-test under way ends with "chainStopped" if the
+                // chips go off: its 80 s count as no work for the latch.
+                let latch_working = working && !crate::selftest::running();
+                let verdict = latch.observe(now_s, latch_working, &samples[..n_mon]);
                 let given_up: Vec<(u8, u8)> = latch.given_up().collect();
-                if state().domains_given_up != given_up {
+                if shown.domains_given_up != given_up {
                     update(|s| s.domains_given_up = given_up);
                 }
                 match verdict {
