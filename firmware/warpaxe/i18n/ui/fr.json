@@ -522,6 +522,8 @@
   "crash_nodump": "Ce plantage n’a laissé aucun core dump.",
   "evd_chip_silent": "la puce {c} ne répond plus",
   "evd_chain_restart": "toutes les {n} puces muettes pendant 60 s à {mv} mV, puces redémarrées",
+  "evd_chip_restart": "puce {c} muette pendant 10 min à {mv} mV, puces redémarrées",
+  "evd_chip_given_up": "puce {c} toujours muette après 3 redémarrages, plus aucun redémarrage jusqu’au prochain démarrage",
   "evd_pool_fallback": "pool principal injoignable {n} fois, passage au pool de secours",
   "evd_pool_back": "le pool principal répond à nouveau, retour depuis le pool de secours",
   "evd_pool_saved": "passage au pool enregistré « {p} »",

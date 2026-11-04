@@ -522,6 +522,8 @@
   "crash_nodump": "Nenhum core dump foi gravado para este travamento.",
   "evd_chip_silent": "o chip {c} parou de responder",
   "evd_chain_restart": "todos os {n} chips mudos por 60 s a {mv} mV, chips reiniciados",
+  "evd_chip_restart": "chip {c} mudo por 10 min a {mv} mV, chips reiniciados",
+  "evd_chip_given_up": "chip {c} ainda mudo após 3 reinícios, sem novos reinícios até a próxima inicialização",
   "evd_pool_fallback": "o pool principal falhou {n} vezes, passou para o pool reserva",
   "evd_pool_back": "o pool principal voltou a responder, saiu do pool reserva",
   "evd_pool_saved": "passou para o pool salvo “{p}”",

@@ -172,6 +172,12 @@ pub fn system_info() -> serde_json::Value {
         // voltage (two or more = the chips do not run at this voltage).
         "silentChips": m.silent_chips, "chainSilentRestarts": m.chain_restarts,
         "chainSilentRestartsSameMv": m.silent_restarts_same_mv,
+        // Chain restarts for one chip silent for ten minutes while the
+        // others hashed, the last one, and the chips left silent after
+        // three restarts that did not hold (until the next boot).
+        "chipSilentRestarts": m.chip_restarts,
+        "lastChipSilentRestart": m.last_chip_restart.map(|(chip, mv, at)| json!({"chip": chip, "mv": mv, "uptime_s": at})),
+        "chipsGivenUp": m.chips_given_up,
         "stratumURL": cfg.stratum_url, "stratumPort": cfg.stratum_port, "stratumUser": cfg.stratum_user, "stratumTLS": cfg.stratum_tls, "fallbackStratumTLS": cfg.fallback_tls, "stratumTLSActive": st.tls,
         "stratumProtocol": cfg.stratum_protocol, "stratumV2AuthorityPubkey": cfg.stratum_v2_authority_pubkey, "stratumV2ChannelType": cfg.stratum_v2_channel_type, "stratumV2RequireAuth": cfg.stratum_v2_require_auth,
         "fallbackStratumProtocol": cfg.fallback_protocol, "fallbackStratumV2AuthorityPubkey": cfg.fallback_v2_authority_pubkey, "fallbackStratumV2ChannelType": cfg.fallback_v2_channel_type, "fallbackStratumV2RequireAuth": cfg.fallback_v2_require_auth,

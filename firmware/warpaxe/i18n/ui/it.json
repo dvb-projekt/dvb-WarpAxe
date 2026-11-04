@@ -522,6 +522,8 @@
   "crash_nodump": "Per questo crash non è stato scritto alcun core dump.",
   "evd_chip_silent": "il chip {c} non risponde più",
   "evd_chain_restart": "tutti i {n} chip muti per 60 s a {mv} mV, chip riavviati",
+  "evd_chip_restart": "chip {c} muto per 10 min a {mv} mV, chip riavviati",
+  "evd_chip_given_up": "chip {c} ancora muto dopo 3 riavvii, nessun altro riavvio fino al prossimo avvio",
   "evd_pool_fallback": "pool principale non raggiungibile {n} volte, passato al pool di riserva",
   "evd_pool_back": "il pool principale risponde di nuovo, ritorno dal pool di riserva",
   "evd_pool_saved": "passato al pool salvato “{p}”",

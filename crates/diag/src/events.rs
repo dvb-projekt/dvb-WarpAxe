@@ -245,6 +245,21 @@ pub mod detail {
         coded("chip_silent", &[("c", Value::from(chip))])
     }
 
+    /// One chip silent for ten minutes while the others hashed: the
+    /// chain was restarted for it.
+    pub fn chip_restart(chip: u8, mv: u16) -> Detail {
+        coded(
+            "chip_restart",
+            &[("c", Value::from(chip)), ("mv", Value::from(mv))],
+        )
+    }
+
+    /// Restarts did not keep the chip running: no more for it until
+    /// the next boot.
+    pub fn chip_given_up(chip: u8) -> Detail {
+        coded("chip_given_up", &[("c", Value::from(chip))])
+    }
+
     /// All chips silent for a minute: the chain was restarted.
     pub fn chain_restart(chips: u8, mv: u16) -> Detail {
         coded(
@@ -548,6 +563,15 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
     let g = |k: &str| show(p.get(k));
     Some(match c {
         "chip_silent" => format!("chip {} silent", g("c")),
+        "chip_restart" => format!(
+            "chip {} silent for 10 min at {} mV, chain restarted",
+            g("c"),
+            g("mv")
+        ),
+        "chip_given_up" => format!(
+            "chip {} still silent after 3 restarts, no more until the next boot",
+            g("c")
+        ),
         "chain_restart" => format!(
             "all {} chips silent for 60 s at {} mV, chain restarted",
             g("n"),
@@ -883,6 +907,14 @@ mod tests {
                 detail::chain_restart(4, 1150),
                 "all 4 chips silent for 60 s at 1150 mV, chain restarted",
             ),
+            (
+                detail::chip_restart(4, 1210),
+                "chip 4 silent for 10 min at 1210 mV, chain restarted",
+            ),
+            (
+                detail::chip_given_up(4),
+                "chip 4 still silent after 3 restarts, no more until the next boot",
+            ),
             (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
             (detail::pool_back(), "main pool answers again, back from the fallback"),
             (detail::pool_saved("Braiins"), "saved pool Braiins used"),
@@ -1080,6 +1112,8 @@ mod tests {
                 detail::power(&["off", "vout_ov", "iout_oc", "vin_uv", "temp", "temp_warn"]),
             ),
             ("chain", detail::chain_restart(12, 1350)),
+            ("chain", detail::chip_restart(7, 1210)),
+            ("chain", detail::chip_given_up(7)),
             (
                 "update",
                 detail::installed("v0.1.35", "v0.1.35-rc.12 verified"),

@@ -16,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 pub mod driver;
+pub mod lone;
 pub mod monitor;
 pub mod uart;
 pub mod worth;
@@ -24,6 +25,7 @@ pub use driver::{
     Chain, ChipStatus, Config, Error, Event, Found, InitError, Phase, Stats, Work, WorkRef,
     MAX_CHIPS, SLOTS,
 };
+pub use lone::{LoneSilence, Verdict as LoneVerdict};
 pub use monitor::{ChipMonitor, HashrateMonitor, Measurement};
 pub use uart::Uart;
 pub use worth::NonceWorth;

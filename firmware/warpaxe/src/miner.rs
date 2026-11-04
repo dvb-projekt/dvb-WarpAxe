@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use warpaxe_board::choice::{self, FirstStart};
-use warpaxe_chain::{Chain, Config as ChainConfig, Event, NonceWorth, Phase};
+use warpaxe_chain::{
+    Chain, Config as ChainConfig, Event, LoneSilence, LoneVerdict, NonceWorth, Phase,
+};
 use warpaxe_stratum::job::hash_difficulty;
 use warpaxe_stratum::{sha256d, Job, WorkGate};
 
@@ -86,6 +88,14 @@ pub struct MinerState {
     pub silent_restarts_same_mv: u32,
     /// The core voltage of the last silent restart, mV.
     pub silent_restart_mv: u16,
+    /// Times the chain was started over for one chip silent for ten
+    /// minutes while the others hashed ([`LoneSilence`]).
+    pub chip_restarts: u32,
+    /// The last of those: chip, core voltage (mV), uptime (s).
+    pub last_chip_restart: Option<(u8, u16, u64)>,
+    /// Chips whose restarts did not keep them running: left silent
+    /// until the next boot.
+    pub chips_given_up: Vec<u8>,
     /// 10-minute window.
     pub hashrate_ghs: f64,
     /// Last 30 s bucket.
@@ -326,6 +336,8 @@ fn run(mut uart: ChipUart) {
     // count runs the self-test once, a little after the chain is up.
     let mut first_start_attempts: u8 = 0;
     let mut selftest_due: Option<Instant> = None;
+    // One chip silent while the others hash: kept across chain restarts.
+    let mut lone = LoneSilence::new();
     loop {
         if board::chain_stopped() {
             if !parked && board::parks_uart() {
@@ -440,6 +452,7 @@ fn run(mut uart: ChipUart) {
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
         let mut all_silent_since: Option<Instant> = None;
+        let mut lone_at = Instant::now();
         let chain_started = Instant::now();
         // A register scan: the next register to read (one per loop pass,
         // like the counter reads), then when the last read went out.
@@ -908,6 +921,61 @@ fn run(mut uart: ChipUart) {
                 }
             } else {
                 all_silent_since = None;
+            }
+            // The single-chip policy works in seconds: once a second is
+            // enough, and spares the config copy on every 2 ms pass.
+            if lone_at.elapsed() >= Duration::from_secs(1) {
+                lone_at = Instant::now();
+                let mut flags = [false; warpaxe_chain::MAX_CHIPS];
+                for (f, c) in flags.iter_mut().zip(chain.chips()) {
+                    *f = c.silent;
+                }
+                let flags = &flags[..usize::from(n).min(flags.len())];
+                // Work going out right now, not just a chain past bring-up:
+                // with the pool down a chip shows nothing either way.
+                let working = chain.accepting_work()
+                    && last_work.is_some_and(|t| {
+                        t.elapsed() < Duration::from_micros(chain.work_timeout_us())
+                    });
+                let cfg = config::get();
+                let mv = cfg.core_voltage;
+                lone.set_point(cfg.frequency, mv);
+                let verdict = lone.observe(diag::uptime_s(), working, flags);
+                // Also after a new point gave given-up chips another chance.
+                let given_up: Vec<u8> = lone.given_up().collect();
+                if state().chips_given_up != given_up {
+                    update(|s| s.chips_given_up = given_up);
+                }
+                match verdict {
+                    Some(LoneVerdict::Restart { chip }) => {
+                        update(|s| {
+                            s.chip_restarts += 1;
+                            s.last_chip_restart = Some((chip, mv, diag::uptime_s()));
+                            s.hashrate_now_ghs = 0.0;
+                            s.last_error = format!(
+                                "chip {chip} silent for 10 min at {mv} mV, chain restarted"
+                            );
+                        });
+                        log::warn!(
+                            "miner: chip {chip} silent for 10 min at {mv} mV, restarting the chain"
+                        );
+                        crate::events::record(
+                            "chain",
+                            warpaxe_diag::events::detail::chip_restart(chip, mv),
+                        );
+                        break;
+                    }
+                    Some(LoneVerdict::GiveUp { chip }) => {
+                        log::warn!(
+                            "miner: chip {chip} still silent after 3 restarts, leaving it until the next boot"
+                        );
+                        crate::events::record(
+                            "chain",
+                            warpaxe_diag::events::detail::chip_given_up(chip),
+                        );
+                    }
+                    None => {}
+                }
             }
             std::thread::sleep(Duration::from_millis(2));
         }

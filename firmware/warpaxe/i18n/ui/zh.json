@@ -522,6 +522,8 @@
   "crash_nodump": "这次崩溃没有写入核心转储。",
   "evd_chip_silent": "芯片 {c} 不再响应",
   "evd_chain_restart": "全部 {n} 颗芯片在 {mv} mV 下 60 秒无响应，已重启芯片",
+  "evd_chip_restart": "芯片 {c} 在 {mv} mV 下 10 分钟无响应，已重启芯片",
+  "evd_chip_given_up": "芯片 {c} 重启 3 次后仍无响应，下次开机前不再重启芯片",
   "evd_pool_fallback": "主矿池 {n} 次连接失败，已切换到备用矿池",
   "evd_pool_back": "主矿池恢复响应，已从备用矿池切回",
   "evd_pool_saved": "已切换到已保存的矿池“{p}”",
