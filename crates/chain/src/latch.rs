@@ -44,7 +44,10 @@ pub const SPACING_S: u64 = 3600;
 /// given up.
 pub const MAX_TRIES: u8 = 3;
 
-/// What to do now.
+/// What to do now. A `GiveUp` is reported once; when a `Reset` for
+/// another chip falls on the same second it wins, and the give-up shows
+/// only in [`DomainLatch::given_up`] (the firmware records the event
+/// from that list, not from the verdict).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     /// Switch the chips off and on for this domain.
@@ -112,7 +115,7 @@ impl Window {
         if count < 2 {
             return None;
         }
-        let mut worst: Option<(u8, u8)> = None;
+        let mut worst: Option<(u8, f32)> = None;
         for d in judged {
             let own = self.sum[d];
             let others = (total - own) / (count - 1) as f32;
@@ -120,11 +123,11 @@ impl Window {
                 continue;
             }
             let share = own / others * 100.0;
-            if share < STUCK_PERCENT as f32 && worst.is_none_or(|(_, p)| share < f32::from(p)) {
-                worst = Some((d as u8, share as u8));
+            if share < STUCK_PERCENT as f32 && worst.is_none_or(|(_, p)| share < p) {
+                worst = Some((d as u8, share));
             }
         }
-        worst
+        worst.map(|(d, share)| (d, share as u8))
     }
 }
 
@@ -239,7 +242,7 @@ impl DomainLatch {
             for d in 0..domains {
                 if stuck.is_some_and(|(sd, _)| usize::from(sd) == d) {
                     self.clean_s[i][d] = 0;
-                } else if self.tries[i][d] > 0 {
+                } else if self.tries[i][d] > 0 && !self.given_up[i][d] {
                     self.clean_s[i][d] = self.clean_s[i][d].saturating_add(judged.samples);
                     if u64::from(self.clean_s[i][d]) >= SPACING_S {
                         self.tries[i][d] = 0;

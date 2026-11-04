@@ -2216,18 +2216,33 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if ok {
                 // Let the rail settle before the miner resets the chain.
                 std::thread::sleep(Duration::from_millis(500));
-                pf.enabled(t0.elapsed().as_secs() as u32);
-                POWERED.store(true, Ordering::Relaxed);
-                // Start the fans from full again, as at boot: the PID ran
-                // down to its minimum over cold chips while the core was
-                // off, and a Gaia restarted at 420 MHz then heated its
-                // regulator to 76 °C in 45 s at 25 % fan and tripped its
-                // over-current limit.
-                pid.reset(100.0, profile.fan_target_c);
-                pid_vr.reset(100.0, vr_fan_target_c(profile));
-                warmup = Some(Warmup::start(t0.elapsed().as_secs() as u32));
-                update(|s| s.fan_warmup = true);
-                log::warn!("board: core voltage back on, {applied_mv} mV");
+                if overheat() || shutdown() {
+                    // A stop asked for while the rail came up (a
+                    // `prepare_reset` right after a chips-on or at the
+                    // end of an off/on cycle: it sees the rail still
+                    // reported off and runs its own `rail_off` at once):
+                    // off again, instead of reporting the rail up under
+                    // it, which could leave it on at the reset.
+                    if let Some(vr) = vr.as_mut() {
+                        vr.off();
+                    }
+                    asic_power(false);
+                    hold_reset_without_regulator(profile, vr.is_none());
+                    log::warn!("board: core voltage off again, stopped while it came up");
+                } else {
+                    pf.enabled(t0.elapsed().as_secs() as u32);
+                    POWERED.store(true, Ordering::Relaxed);
+                    // Start the fans from full again, as at boot: the PID
+                    // ran down to its minimum over cold chips while the
+                    // core was off, and a Gaia restarted at 420 MHz then
+                    // heated its regulator to 76 °C in 45 s at 25 % fan
+                    // and tripped its over-current limit.
+                    pid.reset(100.0, profile.fan_target_c);
+                    pid_vr.reset(100.0, vr_fan_target_c(profile));
+                    warmup = Some(Warmup::start(t0.elapsed().as_secs() as u32));
+                    update(|s| s.fan_warmup = true);
+                    log::warn!("board: core voltage back on, {applied_mv} mV");
+                }
             }
         }
 

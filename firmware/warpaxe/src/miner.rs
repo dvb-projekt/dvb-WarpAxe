@@ -1037,6 +1037,21 @@ fn run(mut uart: ChipUart) {
                 let verdict = latch.observe(now_s, latch_working, &samples[..n_mon]);
                 let given_up: Vec<(u8, u8)> = latch.given_up().collect();
                 if shown.domains_given_up != given_up {
+                    // The event from the list, not the verdict: a reset
+                    // for another chip on the same second outranks a
+                    // give-up in the verdict, the list has both.
+                    for &(chip, domain) in given_up
+                        .iter()
+                        .filter(|d| !shown.domains_given_up.contains(d))
+                    {
+                        log::warn!(
+                            "miner: chip {chip} domain {domain} still stuck after 3 resets, leaving it until a new point or the next boot"
+                        );
+                        crate::events::record(
+                            "chain",
+                            warpaxe_diag::events::detail::domain_given_up(chip, domain),
+                        );
+                    }
                     update(|s| s.domains_given_up = given_up);
                 }
                 match verdict {
@@ -1046,9 +1061,12 @@ fn run(mut uart: ChipUart) {
                         percent,
                     }) => {
                         lone.note_restart(now_s);
-                        // The full off/on path; without the board thread
-                        // (nothing to switch the rail) the chain restart
-                        // below is all there is.
+                        // The full off/on path. `false` only without the
+                        // board thread (no chips to speak of) or in the
+                        // moment a stop landed since this pass's
+                        // chain_stopped check: the chain restart below is
+                        // all there is then, and the hour's slot and the
+                        // try are spent on it all the same.
                         let cycled = board::cycle_chips("domain latch");
                         update(|s| {
                             s.domain_latch_resets += 1;
@@ -1070,16 +1088,8 @@ fn run(mut uart: ChipUart) {
                         );
                         break;
                     }
-                    Some(LatchVerdict::GiveUp { chip, domain }) => {
-                        log::warn!(
-                            "miner: chip {chip} domain {domain} still stuck after 3 resets, leaving it until a new point or the next boot"
-                        );
-                        crate::events::record(
-                            "chain",
-                            warpaxe_diag::events::detail::domain_given_up(chip, domain),
-                        );
-                    }
-                    None => {}
+                    // Said above, from the list.
+                    Some(LatchVerdict::GiveUp { .. }) | None => {}
                 }
             }
             std::thread::sleep(Duration::from_millis(2));
