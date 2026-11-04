@@ -94,6 +94,7 @@ move fast; corrections welcome.
 | Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | no (DHCP hostname only) | yes (from v0.1.28) |
 | Web UI over the USB cable | not found | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | no | yes |
+| Ethernet over the W5500 HAT (NerdHat) | no | yes, from v1.1.1 (NerdQAxe family, NerdOctaxe up to rev 3.3, NerdAxe Gaia, NerdQX; Wi-Fi is stopped while the cable is in) | no | yes on the NerdQAxe++, the NerdOctaxe up to rev 3.3 and the NerdAxe Gaia, in the one image for every board: the HAT is found at boot, the cable is preferred and Wi-Fi stays connected as the fallback; the setup hotspot opens only when neither has a connection ([`docs/13`](docs/13-Ethernet-over-the-W5500-HAT.md)); **built after NerdOS, not yet run on a HAT** |
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | no NTP; set from the pool's job time | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | no (a fixed 60 W) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | no display; two status LEDs (the share blink can be switched off) | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
@@ -268,6 +269,17 @@ back at any time with `GET /api/v1/display/frame`.
   browser.
 
 ### Board
+- Ethernet over the W5500 HAT ("NerdHat") on the NerdQAxe++, the
+  NerdOctaxe up to rev 3.3 and the NerdAxe Gaia (over its interposer),
+  on NerdOS v1.1.1's pins: the chip is looked for at boot (VERSIONR over
+  SPI) and reset over SPI, so the same image runs with and without the
+  HAT; with a cable the pool, updates and the price fetch leave over
+  Ethernet and Wi-Fi stays as the fallback, the setup hotspot opens only
+  when neither has a connection, and a pool session moves between the two
+  once, not on every flap of the cable. Not on a NerdOctaxe from rev 3.4
+  (its TMP451 multiplexer shares the HAT's pins; the firmware checks the
+  bus first). Built after NerdOS, not yet run on a HAT
+  ([`docs/13`](docs/13-Ethernet-over-the-W5500-HAT.md)).
 - Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
   Rev 7, BitForge Nano), TPS53647/TPS53667 (NerdQAxe++, NerdOctaxe,
   NerdQX); the core current and the regulator's warning line in the API
@@ -389,7 +401,13 @@ back at any time with `GET /api/v1/display/frame`.
   already taken gets `-2`) and as `_http._tcp` with AxeOS's `_axeos`
   subtype and TXT items (board, family, asic, asic_count, fw_version), so
   tools that discover Bitaxes that way find it; the router's DHCP sees
-  the same name.
+  the same name, over Wi-Fi and over the Ethernet HAT.
+- The network as it is: `ethStatus`, `ethIP`, `ethMAC`, `ethSpeed` and
+  `netInterface` (the default route: ethernet, wifi or usb) in
+  `/api/system/info`, `net.eth` and `net.active` in `/api/v1/state`; the
+  dashboard and the header show the cable with its speed while it carries
+  the default route, the Network tab lists every interface with its
+  address.
 - Tabs in the stock order: Dashboard, Swarm, Network, Pool, Settings,
   System; the starfield background of dvb-WarpPool. The browser tab names
   the miner ("NerdAxe Gaia · WarpAxe"), so several open tabs tell their
