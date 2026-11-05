@@ -28,8 +28,8 @@ working — including
 clock-and-voltage tuner of dvb-WarpPool.
 
 It does what the stock firmware does — Stratum V2 with the pool's
-authority key checked, Stratum V1 over TLS, a fallback pool that hands back
-to the main pool — and differs where it counts for running a fleet:
+authority key checked, Stratum V1 over TLS (a pool on its own certificate
+after one click), a fallback pool that hands back to the main pool — and differs where it counts for running a fleet:
 **signed online updates** the miner fetches and checks itself, **one image
 for every board** with the board found on the first start and Wi-Fi and
 pool taken over from the previous AxeOS, NerdOS or ForgeOS settings, a
@@ -69,6 +69,7 @@ move fast; corrections welcome.
 |---|---|---|---|---|
 | Stratum V2 (Noise, authority key, "require authentication") | yes | yes | no | yes |
 | Stratum V1 over TLS, certificate checked | yes | yes | yes (on in the factory settings) | yes |
+| Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | not checked | not checked | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
 | TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1 | ESP-IDF's built-in lists, which still carry `emSign ECC Root CA - G3` | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
@@ -304,10 +305,23 @@ back at any time with `GET /api/v1/display/frame`.
   runs to a removed root no longer connects. A pool
   the previous firmware ran on TLS with the owner's own certificate stays
   on TLS here, with the pinned CA bundle, rather than dropping to plain
-  text (a pool on a private certificate then fails to connect; TLS can be
-  switched off for it). A self-signed certificate, such as the one WarpPool
-  creates on Umbrel, is not accepted either, so connect to such a pool on
-  its plain port (WarpPool: 3333) on the home network for now. A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
+  text. A pool whose certificate no public authority issued, such as the
+  self-signed one WarpPool creates on Umbrel, is refused at first: the
+  Pool page then shows the fingerprint of the pool's key (SHA-256 of its
+  public key, `AB:CD:…:EF`, the value WarpPool shows in its Connect
+  window and `openssl x509 -pubkey -noout | openssl pkey -pubin -outform
+  der | openssl dgst -sha256 -c` prints), and one click trusts it, per
+  pool (main and fallback apart; a saved pool carries its key along).
+  With a trusted key the host name is not checked, so the pool's IP
+  address works as its address. The key is only consulted once the bundle
+  check fails (so a certificate the public PKI trusts for the host name
+  still connects, whatever its key), so a pool on a public certificate
+  is never affected, also not by its rotation; it never applies to the
+  online update or the price fetch. A pool whose own certificate later
+  presents another key does not connect until that key is confirmed on
+  its own; "Forget" drops it
+  ([`crates/trust`](crates/trust/src/pin.rs),
+  [`docs/14`](docs/14-TLS-pool-key-pinning.md)). A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
   1–32) is refused instead of trusted.
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.

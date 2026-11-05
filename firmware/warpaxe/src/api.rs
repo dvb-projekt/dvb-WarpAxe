@@ -103,6 +103,8 @@ pub fn system_info() -> serde_json::Value {
     let b = board::state();
     let profile = board::profile();
     let blocks = config::blocks();
+    let tls_pending_main = stratum::tls_pending(false);
+    let tls_pending_fb = stratum::tls_pending(true);
     #[allow(unused_mut)]
     // Delivered against small cores × clock (see yieldPercent below).
     let expected_ghs = f64::from(board::chip().small_cores)
@@ -251,6 +253,19 @@ pub fn system_info() -> serde_json::Value {
     // WarpTune's heartbeat (`POST /api/v1/regulator`): active while its
     // time to live runs. Always present.
     v["externalRegulator"] = crate::regulator::json();
+    // A pool on a certificate no public authority issued: the key
+    // confirmed for it (SHA-256 of the SubjectPublicKeyInfo as
+    // `AB:CD:…:EF`, empty = none), whether the running session was
+    // accepted by that key rather than the CA bundle, and the key seen
+    // but not confirmed yet (null = none) with whether it differs from
+    // a confirmed one. Main and fallback pool apart.
+    v["stratumTLSPin"] = json!(cfg.stratum_tls_pin);
+    v["fallbackStratumTLSPin"] = json!(cfg.fallback_tls_pin);
+    v["stratumTLSPinned"] = json!(st.tls_pinned);
+    v["stratumTLSPending"] = json!(tls_pending_main.as_ref().map(|p| p.key.clone()));
+    v["stratumTLSKeyChanged"] = json!(tls_pending_main.as_ref().is_some_and(|p| p.changed));
+    v["fallbackStratumTLSPending"] = json!(tls_pending_fb.as_ref().map(|p| p.key.clone()));
+    v["fallbackStratumTLSKeyChanged"] = json!(tls_pending_fb.as_ref().is_some_and(|p| p.changed));
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
     }
@@ -463,6 +478,26 @@ fn expert_refuse(v: &serde_json::Value) -> Option<String> {
 
 /// The app slot this boot runs from; it cannot change until the next
 /// boot, so it is read once (each `EspOta` also logs its drop).
+/// A pool's unconfirmed TLS key belongs to the pool as it was set: once
+/// its address, port, TLS switch or confirmed key is patched, the Pool
+/// page starts afresh (a pin that was just confirmed is no longer
+/// "pending"; another pool's key is not offered under the new address).
+fn forget_pending_keys(keys: &[String]) {
+    let touches = |prefix: &str| {
+        keys.iter().any(|k| {
+            k.strip_prefix(prefix).is_some_and(|rest| {
+                matches!(rest, "URL" | "Port" | "TLS" | "TLSPin" | "Protocol")
+            })
+        })
+    };
+    if touches("stratum") {
+        stratum::clear_tls_pending(false);
+    }
+    if touches("fallbackStratum") {
+        stratum::clear_tls_pending(true);
+    }
+}
+
 /// The pool protocol fields as tools send them: AxeOS strings ("SV1",
 /// "SV2") or NerdOS numbers (0, 1). Numbers become strings, anything
 /// else is refused; an authority key must parse.
@@ -510,6 +545,26 @@ fn pool_refuse(v: &mut serde_json::Value) -> Option<String> {
             if t != "extended" {
                 log::warn!("config: {k} {t:?} noted; WarpAxe opens extended channels");
             }
+        }
+    }
+    // The confirmed key of a pool on its own certificate: the written
+    // form in any case, with or without colons; stored as `AB:CD:…:EF`.
+    // Empty or null forgets it.
+    for k in ["stratumTLSPin", "fallbackStratumTLSPin"] {
+        let Some(x) = v.get(k).cloned() else {
+            continue;
+        };
+        let norm = match &x {
+            serde_json::Value::Null => String::new(),
+            serde_json::Value::String(t) if t.trim().is_empty() => String::new(),
+            serde_json::Value::String(t) => match warpaxe_trust::pin::Pin::parse(t) {
+                Some(p) => p.text().as_str().to_string(),
+                None => return Some(format!("{k}: not a key fingerprint (SHA-256, 32 bytes as AB:CD:…:EF)")),
+            },
+            _ => return Some(format!("{k}: a string, or empty to forget the key")),
+        };
+        if let Some(o) = v.as_object_mut() {
+            o.insert(k.into(), serde_json::Value::String(norm));
         }
     }
     None
@@ -829,6 +884,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                         .as_object()
                         .map(|o| o.keys().cloned().collect())
                         .unwrap_or_default();
+                    forget_pending_keys(&keys);
                     // Who changed what, kept across reboots: a worker renamed
                     // in the web UI showed at the pool hours later (2026-10-08)
                     // and nobody could say where the change had come from.
@@ -1210,6 +1266,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     {
                         Ok(_) => {
                             log::info!("pools: {who} switched to saved pool {:?}", p.name);
+                            stratum::clear_tls_pending(false);
                             config::record_patch(&who, &[format!("pool:{}", p.name)]);
                             crate::events::record(
                                 "pool",

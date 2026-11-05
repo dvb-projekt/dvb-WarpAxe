@@ -16,6 +16,9 @@ use std::time::{Duration, Instant};
 
 use esp_idf_svc::sys;
 use esp_idf_svc::tls::{Config, EspTls, InternalSocket};
+use warpaxe_trust::pin::Pin;
+
+use crate::tls_trust::{self, Seen};
 
 /// No data from the pool for this long ends the session (as the plain
 /// socket's read timeout).
@@ -33,6 +36,32 @@ pub enum Link {
 pub struct SendTls(EspTls<InternalSocket>);
 unsafe impl Send for SendTls {}
 
+/// The pool's certificate was refused for its key alone: no public
+/// authority issued it and the key is not the confirmed one (or there is
+/// none). The stratum thread keeps `seen` for the Pool page.
+#[derive(Debug, Clone, Copy)]
+pub struct KeyRefused(pub Seen);
+
+impl std::fmt::Display for KeyRefused {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.0.changed {
+            write!(
+                f,
+                "the pool's key changed: {} is not the trusted key (confirm it on the Pool page if the change is yours)",
+                self.0.pin.text().short()
+            )
+        } else {
+            write!(
+                f,
+                "pool certificate not verifiable against a public authority (self-signed, or the chain incomplete): key {} (trust it on the Pool page)",
+                self.0.pin.text().short()
+            )
+        }
+    }
+}
+
+impl std::error::Error for KeyRefused {}
+
 fn esp_io(e: sys::EspError) -> io::Error {
     io::Error::other(e.to_string())
 }
@@ -44,8 +73,12 @@ fn is_want(e: &sys::EspError) -> bool {
 
 impl Link {
     /// Connect to `host:port`; with `tls`, verify the pool's certificate
-    /// against the built-in CA bundle and its name against `host`.
-    pub fn connect(host: &str, port: u16, tls: bool) -> anyhow::Result<Link> {
+    /// against the built-in CA bundle and its name against `host`, or,
+    /// when that fails, its public key against `pin` (the owner's
+    /// confirmed key for this pool; `tls_trust`). A refusal for the key
+    /// alone is a [`KeyRefused`] error. After a TLS connect,
+    /// `tls_trust::pool_outcome` says whether the pin did the accepting.
+    pub fn connect(host: &str, port: u16, tls: bool, pin: Option<Pin>) -> anyhow::Result<Link> {
         if !tls {
             let addr = (host, port)
                 .to_socket_addrs()?
@@ -59,15 +92,24 @@ impl Link {
             }
             return Ok(Link::Tcp(s));
         }
-        log::info!("stratum: connecting to {host}:{port} (TLS)");
+        log::info!(
+            "stratum: connecting to {host}:{port} (TLS{})",
+            if pin.is_some() { ", pinned key" } else { "" }
+        );
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
+        // The name goes out as SNI and is checked unless the pin accepts
+        // the certificate (then an IP address works as the pool address).
         cfg.common_name = Some(host);
-        cfg.crt_bundle_attach = Some(crate::tls_trust::attach);
+        cfg.crt_bundle_attach = Some(tls_trust::attach_pool);
         cfg.timeout_ms = 10_000;
-        let hs = t
-            .connect(host, port, &cfg)
-            .map_err(|e| anyhow::anyhow!("tls handshake with {host}:{port}: {e}"))?;
+        tls_trust::pool_begin(pin);
+        let hs = t.connect(host, port, &cfg).map_err(|e| {
+            match tls_trust::pool_outcome().0 {
+                Some(seen) => anyhow::Error::new(KeyRefused(seen)),
+                None => anyhow::anyhow!("tls handshake with {host}:{port}: {e}"),
+            }
+        })?;
         drop(hs);
         let mut fd: i32 = -1;
         sys::esp!(unsafe { sys::esp_tls_get_conn_sockfd(t.context_handle(), &mut fd) })?;
@@ -83,7 +125,11 @@ impl Link {
                 core::mem::size_of::<i32>() as u32,
             );
         }
-        log::info!("stratum: TLS up, certificate verified for {host}");
+        if tls_trust::pool_outcome().1 {
+            log::info!("stratum: TLS up, certificate accepted by the pinned key for {host}");
+        } else {
+            log::info!("stratum: TLS up, certificate verified for {host}");
+        }
         Ok(Link::Tls {
             tls: Mutex::new(SendTls(t)),
             fd,
