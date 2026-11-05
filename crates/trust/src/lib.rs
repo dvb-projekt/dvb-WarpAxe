@@ -89,6 +89,12 @@ impl<'a> Bundle<'a> {
         })
     }
 
+    /// A root with this subject name: the issuer of a certificate the
+    /// public PKI is responsible for, whatever its verdict.
+    pub fn has_subject(&self, subject: &[u8]) -> bool {
+        !subject.is_empty() && self.entries().any(|(s, _)| s == subject)
+    }
+
     /// A root with exactly this subject name and public key.
     pub fn contains(&self, subject: &[u8], spki: &[u8]) -> bool {
         !subject.is_empty()

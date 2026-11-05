@@ -111,11 +111,25 @@ CN_MISMATCH, EXPIRED, FUTURE, BAD_MD:
 Never overridden, pin or no pin: REVOKED, KEY_USAGE, EXT_KEY_USAGE,
 NS_CERT_TYPE, BAD_PK, BAD_KEY (a weak or unsupported key stays refused).
 
+Order in the callback: a matching pin short-circuits before ESP-IDF's
+lookup (which has no issuer to find for a self-signed leaf and would end
+the handshake). An unconfirmed or changed key is only reported after
+ESP-IDF's own verdict refused the leaf, so a leaf a bundle root issued
+directly is never logged or offered as refused. A leaf whose issuer name
+is a root of the bundle (`Bundle::has_subject`) is left to the public PKI
+altogether: expired or on the wrong name, it is never offered for a pin.
+
 Not covered: a chain from a private CA (leaf + CA sent). mbedTLS marks
 the CA, not the leaf, as "not trusted"; the leaf's flags are 0 and the
 pin rule does nothing, so nothing is offered for pinning and the chain
-fails as before. A leaf the public PKI trusts but with a wrong name or
-expired is never offered either: that is the PKI's verdict.
+fails as before. The pin is a fallback after the bundle, not strict
+pinning: with a pin stored, a certificate the public PKI trusts for the
+host name connects through the bundle whatever its key (device test 7).
+
+The stored pin survives a change of the pool's address or port (the
+same pool under its IP address keeps working); only the pending key is
+dropped. Pointing the entry at another self-signed pool therefore shows
+"The pool's key has changed", and the text says so.
 
 ## API
 

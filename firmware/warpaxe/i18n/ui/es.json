@@ -154,7 +154,7 @@
   "pin_ask_trust": "¿Confiar en la clave {f} para {p}? El minero se conectará a este pool solo con esta clave.",
   "pin_saved": "Clave de confianza guardada, conectando.",
   "pin_changed_title": "La clave del pool ha cambiado",
-  "pin_changed_s": "El pool presenta una clave distinta de aquella en la que confiaste, así que el minero no se conectó. Si tú mismo renovaste el certificado del pool con una clave nueva, confía en la nueva clave; si no, pregunta antes al operador del pool.",
+  "pin_changed_s": "El pool presenta una clave distinta de aquella en la que confiaste, así que el minero no se conectó. Si tú mismo renovaste el certificado del pool con una clave nueva, o apuntaste esta entrada a otro pool, confía en la nueva clave; si no, pregunta antes al operador del pool.",
   "pin_old": "De confianza hasta ahora",
   "pin_new": "Presentada ahora",
   "pin_trust_new": "Confiar en la nueva clave",

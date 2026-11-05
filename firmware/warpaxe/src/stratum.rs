@@ -497,7 +497,18 @@ fn session(
             // offers the key seen for confirmation (RAM only; the pin
             // is written by the HTTP handler on the click).
             if let Some(KeyRefused(seen)) = e.downcast_ref::<KeyRefused>() {
-                set_tls_pending(fallback, host, port, *seen);
+                // Unless the click came while this connect was under way:
+                // the key is confirmed now, and the reconnect the PATCH
+                // started uses it.
+                let cfg = config::get();
+                let stored = if fallback {
+                    &cfg.fallback_tls_pin
+                } else {
+                    &cfg.stratum_tls_pin
+                };
+                if !seen.pin.matches_text(stored) {
+                    set_tls_pending(fallback, host, port, *seen);
+                }
             }
             return Err(e);
         }

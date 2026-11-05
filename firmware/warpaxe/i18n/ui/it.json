@@ -154,7 +154,7 @@
   "pin_ask_trust": "Fidarsi della chiave {f} per {p}? Il miner si connetterà a questo pool solo con questa chiave.",
   "pin_saved": "Chiave accettata, connessione in corso.",
   "pin_changed_title": "La chiave del pool è cambiata",
-  "pin_changed_s": "Il pool presenta una chiave diversa da quella di cui ti sei fidato, quindi il miner non si è connesso. Se hai rinnovato tu stesso il certificato del pool con una nuova chiave, fidati della nuova chiave; altrimenti chiedi prima al gestore del pool.",
+  "pin_changed_s": "Il pool presenta una chiave diversa da quella di cui ti sei fidato, quindi il miner non si è connesso. Se hai rinnovato tu stesso il certificato del pool con una nuova chiave, o hai puntato questa voce a un altro pool, fidati della nuova chiave; altrimenti chiedi prima al gestore del pool.",
   "pin_old": "Fidata finora",
   "pin_new": "Presentata ora",
   "pin_trust_new": "Fidati della nuova chiave",

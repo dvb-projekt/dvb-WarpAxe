@@ -23,7 +23,7 @@
 //! thread for the pool), and only ever write RAM ([`POOL`]).
 
 use core::ffi::{c_int, c_void};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use esp_idf_svc::sys;
 use warpaxe_trust::pin::{Pin, Verdict};
@@ -145,9 +145,15 @@ static POOL: Mutex<PoolTrust> = Mutex::new(PoolTrust {
     pinned: false,
 });
 
+/// The slot; a poisoned lock (no panic site holds it, but the callback
+/// must never abort the handshake thread) yields its contents anyway.
+fn pool() -> MutexGuard<'static, PoolTrust> {
+    POOL.lock().unwrap_or_else(|e| e.into_inner())
+}
+
 /// Before a pool handshake: the pin to compare with, nothing seen yet.
 pub fn pool_begin(pin: Option<Pin>) {
-    *POOL.lock().unwrap() = PoolTrust {
+    *pool() = PoolTrust {
         pin,
         seen: None,
         pinned: false,
@@ -158,7 +164,7 @@ pub fn pool_begin(pin: Option<Pin>) {
 /// (`None` when the bundle or the pin accepted it, or when the handshake
 /// failed before a certificate), and whether the pin did the accepting.
 pub fn pool_outcome() -> (Option<Seen>, bool) {
-    let p = POOL.lock().unwrap();
+    let p = pool();
     (p.seen, p.pinned)
 }
 
@@ -173,38 +179,60 @@ unsafe extern "C" fn verify_pool(
         if sent_root(c, depth, &mut *flags) {
             return 0;
         }
-        let pin = POOL.lock().unwrap().pin;
-        match warpaxe_trust::pin::verdict(depth, *flags, pin.as_ref(), raw(&c.pk_raw)) {
-            Verdict::Untouched => {}
+        // A leaf whose issuer is a root of the bundle is the public PKI's
+        // (expired, or on the wrong name): its verdict stands, nothing is
+        // offered for a pin.
+        let public = bundle().is_some_and(|b| b.has_subject(raw(&c.issuer_raw)));
+        let pin = pool().pin;
+        let verdict = if public {
+            Verdict::Untouched
+        } else {
+            warpaxe_trust::pin::verdict(depth, *flags, pin.as_ref(), raw(&c.pk_raw))
+        };
+        let seen = match verdict {
+            Verdict::Untouched => None,
             Verdict::Pinned => {
-                log::info!("tls: pool certificate accepted by the pinned key (flags {:#x})", *flags);
+                // Before ESP-IDF's lookup, which has no issuer to find for
+                // a self-signed leaf and would end the handshake.
+                log::info!(
+                    "tls: pool certificate accepted by the pinned key (flags {:#x})",
+                    *flags
+                );
                 *flags = 0;
-                POOL.lock().unwrap().pinned = true;
+                pool().pinned = true;
                 return 0;
             }
-            Verdict::Unconfirmed(seen) => {
-                log::warn!(
-                    "tls: pool certificate not from a public authority; its key {} is not confirmed (flags {:#x})",
-                    seen.text().short(),
-                    *flags
-                );
-                POOL.lock().unwrap().seen = Some(Seen {
-                    pin: seen,
-                    changed: false,
-                });
-            }
-            Verdict::Changed(seen) => {
-                log::warn!(
-                    "tls: the pool's key changed: {} is not the pinned key (flags {:#x})",
-                    seen.text().short(),
-                    *flags
-                );
-                POOL.lock().unwrap().seen = Some(Seen {
-                    pin: seen,
-                    changed: true,
-                });
+            Verdict::Unconfirmed(seen) => Some(Seen {
+                pin: seen,
+                changed: false,
+            }),
+            Verdict::Changed(seen) => Some(Seen {
+                pin: seen,
+                changed: true,
+            }),
+        };
+        // ESP-IDF's own verdict first: a leaf a bundle root issued
+        // directly is validated here and never reported as refused.
+        let ret = esp_crt_verify_callback(buf, crt, depth, flags);
+        if let Some(seen) = seen {
+            if ret != 0 || *flags != 0 {
+                if seen.changed {
+                    log::warn!(
+                        "tls: the pool's key changed: {} is not the pinned key (flags {:#x})",
+                        seen.pin.text().short(),
+                        *flags
+                    );
+                } else {
+                    log::warn!(
+                        "tls: pool certificate not from a public authority; its key {} is not confirmed (flags {:#x})",
+                        seen.pin.text().short(),
+                        *flags
+                    );
+                }
+                pool().seen = Some(seen);
             }
         }
+        return ret;
     }
     esp_crt_verify_callback(buf, crt, depth, flags)
 }

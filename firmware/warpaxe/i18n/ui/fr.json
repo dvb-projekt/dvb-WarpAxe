@@ -154,7 +154,7 @@
   "pin_ask_trust": "Faire confiance à la clé {f} pour {p} ? Le mineur ne se connectera plus à ce pool qu’avec cette clé.",
   "pin_saved": "Clé approuvée, connexion en cours.",
   "pin_changed_title": "La clé du pool a changé",
-  "pin_changed_s": "Le pool présente une clé différente de celle que vous avez approuvée, le mineur ne s’est donc pas connecté. Si vous avez vous-même renouvelé le certificat du pool avec une nouvelle clé, faites confiance à la nouvelle clé ; sinon, demandez d’abord à l’opérateur du pool.",
+  "pin_changed_s": "Le pool présente une clé différente de celle que vous avez approuvée, le mineur ne s’est donc pas connecté. Si vous avez vous-même renouvelé le certificat du pool avec une nouvelle clé, ou dirigé cette entrée vers un autre pool, faites confiance à la nouvelle clé ; sinon, demandez d’abord à l’opérateur du pool.",
   "pin_old": "Approuvée jusqu’ici",
   "pin_new": "Présentée maintenant",
   "pin_trust_new": "Faire confiance à la nouvelle clé",

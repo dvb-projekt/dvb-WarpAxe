@@ -14,6 +14,9 @@
 //!
 //! - A leaf the bundle trusts (no "not trusted" flag) is not this
 //!   module's business: the public PKI decided, flags stay as they are.
+//!   So is a leaf whose issuer name is a root of the bundle (the firmware
+//!   checks `Bundle::has_subject` first): expired or on the wrong name, it
+//!   is the public PKI's verdict, never offered for a pin.
 //! - A leaf mbedTLS could not anchor, with nothing else wrong than its
 //!   name, its dates or a weak hash in its own signature, is compared
 //!   with the pin. The same key: accepted, flags cleared. The hostname

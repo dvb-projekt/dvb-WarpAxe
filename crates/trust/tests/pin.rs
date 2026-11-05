@@ -253,3 +253,15 @@ fn the_der_walk_reads_the_bundles_roots_too() {
         None
     );
 }
+
+#[test]
+fn a_bundle_roots_name_as_issuer_is_the_public_pkis_business() {
+    use warpaxe_trust::Bundle;
+    let b = Bundle::new(include_bytes!("data/x509_crt_bundle")).unwrap();
+    // GTS Root R4's own name is in the bundle; a self-signed test pool's is not.
+    let (gts, _) = subject_and_spki(include_bytes!("data/gts-r4-self-signed.der")).unwrap();
+    assert!(b.has_subject(gts));
+    let (pool, _) = subject_and_spki(SELF).unwrap();
+    assert!(!b.has_subject(pool));
+    assert!(!b.has_subject(&[]));
+}
