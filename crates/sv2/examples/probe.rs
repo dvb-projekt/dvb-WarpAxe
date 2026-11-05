@@ -111,7 +111,7 @@ fn main() {
                             t.version,
                             t.version_mask,
                             t.merkle_path.len(),
-                            job.coinbase.len()
+                            t.coinbase(&job.extranonce2).len()
                         );
                         println!(
                             "  height {:?} tag {:?}",

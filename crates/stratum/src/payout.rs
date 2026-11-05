@@ -92,6 +92,67 @@ fn raw_outputs(tx: &[u8]) -> Option<Vec<(u64, &[u8])>> {
     Some(out)
 }
 
+/// Outputs the firmware keeps and shows of one coinbase. A pool that pays
+/// its miners in the coinbase sends hundreds or thousands of outputs
+/// (ESP-Miner#2081); listing each in `/api/system/info` and copying the
+/// list with every state read would cost the miner its internal RAM.
+pub const SHOWN_OUTPUTS: usize = 32;
+
+/// The outputs to show and what was left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Shown {
+    /// The kept outputs, in the order of the transaction.
+    pub outputs: Vec<Output>,
+    /// Outputs left out.
+    pub hidden: usize,
+    /// Their sum, satoshis.
+    pub hidden_value: u64,
+}
+
+/// At most `max` outputs: the miner's own (`own`, the address the worker
+/// name starts with) first, then the witness commitment, then the largest
+/// of the rest; kept in the order of the transaction, the others summed.
+pub fn shown(outputs: Vec<Output>, own: &str, max: usize) -> Shown {
+    if outputs.len() <= max {
+        return Shown {
+            outputs,
+            ..Shown::default()
+        };
+    }
+    let rank = |o: &Output| -> u8 {
+        if !own.is_empty() && o.address == own {
+            0
+        } else if o.address.starts_with("OP_RETURN aa21a9ed") {
+            1
+        } else {
+            2
+        }
+    };
+    let mut order: Vec<usize> = (0..outputs.len()).collect();
+    // Own, then the commitment, then by value (largest first); ties keep
+    // the transaction order.
+    order.sort_by(|&a, &b| {
+        rank(&outputs[a])
+            .cmp(&rank(&outputs[b]))
+            .then(outputs[b].value.cmp(&outputs[a].value))
+            .then(a.cmp(&b))
+    });
+    let mut keep = vec![false; outputs.len()];
+    for &i in order.iter().take(max) {
+        keep[i] = true;
+    }
+    let mut out = Shown::default();
+    for (o, k) in outputs.into_iter().zip(keep) {
+        if k {
+            out.outputs.push(o);
+        } else {
+            out.hidden += 1;
+            out.hidden_value = out.hidden_value.saturating_add(o.value);
+        }
+    }
+    out
+}
+
 /// The outputs of a coinbase transaction with Bitcoin addresses for the
 /// chain `hrp` names. `None` if it does not parse.
 pub fn outputs(tx: &[u8], hrp: &str) -> Option<Vec<Output>> {
@@ -848,5 +909,56 @@ mod tests {
         assert!(!p.own_address);
         assert!(p.bitcoin, "unknown, so the amounts stay in BTC");
         assert!(p.outputs[0].address.starts_with("bc1q"));
+    }
+
+    fn out(value: u64, address: &str) -> Output {
+        Output {
+            value,
+            address: address.into(),
+        }
+    }
+
+    #[test]
+    fn few_outputs_are_all_shown() {
+        let o = vec![out(5, "a"), out(1, "b")];
+        let s = shown(o.clone(), "b", 32);
+        assert_eq!(s.outputs, o);
+        assert_eq!((s.hidden, s.hidden_value), (0, 0));
+    }
+
+    #[test]
+    fn many_outputs_keep_own_commitment_and_the_largest_in_order() {
+        let mut o: Vec<Output> = (0..2000u64)
+            .map(|i| out(1000 + i, &format!("bc1q{i}")))
+            .collect();
+        o.insert(700, out(3, "bc1qme"));
+        o.push(out(0, "OP_RETURN aa21a9edff"));
+        let total: u64 = o.iter().map(|x| x.value).sum();
+        let s = shown(o, "bc1qme", 32);
+        assert_eq!(s.outputs.len(), 32);
+        assert_eq!(s.hidden, 2002 - 32);
+        let kept: u64 = s.outputs.iter().map(|x| x.value).sum();
+        assert_eq!(kept + s.hidden_value, total);
+        assert!(s.outputs.iter().any(|x| x.address == "bc1qme"));
+        assert_eq!(s.outputs.last().unwrap().address, "OP_RETURN aa21a9edff");
+        // The other 30 are the largest, in transaction order.
+        let rest: Vec<&str> = s
+            .outputs
+            .iter()
+            .map(|x| x.address.as_str())
+            .filter(|a| a.starts_with("bc1q1"))
+            .collect();
+        assert_eq!(rest.len(), 30);
+        assert_eq!(rest.first(), Some(&"bc1q1970"));
+        assert_eq!(rest.last(), Some(&"bc1q1999"));
+    }
+
+    #[test]
+    fn a_pool_account_has_no_own_output_to_keep() {
+        let o: Vec<Output> = (0..40u64).map(|i| out(i, &format!("x{i}"))).collect();
+        let s = shown(o, "", 32);
+        assert_eq!(s.outputs.len(), 32);
+        assert_eq!(s.hidden, 8);
+        assert_eq!(s.hidden_value, (0..8).sum::<u64>());
     }
 }

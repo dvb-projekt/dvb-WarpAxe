@@ -204,6 +204,8 @@ pub fn system_info() -> serde_json::Value {
         "poolDifficulty": st.difficulty,
         "blockHeight": st.block_height, "networkDifficulty": st.network_difficulty, "scriptsig": st.scriptsig,
         "coinbaseOutputs": st.coinbase_outputs.iter().map(|(v, a)| json!({"value": v, "address": a})).collect::<Vec<_>>(),
+        "coinbaseOutputsHidden": st.coinbase_outputs_hidden, "coinbaseOutputsHiddenSatoshis": st.coinbase_outputs_hidden_sat,
+        "stratumLinesTooLong": st.lines_too_long,
         "coinbaseValueTotalSatoshis": st.coinbase_total_sat, "coinbaseValueUserSatoshis": st.coinbase_user_sat,
         "coinbaseOwnAddress": st.coinbase_own_address, "coinbaseBitcoin": st.coinbase_bitcoin, "coinTicker": cfg.coin_ticker,
         "blockFound": m.blocks_found, "blocksFoundTotal": blocks.n, "lastBlock": (blocks.n > 0).then(|| serde_json::json!({"height": blocks.h, "time": blocks.t, "coin": blocks.coin})), "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "showHashCounters": cfg.show_hash_counters, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,

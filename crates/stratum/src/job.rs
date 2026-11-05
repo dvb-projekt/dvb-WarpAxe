@@ -47,8 +47,6 @@ pub struct Job {
     pub job_id: String,
     /// The extranonce2 this job was built with.
     pub extranonce2: Vec<u8>,
-    /// The full coinbase transaction.
-    pub coinbase: Vec<u8>,
     /// Merkle root in the block header's byte order.
     pub merkle_root: [u8; 32],
     /// Previous block hash in the block header's byte order.
@@ -97,40 +95,105 @@ fn hex_u32(s: &str) -> Option<u32> {
     u32::from_str_radix(s, 16).ok()
 }
 
-impl Job {
-    /// Assemble the coinbase, hash the merkle path, order the header fields.
-    pub fn build(session: &Session, n: &Notify, extranonce2: &[u8]) -> Option<Job> {
-        if extranonce2.len() != session.extranonce2_size {
-            return None;
-        }
-        let mut coinbase = hex::decode(&n.coinb1).ok()?;
-        coinbase.extend_from_slice(&session.extranonce1);
-        coinbase.extend_from_slice(extranonce2);
-        coinbase.extend_from_slice(&hex::decode(&n.coinb2).ok()?);
+/// A `mining.notify` decoded once: the coinbase halves as bytes and the
+/// merkle branches as hashes. Each job then only hashes them with its own
+/// extranonce2; the coinbase is never assembled nor kept per job. A
+/// coinbase that pays many outputs (10 KB and more; ESP-Miner#2081) would
+/// otherwise be decoded for every job and copied into every job the
+/// miner keeps (up to 64), in pieces below the 16 KB the ESP-IDF heap
+/// puts into PSRAM, so into the scarce internal RAM.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Prepared {
+    /// The notify as the pool sent it.
+    pub notify: Notify,
+    coinb1: Vec<u8>,
+    coinb2: Vec<u8>,
+    branches: Vec<[u8; 32]>,
+    prev_hash: [u8; 32],
+    version: u32,
+    nbits: u32,
+    ntime: u32,
+}
 
-        // Merkle root: coinbase txid (natural order) folded with each branch.
-        let mut h = sha256d(&coinbase);
-        for b in &n.merkle_branches {
-            let branch = hex32(b)?;
-            let mut both = [0u8; 64];
-            both[..32].copy_from_slice(&h);
-            both[32..].copy_from_slice(&branch);
-            h = sha256d(&both);
-        }
+impl Prepared {
+    /// `None` if a field is not the hex it should be.
+    pub fn new(n: Notify) -> Option<Self> {
+        let branches = n
+            .merkle_branches
+            .iter()
+            .map(|b| hex32(b))
+            .collect::<Option<Vec<_>>>()?;
         // Stratum sends prevhash with every 32-bit word byte-swapped
         // relative to the header; undo that.
-        let prev_stratum = hex32(&n.prevhash)?;
-        Some(Job {
-            job_id: n.job_id.clone(),
-            extranonce2: extranonce2.to_vec(),
-            coinbase,
-            merkle_root: h,
-            prev_hash: reverse_endianness_per_word(&prev_stratum),
+        let prev_hash = reverse_endianness_per_word(&hex32(&n.prevhash)?);
+        Some(Prepared {
+            coinb1: hex::decode(&n.coinb1).ok()?,
+            coinb2: hex::decode(&n.coinb2).ok()?,
+            branches,
+            prev_hash,
             version: hex_u32(&n.version)?,
             nbits: hex_u32(&n.nbits)?,
             ntime: hex_u32(&n.ntime)?,
-            clean_jobs: n.clean_jobs,
+            notify: n,
         })
+    }
+
+    /// The coinbase halves as bytes (`coinb1`, `coinb2`).
+    pub fn coinbase_parts(&self) -> (&[u8], &[u8]) {
+        (&self.coinb1, &self.coinb2)
+    }
+
+    /// The full coinbase transaction for `extranonce2`.
+    pub fn coinbase(&self, session: &Session, extranonce2: &[u8]) -> Vec<u8> {
+        let mut c = Vec::with_capacity(
+            self.coinb1.len() + session.extranonce1.len() + extranonce2.len() + self.coinb2.len(),
+        );
+        c.extend_from_slice(&self.coinb1);
+        c.extend_from_slice(&session.extranonce1);
+        c.extend_from_slice(extranonce2);
+        c.extend_from_slice(&self.coinb2);
+        c
+    }
+
+    /// The job for `extranonce2`; `None` if it has the wrong size.
+    pub fn build(&self, session: &Session, extranonce2: &[u8]) -> Option<Job> {
+        if extranonce2.len() != session.extranonce2_size {
+            return None;
+        }
+        // Coinbase txid without assembling the coinbase.
+        use sha2::{Digest, Sha256};
+        let first = Sha256::new()
+            .chain_update(&self.coinb1)
+            .chain_update(&session.extranonce1)
+            .chain_update(extranonce2)
+            .chain_update(&self.coinb2)
+            .finalize();
+        let mut h: [u8; 32] = Sha256::digest(first).into();
+        // Merkle root: coinbase txid (natural order) folded with each branch.
+        for branch in &self.branches {
+            let mut both = [0u8; 64];
+            both[..32].copy_from_slice(&h);
+            both[32..].copy_from_slice(branch);
+            h = sha256d(&both);
+        }
+        Some(Job {
+            job_id: self.notify.job_id.clone(),
+            extranonce2: extranonce2.to_vec(),
+            merkle_root: h,
+            prev_hash: self.prev_hash,
+            version: self.version,
+            nbits: self.nbits,
+            ntime: self.ntime,
+            clean_jobs: self.notify.clean_jobs,
+        })
+    }
+}
+
+impl Job {
+    /// Assemble the coinbase, hash the merkle path, order the header
+    /// fields: [`Prepared::build`] for a notify used once.
+    pub fn build(session: &Session, n: &Notify, extranonce2: &[u8]) -> Option<Job> {
+        Prepared::new(n.clone())?.build(session, extranonce2)
     }
 
     /// The chip's view. ESP-Miner hands the BM13xx the previous hash in

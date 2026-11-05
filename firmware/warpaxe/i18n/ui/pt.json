@@ -314,6 +314,7 @@
   "cb_to_you": "para o seu endereço",
   "cb_value": "Valor da coinbase",
   "cb_witness": "witness commitment (OP_RETURN)",
+  "cb_more": "outras saídas ({n})",
   "upd_restarting": "O minerador está reiniciando com o novo firmware; esta página aguarda e recarrega sozinha.",
   "upd_done": "Atualização concluída: o minerador roda o WarpAxe {v}.",
   "upd_same": "O minerador reiniciou, mas continua com {v}: a atualização não foi aplicada. O log na página Sistema mostra o motivo.",

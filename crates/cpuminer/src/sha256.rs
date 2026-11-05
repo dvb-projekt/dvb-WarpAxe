@@ -419,7 +419,6 @@ mod tests {
         let job = Job {
             job_id: "1".into(),
             extranonce2: vec![0; 4],
-            coinbase: Vec::new(),
             merkle_root: merkle.try_into().unwrap(),
             prev_hash: prev.try_into().unwrap(),
             version: 1,

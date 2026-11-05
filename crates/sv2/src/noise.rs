@@ -22,9 +22,14 @@ pub const ACT_1_LEN: usize = 64;
 pub const ACT_2_LEN: usize = 234;
 /// Poly1305 tag on every record.
 pub const TAG_LEN: usize = 16;
-/// Largest payload the transport accepts. Jobs are a few hundred bytes;
-/// the spec allows 16 MiB, the board has no such memory.
-pub const MAX_PAYLOAD: usize = 8 * 1024;
+/// Largest payload the transport accepts: one Noise record (65,535 bytes
+/// less the tag). Jobs are a few hundred bytes, but an extended channel
+/// carries the coinbase prefix and suffix, and a pool that pays its
+/// miners in the coinbase sends several KB to tens of KB of them
+/// (ESP-Miner#2081; 8 KB until v0.1.40). The spec allows 16 MiB split
+/// over several records; this transport reads one record per frame, and
+/// the board would not hold that much anyway.
+pub const MAX_PAYLOAD: usize = u16::MAX as usize - TAG_LEN;
 
 const ENC_HEADER_LEN: usize = HEADER_LEN + TAG_LEN;
 

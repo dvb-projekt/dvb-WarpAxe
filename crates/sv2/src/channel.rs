@@ -82,6 +82,28 @@ impl Template {
         if extranonce2.len() != self.extranonce2_size {
             return None;
         }
+        let mut h = sha256d(&self.coinbase(extranonce2));
+        for b in &self.merkle_path {
+            let mut both = [0u8; 64];
+            both[..32].copy_from_slice(&h);
+            both[32..].copy_from_slice(b);
+            h = sha256d(&both);
+        }
+        Some(Job {
+            job_id: self.job_id.to_string(),
+            extranonce2: extranonce2.to_vec(),
+            merkle_root: h,
+            prev_hash: self.prev_hash,
+            version: self.version,
+            nbits: self.nbits,
+            ntime: self.ntime,
+            clean_jobs: self.clean,
+        })
+    }
+
+    /// The full coinbase transaction for `extranonce2`. Built for the
+    /// txid and dropped; a job does not keep it.
+    pub fn coinbase(&self, extranonce2: &[u8]) -> Vec<u8> {
         let mut coinbase = Vec::with_capacity(
             self.coinbase_prefix.len()
                 + self.extranonce_prefix.len()
@@ -92,24 +114,7 @@ impl Template {
         coinbase.extend_from_slice(&self.extranonce_prefix);
         coinbase.extend_from_slice(extranonce2);
         coinbase.extend_from_slice(&self.coinbase_suffix);
-        let mut h = sha256d(&coinbase);
-        for b in &self.merkle_path {
-            let mut both = [0u8; 64];
-            both[..32].copy_from_slice(&h);
-            both[32..].copy_from_slice(b);
-            h = sha256d(&both);
-        }
-        Some(Job {
-            job_id: self.job_id.to_string(),
-            extranonce2: extranonce2.to_vec(),
-            coinbase,
-            merkle_root: h,
-            prev_hash: self.prev_hash,
-            version: self.version,
-            nbits: self.nbits,
-            ntime: self.ntime,
-            clean_jobs: self.clean,
-        })
+        coinbase
     }
 }
 
@@ -669,9 +674,10 @@ mod tests {
             clean: true,
         };
         let j = t.build(&[0, 1]).unwrap();
-        assert_eq!(j.coinbase, vec![1, 2, 3, 0xAA, 0xBB, 0, 1, 9, 9]);
+        let coinbase = t.coinbase(&[0, 1]);
+        assert_eq!(coinbase, vec![1, 2, 3, 0xAA, 0xBB, 0, 1, 9, 9]);
         let mut both = [0u8; 64];
-        both[..32].copy_from_slice(&sha256d(&j.coinbase));
+        both[..32].copy_from_slice(&sha256d(&coinbase));
         both[32..].copy_from_slice(&[0x11; 32]);
         assert_eq!(j.merkle_root, sha256d(&both));
         assert_eq!(j.job_id, "5");

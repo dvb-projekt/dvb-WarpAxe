@@ -14,11 +14,12 @@
 pub mod coinbase;
 pub mod gate;
 pub mod job;
+pub mod line;
 pub mod message;
 pub mod payout;
 
 pub use gate::WorkGate;
-pub use job::{Job, Session};
+pub use job::{Job, Prepared, Session};
 pub use message::{parse_line, Incoming, Notify, Request, Response};
 
 /// Bitcoin's double SHA-256.
