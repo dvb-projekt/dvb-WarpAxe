@@ -78,11 +78,16 @@ fn raw_outputs(tx: &[u8]) -> Option<Vec<(u64, &[u8])>> {
         take(tx, &mut at, len)?; // script
         take(tx, &mut at, 4)?; // sequence
     }
-    let n = varint(tx, &mut at)?;
-    if n == 0 || n > 64 {
+    // An output is at least 9 bytes (value and an empty script), so the
+    // count the pool states cannot reserve more than the bytes it sent.
+    // Until v0.1.40 more than 64 outputs gave no payout at all; a pool
+    // that pays its miners in the coinbase sends hundreds or thousands
+    // (ESP-Miner#2081), and [`shown`] keeps what is listed small.
+    let n = usize::try_from(varint(tx, &mut at)?).ok()?;
+    if n == 0 || n > tx.len().saturating_sub(at) / 9 {
         return None;
     }
-    let mut out = Vec::with_capacity(n as usize);
+    let mut out = Vec::with_capacity(n);
     for _ in 0..n {
         let v = take(tx, &mut at, 8)?;
         let value = u64::from_le_bytes(v.try_into().ok()?);
