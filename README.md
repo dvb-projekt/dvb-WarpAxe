@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-533%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-554%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
 </p>
@@ -305,8 +305,8 @@ back at any time with `GET /api/v1/display/frame`.
   runs to a removed root no longer connects. A pool
   the previous firmware ran on TLS with the owner's own certificate stays
   on TLS here, with the pinned CA bundle, rather than dropping to plain
-  text. A pool whose certificate no public authority issued, such as the
-  self-signed one WarpPool creates on Umbrel, is refused at first: the
+  text. Since v0.1.41 a pool whose certificate no public authority issued,
+  such as the self-signed one WarpPool creates on Umbrel, is refused at first: the
   Pool page then shows the fingerprint of the pool's key (SHA-256 of its
   public key, `AB:CD:…:EF`, the value WarpPool shows in its Connect
   window and `openssl x509 -pubkey -noout | openssl pkey -pubin -outform
@@ -322,7 +322,14 @@ back at any time with `GET /api/v1/display/frame`.
   its own; "Forget" drops it
   ([`crates/trust`](crates/trust/src/pin.rs),
   [`docs/14`](docs/14-TLS-pool-key-pinning.md)). A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
-  1–32) is refused instead of trusted.
+  1–32) is refused instead of trusted. A Stratum V1 line is read up to
+  512 KB; a longer one ends the session, and the miner reconnects
+  (`stratumLinesTooLong`) instead of reading until the memory is gone.
+  The coinbase is decoded once per job and hashed with each extranonce2
+  without being copied into the work for the chips, so a coinbase of tens
+  or hundreds of KB no longer fills the internal RAM with copies of it
+  (tested against a test pool sending up to 3,000 outputs). Stratum V2 accepts messages up to one
+  Noise record, 65,519 bytes (8 KB until v0.1.40).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
 - **Saved pools**: up to eight, each with a name and the coin it mines;
@@ -438,7 +445,13 @@ back at any time with `GET /api/v1/display/frame`.
   another SHA-256 coin too (BCH, eCash, DigiByte, FixedCoin…); the
   outputs are written the way that coin writes addresses, and the amounts
   carry the coin set for the pool (*Coin*, default BTC). A worker name that
-  is a pool account, not an address, shows "paid by the pool".
+  is a pool account, not an address, shows "paid by the pool". Since
+  v0.1.41 a coinbase that pays many outputs (a pool that pays its miners
+  in the coinbase; ESP-Miner issue #2081) is listed as the worker's own
+  output, the SegWit checksum and the largest others, at most 32, with
+  the rest summed in one row (`coinbaseOutputsHidden`,
+  `coinbaseOutputsHiddenSatoshis`); before, more than 64 outputs showed
+  no payout at all.
 - **Swarm** page for the other miners on the network — AxeOS, NerdOS,
   ForgeOS or WarpAxe: fleet hashrate, power, J/TH and record difficulty,
   each miner's share, a card per miner with a sparkline and its
