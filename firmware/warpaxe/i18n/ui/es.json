@@ -228,7 +228,7 @@
   "restart": "Reiniciar",
   "saving": "Guardando…",
   "saved": "Guardado.",
-  "saved_restart": "Guardado. Reinicia para aplicar los cambios del pool o de red.",
+  "saved_restart": "Guardado. Los cambios de red se aplican tras reiniciar.",
   "nothing": "No hay cambios.",
   "failed": "Error: ",
   "fw_update": "Actualización de firmware",

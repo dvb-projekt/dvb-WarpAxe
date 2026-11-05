@@ -228,7 +228,7 @@
   "restart": "Riavvia",
   "saving": "Salvataggio…",
   "saved": "Salvato.",
-  "saved_restart": "Salvato. Riavvia per applicare le modifiche a pool o rete.",
+  "saved_restart": "Salvato. Le modifiche di rete si applicano dopo un riavvio.",
   "nothing": "Nessuna modifica.",
   "failed": "Non riuscito: ",
   "fw_update": "Aggiornamento firmware",

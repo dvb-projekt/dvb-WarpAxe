@@ -228,7 +228,7 @@
   "restart": "Reiniciar",
   "saving": "Salvando…",
   "saved": "Salvo.",
-  "saved_restart": "Salvo. Reinicie para aplicar as alterações de pool ou rede.",
+  "saved_restart": "Salvo. As alterações de rede entram em vigor após reiniciar.",
   "nothing": "Nada foi alterado.",
   "failed": "Falhou: ",
   "fw_update": "Atualização de firmware",

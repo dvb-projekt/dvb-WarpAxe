@@ -228,7 +228,7 @@
   "restart": "Redémarrer",
   "saving": "Enregistrement…",
   "saved": "Enregistré.",
-  "saved_restart": "Enregistré. Redémarrez pour appliquer les modifications du pool ou du réseau.",
+  "saved_restart": "Enregistré. Les modifications réseau s’appliquent après un redémarrage.",
   "nothing": "Aucune modification.",
   "failed": "Échec : ",
   "fw_update": "Mise à jour du firmware",
