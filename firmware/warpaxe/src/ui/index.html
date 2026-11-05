@@ -871,13 +871,15 @@ function pinHtml(fb, i) {
   if (pin && (fb ? i.fallbackStratumTLS : i.stratumTLS) > 0 && String(fb ? i.fallbackStratumProtocol : i.stratumProtocol).toUpperCase() !== "SV2") return box("0,224,255", t("pin_trusted_title"), `<span class="mute">${t("pin_trusted_s")}${!fb === !i.isUsingFallbackStratum && i.stratumTLSPinned ? " " + t("pin_active") : ""}</span><div class="lbl">${t("pin_fp")}</div>${fpHtml(pin)}${btn("pinforget", t("pin_forget"))}`);
   return "";
 }
-function poolPage() {
-  const i = info, s = state?.stratum || {}, c = state?.config || {};
+/* The connection card at the top of the Pool page: the page does not
+   re-render under the form, so the poll refreshes this card on its own
+   (after a save the miner reconnects; the dot turns green then). */
+function poolHero() {
+  const i = info, s = state?.stratum || {};
   const reasons = Object.entries(s.reject_reasons || {}).map(([m, n]) => `${esc(m)} × ${n}`).join(" · ");
   const tot = (s.shares_accepted || 0) + (s.shares_rejected || 0), rej = tot ? s.shares_rejected / tot * 100 : 0;
   const fb = i.isUsingFallbackStratum, dotc = !i.stratumConnected ? "var(--err)" : fb ? "var(--warn)" : "var(--ok)";
-  return `<div style="display:flex;flex-direction:column;gap:18px">
-  <section class="dh phero" style="--fc:${dotc}">
+  return `  <section class="dh phero" style="--fc:${dotc}">
     <div class="dhid" style="justify-content:space-between"><div style="min-width:min(100%,340px);flex:1"><div class="lbl">${fb ? t("on_fallback") : t("pool")}</div>
       <div class="plink" style="margin-top:8px;background:rgba(0,224,255,.06)"><span class="dot" style="background:${dotc};box-shadow:0 0 10px ${dotc}"></span><span class="host">${esc(fb ? i.activePool : `${i.stratumURL}:${i.stratumPort}`)}</span><span class="num" style="font-size:12px;color:var(--plasma);white-space:nowrap">${i.stratumProtocolActive === "SV2" ? "Stratum V2 · Noise" : "Stratum V1"}${i.stratumTLSActive ? " · TLS" : ""}</span></div></div>
       <div class="pworker"><div class="lbl">${t("worker")}</div><div class="num" style="margin-top:8px">${esc(worker(fb ? i.fallbackStratumUser : i.stratumUser))}</div></div></div>
@@ -888,7 +890,16 @@ function poolPage() {
       <div><span class="lbl">${t("reconnects")}</span><b>${nf(s.reconnects)}</b></div></div>
     ${s.last_reject ? `<div class="num dim" style="font-size:12px;word-break:break-all;position:relative;z-index:1">${t("last_reject")}: ${esc(s.last_reject)}</div>` : ""}
     ${payoutHtml(i)}
-  </section>
+  </section>`;
+}
+function poolHeroRefresh() {
+  const e = $("#phero-slot"), h = info && poolHero();
+  if (e && h != null && e._h !== h) { e.innerHTML = h; e._h = h; }
+}
+function poolPage() {
+  const i = info, c = state?.config || {};
+  return `<div style="display:flex;flex-direction:column;gap:18px">
+  <div id="phero-slot" style="display:contents">${poolHero()}</div>
   ${poolsCard(i)}
   <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) + fld("coinTicker", c.coinTicker || "BTC", {hint: t("coin_s")}) + tog("stratumTLS", c.stratumTLS > 0, t("tls_main_s"), true, true) + pinSlot(false, i) + ssel("stratumProtocol", c.stratumProtocol || "SV1", [["SV1", "Stratum V1"], ["SV2", "Stratum V2"]], t("proto_main_s")) + fld("stratumV2AuthorityPubkey", c.stratumV2AuthorityPubkey || "", {hint: t("auth_s")}) + tog("stratumV2RequireAuth", c.stratumV2RequireAuth !== false, t("reqauth_s"), true) +
     `<div style="grid-column:1/-1;height:1px;background:rgba(255,255,255,.06)"></div>` + `<div class="lbl" style="grid-column:1/-1">${t("fb_pool")}</div>` + tog("useFallbackStratum", c.useFallbackStratum, t("fb_s"), true) +
@@ -1649,7 +1660,7 @@ async function load(full) {
   if (full && asic === null) { try { asic = await get("/api/system/asic"); } catch (e) { asic = false; } }
   if (route === "dashboard") { try { hist = await get(`/api/v1/history?span=${span}`); } catch (e) {} }
   if (route === "system" && full) { try { upd = await get("/api/v1/update"); } catch (e) {} }
-  if (route === "dashboard" || full) render(); else { header(); if (route === "pool") pinRefresh(); }
+  if (route === "dashboard" || full) render(); else { header(); if (route === "pool") { pinRefresh(); poolHeroRefresh(); } }
 }
 function go() {
   route = (location.hash.match(/#\/(\w+)/) || [])[1] || (HOTSPOT ? "network" : "dashboard");
