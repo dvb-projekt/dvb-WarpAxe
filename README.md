@@ -305,7 +305,9 @@ back at any time with `GET /api/v1/display/frame`.
   the previous firmware ran on TLS with the owner's own certificate stays
   on TLS here, with the pinned CA bundle, rather than dropping to plain
   text (a pool on a private certificate then fails to connect; TLS can be
-  switched off for it). A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
+  switched off for it). A self-signed certificate, such as the one WarpPool
+  creates on Umbrel, is not accepted either, so connect to such a pool on
+  its plain port (WarpPool: 3333) on the home network for now. A pool that asks for an extranonce2 size outside 1–16 bytes (V2:
   1–32) is refused instead of trusted.
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
