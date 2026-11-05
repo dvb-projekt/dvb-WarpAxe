@@ -849,6 +849,16 @@ function poolsCard(i) {
 function fpShort(f) { return `${f.slice(0, 11)} … ${f.slice(-11)}`; }
 function fpLines(f) { const b = f.split(":"), out = []; for (let i = 0; i < b.length; i += 8) out.push(b.slice(i, i + 8).join(":")); return out.join("\n"); }
 function fpHtml(f) { return `<div><b class="num" style="font-size:15px;letter-spacing:.02em">${esc(fpShort(f))}</b><pre class="num dim" style="margin:6px 0 0;font-size:12px;line-height:1.5;white-space:pre;overflow-x:auto">${esc(fpLines(f))}</pre></div>`; }
+/* The box lives in its own slot so the poll can refresh it on the Pool
+   page, which otherwise does not re-render under the form: a key seen
+   after a reconnect shows up without a reload. */
+function pinSlot(fb, i) { return `<div id="pin-${fb ? "fb" : "main"}" style="display:contents">${pinHtml(fb, i)}</div>`; }
+function pinRefresh() {
+  for (const fb of [false, true]) {
+    const e = $(`#pin-${fb ? "fb" : "main"}`), h = info && pinHtml(fb, info);
+    if (e && h != null && e._h !== h) { e.innerHTML = h; e._h = h; }
+  }
+}
 function pinHtml(fb, i) {
   const pre = fb ? "fallbackStratum" : "stratum", pin = i[pre + "TLSPin"] || "", pending = i[pre + "TLSPending"] || "", changed = !!i[pre + "TLSKeyChanged"];
   const box = (rgb, title, body) => `<div class="note" style="grid-column:1/-1;flex-direction:column;gap:10px;background:rgba(${rgb},.08);border:1px solid rgba(${rgb},.3)"><b style="color:rgb(${rgb})">${title}</b>${body}</div>`;
@@ -877,9 +887,9 @@ function poolPage() {
     ${payoutHtml(i)}
   </section>
   ${poolsCard(i)}
-  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) + fld("coinTicker", c.coinTicker || "BTC", {hint: t("coin_s")}) + tog("stratumTLS", c.stratumTLS > 0, t("tls_main_s"), true, true) + pinHtml(false, i) + ssel("stratumProtocol", c.stratumProtocol || "SV1", [["SV1", "Stratum V1"], ["SV2", "Stratum V2"]], t("proto_main_s")) + fld("stratumV2AuthorityPubkey", c.stratumV2AuthorityPubkey || "", {hint: t("auth_s")}) + tog("stratumV2RequireAuth", c.stratumV2RequireAuth !== false, t("reqauth_s"), true) +
+  <form id="pf">${sec(t("pool_settings"), t("pool_hint"), `<div class="lbl" style="grid-column:1/-1">${t("main_pool")}</div>` + fld("stratumURL", c.stratumURL) + fld("stratumPort", c.stratumPort, {type: "number", min: 1, max: 65535}) + fld("stratumUser", c.stratumUser) + fld("stratumPassword", "", {type: "password", hint: t("keep_pw")}) + fld("coinTicker", c.coinTicker || "BTC", {hint: t("coin_s")}) + tog("stratumTLS", c.stratumTLS > 0, t("tls_main_s"), true, true) + pinSlot(false, i) + ssel("stratumProtocol", c.stratumProtocol || "SV1", [["SV1", "Stratum V1"], ["SV2", "Stratum V2"]], t("proto_main_s")) + fld("stratumV2AuthorityPubkey", c.stratumV2AuthorityPubkey || "", {hint: t("auth_s")}) + tog("stratumV2RequireAuth", c.stratumV2RequireAuth !== false, t("reqauth_s"), true) +
     `<div style="grid-column:1/-1;height:1px;background:rgba(255,255,255,.06)"></div>` + `<div class="lbl" style="grid-column:1/-1">${t("fb_pool")}</div>` + tog("useFallbackStratum", c.useFallbackStratum, t("fb_s"), true) +
-    fld("fallbackStratumURL", c.fallbackStratumURL) + fld("fallbackStratumPort", c.fallbackStratumPort, {type: "number", min: 1, max: 65535}) + fld("fallbackStratumUser", c.fallbackStratumUser) + fld("fallbackStratumPassword", "", {type: "password", hint: t("keep_pw")}) + tog("fallbackStratumTLS", c.fallbackStratumTLS > 0, t("tls_s"), true, true) + pinHtml(true, i) + ssel("fallbackStratumProtocol", c.fallbackStratumProtocol || "SV1", [["SV1", "Stratum V1"], ["SV2", "Stratum V2"]], t("proto_s")) + fld("fallbackStratumV2AuthorityPubkey", c.fallbackStratumV2AuthorityPubkey || "", {hint: t("auth_s")}) + tog("fallbackStratumV2RequireAuth", c.fallbackStratumV2RequireAuth !== false, t("reqauth_s"), true), actions(true))}</form></div>`;
+    fld("fallbackStratumURL", c.fallbackStratumURL) + fld("fallbackStratumPort", c.fallbackStratumPort, {type: "number", min: 1, max: 65535}) + fld("fallbackStratumUser", c.fallbackStratumUser) + fld("fallbackStratumPassword", "", {type: "password", hint: t("keep_pw")}) + tog("fallbackStratumTLS", c.fallbackStratumTLS > 0, t("tls_s"), true, true) + pinSlot(true, i) + ssel("fallbackStratumProtocol", c.fallbackStratumProtocol || "SV1", [["SV1", "Stratum V1"], ["SV2", "Stratum V2"]], t("proto_s")) + fld("fallbackStratumV2AuthorityPubkey", c.fallbackStratumV2AuthorityPubkey || "", {hint: t("auth_s")}) + tog("fallbackStratumV2RequireAuth", c.fallbackStratumV2RequireAuth !== false, t("reqauth_s"), true), actions(true))}</form></div>`;
 }
 /* Whether the miner's clock is set: TLS and an authenticated Stratum V2
    pool wait for it, and a blocked NTP server otherwise shows only as a
@@ -1636,7 +1646,7 @@ async function load(full) {
   if (full && asic === null) { try { asic = await get("/api/system/asic"); } catch (e) { asic = false; } }
   if (route === "dashboard") { try { hist = await get(`/api/v1/history?span=${span}`); } catch (e) {} }
   if (route === "system" && full) { try { upd = await get("/api/v1/update"); } catch (e) {} }
-  if (route === "dashboard" || full) render(); else header();
+  if (route === "dashboard" || full) render(); else { header(); if (route === "pool") pinRefresh(); }
 }
 function go() {
   route = (location.hash.match(/#\/(\w+)/) || [])[1] || (HOTSPOT ? "network" : "dashboard");
