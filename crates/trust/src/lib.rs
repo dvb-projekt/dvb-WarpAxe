@@ -22,9 +22,16 @@
 //! No I/O and no unsafe code: the firmware hands in the bundle as embedded
 //! and the raw subject and key of the certificate (mbedTLS `subject_raw`,
 //! `pk_raw`), so the rule runs under `cargo test`.
+//!
+//! [`pin`] is the second rule, for the pool connection only: a pool
+//! certificate no public authority issued is accepted when its public
+//! key is the one the owner confirmed (SHA-256 of the SubjectPublicKeyInfo).
 
 #![cfg_attr(not(test), no_std)]
 #![forbid(unsafe_code)]
+
+pub mod pin;
+pub mod x509;
 
 /// mbedTLS `MBEDTLS_X509_BADCERT_EXPIRED`.
 pub const BADCERT_EXPIRED: u32 = 0x01;
