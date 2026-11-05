@@ -1025,3 +1025,106 @@ mod board_choice {
         assert_eq!(first_start_verdict(0, 1, None, &[]), FirstStart::NoChips);
     }
 }
+
+// ---------------------------------------------------------- domain latch
+
+/// The domain-latch policy against the simulated chain: what the
+/// firmware does once a second (request the counters, hand the monitor's
+/// domain rates to [`DomainLatch`]), in simulated time. A chip whose
+/// counters are older than five seconds is not fresh.
+mod domain_latch {
+    use super::*;
+    use warpaxe_chain::{DomainLatch, LatchSample, LatchVerdict};
+
+    const STALE_US: u64 = 5_000_000;
+
+    /// Mine for `seconds`, observing once a second; the verdicts with
+    /// the simulated second they came at.
+    fn observe(b: &mut Bench, p: &mut DomainLatch, seconds: u64) -> Vec<(u64, LatchVerdict)> {
+        let mut out = Vec::new();
+        for _ in 0..seconds {
+            b.drv.request_counters(&mut b.uart).unwrap();
+            b.mine_ms(1000);
+            let m = b.drv.monitor();
+            let rates: Vec<Vec<f32>> = (0..m.chips().len())
+                .map(|i| (0..m.domains()).map(|d| m.domain_ghs(i, d)).collect())
+                .collect();
+            let samples: Vec<LatchSample> = m
+                .chips()
+                .iter()
+                .zip(b.drv.chips())
+                .zip(&rates)
+                .map(|((c, st), r)| LatchSample {
+                    silent: st.silent,
+                    fresh: b.now.saturating_sub(c.total.time_us) < STALE_US,
+                    domains: r,
+                })
+                .collect();
+            let now_s = b.now / 1_000_000;
+            if let Some(v) = p.observe(now_s, b.drv.accepting_work(), &samples) {
+                out.push((now_s, v));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn a_latched_domain_is_caught_after_ten_minutes_and_named() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        // Chip 1, domain 2 at 3 % of its share: the chip still answers
+        // and finds nonces, only that domain's counter crawls.
+        b.uart.sim.chip_mut(1).inject(Fault::WeakDomain {
+            domain: 2,
+            per_mille: 30,
+        });
+        b.mine_ms(2_000);
+        let mut p = DomainLatch::new();
+        let start = b.now / 1_000_000;
+        let v = observe(&mut b, &mut p, 700);
+        assert_eq!(v.len(), 1, "{v:?}");
+        let (at, verdict) = v[0];
+        let LatchVerdict::Reset {
+            chip,
+            domain,
+            percent,
+        } = verdict
+        else {
+            panic!("{verdict:?}");
+        };
+        assert_eq!((chip, domain), (1, 2));
+        assert!((2..=4).contains(&percent), "percent {percent}");
+        // The 600th fresh sample; the first read or two carry no rate
+        // yet but are fresh all the same.
+        assert!(
+            (600..=610).contains(&(at - start)),
+            "at {at}, start {start}"
+        );
+        assert!(!b.drv.chips()[1].silent, "the chip itself is not silent");
+    }
+
+    #[test]
+    fn a_weak_domain_at_half_its_share_does_not_trigger() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        b.uart.sim.chip_mut(1).inject(Fault::WeakDomain {
+            domain: 2,
+            per_mille: 500,
+        });
+        b.mine_ms(2_000);
+        let mut p = DomainLatch::new();
+        // Two full windows and change.
+        let v = observe(&mut b, &mut p, 1300);
+        assert!(v.is_empty(), "{v:?}");
+        assert_eq!(p.given_up().count(), 0);
+    }
+
+    #[test]
+    fn a_healthy_chain_is_left_alone() {
+        let mut b = Bench::new(2, Bench::config());
+        b.run_until_ready(20_000);
+        b.mine_ms(2_000);
+        let mut p = DomainLatch::new();
+        assert!(observe(&mut b, &mut p, 650).is_empty());
+    }
+}

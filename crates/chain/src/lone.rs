@@ -7,7 +7,8 @@
 //! brought it back. This decides when that restart happens for one chip:
 //!
 //! - after [`SILENT_S`] of silence with work going out,
-//! - at most once per [`SPACING_S`], over all chips,
+//! - at most once per [`SPACING_S`], over all chips and shared with the
+//!   domain-latch reset ([`LoneSilence::note_restart`]),
 //! - and not again for a chip whose last [`MAX_TRIES`] restarts each left
 //!   it silent again before it had run [`SPACING_S`]: that chip is given
 //!   up until the next boot.
@@ -93,6 +94,13 @@ impl LoneSilence {
             self.given_up = [false; MAX_CHIPS];
         }
         self.point = Some((mhz, mv));
+    }
+
+    /// Another intervention on the chain happened now (the domain-latch
+    /// reset): the hour between two restarts counts from it, so the
+    /// firmware intervenes at most once an hour in all.
+    pub fn note_restart(&mut self, now_s: u64) {
+        self.last_restart = Some(now_s);
     }
 
     /// One look at the chain. `silent` holds the watchdog's flag per chip
@@ -225,6 +233,15 @@ mod tests {
             v.first(),
             Some(&(600 + SPACING_S, Verdict::Restart { chip: 6 }))
         );
+    }
+
+    #[test]
+    fn a_domain_latch_reset_counts_against_the_hour() {
+        let mut p = LoneSilence::new();
+        assert!(run(&mut p, 0, 500, &one(4)).is_empty());
+        p.note_restart(500);
+        let v = run(&mut p, 501, 500 + SPACING_S + 10, &one(4));
+        assert_eq!(v, vec![(500 + SPACING_S, Verdict::Restart { chip: 4 })]);
     }
 
     #[test]

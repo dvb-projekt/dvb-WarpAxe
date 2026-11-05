@@ -22,5 +22,6 @@
 
 pub mod dump;
 pub mod events;
+pub mod heartbeat;
 pub mod restart;
 pub mod scrub;
