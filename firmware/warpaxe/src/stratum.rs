@@ -5,7 +5,7 @@
 //! shows is in [`state`].
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -15,9 +15,9 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
-    subscribe_request, suggest_difficulty_request, Notify, Request,
+    subscribe_request, suggest_difficulty_request, Request,
 };
-use warpaxe_stratum::{coinbase, line, parse_line, payout, Incoming, Prepared, Session};
+use warpaxe_stratum::{coinbase, line, parse_line, payout, Incoming, Job, Prepared, Session};
 
 use crate::link::{Link, LinkReader};
 use crate::{board, clock, config, diag, miner};

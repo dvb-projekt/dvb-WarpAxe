@@ -1,4 +1,4 @@
-#![recursion_limit = "512"]
+#![recursion_limit = "1024"]
 //! WarpAxe firmware: the ESP32-S3 side of the miner.
 //!
 //! Boot order matters and is deliberate: diagnostics first (a crash in the

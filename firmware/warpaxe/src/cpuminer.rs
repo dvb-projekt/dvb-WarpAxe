@@ -100,7 +100,6 @@ impl CpuJob {
             Job {
                 job_id: "probe".into(),
                 extranonce2: Vec::new(),
-                coinbase: Vec::new(),
                 merkle_root: [0x5a; 32],
                 prev_hash: [0xa5; 32],
                 version: 0x2000_0000,
