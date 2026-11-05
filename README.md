@@ -314,10 +314,10 @@ back at any time with `GET /api/v1/display/frame`.
   pool (main and fallback apart; a saved pool carries its key along).
   With a trusted key the host name is not checked, so the pool's IP
   address works as its address. The key is only consulted once the bundle
-  check fails, so a pool on a public certificate is never affected, also
-  not by its rotation; it never applies to the online update or the price
-  fetch (so a certificate the public PKI trusts for the host name still
-  connects, whatever its key). A pool whose own certificate later
+  check fails (so a certificate the public PKI trusts for the host name
+  still connects, whatever its key), so a pool on a public certificate
+  is never affected, also not by its rotation; it never applies to the
+  online update or the price fetch. A pool whose own certificate later
   presents another key does not connect until that key is confirmed on
   its own; "Forget" drops it
   ([`crates/trust`](crates/trust/src/pin.rs),

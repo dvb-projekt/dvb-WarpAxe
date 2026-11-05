@@ -224,7 +224,7 @@ unsafe extern "C" fn verify_pool(
                     );
                 } else {
                     log::warn!(
-                        "tls: pool certificate not from a public authority; its key {} is not confirmed (flags {:#x})",
+                        "tls: pool certificate not verifiable against a public authority (self-signed, or the chain incomplete); its key {} is not confirmed (flags {:#x})",
                         seen.pin.text().short(),
                         *flags
                     );

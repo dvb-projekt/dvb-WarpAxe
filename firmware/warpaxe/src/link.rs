@@ -53,7 +53,7 @@ impl std::fmt::Display for KeyRefused {
         } else {
             write!(
                 f,
-                "pool certificate not from a public authority: key {} (trust it on the Pool page)",
+                "pool certificate not verifiable against a public authority (self-signed, or the chain incomplete): key {} (trust it on the Pool page)",
                 self.0.pin.text().short()
             )
         }

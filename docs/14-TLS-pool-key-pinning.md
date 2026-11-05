@@ -16,8 +16,12 @@ confirmed by a click; not a custom-CA upload as the first answer.
    first checked as before: the chain against the CA bundle (plus the
    sent-root rule of v0.1.40), the name against the host. Only when
    mbedTLS leaves the *leaf* certificate "not trusted" is the stored pin
-   consulted. A public pool with a real certificate never meets the pin,
-   also not when its certificate rotates every 90 days.
+   consulted. A public pool with a real certificate, served with its
+   chain, never meets the pin, also not when its certificate rotates
+   every 90 days. (A pool that leaves its intermediate out of the chain
+   is refused like a self-signed one and its key offered; the texts say
+   "not verifiable against a public authority" in the log, and the Pool
+   page asks the owner to compare the fingerprint before the click.)
 2. **No silent take-over.** A refused leaf's key is remembered as
    "pending", in RAM only, per pool slot (main, fallback). The Pool page
    shows "Certificate not from a public authority", the fingerprint, and
@@ -29,7 +33,8 @@ confirmed by a click; not a custom-CA upload as the first answer.
    host name is not checked, so the pool's IP address works. A renewed
    certificate with the same key keeps the pin (test in `crates/trust`).
    A "Forget" button drops it.
-4. **A changed key never connects.** The session fails with a clear
+4. **A changed key of a pool on its own certificate never connects.**
+   The session fails with a clear
    message ("the pool's key changed: … is not the trusted key"), nothing
    is taken over, and the new key appears as pending with its own
    confirmation ("Trust the new key"), the old one shown beside it.
@@ -62,8 +67,8 @@ confirmed by a click; not a custom-CA upload as the first answer.
   SubjectPublicKeyInfo, for the tests (the firmware gets both from
   mbedTLS as `subject_raw` and `pk_raw`).
 - `firmware/warpaxe/src/tls_trust.rs`: `attach_pool` installs
-  `verify_pool`, which runs the sent-root rule, then the pin rule, then
-  ESP-IDF's own callback. `pool_begin(pin)` before the handshake,
+  `verify_pool` (the order is under "Order in the callback" below).
+  `pool_begin(pin)` before the handshake,
   `pool_outcome()` after it. `attach` (update, price fetch) is unchanged
   and never sees a pin.
 - `firmware/warpaxe/src/link.rs`: `Link::connect(host, port, tls, pin)`;
@@ -111,7 +116,8 @@ CN_MISMATCH, EXPIRED, FUTURE, BAD_MD:
 Never overridden, pin or no pin: REVOKED, KEY_USAGE, EXT_KEY_USAGE,
 NS_CERT_TYPE, BAD_PK, BAD_KEY (a weak or unsupported key stays refused).
 
-Order in the callback: a matching pin short-circuits before ESP-IDF's
+Order in the callback: the sent-root rule; then a leaf whose issuer is
+a bundle root is left to ESP-IDF; then a matching pin short-circuits before ESP-IDF's
 lookup (which has no issuer to find for a self-signed leaf and would end
 the handshake). An unconfirmed or changed key is only reported after
 ESP-IDF's own verdict refused the leaf, so a leaf a bundle root issued
