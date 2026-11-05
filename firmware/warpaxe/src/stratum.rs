@@ -19,8 +19,9 @@ use warpaxe_stratum::message::{
 };
 use warpaxe_stratum::{coinbase, parse_line, payout, Incoming, Job, Session};
 
-use crate::link::{Link, LinkReader};
+use crate::link::{KeyRefused, Link, LinkReader};
 use crate::{board, clock, config, diag, miner};
+use warpaxe_trust::pin::Pin;
 use warpaxe_sv2::{Client, ClientConfig, Event, Frame, Handshake, Template, Transport};
 
 const AGENT: &str = concat!("warpaxe/", env!("CARGO_PKG_VERSION"));
@@ -73,6 +74,9 @@ pub struct StratumState {
     pub connected: bool,
     pub subscribed: bool,
     pub authorized: bool,
+    /// The running TLS session's certificate was accepted by the pool's
+    /// confirmed key, not by the CA bundle.
+    pub tls_pinned: bool,
     pub extranonce1: String,
     pub extranonce2_size: usize,
     pub difficulty: f64,
@@ -251,6 +255,58 @@ static CURRENT_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
 /// `run` neither counts a failure nor waits for the backoff.
 static RECONNECT: AtomicBool = AtomicBool::new(false);
 
+/// A pool key the TLS check refused (no public authority, and not the
+/// confirmed key), per slot (main, fallback), in RAM only: the Pool page
+/// shows it for confirmation. Cleared when that pool's settings change
+/// (`clear_tls_pending`) or its certificate is accepted.
+static TLS_PENDING: Mutex<[Option<PendingKey>; 2]> = Mutex::new([None, None]);
+
+/// A pool's unconfirmed key, with the pool it was seen at.
+#[derive(Clone, Debug, Serialize)]
+pub struct PendingKey {
+    pub host: String,
+    pub port: u16,
+    /// SHA-256 of the SubjectPublicKeyInfo, `AB:CD:…:EF`.
+    pub key: String,
+    /// A key is confirmed for this pool, and this is another one.
+    pub changed: bool,
+}
+
+/// The unconfirmed key seen at the main (or fallback) pool as it is
+/// configured now; none once the pool's address changed.
+pub fn tls_pending(fallback: bool) -> Option<PendingKey> {
+    let cfg = config::get();
+    let (host, port) = if fallback {
+        (&cfg.fallback_url, cfg.fallback_port)
+    } else {
+        (&cfg.stratum_url, cfg.stratum_port)
+    };
+    TLS_PENDING.lock().unwrap()[usize::from(fallback)]
+        .clone()
+        .filter(|p| p.host.eq_ignore_ascii_case(host) && p.port == port)
+}
+
+/// Forget the unconfirmed key of the main (or fallback) pool: its
+/// settings changed, or a key was confirmed or forgotten.
+pub fn clear_tls_pending(fallback: bool) {
+    TLS_PENDING.lock().unwrap()[usize::from(fallback)] = None;
+}
+
+fn set_tls_pending(fallback: bool, host: &str, port: u16, seen: crate::tls_trust::Seen) {
+    TLS_PENDING.lock().unwrap()[usize::from(fallback)] = Some(PendingKey {
+        host: host.to_string(),
+        port,
+        key: seen.pin.text().as_str().to_string(),
+        changed: seen.changed,
+    });
+}
+
+/// The confirmed key of a pool as stored, or none (also for a value that
+/// does not parse: it is only ever written by `pool_refuse`).
+fn pin_of(stored: &str) -> Option<Pin> {
+    Pin::parse(stored)
+}
+
 /// Pool settings changed over the API: end the running session now, so
 /// the new pool, worker, password, TLS or protocol applies within
 /// seconds instead of at the next reboot (Oliver renamed a worker on
@@ -295,11 +351,12 @@ fn run() {
             on_fallback = true;
             fails = 0;
         }
-        let (host, port, tls, user, pass, v2) = if on_fallback {
+        let (host, port, tls, pin, user, pass, v2) = if on_fallback {
             (
                 cfg.fallback_url.clone(),
                 cfg.fallback_port,
                 cfg.fallback_tls > 0,
+                pin_of(&cfg.fallback_tls_pin),
                 cfg.fallback_user.clone(),
                 cfg.fallback_pass.clone(),
                 cfg.fallback_sv2().then(|| V2Pool {
@@ -312,6 +369,7 @@ fn run() {
                 cfg.stratum_url.clone(),
                 cfg.stratum_port,
                 cfg.stratum_tls > 0,
+                pin_of(&cfg.stratum_tls_pin),
                 cfg.stratum_user.clone(),
                 cfg.stratum_pass.clone(),
                 cfg.sv2().then(|| V2Pool {
@@ -326,6 +384,7 @@ fn run() {
             s.pool = pool.clone();
             s.using_fallback = on_fallback;
             s.tls = tls && !sv2;
+            s.tls_pinned = false;
             s.sv2 = sv2;
             s.connected = false;
             s.subscribed = false;
@@ -337,7 +396,7 @@ fn run() {
         CLOCK_UNSURE.store(false, Ordering::Relaxed);
         let result = match v2 {
             Some(v2) => session_v2_on_psram(host.clone(), port, user.clone(), v2, on_fallback),
-            None => session(&host, port, tls, &user, &pass, on_fallback),
+            None => session(&host, port, tls, pin, &user, &pass, on_fallback),
         };
         *FALLBACK_STREAM.lock().unwrap() = None;
         *CURRENT_STREAM.lock().unwrap() = None;
@@ -424,13 +483,31 @@ fn session(
     host: &str,
     port: u16,
     tls: bool,
+    pin: Option<Pin>,
     user: &str,
     pass: &str,
     fallback: bool,
 ) -> anyhow::Result<()> {
     // No try_clone: ESP-IDF has no dup(). The link is read on this thread
     // and written on a small writer thread (see `link`).
-    let stream = Arc::new(Link::connect(host, port, tls)?);
+    let stream = match Link::connect(host, port, tls, pin) {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            // A certificate refused for its key alone: the Pool page
+            // offers the key seen for confirmation (RAM only; the pin
+            // is written by the HTTP handler on the click).
+            if let Some(KeyRefused(seen)) = e.downcast_ref::<KeyRefused>() {
+                set_tls_pending(fallback, host, port, *seen);
+            }
+            return Err(e);
+        }
+    };
+    if tls {
+        // Accepted, by the bundle or by the confirmed key: nothing is
+        // pending for this pool any more.
+        clear_tls_pending(fallback);
+    }
+    let pinned = tls && crate::tls_trust::pool_outcome().1;
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     // Settings changed while this session was connecting (DNS, connect,
     // TLS): `reconnect` found no stream to shut, so end here and let
@@ -444,6 +521,7 @@ fn session(
     let mut reader = BufReader::new(LinkReader(&stream));
     update(|s| {
         s.connected = true;
+        s.tls_pinned = pinned;
         s.last_error.clear();
     });
     {
@@ -781,7 +859,7 @@ fn session_v2(
     }
     let now = now.unwrap_or(0) as u32;
 
-    let stream = Arc::new(Link::connect(host, port, false)?);
+    let stream = Arc::new(Link::connect(host, port, false, None)?);
 
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     // Settings changed while this session was connecting (DNS, connect,

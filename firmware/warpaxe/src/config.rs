@@ -29,6 +29,12 @@ pub struct Config {
     /// own certificate is not offered.)
     #[serde(rename = "stratumTLS")]
     pub stratum_tls: u8,
+    /// The main pool's confirmed public key for a certificate no public
+    /// authority issued: SHA-256 of its SubjectPublicKeyInfo as
+    /// `AB:CD:…:EF` (`warpaxe_trust::pin`); empty = none. Only consulted
+    /// when the bundle check fails; set by a click on the Pool page.
+    #[serde(rename = "stratumTLSPin")]
+    pub stratum_tls_pin: String,
     /// Switch to the fallback pool after repeated failures on the main one
     /// (AxeOS/NerdOS name).
     #[serde(rename = "useFallbackStratum")]
@@ -43,6 +49,9 @@ pub struct Config {
     pub fallback_pass: String,
     #[serde(rename = "fallbackStratumTLS")]
     pub fallback_tls: u8,
+    /// As `stratum_tls_pin`, for the fallback pool.
+    #[serde(rename = "fallbackStratumTLSPin")]
+    pub fallback_tls_pin: String,
     /// Stratum protocol of the main pool (AxeOS name): "SV1" or "SV2".
     #[serde(rename = "stratumProtocol")]
     pub stratum_protocol: String,
@@ -215,12 +224,14 @@ impl Default for Config {
             stratum_user: String::new(),
             stratum_pass: "x".into(),
             stratum_tls: 0,
+            stratum_tls_pin: String::new(),
             use_fallback: false,
             fallback_url: String::new(),
             fallback_port: 3333,
             fallback_user: String::new(),
             fallback_pass: "x".into(),
             fallback_tls: 0,
+            fallback_tls_pin: String::new(),
             stratum_protocol: "SV1".into(),
             stratum_v2_authority_pubkey: String::new(),
             stratum_v2_channel_type: "extended".into(),
@@ -563,6 +574,11 @@ pub struct PoolProfile {
     pub pass: String,
     #[serde(rename = "stratumTLS")]
     pub tls: u8,
+    /// The confirmed key of a pool on its own certificate, as in the
+    /// config; stored only when set, so the eight pools stay within the
+    /// NVS string (`as_patch` still clears it when switching).
+    #[serde(rename = "stratumTLSPin", skip_serializing_if = "String::is_empty")]
+    pub pin: String,
     #[serde(rename = "stratumProtocol")]
     pub protocol: String,
     #[serde(rename = "stratumV2AuthorityPubkey")]
@@ -583,6 +599,7 @@ impl PoolProfile {
             user: cfg.stratum_user.clone(),
             pass: cfg.stratum_pass.clone(),
             tls: cfg.stratum_tls,
+            pin: cfg.stratum_tls_pin.clone(),
             protocol: cfg.stratum_protocol.clone(),
             pubkey: cfg.stratum_v2_authority_pubkey.clone(),
             require_auth: cfg.stratum_v2_require_auth,
@@ -595,6 +612,9 @@ impl PoolProfile {
         let mut v = serde_json::to_value(self).unwrap_or_default();
         if let Some(o) = v.as_object_mut() {
             o.remove("name");
+            // A pool without a pin takes the previous pool's pin away.
+            o.entry("stratumTLSPin")
+                .or_insert_with(|| serde_json::Value::String(String::new()));
         }
         v
     }
@@ -1237,6 +1257,9 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
                     p.pass
                 },
                 tls: tls_from_stock(u16::from(p.tls), "saved pool"),
+                // AxeOS's own certificate (stratumTLS 2) is not taken over
+                // as a key: the owner confirms it on the Pool page.
+                pin: String::new(),
                 protocol: if is_sv2(&p.protocol) {
                     "SV2".into()
                 } else {
