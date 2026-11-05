@@ -330,7 +330,7 @@
   "cb_payout_short": "ブロック報酬の取り分",
   "cb_to_you": "あなたのアドレスへ",
   "cb_value": "コインベースの金額",
-  "cb_witness": "ウィットネスコミットメント（OP_RETURN）",
+  "cb_witness": "SegWitチェックサム（金額なし）",
   "cb_more": "その他の出力（{n}）",
   "upd_restarting": "マイナーが新しいファームウェアで再起動しています。このページは再起動を待って自動で再読み込みします。",
   "upd_done": "アップデート完了：マイナーは WarpAxe {v} で動作しています。",

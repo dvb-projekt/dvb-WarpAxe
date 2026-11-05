@@ -330,7 +330,7 @@
   "cb_payout_short": "Versement par bloc",
   "cb_to_you": "à votre adresse",
   "cb_value": "Valeur de la coinbase",
-  "cb_witness": "engagement de témoin (OP_RETURN)",
+  "cb_witness": "somme de contrôle SegWit (sans montant)",
   "cb_more": "autres sorties ({n})",
   "upd_restarting": "Le mineur redémarre avec le nouveau firmware ; cette page attend son retour et se recharge d’elle-même.",
   "upd_done": "Mise à jour terminée : le mineur tourne sous WarpAxe {v}.",

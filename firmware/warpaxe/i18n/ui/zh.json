@@ -330,7 +330,7 @@
   "cb_payout_short": "出块收益",
   "cb_to_you": "支付到你的地址",
   "cb_value": "Coinbase 金额",
-  "cb_witness": "见证承诺（OP_RETURN）",
+  "cb_witness": "SegWit 校验和（无金额）",
   "cb_more": "其他输出（{n}）",
   "upd_restarting": "矿机正在用新固件重启，本页面会等待重启完成并自动刷新。",
   "upd_done": "更新完成：矿机正在运行 WarpAxe {v}。",

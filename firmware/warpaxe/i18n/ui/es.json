@@ -330,7 +330,7 @@
   "cb_payout_short": "Pago por bloque",
   "cb_to_you": "a tu dirección",
   "cb_value": "Valor de la coinbase",
-  "cb_witness": "compromiso de testigo (witness commitment, OP_RETURN)",
+  "cb_witness": "suma de comprobación SegWit (sin importe)",
   "cb_more": "otras salidas ({n})",
   "upd_restarting": "El minero se reinicia con el nuevo firmware; esta página espera a que vuelva y se recarga sola.",
   "upd_done": "Actualización terminada: el minero funciona con WarpAxe {v}.",
