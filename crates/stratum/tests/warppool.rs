@@ -68,8 +68,9 @@ fn coinbase_and_merkle_root_match_python() {
     .unwrap();
     let en2 = hex::decode(v["extranonce2"].as_str().unwrap()).unwrap();
     let job = Job::build(&session, &notify(), &en2).unwrap();
+    let prepared = warpaxe_stratum::Prepared::new(notify()).unwrap();
     assert_eq!(
-        hex::encode(&job.coinbase),
+        hex::encode(prepared.coinbase(&session, &en2)),
         v["coinbase_hex"].as_str().unwrap()
     );
     assert_eq!(

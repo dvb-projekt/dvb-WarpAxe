@@ -314,6 +314,7 @@
   "cb_to_you": "à votre adresse",
   "cb_value": "Valeur de la coinbase",
   "cb_witness": "engagement de témoin (OP_RETURN)",
+  "cb_more": "autres sorties ({n})",
   "upd_restarting": "Le mineur redémarre avec le nouveau firmware ; cette page attend son retour et se recharge d’elle-même.",
   "upd_done": "Mise à jour terminée : le mineur tourne sous WarpAxe {v}.",
   "upd_same": "Le mineur a redémarré mais tourne toujours sous {v} : la mise à jour n’a pas été appliquée. Le journal de la page Système en donne la raison.",

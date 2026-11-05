@@ -5,7 +5,7 @@
 //! shows is in [`state`].
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader};
+use std::io::BufReader;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{channel, Sender};
@@ -15,9 +15,9 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
-    subscribe_request, suggest_difficulty_request, Notify, Request,
+    subscribe_request, suggest_difficulty_request, Request,
 };
-use warpaxe_stratum::{coinbase, parse_line, payout, Incoming, Job, Session};
+use warpaxe_stratum::{coinbase, line, parse_line, payout, Incoming, Job, Prepared, Session};
 
 use crate::link::{Link, LinkReader};
 use crate::{board, clock, config, diag, miner};
@@ -62,7 +62,12 @@ pub struct StratumState {
     /// Who the current job pays if it finds a block: (satoshis, address)
     /// per coinbase output, their total and what goes to the worker's own
     /// address (AxeOS `coinbaseOutputs`, `coinbaseValue*Satoshis`).
+    /// At most [`payout::SHOWN_OUTPUTS`] of them (own first, then the
+    /// witness commitment, then the largest); the rest only counted.
     pub coinbase_outputs: Vec<(u64, String)>,
+    /// Outputs left out of `coinbase_outputs`, and their sum.
+    pub coinbase_outputs_hidden: u32,
+    pub coinbase_outputs_hidden_sat: u64,
     pub coinbase_total_sat: u64,
     pub coinbase_user_sat: u64,
     /// The worker name starts with an address of some SHA-256 coin; if
@@ -93,13 +98,17 @@ pub struct StratumState {
     /// Reject reasons the pool gave, with counts (AxeOS
     /// `sharesRejectedReasons`).
     pub reject_reasons: std::collections::BTreeMap<String, u32>,
+    /// Sessions ended because the pool sent a line over
+    /// [`line::MAX_LINE`], since boot.
+    pub lines_too_long: u32,
     pub last_reject: String,
 }
 
 static STATE: Mutex<Option<StratumState>> = Mutex::new(None);
 /// The newest work from the pool, whichever protocol brought it.
 enum Feed {
-    V1(Session, Notify),
+    /// Decoded once per notify; every job hashes from it.
+    V1(Session, Prepared),
     V2(Template),
 }
 
@@ -124,13 +133,17 @@ static NEXT_ID: Mutex<u64> = Mutex::new(100);
 
 /// Keep a job's payout; a job that does not parse clears it rather than
 /// leaving the previous pool's split on show.
-fn set_payout(st: &mut StratumState, pay: Option<payout::Payout>) {
+fn set_payout(st: &mut StratumState, pay: Option<payout::Payout>, user: &str) {
     let p = pay.unwrap_or_default();
-    st.coinbase_outputs = p
+    let own = if p.own_address { user.split('.').next().unwrap_or("").trim() } else { "" };
+    let shown = payout::shown(p.outputs, own, payout::SHOWN_OUTPUTS);
+    st.coinbase_outputs = shown
         .outputs
         .into_iter()
         .map(|o| (o.value, o.address))
         .collect();
+    st.coinbase_outputs_hidden = u32::try_from(shown.hidden).unwrap_or(u32::MAX);
+    st.coinbase_outputs_hidden_sat = shown.hidden_value;
     st.coinbase_total_sat = p.total;
     st.coinbase_user_sat = p.user;
     st.coinbase_own_address = p.own_address;
@@ -164,7 +177,7 @@ pub fn next_job() -> Option<(Job, u64, u64)> {
     let n = en2.len();
     en2[n - take..].copy_from_slice(&be[4 - take..]);
     let job = match feed {
-        Feed::V1(session, notify) => Job::build(session, notify, &en2),
+        Feed::V1(session, prepared) => prepared.build(session, &en2),
         Feed::V2(t) => t.build(&en2),
     }?;
     Some((job, *seq, *clean_seq))
@@ -506,7 +519,14 @@ fn session(
     let started = Instant::now();
     loop {
         line.clear();
-        let n = reader.read_line(&mut line)?;
+        let n = match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
+            Ok(n) => n,
+            Err(e) if line::is_too_long(&e) => {
+                update(|s| s.lines_too_long += 1);
+                anyhow::bail!("{e}: the pool sent a line too long to keep, reconnecting");
+            }
+            Err(e) => return Err(e.into()),
+        };
         if n == 0 {
             anyhow::bail!("pool closed the connection");
         }
@@ -588,14 +608,18 @@ fn session(
                 };
                 let clean = n.clean_jobs;
                 let job_id = n.job_id.clone();
-                let c1 = hex::decode(&n.coinb1).unwrap_or_default();
-                let c2 = hex::decode(&n.coinb2).unwrap_or_default();
-                let height = coinbase::block_height(&c1).unwrap_or(0);
+                let Some(prepared) = Prepared::new(n) else {
+                    log::warn!("stratum: notify {job_id} with a field that is not hex, ignored");
+                    continue;
+                };
+                let (c1, c2) = prepared.coinbase_parts();
+                let n = &prepared.notify;
+                let height = coinbase::block_height(c1).unwrap_or(0);
                 let net_diff = u32::from_str_radix(&n.nbits, 16)
                     .map(coinbase::nbits_difficulty)
                     .unwrap_or(0.0);
-                let tag = coinbase::script_text(&c1, &c2, s.extranonce1.len() + s.extranonce2_size);
-                let pay = payout::payout(&c1, s.extranonce1.len() + s.extranonce2_size, &c2, user);
+                let tag = coinbase::script_text(c1, c2, s.extranonce1.len() + s.extranonce2_size);
+                let pay = payout::payout(c1, s.extranonce1.len() + s.extranonce2_size, c2, user);
                 if started.elapsed() < Duration::from_secs(5) || clean {
                     log::info!(
                         "stratum: job {} ntime {} clean {}",
@@ -604,13 +628,13 @@ fn session(
                         clean
                     );
                 }
-                publish(Feed::V1(s.clone(), n), clean);
+                publish(Feed::V1(s.clone(), prepared), clean);
                 update(|st| {
                     st.last_job_id = job_id;
                     st.block_height = height;
                     st.network_difficulty = net_diff;
                     st.scriptsig = tag;
-                    set_payout(st, pay);
+                    set_payout(st, pay, user);
                 });
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
@@ -974,7 +998,7 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
                 st.block_height = height;
                 st.network_difficulty = net_diff;
                 st.scriptsig = tag;
-                set_payout(st, pay);
+                set_payout(st, pay, user);
             });
         }
         Event::ExtranoncePrefix(p) => {
