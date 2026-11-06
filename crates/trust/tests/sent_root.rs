@@ -48,10 +48,10 @@ fn subject_and_key(cert: &[u8]) -> (&[u8], &[u8]) {
 }
 
 #[test]
-fn the_bundle_parses_to_its_118_roots() {
+fn the_bundle_parses_to_its_117_roots() {
     let b = Bundle::new(BUNDLE).expect("bundle");
-    assert_eq!(b.len(), 118);
-    assert_eq!(b.entries().count(), 118);
+    assert_eq!(b.len(), 117);
+    assert_eq!(b.entries().count(), 117);
 }
 
 #[test]

@@ -42,6 +42,24 @@ pub const BADCERT_FUTURE: u32 = 0x200;
 /// mbedTLS `MBEDTLS_X509_BADCERT_BAD_MD`.
 pub const BADCERT_BAD_MD: u32 = 0x4000;
 
+/// The flags with the date faults removed unless the clock can be trusted.
+///
+/// mbedTLS checks every certificate's validity window against the system
+/// clock (`CONFIG_MBEDTLS_HAVE_TIME_DATE`, since v0.1.41; before that the
+/// dates were never checked). A clock NTP has not set this boot is not one
+/// to judge a certificate by: after a cold boot it starts in 1970, before
+/// any certificate's `notBefore`, and across a reset it is whatever RTC
+/// memory kept. Its date faults are then the clock's, not the server's,
+/// and are dropped; everything else stands. With NTP off the dates are
+/// never checked, as before.
+pub fn clock_checked(flags: u32, clock_trusted: bool) -> u32 {
+    if clock_trusted {
+        flags
+    } else {
+        flags & !(BADCERT_EXPIRED | BADCERT_FUTURE)
+    }
+}
+
 /// ESP-IDF's compact bundle (`gen_crt_bundle.py`): a big-endian count,
 /// then per root its name length, key length, DER subject name and DER
 /// SubjectPublicKeyInfo.
@@ -112,4 +130,27 @@ pub fn is_sent_root(bundle: &Bundle<'_>, flags: u32, subject: &[u8], spki: &[u8]
     flags & BADCERT_NOT_TRUSTED != 0
         && flags & !(BADCERT_NOT_TRUSTED | ignorable) == 0
         && bundle.contains(subject, spki)
+}
+
+#[cfg(test)]
+mod clock_tests {
+    use super::*;
+
+    #[test]
+    fn trusted_clock_keeps_every_flag() {
+        let f = BADCERT_EXPIRED | BADCERT_FUTURE | BADCERT_NOT_TRUSTED;
+        assert_eq!(clock_checked(f, true), f);
+        assert_eq!(clock_checked(BADCERT_EXPIRED, true), BADCERT_EXPIRED);
+    }
+
+    #[test]
+    fn untrusted_clock_drops_only_the_dates() {
+        assert_eq!(clock_checked(BADCERT_EXPIRED, false), 0);
+        assert_eq!(clock_checked(BADCERT_FUTURE, false), 0);
+        assert_eq!(
+            clock_checked(BADCERT_FUTURE | BADCERT_NOT_TRUSTED | BADCERT_BAD_MD, false),
+            BADCERT_NOT_TRUSTED | BADCERT_BAD_MD
+        );
+        assert_eq!(clock_checked(0, false), 0);
+    }
 }

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """Check the pinned CA bundle the firmware trusts (firmware/warpaxe/certificates).
 
-Without arguments: the file matches its published checksum, holds 118 roots,
-and none of the roots removed after the eMudhra incident. With --build-dir
+Without arguments: curl's extract matches its published checksum, the bundle
+the firmware trusts (ca-bundle.pem) is that extract minus the roots in DROPPED,
+it holds 117 roots and none of the eMudhra roots. With --write: regenerate
+ca-bundle.pem from the extract. With --build-dir
 (a finished firmware build, the esp-idf-sys `out` directory): the build used
 only this file, and the trust store compiled into the app is exactly the one
 ESP-IDF's generator makes from it.
 
-Run from the repo root: python3 tools/check-ca-bundle.py [--build-dir DIR]
+Run from the repo root: python3 tools/check-ca-bundle.py [--write] [--build-dir DIR]
 """
 import argparse
 import hashlib
@@ -20,9 +22,25 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 FW = ROOT / "firmware/warpaxe"
-BUNDLE = FW / "certificates/cacert-2026-10-20.pem"
-ROOTS = 118
+UPSTREAM = FW / "certificates/cacert-2026-10-20.pem"
+BUNDLE = FW / "certificates/ca-bundle.pem"
+ROOTS = 117
+# Not in curl's extract of 2026-10-20 (Mozilla removed them).
 REMOVED = {"emSign ECC Root CA - G3", "AAA Certificate Services"}
+# Still in the extract, left out by WarpAxe: the last eMudhra root, as
+# ForgeOS v1.8 and ESP-Miner do (certificates/README.md).
+DROPPED = {"emSign Root CA - G1"}
+EMUDHRA = re.compile(r"emSign|eMudhra", re.I)
+
+
+def derive():
+    """curl's extract without the blocks named in DROPPED, byte for byte otherwise."""
+    text = UPSTREAM.read_text()
+    blocks = text.split("\n\n")
+    kept = [b for b in blocks if b.split("\n", 1)[0] not in DROPPED]
+    if len(blocks) - len(kept) != len(DROPPED):
+        fail(f"{UPSTREAM.name}: expected to drop {sorted(DROPPED)}, dropped {len(blocks) - len(kept)} blocks")
+    return "\n\n".join(kept)
 
 
 def fail(why):
@@ -31,18 +49,23 @@ def fail(why):
 
 
 def check_file():
-    want = BUNDLE.with_suffix(".pem.sha256").read_text().split()[0]
-    if hashlib.sha256(BUNDLE.read_bytes()).hexdigest() != want:
-        fail(f"{BUNDLE.name}: checksum does not match {BUNDLE.name}.sha256")
+    want = UPSTREAM.with_suffix(".pem.sha256").read_text().split()[0]
+    if hashlib.sha256(UPSTREAM.read_bytes()).hexdigest() != want:
+        fail(f"{UPSTREAM.name}: checksum does not match {UPSTREAM.name}.sha256")
+    if BUNDLE.read_text() != derive():
+        fail(f"{BUNDLE.name} is not {UPSTREAM.name} minus {sorted(DROPPED)}: run with --write")
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     ctx.load_verify_locations(cafile=str(BUNDLE))
     n = ctx.cert_store_stats()["x509_ca"]
     if n != ROOTS:
         fail(f"{BUNDLE.name}: {n} roots, expected {ROOTS}")
     names = {v for c in ctx.get_ca_certs() for rdn in c["subject"] for k, v in rdn if k == "commonName"}
-    if names & REMOVED:
-        fail(f"{BUNDLE.name}: still holds {sorted(names & REMOVED)}")
-    print(f"{BUNDLE.name}: checksum ok, {n} roots, removed roots absent")
+    bad = {c for c in names if c in REMOVED | DROPPED or EMUDHRA.search(c)}
+    orgs = {v for c in ctx.get_ca_certs() for rdn in c["subject"] for k, v in rdn if k == "organizationName"}
+    bad |= {o for o in orgs if EMUDHRA.search(o)}
+    if bad:
+        fail(f"{BUNDLE.name}: still holds {sorted(bad)}")
+    print(f"{BUNDLE.name}: {UPSTREAM.name} checksum ok, {n} roots, no eMudhra root")
 
 
 def config(build):
@@ -55,7 +78,7 @@ def config(build):
 def check_build(build):
     on, path = config(build)
     for k in ("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE", "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_NONE",
-              "CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE"):
+              "CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE", "CONFIG_MBEDTLS_HAVE_TIME_DATE"):
         if k not in on:
             fail(f"build: {k} is not set (stale build directory? cargo clean -p esp-idf-sys)")
     for k in ("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL", "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_CMN",
@@ -83,8 +106,11 @@ def check_build(build):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    ap.add_argument("--write", action="store_true", help=f"regenerate {BUNDLE.name} from {UPSTREAM.name}")
     ap.add_argument("--build-dir", type=Path, help="esp-idf-sys out directory of a firmware build")
     a = ap.parse_args()
+    if a.write:
+        BUNDLE.write_text(derive())
     check_file()
     if a.build_dir:
         check_build(a.build_dir)

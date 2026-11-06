@@ -19,6 +19,12 @@
 //! tests do. On an ESP-IDF upgrade check that its signature is unchanged,
 //! and drop the sent-root part once ESP-IDF trusts a sent root itself.
 //!
+//! Dates: mbedTLS checks each certificate's validity window
+//! (`CONFIG_MBEDTLS_HAVE_TIME_DATE`) for every client. Both callbacks
+//! first drop the date faults when NTP has not set the clock this boot
+//! (`warpaxe_trust::clock_checked`), so a miner without a clock connects
+//! as before v0.1.41, and one with a clock refuses an expired certificate.
+//!
 //! Threads: the callbacks run on the thread that handshakes (the stratum
 //! thread for the pool), and only ever write RAM ([`POOL`]).
 
@@ -83,12 +89,35 @@ unsafe fn sent_root(c: &sys::mbedtls_x509_crt, depth: c_int, flags: &mut u32) ->
     false
 }
 
+/// The date rule, first thing in both callbacks: without a clock NTP set,
+/// a certificate's dates are not held against it; with one, an expired or
+/// not yet valid certificate is named in the log.
+///
+/// # Safety
+/// `flags` is the pointer mbedTLS hands to the verify callback.
+unsafe fn dates(depth: c_int, flags: *mut u32) {
+    if flags.is_null() {
+        return;
+    }
+    let trusted = crate::clock::trusted();
+    let f = *flags;
+    *flags = warpaxe_trust::clock_checked(f, trusted);
+    let dated = f & (warpaxe_trust::BADCERT_EXPIRED | warpaxe_trust::BADCERT_FUTURE);
+    if trusted && dated != 0 {
+        log::warn!(
+            "tls: certificate at depth {depth} is {} (flags {f:#x})",
+            if dated & warpaxe_trust::BADCERT_EXPIRED != 0 { "expired" } else { "not valid yet" }
+        );
+    }
+}
+
 unsafe extern "C" fn verify(
     buf: *mut c_void,
     crt: *mut sys::mbedtls_x509_crt,
     depth: c_int,
     flags: *mut u32,
 ) -> c_int {
+    dates(depth, flags);
     if !crt.is_null() && !flags.is_null() && sent_root(&*crt, depth, &mut *flags) {
         return 0;
     }
@@ -174,6 +203,7 @@ unsafe extern "C" fn verify_pool(
     depth: c_int,
     flags: *mut u32,
 ) -> c_int {
+    dates(depth, flags);
     if !crt.is_null() && !flags.is_null() {
         let c = &*crt;
         if sent_root(c, depth, &mut *flags) {

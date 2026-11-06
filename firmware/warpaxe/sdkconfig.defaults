@@ -71,7 +71,12 @@ CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_NONE=y
 # CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEPRECATED_LIST is not set
 CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE=y
-CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE_PATH="../../../../../../certificates/cacert-2026-10-20.pem"
+CONFIG_MBEDTLS_CUSTOM_CERTIFICATE_BUNDLE_PATH="../../../../../../certificates/ca-bundle.pem"
+# Check each certificate's validity window against the clock. Without a
+# clock NTP set this boot the date faults are dropped again in the verify
+# callbacks (firmware/warpaxe/src/tls_trust.rs), so a miner without NTP
+# connects as before; tools/check-ca-bundle.py --build-dir checks it is on.
+CONFIG_MBEDTLS_HAVE_TIME_DATE=y
 # A new app must mark itself valid once it runs (update::mark_app_valid at
 # chain ready, or after three minutes); a crash or boot loop before that
 # makes the bootloader start the previous app instead. The bootloader must

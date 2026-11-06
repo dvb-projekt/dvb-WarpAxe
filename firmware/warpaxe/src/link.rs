@@ -96,6 +96,12 @@ impl Link {
             "stratum: connecting to {host}:{port} (TLS{})",
             if pin.is_some() { ", pinned key" } else { "" }
         );
+        // The certificate's dates are checked once NTP has set the clock
+        // this boot (`tls_trust`); right after boot, give it a moment.
+        crate::clock::wait_for_ntp(15);
+        if !crate::clock::trusted() {
+            log::warn!("stratum: NTP has not set the clock yet, the pool certificate's dates are not checked");
+        }
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
         // The name goes out as SNI and is checked unless the pin accepts

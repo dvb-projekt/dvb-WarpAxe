@@ -63,6 +63,28 @@ pub fn ntp_pending() -> bool {
     cfg.use_ntp && !cfg.ntp_server.is_empty() && last_sync().is_none()
 }
 
+/// The clock is one to check a TLS certificate's dates by: NTP set it
+/// this boot. With NTP off, never (`warpaxe_trust::clock_checked`).
+/// Reads an atomic only, so the TLS verify callbacks may call it.
+pub fn trusted() -> bool {
+    last_sync().is_some()
+}
+
+/// In the boot's first minutes, wait up to `max_s` seconds for NTP to set
+/// the clock, so a TLS certificate's dates can be checked. Later, or with
+/// NTP off, returns at once: with NTP unreachable for good every
+/// reconnect would otherwise pay the wait.
+pub fn wait_for_ntp(max_s: u32) {
+    if crate::diag::uptime_s() >= 300 {
+        return;
+    }
+    let mut waited = 0;
+    while ntp_pending() && waited < max_s {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        waited += 1;
+    }
+}
+
 /// When SNTP last set the clock this boot, seconds since 1970.
 pub fn last_sync() -> Option<u64> {
     match LAST_SYNC.load(Ordering::Relaxed) {

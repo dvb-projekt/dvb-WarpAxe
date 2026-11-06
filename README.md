@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-554%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-556%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
 </p>
@@ -70,7 +70,7 @@ move fast; corrections welcome.
 | Stratum V2 (Noise, authority key, "require authentication") | yes | yes | no | yes |
 | Stratum V1 over TLS, certificate checked | yes | yes | yes (on in the factory settings) | yes |
 | Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | not checked | not checked | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
-| TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1 | ESP-IDF's built-in lists, which still carry `emSign ECC Root CA - G3` | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build |
+| TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1 | ESP-IDF's built-in lists, which still carry `emSign ECC Root CA - G3` | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 also without the last eMudhra root `emSign Root CA - G1`, and certificate dates checked once NTP has set the clock |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
@@ -297,6 +297,13 @@ back at any time with `GET /api/v1/display/frame`.
   CA - G3` nor `AAA Certificate Services` (ESP-IDF v5.3.3's own lists
   still carry both;
   [`firmware/warpaxe/certificates`](firmware/warpaxe/certificates/README.md)).
+  Since v0.1.41 WarpAxe also leaves out `emSign Root CA - G1`, the last
+  eMudhra root still in that extract, and checks each certificate's
+  validity dates, as soon as NTP has set the clock this boot (in the first
+  minutes after a start the miner waits up to 15 s for it before a TLS
+  pool connection). Without NTP the dates are not checked, as before; with
+  it an expired pool certificate no longer connects. A pool trusted by its
+  pinned key is not judged by its dates.
   A root of the bundle that the server sends along, cross-signed by an
   older root the bundle no longer has (`api.coingecko.com` sends `GTS Root
   R4` signed by `GlobalSign Root CA`), counts as that root when its name
