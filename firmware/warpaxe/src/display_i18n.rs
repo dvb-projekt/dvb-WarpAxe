@@ -2,6 +2,11 @@
 //! Do not edit; English and German are inline in screens.rs.
 
 static ES: &[(&str, &str)] = &[
+    ("ASICS OFF", "ASIC APAGADOS"),
+    (
+        "ASICs off until a pool answers",
+        "ASIC apagados hasta que responda un pool",
+    ),
     ("BEST DIFF", "MEJOR DIF."),
     ("BLOCK", "BLOQUE"),
     ("BLOCK FOUND", "BLOQUE ENCONTRADO"),
@@ -14,7 +19,6 @@ static ES: &[(&str, &str)] = &[
     ("Block", "Bloque"),
     ("Board", "Placa"),
     ("CANCELLED", "CANCELADO"),
-    ("CHIPS OFF", "CHIPS APAGADOS"),
     ("CORE OFF", "NÚCLEO APAG."),
     ("Cancelled in the web UI", "Cancelado en la interfaz web"),
     ("Candidates", "Candidatos"),
@@ -23,10 +27,6 @@ static ES: &[(&str, &str)] = &[
         "Chip {t} °C · voltaje del núcleo cortado",
     ),
     ("Chips", "Chips"),
-    (
-        "Chips off until a pool answers",
-        "Chips apagados hasta que responda un pool",
-    ),
     ("Clock", "Frecuencia"),
     (
         "Clock or voltage changed during the test",
@@ -38,7 +38,7 @@ static ES: &[(&str, &str)] = &[
     ("Device", "Dispositivo"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Sigue accesible · enciende los chips en la interfaz web",
+        "Sigue accesible · enciende los ASIC en la interfaz web",
     ),
     ("Domains", "Dominios"),
     ("EFFICIENCY", "EFICIENCIA"),
@@ -112,8 +112,8 @@ static ES: &[(&str, &str)] = &[
     ("THEN OPEN", "LUEGO ABRE"),
     ("Temperature", "Temperatura"),
     (
-        "The chips went off during the test",
-        "Los chips se apagaron en la prueba",
+        "The ASICs went off during the test",
+        "Los ASIC se apagaron en la prueba",
     ),
     ("UPTIME", "T. ACTIVO"),
     ("Uptime", "En marcha"),
@@ -138,6 +138,11 @@ static ES: &[(&str, &str)] = &[
 ];
 
 static FR: &[(&str, &str)] = &[
+    ("ASICS OFF", "ASIC COUPÉS"),
+    (
+        "ASICs off until a pool answers",
+        "ASIC coupés jusqu’à ce qu’un pool réponde",
+    ),
     ("BEST DIFF", "MEILL. DIFF."),
     ("BLOCK", "BLOC"),
     ("BLOCK FOUND", "BLOC TROUVÉ"),
@@ -150,7 +155,6 @@ static FR: &[(&str, &str)] = &[
     ("Block", "Bloc"),
     ("Board", "Carte"),
     ("CANCELLED", "ANNULÉ"),
-    ("CHIPS OFF", "PUCES COUPÉES"),
     ("CORE OFF", "CŒUR COUPÉ"),
     ("Cancelled in the web UI", "Annulé dans l’interface web"),
     ("Candidates", "Candidats"),
@@ -159,10 +163,6 @@ static FR: &[(&str, &str)] = &[
         "Puce {t} °C · tension cœur coupée",
     ),
     ("Chips", "Puces"),
-    (
-        "Chips off until a pool answers",
-        "Puces coupées jusqu’à ce qu’un pool réponde",
-    ),
     ("Clock", "Fréquence"),
     (
         "Clock or voltage changed during the test",
@@ -174,7 +174,7 @@ static FR: &[(&str, &str)] = &[
     ("Device", "Appareil"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Appareil joignable · rallumer les puces via l’interface web",
+        "Appareil joignable · rallumer les ASIC via l’interface web",
     ),
     ("Domains", "Domaines"),
     ("EFFICIENCY", "EFFICACITÉ"),
@@ -248,8 +248,8 @@ static FR: &[(&str, &str)] = &[
     ("THEN OPEN", "PUIS OUVRIR"),
     ("Temperature", "Température"),
     (
-        "The chips went off during the test",
-        "Puces coupées pendant le test",
+        "The ASICs went off during the test",
+        "ASIC coupés pendant le test",
     ),
     ("UPTIME", "ACTIF DEPUIS"),
     ("Uptime", "Actif depuis"),
@@ -268,6 +268,11 @@ static FR: &[(&str, &str)] = &[
 ];
 
 static IT: &[(&str, &str)] = &[
+    ("ASICS OFF", "ASIC SPENTI"),
+    (
+        "ASICs off until a pool answers",
+        "ASIC spenti finché un pool non risponde",
+    ),
     ("BEST DIFF", "MIGLIOR DIFF"),
     ("BLOCK", "BLOCCO"),
     ("BLOCK FOUND", "BLOCCO TROVATO"),
@@ -280,7 +285,6 @@ static IT: &[(&str, &str)] = &[
     ("Block", "Blocco"),
     ("Board", "Scheda"),
     ("CANCELLED", "ANNULLATO"),
-    ("CHIPS OFF", "CHIP SPENTI"),
     ("CORE OFF", "CORE SPENTO"),
     ("Cancelled in the web UI", "Annullato nell’interfaccia web"),
     ("Candidates", "Candidati"),
@@ -289,10 +293,6 @@ static IT: &[(&str, &str)] = &[
         "Chip {t} °C · tensione core spenta",
     ),
     ("Chips", "Chip"),
-    (
-        "Chips off until a pool answers",
-        "Chip spenti finché un pool non risponde",
-    ),
     ("Clock", "Frequenza"),
     (
         "Clock or voltage changed during the test",
@@ -378,8 +378,8 @@ static IT: &[(&str, &str)] = &[
     ("THEN OPEN", "POI APRI"),
     ("Temperature", "Temperatura"),
     (
-        "The chips went off during the test",
-        "Chip spenti durante il test",
+        "The ASICs went off during the test",
+        "ASIC spenti durante il test",
     ),
     ("UPTIME", "UPTIME"),
     ("Uptime", "Uptime"),
@@ -401,6 +401,11 @@ static IT: &[(&str, &str)] = &[
 ];
 
 static PT: &[(&str, &str)] = &[
+    ("ASICS OFF", "ASICS PARADOS"),
+    (
+        "ASICs off until a pool answers",
+        "ASICs parados até um pool responder",
+    ),
     ("BEST DIFF", "MELHOR DIF."),
     ("BLOCK", "BLOCO"),
     ("BLOCK FOUND", "BLOCO MINERADO"),
@@ -413,7 +418,6 @@ static PT: &[(&str, &str)] = &[
     ("Block", "Bloco"),
     ("Board", "Placa"),
     ("CANCELLED", "CANCELADO"),
-    ("CHIPS OFF", "CHIPS PARADOS"),
     ("CORE OFF", "NÚCLEO DESL."),
     ("Cancelled in the web UI", "Cancelado na interface web"),
     ("Candidates", "Candidatos"),
@@ -422,10 +426,6 @@ static PT: &[(&str, &str)] = &[
         "Chip {t} °C · tensão do núcleo cortada",
     ),
     ("Chips", "Chips"),
-    (
-        "Chips off until a pool answers",
-        "Chips parados até um pool responder",
-    ),
     ("Clock", "Frequência"),
     (
         "Clock or voltage changed during the test",
@@ -437,7 +437,7 @@ static PT: &[(&str, &str)] = &[
     ("Device", "Dispositivo"),
     (
         "Device stays reachable · switch on in the web UI",
-        "Continua acessível · ligue os chips pela interface web",
+        "Continua acessível · ligue os ASICs pela interface web",
     ),
     ("Domains", "Domínios"),
     ("EFFICIENCY", "EFICIÊNCIA"),
@@ -511,8 +511,8 @@ static PT: &[(&str, &str)] = &[
     ("THEN OPEN", "DEPOIS ABRA"),
     ("Temperature", "Temperatura"),
     (
-        "The chips went off during the test",
-        "Chips desligaram no teste",
+        "The ASICs went off during the test",
+        "ASICs desligaram no teste",
     ),
     ("UPTIME", "TEMPO ATIVO"),
     ("Uptime", "Tempo ativo"),

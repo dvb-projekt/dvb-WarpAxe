@@ -1823,8 +1823,8 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
                 "Takt oder Spannung im Test geändert",
             ),
             Some("chainStopped") => l(
-                "The chips went off during the test",
-                "Die Chips gingen während des Tests aus",
+                "The ASICs went off during the test",
+                "Die ASICs gingen während des Tests aus",
             ),
             _ => l(
                 "Cancelled in the web UI",
@@ -2024,14 +2024,14 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 if no_pool {
                     l("NO POOL", "KEIN POOL")
                 } else {
-                    l("CHIPS OFF", "CHIPS AUS")
+                    l("ASICS OFF", "ASICS AUS")
                 },
                 Align::Center,
             );
             let l = if no_pool {
                 l(
-                    "Chips off until a pool answers",
-                    "Chips aus, bis ein Pool antwortet",
+                    "ASICs off until a pool answers",
+                    "ASICs aus, bis ein Pool antwortet",
                 )
             } else {
                 l(
@@ -2298,7 +2298,7 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
             let title = if no_pool {
                 l("NO POOL", "KEIN POOL")
             } else {
-                l("CHIPS OFF", "CHIPS AUS")
+                l("ASICS OFF", "ASICS AUS")
             };
             oled_center(o, 6, &oled_str(title));
             let n = net::state();
