@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-595%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-597%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -72,7 +72,7 @@ move fast; corrections welcome.
 | Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | no (TLS on or off, checked against the built-in bundle only) | over the API only: a TLS mode with a pasted certificate (`stratumCert`); its entry on the Pool page is commented out in the source | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
 | TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1; a cross-signed copy of one of its roots accepted since v1.1.2 | ESP-IDF's bundle without the eMudhra/emSign roots since v1.8; certificate dates checked (TLS waits up to 15 s for NTP, no connection without a clock) | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 without the last eMudhra root `emSign Root CA - G1` (117 roots left), and certificate dates checked once NTP has set the clock (TLS waits up to 15 s for it in the first five minutes; without a clock Stratum V1 over TLS connects with the dates unchecked, Stratum V2 with "require authentication" waits for the clock) |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
-| Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | no |
+| Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | yes since v0.1.42: after two failed attempts on each configured pool and a minute (core voltage 0, held in reset, fans at their lowest duty); both pools are probed in turn every 30 s, the chips are set up again when one sends work; `poolsUnavailable` in the API, a notice on the dashboard and the display |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
 | An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
@@ -82,7 +82,7 @@ move fast; corrections welcome.
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | no (the page asks for a restart) | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes, partly (up to six outputs and the total; your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (up to 32 outputs, yours first, the rest summed; your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account; job lines up to 512 KiB since v0.1.41) |
-| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin, and since v0.1.42 `hash` and `status`: pending, confirmed once the pool's next work builds on it, orphaned when the work for the next height builds on another block) in the API, kept in NVS; the banner shows the status and the hash, with a mempool.space link for Bitcoin; entries in the event log for the find and for the status; a warp jump on the display |
+| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin, and since v0.1.42 `hash` and `status`: pending, confirmed once the pool's next work builds on it, orphaned when the work for the next height builds on another block, unknown when the miner was offline in between) in the API, kept in NVS; the banner shows the status and the hash, with a mempool.space link for Bitcoin; entries in the event log for the find and for the status; a warp jump on the display |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
@@ -368,7 +368,9 @@ back at any time with `GET /api/v1/display/frame`.
   return from an outage of ten minutes or more in any case). No pool or
   no worker name configured counts the same. Nothing is written to flash
   per attempt. Not during the first start of a newly chosen board, whose
-  chips have to answer once for the choice to be confirmed.
+  chips have to answer once for the choice to be confirmed, and not
+  while a self-test runs: the chips stay on for it, and come on for one
+  started while they were off.
 - **Saved pools**: up to eight, each with a name and the coin it mines;
   the main pool as it is now is saved with one click, a saved one becomes
   the main pool with another, and the miner reconnects at once. Passwords
@@ -398,7 +400,8 @@ back at any time with `GET /api/v1/display/frame`.
   in PLL steps (6.25 MHz every 100 ms: 625 to 425 MHz takes 3.2 s), so
   the chips ran at the old clock on the new voltage for those seconds.
   The voltage drop is now held until the chips run at the clock asked
-  for (30 s at the most). A higher voltage is set at once as before, and
+  for (30 s at the most; a clock the PLL has no setting for is refused
+  by the API, as is one below 50 MHz). A higher voltage is set at once as before, and
   so are a voltage change on its own and the step from the bring-up
   voltage to the configured one after the chain init.
 - Never a core voltage below the regulator's clean range: the TPS546
@@ -585,8 +588,12 @@ back at any time with `GET /api/v1/display/frame`.
   time or 0 without a clock, `coin`, and since v0.1.42 `hash` as block
   explorers show it and `status`: `pending`, `confirmed` once work from
   the pool names the block as its parent, `orphaned` when the work for
-  the next height names another one; both null for a block found before
-  v0.1.42; `lastBlock` itself null until the first block), both
+  the next height names another one, `unknown` when the block was still
+  pending and the first work seen is already two heights on (the miner
+  was offline in between); both null for a block found before v0.1.42;
+  `lastBlock` itself null until the first block; the count is stored in
+  the form older versions read, hash and status in a second entry, and
+  a height is stored once however many nonces meet its target), both
   kept across restarts, `poolsUnavailable` (no pool answers, since
   v0.1.42; the chips are off for it, `chainStopped`, except on a board
   without chips and during a first start), and AxeOS's `hashrateMonitor` (per chip the

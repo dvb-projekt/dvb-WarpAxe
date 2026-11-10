@@ -603,5 +603,7 @@
   "evd_block_orphaned": "bloco {h} órfão: o trabalho para a próxima altura é construído sobre outro bloco",
   "blk_st_pending": "Pendente: aguardando o próximo trabalho do pool",
   "blk_st_confirmed": "Confirmado: o próximo trabalho do pool é construído sobre ele",
-  "blk_st_orphaned": "Órfão: a rede continuou com outro bloco"
+  "blk_st_orphaned": "Órfão: a rede continuou com outro bloco",
+  "blk_st_unknown": "Desconhecido: o minerador ficou offline nesse meio-tempo e aqui não dá mais para verificar",
+  "evd_block_unknown": "bloco {h}: estado desconhecido, o minerador ficou offline nesse meio-tempo e não dá mais para verificar"
 }

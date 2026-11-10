@@ -226,9 +226,27 @@ fn wait(d: Duration) -> bool {
 
 type Outcome = Result<(BoardReadings, Option<Box<Window>>, Option<FanReadings>), &'static str>;
 
+/// How long a test waits for chips that were off for want of a pool to
+/// be back up before its first reading.
+const POWER_UP_WAIT: Duration = Duration::from_secs(45);
+
 fn perform(cfg: &config::Config) -> Outcome {
     let profile = board::profile();
     let chip = board::chip();
+    // Chips off because no pool answers come back on for the test
+    // (`board::no_pool` steps aside while one runs): the rail, the
+    // warm-up and the chain's bring-up take some seconds, and a reading
+    // before that would call the core voltage wrong.
+    if crate::stratum::state().pools_unavailable && !board::overheat() && !board::shutdown() {
+        let end = Instant::now() + POWER_UP_WAIT;
+        while Instant::now() < end
+            && (board::chain_stopped() || miner::state().phase != "READY")
+        {
+            if !wait(Duration::from_millis(500)) {
+                return Err("cancelled");
+            }
+        }
+    }
     let first = readings(cfg);
     // The hash window, while the chain hashes.
     let mut window = None;

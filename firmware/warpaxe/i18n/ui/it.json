@@ -603,5 +603,7 @@
   "evd_block_orphaned": "blocco {h} orfano: il lavoro per l’altezza successiva si basa su un altro blocco",
   "blk_st_pending": "In attesa: aspetta il prossimo lavoro del pool",
   "blk_st_confirmed": "Confermato: il lavoro successivo del pool si basa su di esso",
-  "blk_st_orphaned": "Orfano: la rete ha proseguito con un altro blocco"
+  "blk_st_orphaned": "Orfano: la rete ha proseguito con un altro blocco",
+  "blk_st_unknown": "Sconosciuto: il miner è stato offline nel frattempo e qui non si può più verificare",
+  "evd_block_unknown": "blocco {h}: stato sconosciuto, il miner è stato offline nel frattempo e non si può più verificare"
 }

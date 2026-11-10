@@ -603,5 +603,7 @@
   "evd_block_orphaned": "区块 {h} 成为孤块：下一高度的任务基于另一个区块",
   "blk_st_pending": "待确认：等待矿池的下一个任务",
   "blk_st_confirmed": "已确认：矿池的下一个任务基于此区块",
-  "blk_st_orphaned": "孤块：网络在另一个区块上继续延伸"
+  "blk_st_orphaned": "孤块：网络在另一个区块上继续延伸",
+  "blk_st_unknown": "未知：矿机期间曾离线，此处已无法再核实",
+  "evd_block_unknown": "区块 {h}：状态未知，矿机期间曾离线，已无法再核实"
 }

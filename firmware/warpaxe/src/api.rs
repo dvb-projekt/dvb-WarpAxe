@@ -403,6 +403,12 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
                 p.abs_max_frequency_mhz
             ));
         }
+        // A clock the chips cannot be set to would leave them at the
+        // one they have, with whatever voltage came along (and a chain
+        // start falls back to the stock clock): refused here.
+        if let Some(why) = clock_refuse(board::chip(), f) {
+            return Some(why);
+        }
     }
     if let Some(mv) = v.get("coreVoltage").and_then(|m| m.as_u64()) {
         // Never a core voltage below the regulator's clean range,
@@ -423,6 +429,25 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
     }
     expert_refuse(v).or_else(|| display_refuse(v))
 }
+
+/// A clock below [`MIN_FREQUENCY_MHZ`], or one the chip's PLL has no
+/// setting for.
+fn clock_refuse(chip: &warpaxe_core::chip::ChipProfile, mhz: u64) -> Option<String> {
+    if mhz < u64::from(MIN_FREQUENCY_MHZ) {
+        return Some(format!(
+            "frequency {mhz} MHz below {MIN_FREQUENCY_MHZ} MHz"
+        ));
+    }
+    let hz = u32::try_from(mhz).ok().and_then(|m| m.checked_mul(1_000_000));
+    match hz.and_then(|hz| warpaxe_core::pll::solve(&chip.pll, hz)) {
+        Some(_) => None,
+        None => Some(format!("frequency {mhz} MHz has no PLL setting on the {}", chip.name)),
+    }
+}
+
+/// The lowest clock the API takes, MHz: the bring-up ramp starts at
+/// 56.25 MHz, and nothing is to be gained below it.
+const MIN_FREQUENCY_MHZ: u32 = 50;
 
 /// The display's choosable parts, checked by `warpaxe_displaycfg` (host-tested).
 fn display_refuse(v: &serde_json::Value) -> Option<String> {

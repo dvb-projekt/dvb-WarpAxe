@@ -9,8 +9,10 @@
 //! ([`judge`]): a job whose previous hash is the block's hash builds on
 //! it (confirmed); a job for the next height that names another previous
 //! hash says the network built on a different block (orphaned). Until
-//! one of the two arrives the block is pending. ForgeOS v1.8 tracks a
-//! found block the same way.
+//! one of the two arrives the block is pending; when the first work
+//! that says anything is already for a height further on (the miner was
+//! off or without a pool in between), it can no longer be told and the
+//! block is unknown. ForgeOS v1.8 tracks a found block the same way.
 //!
 //! Hashes here are in the header's byte order, as SHA-256d returns them
 //! and as [`crate::Job::prev_hash`] holds them; [`hash_hex`] is the
@@ -82,6 +84,10 @@ pub enum Status {
     Confirmed,
     /// Work for the next height builds on another block.
     Orphaned,
+    /// Still pending when work for a height two or more further on
+    /// came: the work for the next height was never seen, so neither of
+    /// the two can be told any more.
+    Unknown,
 }
 
 impl Status {
@@ -91,6 +97,7 @@ impl Status {
             Status::Pending => "pending",
             Status::Confirmed => "confirmed",
             Status::Orphaned => "orphaned",
+            Status::Unknown => "unknown",
         }
     }
 
@@ -100,24 +107,35 @@ impl Status {
             "pending" => Status::Pending,
             "confirmed" => Status::Confirmed,
             "orphaned" => Status::Orphaned,
+            "unknown" => Status::Unknown,
             _ => return None,
         })
     }
 }
 
-/// What a job says about a block found at `height` with `hash`: the
-/// job's previous hash and the height it builds (0 = unknown). `None`
-/// when it says nothing: work for the block's own height (the pool has
-/// not moved on), or for a height further on, whose previous hash is a
-/// later block's either way.
-pub fn judge(hash: &[u8; 32], height: u64, job_prev: &[u8; 32], job_height: u64) -> Option<Status> {
-    if job_prev == hash {
-        return Some(Status::Confirmed);
-    }
-    if height > 0 && job_height == height + 1 {
-        return Some(Status::Orphaned);
-    }
-    None
+/// What a job says about a block found at `height` with `hash` whose
+/// status is `now`: the job's previous hash and the height it builds
+/// (0 = not readable). `None` when it says nothing new: work for the
+/// block's own height (the pool has not moved on), or work further on
+/// for a block that already has its verdict.
+pub fn judge(
+    hash: &[u8; 32],
+    height: u64,
+    now: Status,
+    job_prev: &[u8; 32],
+    job_height: u64,
+) -> Option<Status> {
+    let next = if job_prev == hash {
+        Status::Confirmed
+    } else if height > 0 && job_height == height + 1 {
+        Status::Orphaned
+    } else if height > 0 && job_height > height + 1 && now == Status::Pending {
+        // Its parent is a later block's whichever chain won.
+        Status::Unknown
+    } else {
+        return None;
+    };
+    (next != now).then_some(next)
 }
 
 #[cfg(test)]
@@ -271,7 +289,7 @@ mod tests {
         let found = sha256d(&block_1());
         // Work for height 1 on the same parent: says nothing.
         let genesis_hash = sha256d(&genesis());
-        assert_eq!(judge(&found, 1, &genesis_hash, 1), None);
+        assert_eq!(judge(&found, 1, Status::Pending, &genesis_hash, 1), None);
         // Block 2's header names block 1 as its parent.
         let block_2 = header(
             1,
@@ -286,9 +304,21 @@ mod tests {
             "000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd"
         );
         let prev: [u8; 32] = block_2[4..36].try_into().unwrap();
-        assert_eq!(judge(&found, 1, &prev, 2), Some(Status::Confirmed));
+        assert_eq!(
+            judge(&found, 1, Status::Pending, &prev, 2),
+            Some(Status::Confirmed)
+        );
+        // After the block had been written off, too; and said once.
+        assert_eq!(
+            judge(&found, 1, Status::Unknown, &prev, 2),
+            Some(Status::Confirmed)
+        );
+        assert_eq!(judge(&found, 1, Status::Confirmed, &prev, 2), None);
         // Also when the job's height could not be read.
-        assert_eq!(judge(&found, 1, &prev, 0), Some(Status::Confirmed));
+        assert_eq!(
+            judge(&found, 1, Status::Pending, &prev, 0),
+            Some(Status::Confirmed)
+        );
     }
 
     #[test]
@@ -296,22 +326,55 @@ mod tests {
         let found = sha256d(&block_125552());
         // A competing block at 125552 won: the work for 125553 names it.
         let rival = hash_from_hex(BLOCK_1).unwrap();
+        let p = Status::Pending;
         assert_eq!(
-            judge(&found, 125_552, &rival, 125_553),
+            judge(&found, 125_552, p, &rival, 125_553),
             Some(Status::Orphaned)
         );
-        // Work further on says nothing about it (its parent is a later
-        // block whichever chain won), nor does work on the same height.
-        assert_eq!(judge(&found, 125_552, &rival, 125_554), None);
-        assert_eq!(judge(&found, 125_552, &rival, 125_552), None);
-        assert_eq!(judge(&found, 125_552, &rival, 0), None);
+        assert_eq!(
+            judge(&found, 125_552, Status::Orphaned, &rival, 125_553),
+            None
+        );
+        // A reorg at the next height turns a confirmed block around.
+        assert_eq!(
+            judge(&found, 125_552, Status::Confirmed, &rival, 125_553),
+            Some(Status::Orphaned)
+        );
+        // Work on the same height, or of unreadable height, says nothing.
+        assert_eq!(judge(&found, 125_552, p, &rival, 125_552), None);
+        assert_eq!(judge(&found, 125_552, p, &rival, 0), None);
         // A block whose own height is unknown is never called orphaned.
-        assert_eq!(judge(&found, 0, &rival, 1), None);
+        assert_eq!(judge(&found, 0, p, &rival, 1), None);
+    }
+
+    #[test]
+    fn work_two_heights_on_leaves_a_pending_block_unknown() {
+        let found = sha256d(&block_125552());
+        let later = hash_from_hex(BLOCK_1).unwrap();
+        // The miner was off while block 125553 came: the first work it
+        // sees is for 125554 (or further), on a parent it cannot place.
+        for h in [125_554, 125_555, 900_000] {
+            assert_eq!(
+                judge(&found, 125_552, Status::Pending, &later, h),
+                Some(Status::Unknown)
+            );
+        }
+        // Said once, and a block with its verdict keeps it.
+        for now in [Status::Unknown, Status::Confirmed, Status::Orphaned] {
+            assert_eq!(judge(&found, 125_552, now, &later, 125_554), None);
+        }
+        // Without the block's own height there is nothing to count from.
+        assert_eq!(judge(&found, 0, Status::Pending, &later, 125_554), None);
     }
 
     #[test]
     fn the_status_words_round_trip() {
-        for s in [Status::Pending, Status::Confirmed, Status::Orphaned] {
+        for s in [
+            Status::Pending,
+            Status::Confirmed,
+            Status::Orphaned,
+            Status::Unknown,
+        ] {
             assert_eq!(Status::parse(s.as_str()), Some(s));
         }
         assert_eq!(Status::parse(""), None);

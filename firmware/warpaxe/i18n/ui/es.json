@@ -603,5 +603,7 @@
   "evd_block_orphaned": "bloque {h} huérfano: el trabajo para la siguiente altura se construye sobre otro bloque",
   "blk_st_pending": "Pendiente: a la espera del siguiente trabajo del pool",
   "blk_st_confirmed": "Confirmado: el siguiente trabajo del pool se construye sobre él",
-  "blk_st_orphaned": "Huérfano: la red siguió con otro bloque"
+  "blk_st_orphaned": "Huérfano: la red siguió con otro bloque",
+  "blk_st_unknown": "Desconocido: el minero estuvo desconectado entretanto y aquí ya no se puede comprobar",
+  "evd_block_unknown": "bloque {h}: estado desconocido, el minero estuvo desconectado entretanto y ya no se puede comprobar"
 }

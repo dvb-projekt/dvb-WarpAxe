@@ -16,7 +16,9 @@
 
 /// A drop is held no longer than this, ms: the longest ramp (the whole
 /// PLL range in 6.25 MHz steps) takes about 15 s, and a voltage request
-/// must not hang on a clock that never arrives.
+/// must not hang on a ramp that never ends. A clock the PLL cannot make
+/// is another matter ([`Clock::unreachable`]): the chips are known to
+/// stay above it, so the drop does not go at all.
 pub const MAX_HOLD_MS: u64 = 30_000;
 
 /// The clock as the mining loop reports it.
@@ -30,6 +32,10 @@ pub struct Clock {
     /// What the chips run at this moment, Hz (the last PLL word written,
     /// on the PLL's grid); 0 while no chain runs.
     pub now_hz: u32,
+    /// The clock asked for has no PLL setting: the chips stay at the
+    /// clock they have, and a drop that waits for them waits until
+    /// another clock or voltage is asked for.
+    pub unreachable: bool,
 }
 
 impl Clock {
@@ -59,12 +65,19 @@ pub enum Step {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct CoreHold {
     since_ms: Option<u64>,
+    /// The voltage the limit ran out for: it goes from then on (a
+    /// regulator's refusal is retried every second, not held another
+    /// 30 s each time) until it is applied or another one is asked for.
+    late_mv: Option<u16>,
 }
 
 impl CoreHold {
     /// Nothing held.
     pub const fn new() -> Self {
-        Self { since_ms: None }
+        Self {
+            since_ms: None,
+            late_mv: None,
+        }
     }
 
     /// A drop is being held right now.
@@ -76,11 +89,17 @@ impl CoreHold {
     pub fn decide(&mut self, now_ms: u64, applied_mv: u16, wanted_mv: u16, clock: Clock) -> Step {
         if wanted_mv >= applied_mv || !clock.coming_down() {
             self.since_ms = None;
+            self.late_mv = None;
             return Step::Apply;
         }
+        if self.late_mv == Some(wanted_mv) {
+            return Step::Apply;
+        }
+        self.late_mv = None;
         let since = *self.since_ms.get_or_insert(now_ms);
-        if now_ms.saturating_sub(since) >= MAX_HOLD_MS {
+        if !clock.unreachable && now_ms.saturating_sub(since) >= MAX_HOLD_MS {
             self.since_ms = None;
+            self.late_mv = Some(wanted_mv);
             return Step::ApplyLate;
         }
         Step::Hold
@@ -95,6 +114,7 @@ mod tests {
         wanted_mhz: 625,
         settled_mhz: 625,
         now_hz: 625_000_000,
+        unreachable: false,
     };
 
     #[test]
@@ -126,6 +146,7 @@ mod tests {
             wanted_mhz: 425,
             settled_mhz: 625,
             now_hz: 425_000_000,
+            unreachable: false,
         };
         assert_eq!(h.decide(0, 1200, 1100, clock), Step::Apply);
     }
@@ -163,6 +184,7 @@ mod tests {
             wanted_mhz: 625,
             settled_mhz: 0,
             now_hz: 56_250_000,
+            unreachable: false,
         };
         assert_eq!(h.decide(0, 1200, 1150, bring_up), Step::Apply);
         // No chain running (stopped, restarting, a board without chips).
@@ -171,6 +193,7 @@ mod tests {
             wanted_mhz: 425,
             settled_mhz: 625,
             now_hz: 0,
+            unreachable: false,
         };
         assert_eq!(h.decide(0, 1200, 1100, stopped), Step::Apply);
     }
@@ -191,8 +214,48 @@ mod tests {
             h.decide(1000 + MAX_HOLD_MS, 1200, 1100, clock),
             Step::ApplyLate
         );
-        // A new hold starts from scratch.
-        assert_eq!(h.decide(1001 + MAX_HOLD_MS, 1200, 1050, clock), Step::Hold);
+        // The regulator refused it: it goes again on the next try, not
+        // after another 30 s.
+        assert_eq!(h.decide(2000 + MAX_HOLD_MS, 1200, 1100, clock), Step::Apply);
+        assert_eq!(h.decide(9000 + MAX_HOLD_MS, 1200, 1100, clock), Step::Apply);
+        // Another voltage is a new hold, from scratch.
+        assert_eq!(h.decide(9001 + MAX_HOLD_MS, 1200, 1050, clock), Step::Hold);
+        assert_eq!(
+            h.decide(9001 + 2 * MAX_HOLD_MS, 1200, 1050, clock),
+            Step::ApplyLate
+        );
+        // Applied: the memory is gone.
+        assert_eq!(
+            h.decide(9002 + 2 * MAX_HOLD_MS, 1050, 1050, clock),
+            Step::Apply
+        );
+        assert_eq!(
+            h.decide(9003 + 2 * MAX_HOLD_MS, 1050, 1000, clock),
+            Step::Hold
+        );
+    }
+
+    #[test]
+    fn a_clock_the_pll_cannot_make_holds_the_drop_until_something_else_is_asked() {
+        let mut h = CoreHold::new();
+        // 425 MHz has no PLL setting: the chips stay at 625.
+        let clock = Clock {
+            wanted_mhz: 425,
+            unreachable: true,
+            ..AT_625
+        };
+        assert_eq!(h.decide(0, 1200, 1100, clock), Step::Hold);
+        assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1100, clock), Step::Hold);
+        // A raise still goes.
+        assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1250, clock), Step::Apply);
+        // A clock that can be made, reached: the drop goes.
+        let down = Clock {
+            wanted_mhz: 450,
+            settled_mhz: 450,
+            now_hz: 450_000_000,
+            unreachable: false,
+        };
+        assert_eq!(h.decide(11 * MAX_HOLD_MS, 1200, 1100, down), Step::Apply);
     }
 
     #[test]

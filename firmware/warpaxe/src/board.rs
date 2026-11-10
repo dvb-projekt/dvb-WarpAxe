@@ -472,13 +472,18 @@ pub fn chain_stopped() -> bool {
 
 /// The chips are (to be) off because no pool answers. Not during a
 /// pending first start: the chain has to come up once for its
-/// enumeration to judge the chosen board, pool or no pool (the
-/// self-test that follows a verified first start then ends with
-/// "chainStopped" if no pool has answered by then). Not on a board
-/// without chips (the T-Display-S3, an undetected board): nothing is
-/// off there.
+/// enumeration to judge the chosen board, pool or no pool. Not while a
+/// self-test runs or the one after a verified first start is due: the
+/// chips stay on for it (and come on for one started while they were
+/// off; without work it finds no hashrate, but the board's checks
+/// run). Not on a board without chips (the T-Display-S3, an undetected
+/// board): nothing is off there.
 pub fn no_pool() -> bool {
-    NO_POOL.load(Ordering::Relaxed) && !choice_pending() && profile().asic_count > 0
+    NO_POOL.load(Ordering::Relaxed)
+        && !choice_pending()
+        && profile().asic_count > 0
+        && !crate::selftest::running()
+        && !crate::miner::selftest_due()
 }
 
 /// No pool answers (`true`: core rail down, chain in reset, fans low) or
@@ -688,7 +693,10 @@ pub fn request_core_mv(mv: u16) {
     } else {
         mv
     };
-    WANTED_MV.store(mv, Ordering::Relaxed);
+    // Released after the clock that came with it (`api.rs` asks for
+    // the clock first), acquired by the board task before it reads the
+    // clock: it never sees the new voltage with the old clock request.
+    WANTED_MV.store(mv, Ordering::Release);
 }
 
 /// The chain init is over, answered or not: drop from the bring-up
@@ -2308,7 +2316,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // loop has ramped the chips down to it (625 to 425 MHz takes
         // 3.2 s, the voltage one pass): a raise, a drop on its own and
         // the bring-up voltage's drop after the init go at once.
-        let want = WANTED_MV.load(Ordering::Relaxed);
+        let want = WANTED_MV.load(Ordering::Acquire);
         let held = want != 0
             && match core_hold.decide(
                 t0.elapsed().as_millis() as u64,
@@ -2337,7 +2345,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 Step::ApplyLate => {
                     core_held_logged = false;
                     log::warn!(
-                        "board: the clock has not come down in {} s, core {want} mV goes now",
+                        "board: the clock's ramp has not ended in {} s, core {want} mV goes now",
                         core_hold::MAX_HOLD_MS / 1000
                     );
                     false

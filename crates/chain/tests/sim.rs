@@ -1208,6 +1208,7 @@ mod core_hold {
                 wanted_mhz: self.wanted_mhz,
                 settled_mhz: self.settled_mhz,
                 now_hz: self.b.drv.frequency_hz(),
+                unreachable: false,
             };
             let step = self
                 .hold

@@ -2,7 +2,7 @@
 //! nonces checked against the pool difficulty and submitted. One thread.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -158,6 +158,20 @@ static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
 /// clears it.
 static STEP_CAP_MHZ: AtomicU32 = AtomicU32::new(0);
 
+/// The self-test that follows a verified first start is due (20 s after
+/// the enumeration): until it has started, the chips are not switched
+/// off for want of a pool (`board::no_pool`).
+static SELFTEST_DUE: AtomicBool = AtomicBool::new(false);
+
+/// The first start's self-test is due and has not started yet.
+pub fn selftest_due() -> bool {
+    SELFTEST_DUE.load(Ordering::Relaxed)
+}
+
+/// The clock asked for has no PLL setting: the chips stay at the clock
+/// they have (`warpaxe_board::core_hold::Clock::unreachable`).
+static CLOCK_UNREACHABLE: AtomicBool = AtomicBool::new(false);
+
 /// The chips' clock this moment, Hz (the last PLL word written); 0 while
 /// no chain runs. With [`SETTLED_MHZ`] what the board task holds a
 /// voltage drop on (`warpaxe_board::core_hold`).
@@ -170,9 +184,10 @@ static SETTLED_MHZ: AtomicU32 = AtomicU32::new(0);
 /// asked for, what the chips have arrived at, what they run at now.
 pub fn clock() -> warpaxe_board::core_hold::Clock {
     warpaxe_board::core_hold::Clock {
-        wanted_mhz: WANTED_MHZ.load(Ordering::Relaxed),
+        wanted_mhz: WANTED_MHZ.load(Ordering::SeqCst),
         settled_mhz: SETTLED_MHZ.load(Ordering::Relaxed),
         now_hz: CLOCK_NOW_HZ.load(Ordering::Relaxed),
+        unreachable: CLOCK_UNREACHABLE.load(Ordering::Relaxed),
     }
 }
 
@@ -260,13 +275,22 @@ pub fn reg_scan() -> Option<RegScan> {
 /// with its hash and its parent's (header byte order here, stored as
 /// explorers show them), and in the event log. From the mining threads,
 /// whose stacks are internal (an NVS write).
-pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) {
-    config::record_block(
+///
+/// `false`, and nothing stored, logged or put into the event log, for
+/// another nonce that meets the target at the height of the block
+/// already recorded (`config::record_block`): at minimum difficulty
+/// that is every nonce.
+pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) -> bool {
+    let hex = block::hash_hex(hash);
+    if !config::record_block(
         height,
         crate::clock::unix_now().unwrap_or(0),
-        &block::hash_hex(hash),
+        &hex,
         &block::hash_hex(prev),
-    );
+    ) {
+        return false;
+    }
+    log::warn!("miner: BLOCK FOUND at height {height} (hash {hex})");
     crate::events::record(
         "block",
         warpaxe_diag::events::detail::block_found(height, &config::get().coin_ticker),
@@ -274,6 +298,7 @@ pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) {
     // The watch looks at the newest work again, with this block in
     // hand (the CPU miner finds on another thread than it watches on).
     *WATCHED_TIP.lock().unwrap() = None;
+    true
 }
 
 /// What the block watch looked at last: the newest work's parent and
@@ -283,7 +308,8 @@ static WATCHED_TIP: Mutex<Option<([u8; 32], u64)>> = Mutex::new(None);
 /// What became of the last found block, read from the work the pool
 /// sends (`warpaxe_stratum::block::judge`): confirmed when work builds
 /// on it, orphaned when work for the next height builds on another
-/// block. Once a second from the mining loops, whose stacks are internal
+/// block, unknown when it is still pending and the work is already two
+/// heights on. Once a second from the mining loops, whose stacks are internal
 /// (a change is one NVS write and an event); nothing happens until the
 /// newest work's parent or height changes. Work for another coin (a
 /// pool switch, a fallback on another chain) says nothing.
@@ -308,10 +334,12 @@ pub fn watch_block() {
     if b.coin != config::get().coin_ticker {
         return;
     }
-    let Some(next) = block::judge(&hash, b.h, &tip.0, tip.1) else {
+    let Some(next) = block::judge(&hash, b.h, now, &tip.0, tip.1) else {
         return;
     };
-    if next == now || !config::set_block_status(next.as_str()) {
+    // Only for the block that was judged: the CPU miner may have found
+    // another one on its own thread since.
+    if !config::set_block_status(&b.hash, next.as_str()) {
         return;
     }
     log::warn!(
@@ -326,6 +354,7 @@ pub fn watch_block() {
         "block",
         match next {
             block::Status::Orphaned => warpaxe_diag::events::detail::block_orphaned(b.h),
+            block::Status::Unknown => warpaxe_diag::events::detail::block_unknown(b.h),
             _ => warpaxe_diag::events::detail::block_confirmed(b.h),
         },
     );
@@ -377,7 +406,9 @@ pub fn request_frequency(mhz: u32) {
     // A clock set by hand ends the overheat step.
     STEP_CAP_MHZ.store(0, Ordering::Relaxed);
     update(|s| s.clock_step = None);
-    WANTED_MHZ.store(mhz, Ordering::Relaxed);
+    // Sequentially consistent: the voltage that comes with it is
+    // released after this store (`board::request_core_mv`).
+    WANTED_MHZ.store(mhz, Ordering::SeqCst);
 }
 
 pub fn state() -> MinerState {
@@ -444,6 +475,7 @@ fn run(mut uart: ChipUart) {
         // nothing is coming down, a voltage drop need not wait.
         CLOCK_NOW_HZ.store(0, Ordering::Relaxed);
         SETTLED_MHZ.store(0, Ordering::Relaxed);
+        CLOCK_UNREACHABLE.store(false, Ordering::Relaxed);
         if board::chain_stopped() {
             if !parked && board::parks_uart() {
                 match uart.park() {
@@ -474,12 +506,21 @@ fn run(mut uart: ChipUart) {
             std::thread::sleep(Duration::from_secs(1));
             continue;
         }
-        let cfg = config::get();
-        let start_mhz = capped_mhz(cfg.frequency);
-        // Before the reset pulse (up to 350 ms): a clock asked for from
-        // here on differs from the one the chain starts with and goes to
-        // it on the loop's first pass, instead of being overwritten.
-        WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
+        // The clock the chain starts with becomes the one asked for,
+        // before the reset pulse (up to 350 ms): a request from here on
+        // differs from it and goes to the chain on the loop's first
+        // pass. A request that fell between reading the config and the
+        // store would be overwritten by it, so the config is read again
+        // afterwards: the request has changed it (the PATCH saves, then
+        // asks), and the store is done over with the new clock.
+        let (cfg, start_mhz) = loop {
+            let cfg = config::get();
+            let start_mhz = capped_mhz(cfg.frequency);
+            WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
+            if capped_mhz(config::get().frequency) == start_mhz {
+                break (cfg, start_mhz);
+            }
+        };
         // The chips filter at the profile's default ticket mask (256 on a
         // BM1370) regardless of the pool difficulty: enough nonces for a
         // steady hashrate estimate, the pool threshold is applied on the
@@ -631,16 +672,16 @@ fn run(mut uart: ChipUart) {
                         // the header's own nbits, exactly (not the rounded
                         // network difficulty of whatever job is current).
                         if block::meets_target(&hash, job.nbits) {
+                            // Counted in RAM every time; stored, logged
+                            // and shown once per height.
                             let height = job.height;
-                            log::warn!(
-                                "miner: BLOCK FOUND at height {height} (diff {diff:.0}, hash {})",
-                                block::hash_hex(&hash)
-                            );
+                            let first = block_found(height, &hash, &job.prev_hash);
                             update(|s| {
                                 s.blocks_found += 1;
-                                s.last_block = Some((height, diag::uptime_s()));
+                                if first {
+                                    s.last_block = Some((height, diag::uptime_s()));
+                                }
                             });
-                            block_found(height, &hash, &job.prev_hash);
                         }
                         if diff >= want {
                             // How old the stratum job is at submit time, in
@@ -697,6 +738,11 @@ fn run(mut uart: ChipUart) {
                             ) {
                                 FirstStart::Verified { chips }
                                 | FirstStart::ShortCount { found: chips, .. } => {
+                                    // Due before the choice counts as
+                                    // verified: no moment in between at
+                                    // which a missing pool could switch
+                                    // the chips off.
+                                    SELFTEST_DUE.store(true, Ordering::Relaxed);
                                     board::verify_choice(chips, expected);
                                     selftest_due = Some(Instant::now() + Duration::from_secs(20));
                                 }
@@ -765,7 +811,10 @@ fn run(mut uart: ChipUart) {
                         log::info!("miner: clock {} MHz", hz / 1_000_000)
                     }
                     Event::FrequencyUnreachable { hz } => {
-                        log::warn!("miner: clock {hz} Hz unreachable")
+                        // The chain runs at the chip's stock clock
+                        // instead: the one asked for never arrives.
+                        log::warn!("miner: clock {hz} Hz unreachable");
+                        clock_reachable = false;
                     }
                     _ => {}
                 }
@@ -777,6 +826,8 @@ fn run(mut uart: ChipUart) {
                     Ok(id) => log::info!("miner: self-test {id} started after the first start"),
                     Err(e) => log::warn!("miner: self-test after the first start not started: {e}"),
                 }
+                // Running now (or refused): its own flag takes over.
+                SELFTEST_DUE.store(false, Ordering::Relaxed);
             }
 
             let phase = chain.phase();
@@ -830,8 +881,10 @@ fn run(mut uart: ChipUart) {
             }
             // The request is with the chain and its ramp is over: from
             // here a lower voltage that came with it may go. A clock the
-            // PLL cannot make never settles; the board lets the voltage
-            // go after its limit and says so.
+            // PLL cannot make never settles, and the board keeps such a
+            // drop waiting (the API refuses such a clock in the first
+            // place).
+            CLOCK_UNREACHABLE.store(!clock_reachable, Ordering::Relaxed);
             if clock_reachable && applied_mhz == want_mhz && chain.clock_settled() {
                 SETTLED_MHZ.store(want_mhz, Ordering::Relaxed);
             }

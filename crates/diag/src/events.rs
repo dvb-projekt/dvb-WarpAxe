@@ -311,6 +311,13 @@ pub mod detail {
         coded("block_orphaned", &[("h", Value::from(height))])
     }
 
+    /// The block found at this height was still pending when work for a
+    /// height two or more further on came: what became of it can no
+    /// longer be told from the pool's work.
+    pub fn block_unknown(height: u64) -> Detail {
+        coded("block_unknown", &[("h", Value::from(height))])
+    }
+
     /// The main pool failed `fails` times: on the fallback.
     pub fn pool_fallback(fails: u32) -> Detail {
         coded("pool_fallback", &[("n", Value::from(fails))])
@@ -636,6 +643,10 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         ),
         "block_found" => format!("block {} found ({})", g("h"), g("coin")),
         "block_confirmed" => format!("block {} confirmed: the pool's next work builds on it", g("h")),
+        "block_unknown" => format!(
+            "block {}: status unknown, the miner was offline in between and it can no longer be checked",
+            g("h")
+        ),
         "block_orphaned" => format!(
             "block {} orphaned: the work for the next height builds on another block",
             g("h")
@@ -972,6 +983,10 @@ mod tests {
                 "block 54110 confirmed: the pool's next work builds on it",
             ),
             (
+                detail::block_unknown(54110),
+                "block 54110: status unknown, the miner was offline in between and it can no longer be checked",
+            ),
+            (
                 detail::block_orphaned(54110),
                 "block 54110 orphaned: the work for the next height builds on another block",
             ),
@@ -1204,6 +1219,7 @@ mod tests {
             ),
             ("block", detail::block_confirmed(99_999_999)),
             ("block", detail::block_orphaned(99_999_999)),
+            ("block", detail::block_unknown(99_999_999)),
             ("pool", detail::pools_back(99_999_999)),
             ("chain", detail::chain_restart(12, 1350)),
             ("chain", detail::chip_restart(7, 1210)),

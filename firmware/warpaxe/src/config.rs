@@ -323,14 +323,21 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     );
     *CONFIG.lock().unwrap() = Some(cfg);
     *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
-    // Room for the record with both hashes (about 230 bytes with a
-    // short ticker); 160 held the one without them.
-    let mut buf = [0u8; 384];
-    *BLOCKS.lock().unwrap() = nvs
+    // The count (under 160 bytes, as every version writes it) and the
+    // last block's hash and status (about 200); both buffers with room.
+    let mut buf = [0u8; 256];
+    let mut info_buf = [0u8; 384];
+    let count = nvs
         .get_str(BLOCKS_KEY, &mut buf)
         .ok()
         .flatten()
-        .and_then(|s| serde_json::from_str(s.trim_end_matches('\0')).ok());
+        .map(|s| s.trim_end_matches('\0'));
+    let info = nvs
+        .get_str(BLOCK_INFO_KEY, &mut info_buf)
+        .ok()
+        .flatten()
+        .map(|s| s.trim_end_matches('\0'));
+    *BLOCKS.lock().unwrap() = blocks_from(count, info);
     *BEST_DIFF_F.lock().unwrap() = nvs
         .get_u64(BEST_F_KEY)
         .ok()
@@ -394,44 +401,83 @@ pub fn raise_best_diff_f(diff: f64) {
 }
 
 /// Blocks found, kept across reboots: how many, and the last one
-/// (height, unix time or 0 without a clock, coin ticker, its hash and
-/// its parent's as block explorers show them, and what became of it)
-/// for the web UI's banner. One NVS string, written when a block is
-/// found and when its status changes. A record from before v0.1.42 has
-/// no hash and no status.
+/// (height, unix time or 0 without a clock, coin ticker) for the web UI's
+/// banner. One NVS string in the form every version since the first
+/// reads (under 160 bytes), written when a block is found. The last
+/// block's hash, its parent's and what became of it are in a second
+/// string ([`BlockInfo`]), so a firmware from before v0.1.42 keeps the
+/// count after a downgrade.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Blocks {
     pub n: u32,
     pub h: u64,
     pub t: u64,
     pub coin: String,
-    /// The block's hash, hex, as explorers show it.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// The block's hash, hex, as explorers show it; empty for a block
+    /// found before v0.1.42. From [`BlockInfo`], not part of this record.
+    #[serde(skip)]
     pub hash: String,
     /// The hash of the block it builds on, the same way.
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    #[serde(skip)]
     pub prev: String,
-    /// `pending`, `confirmed` or `orphaned`
-    /// (`warpaxe_stratum::block::Status`).
-    #[serde(default, skip_serializing_if = "String::is_empty")]
+    /// `pending`, `confirmed`, `orphaned` or `unknown`
+    /// (`warpaxe_stratum::block::Status`); empty without a hash.
+    #[serde(skip)]
     pub status: String,
 }
+
+/// The last found block's hash, its parent's and its status, with the
+/// height and time of the block they belong to (a block counted by an
+/// older firmware after a downgrade has none of this, and must not get
+/// the one before's). One NVS string, written when a block is found and
+/// when its status changes.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+struct BlockInfo {
+    h: u64,
+    t: u64,
+    hash: String,
+    prev: String,
+    status: String,
+}
+
 static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
 const BLOCKS_KEY: &str = "blocks";
+const BLOCK_INFO_KEY: &str = "blockinfo";
 
 /// The blocks found so far, all time.
 pub fn blocks() -> Blocks {
     BLOCKS.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// The stored records as read at boot: the count, with the last block's
+/// hash and status where the second record is that block's.
+fn blocks_from(count: Option<&str>, info: Option<&str>) -> Option<Blocks> {
+    let mut b: Blocks = serde_json::from_str(count?).ok()?;
+    if let Some(i) = info.and_then(|s| serde_json::from_str::<BlockInfo>(s).ok()) {
+        if i.h == b.h && i.t == b.t {
+            b.hash = i.hash;
+            b.prev = i.prev;
+            b.status = i.status;
+        }
+    }
+    Some(b)
+}
+
 /// Count a found block and store it with its hash and its parent's
-/// (hex, as explorers show them), pending. From a thread with an
-/// internal stack (the miner loops, like `raise_best_diff`).
-pub fn record_block(height: u64, unix: u64, hash: &str, prev: &str) {
+/// (hex, as explorers show them), pending: two writes. `false`, and
+/// nothing written or counted, for a second block at the height of the
+/// last one on the same coin: on a chain at minimum difficulty
+/// (testnet4, regtest) every nonce meets the target, hundreds a second,
+/// and only the first is the block. From a thread with an internal
+/// stack (the miner loops, like `raise_best_diff`).
+pub fn record_block(height: u64, unix: u64, hash: &str, prev: &str) -> bool {
     let coin = get().coin_ticker;
     let b = {
         let mut g = BLOCKS.lock().unwrap();
         let b = g.get_or_insert_with(Blocks::default);
+        if b.n > 0 && b.h == height && b.coin == coin {
+            return false;
+        }
         b.n += 1;
         b.h = height;
         b.t = unix;
@@ -441,31 +487,50 @@ pub fn record_block(height: u64, unix: u64, hash: &str, prev: &str) {
         b.status = "pending".into();
         b.clone()
     };
-    store_blocks(&b);
+    if let Ok(json) = serde_json::to_string(&b) {
+        nvs_store(BLOCKS_KEY, &json);
+    }
+    store_block_info(&b);
+    true
 }
 
-/// The last found block's status changed: stored (one write). `false`
-/// when it already was `status` or there is no block with a hash. From
+/// The status of the last found block, whose hash is `hash`, changed:
+/// stored (one write). `false` when the stored block is another one
+/// (found meanwhile on another thread) or already has that status. From
 /// a thread with an internal stack.
-pub fn set_block_status(status: &str) -> bool {
+pub fn set_block_status(hash: &str, status: &str) -> bool {
     let b = {
         let mut g = BLOCKS.lock().unwrap();
-        let Some(b) = g.as_mut().filter(|b| !b.hash.is_empty() && b.status != status) else {
+        let Some(b) = g
+            .as_mut()
+            .filter(|b| !b.hash.is_empty() && b.hash == hash && b.status != status)
+        else {
             return false;
         };
         b.status = status.into();
         b.clone()
     };
-    store_blocks(&b);
+    store_block_info(&b);
     true
 }
 
-fn store_blocks(b: &Blocks) {
-    if let Ok(json) = serde_json::to_string(b) {
-        if let Some(nvs) = NVS.lock().unwrap().as_mut() {
-            if let Err(e) = nvs.set_str(BLOCKS_KEY, &json) {
-                log::warn!("config: storing the found block: {e}");
-            }
+fn store_block_info(b: &Blocks) {
+    let info = BlockInfo {
+        h: b.h,
+        t: b.t,
+        hash: b.hash.clone(),
+        prev: b.prev.clone(),
+        status: b.status.clone(),
+    };
+    if let Ok(json) = serde_json::to_string(&info) {
+        nvs_store(BLOCK_INFO_KEY, &json);
+    }
+}
+
+fn nvs_store(key: &str, json: &str) {
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_str(key, json) {
+            log::warn!("config: storing {key}: {e}");
         }
     }
 }

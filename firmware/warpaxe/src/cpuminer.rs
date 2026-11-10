@@ -687,12 +687,13 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
     config::raise_best_diff_f(diff);
     if warpaxe_stratum::block::meets_target(&hash, job.job.nbits) {
         let height = job.job.height;
-        log::warn!("cpu miner: BLOCK FOUND at height {height} (diff {diff:.0})");
+        let first = crate::miner::block_found(height, &hash, &job.job.prev_hash);
         miner::update_state(|s| {
             s.blocks_found += 1;
-            s.last_block = Some((height, diag::uptime_s()));
+            if first {
+                s.last_block = Some((height, diag::uptime_s()));
+            }
         });
-        crate::miner::block_found(height, &hash, &job.job.prev_hash);
     }
     if diff >= want {
         let age_n = st.jobs_received.saturating_sub(job.seq);

@@ -603,5 +603,7 @@
   "evd_block_orphaned": "bloc {h} orphelin : le job pour la hauteur suivante s’appuie sur un autre bloc",
   "blk_st_pending": "En suspens : en attente du prochain job du pool",
   "blk_st_confirmed": "Confirmé : le job suivant du pool s’appuie dessus",
-  "blk_st_orphaned": "Orphelin : le réseau a continué avec un autre bloc"
+  "blk_st_orphaned": "Orphelin : le réseau a continué avec un autre bloc",
+  "blk_st_unknown": "Inconnu : le mineur a été hors ligne entre-temps, la vérification n’est plus possible ici",
+  "evd_block_unknown": "bloc {h} : état inconnu, le mineur a été hors ligne entre-temps et la vérification n’est plus possible"
 }
