@@ -251,11 +251,13 @@ pub fn system_info() -> serde_json::Value {
     v["domainsGivenUp"] = m.domains_given_up.iter().map(|(c, d)| json!({"chip": c, "domain": d})).collect();
     // A board with a diode per chip (Naja Duo, Gamma Turbo): `temp`
     // above is the hotter of the two, which fan and stop line act on;
-    // `temp2` is the second chip's own, under AxeOS's name (ESP-Miner
-    // v2.15.4 `system_api_json.c`), and `asicTemps` both, chip 1 first.
-    // Null for a diode without a reading; absent on every other board.
+    // `temp2` is the second chip's own, under AxeOS's name and with its
+    // -1 for no reading (ESP-Miner v2.15.4 `system_api_json.c`;
+    // dashboards and tools expect a number there), and `asicTemps`
+    // both, chip 1 first, null for a diode without a reading. Absent on
+    // every other board.
     if let [_, second] = b.chip_temps[..] {
-        v["temp2"] = json!(second);
+        v["temp2"] = json!(second.unwrap_or(-1.0));
         v["asicTemps"] = json!(b.chip_temps);
     }
     // What this firmware heals on its own: a tuner that reads the list

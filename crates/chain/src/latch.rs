@@ -249,6 +249,12 @@ impl DomainLatch {
     /// has nothing to compare and is left alone.
     pub fn observe(&mut self, now_s: u64, working: bool, chips: &[ChipSample]) -> Option<Verdict> {
         let n = chips.len().min(MAX_CHIPS);
+        // No chips: the chain is coming up (the firmware looks during
+        // the bring-up too). Not a changed count; a chain that comes
+        // back with the chips it had keeps its clean-running credit.
+        if n == 0 {
+            return None;
+        }
         if n != self.chips {
             self.windows = [Window::EMPTY; MAX_CHIPS];
             self.clean_s = [[0; MAX_DOMAINS]; MAX_CHIPS];
@@ -283,8 +289,12 @@ impl DomainLatch {
             let mut found = None;
             if self.windows[i].early && self.windows[i].samples >= EARLY_WINDOW_S {
                 self.windows[i].early = false;
+                // Only for a domain that still has a try: giving one up
+                // is the full window's verdict, as it always was (three
+                // minutes dead after the third reset is not yet that).
                 found = self.windows[i]
                     .stuck(domains, &self.given_up[i], EARLY_DEAD_PERCENT)
+                    .filter(|&(d, _)| self.tries[i][usize::from(d)] < MAX_TRIES)
                     .map(|(d, percent)| (d, percent, true));
             }
             if found.is_none() {
@@ -884,8 +894,9 @@ mod tests {
         assert_eq!(resets[0], (u64::from(EARLY_WINDOW_S), true));
         assert!(resets[1].0 >= resets[0].0 + SPACING_S);
         assert!(resets[2].0 >= resets[1].0 + SPACING_S);
-        // Given up at the early look after the third.
-        assert_eq!(gave_up, Some(resets[2].0 + u64::from(EARLY_WINDOW_S)));
+        // Given up at the end of the full window after the third: the
+        // early look does not give a domain up.
+        assert_eq!(gave_up, Some(resets[2].0 + u64::from(WINDOW_S)));
         assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
     }
 

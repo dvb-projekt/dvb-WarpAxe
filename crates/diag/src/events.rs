@@ -275,16 +275,16 @@ pub mod detail {
     }
 
     /// The same for a domain dead from the chain's start, found at the
-    /// early look after three minutes: the same code, with the minutes
-    /// (`min`) the text names instead of its ten.
-    pub fn domain_latch_early(chip: u8, domain: u8, percent: u8) -> Detail {
+    /// early look after `minutes` (three): the same code, with the
+    /// minutes (`min`) the text names instead of its ten.
+    pub fn domain_latch_early(chip: u8, domain: u8, percent: u8, minutes: u32) -> Detail {
         coded(
             "domain_latch",
             &[
                 ("c", Value::from(chip)),
                 ("d", Value::from(domain)),
                 ("pct", Value::from(percent)),
-                ("min", Value::from(3)),
+                ("min", Value::from(minutes)),
             ],
         )
     }
@@ -624,6 +624,56 @@ fn english_fail(a: &[Value]) -> String {
     }
     s
 }
+
+/// Every code the firmware records. The web UI translates a coded
+/// event only when its own list (`EV_CODES` in `ui/index.html`) has the
+/// code and its table has the text `evd_<code>`; a test holds the two
+/// against this list, since a code missing there shows in English only
+/// (as the codes of v0.1.40 and v0.1.41 did until v0.1.42).
+pub const CODES: &[&str] = &[
+    "chip_silent",
+    "chip_restart",
+    "chip_given_up",
+    "domain_latch",
+    "domain_given_up",
+    "chain_restart",
+    "block_found",
+    "block_confirmed",
+    "block_orphaned",
+    "block_unknown",
+    "pool_fallback",
+    "pool_back",
+    "pools_out",
+    "pools_back",
+    "pool_saved",
+    "boot",
+    "boot_dump",
+    "boot_old_dump",
+    "rollback",
+    "installed",
+    "install_rec",
+    "rs_crash_chips",
+    "rs_crash_reset",
+    "verified",
+    "verified_short",
+    "mm_count",
+    "mm_chip",
+    "mm_none",
+    "r_missing",
+    "r_unexpected",
+    "r_vin",
+    "r_parts",
+    "r_ntc",
+    "first",
+    "first_mv",
+    "reverify",
+    "by_hand",
+    "blind",
+    "hot",
+    "power",
+    "st_pass",
+    "st_fail",
+];
 
 /// The English text of a coded detail; `None` for a code this image
 /// does not know (written by a newer one).
@@ -1021,7 +1071,7 @@ mod tests {
                 "chip 4 still silent after 3 restarts, no more until a new clock, a new voltage or the next boot",
             ),
             (
-                detail::domain_latch_early(4, 2, 0),
+                detail::domain_latch_early(4, 2, 0, 3),
                 "chip 4 domain 2 at 0 % of the chip's other domains for 3 min, chips switched off and on",
             ),
             (
@@ -1187,6 +1237,57 @@ mod tests {
         assert_eq!(e.text(), "later");
     }
 
+    /// The web UI's page, for the two checks below.
+    const UI: &str = include_str!("../../../firmware/warpaxe/src/ui/index.html");
+
+    #[test]
+    fn the_web_ui_knows_every_code_the_firmware_records() {
+        // `const EV_CODES = new Set(["chip_silent", …]);`
+        let start = UI
+            .find("const EV_CODES = new Set([")
+            .expect("EV_CODES in the page");
+        let list = &UI[start..];
+        let list = &list[list.find('[').unwrap() + 1..list.find(']').unwrap()];
+        let ui: Vec<&str> = list
+            .split(',')
+            .map(|s| s.trim().trim_matches('"'))
+            .filter(|s| !s.is_empty())
+            .collect();
+        for code in CODES {
+            assert!(
+                ui.contains(code),
+                "{code} is missing from EV_CODES in ui/index.html: its events show in English only"
+            );
+        }
+        for code in &ui {
+            assert!(
+                CODES.contains(code),
+                "{code} is in EV_CODES but not in CODES"
+            );
+        }
+        // And has its text: `evd_<code>` in the English table, except
+        // the two the page builds from other keys (the restart reason,
+        // the regulator's conditions).
+        let en = &UI[UI.find("\nen: {").expect("the English table")..];
+        let en = &en[..en.find("\nde: {").expect("the German table")];
+        for code in CODES.iter().filter(|c| !matches!(**c, "boot" | "power")) {
+            assert!(
+                en.contains(&format!("evd_{code}:\"")),
+                "evd_{code} is missing from the English table in ui/index.html"
+            );
+        }
+    }
+
+    #[test]
+    fn every_code_has_its_english_text() {
+        // The three restart codes store their text with the code.
+        for code in CODES {
+            let stored = matches!(*code, "boot" | "boot_dump" | "boot_old_dump");
+            assert_eq!(english(code, &Map::new()).is_some(), !stored, "{code}");
+        }
+        assert_eq!(english("not_a_code", &Map::new()), None);
+    }
+
     #[test]
     fn coded_repeats_coalesce_and_other_values_do_not() {
         let mut r = Ring::new();
@@ -1247,7 +1348,7 @@ mod tests {
             ("chain", detail::chip_restart(7, 1210)),
             ("chain", detail::chip_given_up(7)),
             ("chain", detail::domain_latch(15, 7, 24)),
-            ("chain", detail::domain_latch_early(15, 7, 4)),
+            ("chain", detail::domain_latch_early(15, 7, 4, 3)),
             ("chain", detail::domain_given_up(15, 7)),
             (
                 "update",

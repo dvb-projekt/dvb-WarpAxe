@@ -1255,9 +1255,12 @@ fn run(mut uart: ChipUart) {
                         // Dead from the chain's start: found after three
                         // minutes instead of ten.
                         let (mins, when) = if early {
-                            (3, " (early, from the chain's start)")
+                            (
+                                warpaxe_chain::latch::EARLY_WINDOW_S / 60,
+                                " (early, from the chain's start)",
+                            )
                         } else {
-                            (10, "")
+                            (warpaxe_chain::latch::WINDOW_S / 60, "")
                         };
                         lone.note_restart(now_s);
                         // The full off/on path. `false` only without the
@@ -1285,7 +1288,7 @@ fn run(mut uart: ChipUart) {
                             "chain",
                             if early {
                                 warpaxe_diag::events::detail::domain_latch_early(
-                                    chip, domain, percent,
+                                    chip, domain, percent, mins,
                                 )
                             } else {
                                 warpaxe_diag::events::detail::domain_latch(chip, domain, percent)

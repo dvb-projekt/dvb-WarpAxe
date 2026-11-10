@@ -672,7 +672,8 @@ pub fn cycling() -> bool {
 /// about six seconds' cost. Whether the rails matter for a mid-run
 /// latch is not known: docs/04 found the warm-reboot latch was the
 /// clock-delay trim, and a clock dip brought a dead domain back without
-/// a power cycle; a mid-run latch has no bench yet. Clock and voltage
+/// a power cycle. In the field the reset has taken twice on a Bitaxe
+/// Gamma (v0.1.41, a domain at 0 % from the chain's start). Clock and voltage
 /// stay as they are; nothing is written to NVS. Returns `false` without
 /// the board thread (nothing would switch the rail back on), or while
 /// the chips are held off for another reason.
@@ -2101,15 +2102,35 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                                 continue;
                             }
                             never_read_s[i] = never_read_s[i].saturating_add(1);
-                            if never_read_s[i] >= TEMP_LOST_S && !never_read_warned[i] {
-                                never_read_warned[i] = true;
+                            if never_read_s[i] >= TEMP_LOST_S {
                                 let text = format!(
                                     "chip {}'s temperature diode has not read since boot: fan and stop line follow chip {} alone",
                                     i + 1,
                                     2 - i
                                 );
-                                log::warn!("board: {text}");
-                                update(|s| s.last_error = text);
+                                if !never_read_warned[i] {
+                                    never_read_warned[i] = true;
+                                    log::warn!("board: {text}");
+                                }
+                                // Standing: put back when another text
+                                // took the place and was cleared.
+                                update(|s| {
+                                    if s.last_error.is_empty() {
+                                        s.last_error = text;
+                                    }
+                                });
+                            }
+                        }
+                        // A diode that reads after all: the notice goes.
+                        for i in 0..2 {
+                            if never_read_warned[i] && two_chips.seen(i) {
+                                never_read_warned[i] = false;
+                                log::info!("board: chip {}'s temperature diode reads now", i + 1);
+                                update(|s| {
+                                    if s.last_error.contains("temperature diode has not read since boot") {
+                                        s.last_error.clear();
+                                    }
+                                });
                             }
                         }
                         acting.ok_or_else(|| {
@@ -2424,6 +2445,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             }
         } else {
             pool_reset_held = false;
+            pool_reset_failed = false;
         }
 
         // A `cycle_chips` and the rail down (this pass or, when another
@@ -2439,8 +2461,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 cycle_off_at = None;
             } else if t.elapsed() >= Duration::from_millis(u64::from(warm_boot::WARM_OFF_MS)) {
                 cycle_off_at = None;
-                CYCLE.store(false, Ordering::Relaxed);
+                // The shutdown first: `cycling()` stays true until it is
+                // lifted, for whoever waits on the two (the self-test).
                 SHUTDOWN.store(false, Ordering::Relaxed);
+                CYCLE.store(false, Ordering::Relaxed);
                 log::warn!("board: chips back on after the off/on cycle");
             }
         }

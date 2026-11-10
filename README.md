@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-617%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-619%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -422,10 +422,11 @@ back at any time with `GET /api/v1/display/frame`.
   unknown, never cool: fans at full, and the lost-sensor stop after a
   minute; a chip that is already over the line stops at once whatever
   the other diode says. A diode that has never read since boot is left
-  out after a minute, with a line in the log and as the board's notice
-  (`boardError`). `temp` is the hotter chip, `temp2` the
-  second chip's own (AxeOS's field) and `asicTemps` both. The Gamma
-  Hex's second diode is not taken for a chip.
+  out, and that is said after a minute, in the log and as the board's
+  notice (`boardError`). `temp` is the hotter chip, `temp2` the
+  second chip's own (AxeOS's field, -1 without a reading) and
+  `asicTemps` both. On the Gamma Hex the other diode (diode 1) is not
+  taken for a chip.
 - Never a core voltage below the regulator's clean range: the TPS546
   driver refuses anything under 0.25 V ÷ VOUT_SCALE_LOOP (TI's reference
   range), the API refuses it with 400 and publishes the floor as
@@ -598,16 +599,18 @@ back at any time with `GET /api/v1/display/frame`.
   `chainSilentRestarts` keeps counting only the all-chips case),
   `domainLatchResets`, `lastDomainLatchReset` (`chip` and `domain` from
   0, `percent` the domain's share of the mean of the chip's other
-  domains over the ten minutes, `uptime_s`; null until the first) and
+  domains over the window: ten minutes, three for a domain dead from
+  the chain's start; `uptime_s`; null until the first) and
   `domainsGivenUp` (`[{chip, domain}]`; chips off and on for a stuck
   hash domain since v0.1.41), `selfHeals` (the cases this firmware heals
   on its own: `["chain_silent", "chip_silent", "domain_latch"]`) and
   `externalRegulator` (`{active, expires_in_s}`, a tuner's heartbeat;
   `{false, 0}` without one, also after every boot),
   on the boards with a diode per chip (Naja Duo, Gamma Turbo; since
-  v0.1.42) `temp2` (the second chip's own temperature, AxeOS's field)
-  and `asicTemps` (both, chip 1 first), each null for a diode without a
-  reading, with `temp` the hotter of the two,
+  v0.1.42) `temp2` (the second chip's own temperature, AxeOS's field,
+  -1 without a reading as there) and `asicTemps` (both, chip 1 first,
+  null for a diode without a reading), with `temp` the hotter of the
+  two,
   `gitHash` (the commit the
   image was built from), `blockFound` (nonces since the start that met
   their block's target: blocks, except on a chain at minimum difficulty,

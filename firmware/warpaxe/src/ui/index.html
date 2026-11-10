@@ -1181,7 +1181,7 @@ function fmtUptime(s) { s = Number(s) || 0; const d = Math.floor(s / 86400), h =
    `p`, firmware 0.1.35 on); events stored before the codes, and codes
    this page does not know, keep the English text `d`. Board, pool and
    chip names stay as they are. */
-const EV_CODES = new Set(["chip_silent", "chain_restart", "pool_fallback", "pool_back", "pool_saved", "boot", "boot_dump", "boot_old_dump", "rollback", "installed", "install_rec", "rs_crash_chips", "rs_crash_reset", "verified", "verified_short", "mm_count", "mm_chip", "mm_none", "r_missing", "r_unexpected", "r_vin", "r_parts", "r_ntc", "first", "first_mv", "reverify", "by_hand", "blind", "hot", "power", "st_pass", "st_fail"]);
+const EV_CODES = new Set(["chip_silent", "chip_restart", "chip_given_up", "domain_latch", "domain_given_up", "chain_restart", "block_found", "block_confirmed", "block_orphaned", "block_unknown", "pool_fallback", "pool_back", "pools_out", "pools_back", "pool_saved", "boot", "boot_dump", "boot_old_dump", "rollback", "installed", "install_rec", "rs_crash_chips", "rs_crash_reset", "verified", "verified_short", "mm_count", "mm_chip", "mm_none", "r_missing", "r_unexpected", "r_vin", "r_parts", "r_ntc", "first", "first_mv", "reverify", "by_hand", "blind", "hot", "power", "st_pass", "st_fail"]);
 function evText(e) {
   const c = e.c, p = e.p || {};
   if (!c || !EV_CODES.has(c)) return e.d || "";
@@ -1192,6 +1192,8 @@ function evText(e) {
   // unless the event names its own (three, for one dead from the
   // chain's start; events from before v0.1.42 name none).
   if (c === "domain_latch" && v.min == null) v.min = n(10);
+  // A block's height is a name, not a quantity: no thousands separators.
+  if (c.startsWith("block_") && p.h != null) v.h = String(p.h);
   // The punctuation that joins the parts, as each language writes it.
   const cjk = lang === "ja" || lang === "zh", cm = cjk ? "、" : ", ", co = cjk ? "：" : lang === "fr" ? " : " : ": ", sc = cjk ? "；" : lang === "fr" ? " ; " : "; ";
   switch (c) {
