@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-625%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-630%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -373,7 +373,11 @@ back at any time with `GET /api/v1/display/frame`.
   and one for coming back (at most one pair in ten minutes, and the
   return from an outage of ten minutes or more in any case). No pool or
   no worker name configured counts the same. Nothing is written to flash
-  per attempt. Not during the first start of a newly chosen board, whose
+  per attempt. A chip temperature that cannot be read while the chips
+  are off (a Bitaxe Gamma's diode needs the chip's power) is no lost
+  sensor: the lost-sensor stop counts only with the core rail on, for
+  every way the rail goes down, and after a hot stop on such a board
+  the regulator and a minute off decide the restart, as on AxeOS. Not during the first start of a newly chosen board, whose
   chips have to answer once for the choice to be confirmed, and not
   while a self-test runs: the chips stay on for it, and come on for one
   started while they were off. Without work from a pool the self-test
