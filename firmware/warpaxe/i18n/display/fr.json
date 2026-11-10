@@ -31,6 +31,8 @@
  "Fans 100 % · clear it in the web UI under System": "Ventil. 100 % · débloquer dans l’interface web > Système",
  "CHIPS OFF": "PUCES COUPÉES",
  "Device stays reachable · switch on in the web UI": "Appareil joignable · rallumer les puces via l’interface web",
+ "NO POOL": "AUCUN POOL",
+ "Chips off until a pool answers": "Puces coupées jusqu’à ce qu’un pool réponde",
  "Preparing flash · do not power off": "Préparation mémoire · ne pas éteindre",
  "{p} % · do not power off": "{p} % · ne pas éteindre",
  "CORE OFF": "CŒUR COUPÉ",

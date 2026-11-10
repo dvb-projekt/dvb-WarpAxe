@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::io::BufReader;
 use std::net::{TcpStream, ToSocketAddrs};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -17,6 +17,7 @@ use warpaxe_stratum::message::{
     authorize_request, configure_request, parse_subscribe_result, submit_request,
     subscribe_request, suggest_difficulty_request, Request,
 };
+use warpaxe_stratum::outage::{self, Change, PoolWatch};
 use warpaxe_stratum::{coinbase, line, parse_line, payout, Incoming, Job, Prepared, Session};
 
 use crate::link::{KeyRefused, Link, LinkReader};
@@ -106,9 +107,57 @@ pub struct StratumState {
     /// [`line::MAX_LINE`], since boot.
     pub lines_too_long: u32,
     pub last_reject: String,
+    /// Neither the main nor (where one is set) the fallback pool
+    /// answers: the chips are off until one sends work again.
+    pub pools_unavailable: bool,
 }
 
 static STATE: Mutex<Option<StratumState>> = Mutex::new(None);
+/// The outage rule's memory (RAM only; nothing is stored per attempt).
+static WATCH: Mutex<PoolWatch> = Mutex::new(PoolWatch::new());
+/// An outage's two events (out, back) are written at most once per
+/// [`OUTAGE_EVENT_S`]: a link that flaps by the minute must not wear the
+/// flash. When the "out" was not written, its "back" is not either.
+const OUTAGE_EVENT_S: u64 = 600;
+/// Uptime second of the last recorded "out" event; 0 = none yet.
+static OUTAGE_EVENT_AT: AtomicU32 = AtomicU32::new(0);
+static OUTAGE_RECORDED: AtomicBool = AtomicBool::new(false);
+
+/// Feed the outage rule and act on what it says: the chips off or back
+/// on (the board's flag), the API's `poolsUnavailable`, the event log.
+/// Atomics, the state lock and the event queue only, so the Sv2
+/// session's thread (stack in PSRAM) may call it.
+fn pools(f: impl FnOnce(&mut PoolWatch, u64) -> Option<Change>) {
+    let now = diag::uptime_s();
+    let change = f(&mut WATCH.lock().unwrap(), now);
+    match change {
+        Some(Change::Unavailable) => {
+            update(|s| s.pools_unavailable = true);
+            crate::board::set_no_pool(true);
+            log::warn!("stratum: no pool answers, chips off until one does");
+            let last = u64::from(OUTAGE_EVENT_AT.load(Ordering::Relaxed));
+            if last == 0 || now.saturating_sub(last) >= OUTAGE_EVENT_S {
+                OUTAGE_EVENT_AT.store(now.clamp(1, u64::from(u32::MAX)) as u32, Ordering::Relaxed);
+                OUTAGE_RECORDED.store(true, Ordering::Relaxed);
+                crate::events::record("pool", warpaxe_diag::events::detail::pools_out());
+            }
+        }
+        Some(Change::Available { off_s }) => {
+            update(|s| s.pools_unavailable = false);
+            crate::board::set_no_pool(false);
+            log::warn!("stratum: a pool answers again after {off_s} s, chips back on");
+            if OUTAGE_RECORDED.swap(false, Ordering::Relaxed) {
+                crate::events::record("pool", warpaxe_diag::events::detail::pools_back(off_s));
+            }
+        }
+        None => {}
+    }
+}
+
+/// Neither pool answers right now.
+fn pools_out() -> bool {
+    WATCH.lock().unwrap().unavailable()
+}
 /// The newest work from the pool, whichever protocol brought it.
 enum Feed {
     /// Decoded once per notify; every job hashes from it.
@@ -204,6 +253,8 @@ fn publish(feed: Feed, clean: bool) {
         (s.jobs_received, s.clean_jobs)
     };
     *NOTIFY.lock().unwrap() = Some((feed, seq, clean_seq));
+    // Work from a pool: it answers (and ends an outage).
+    pools(|w, now| w.answered(now));
 }
 
 /// Queue a share. Silently dropped when no session is up.
@@ -351,6 +402,9 @@ fn run() {
         let cfg = config::get();
         if cfg.stratum_url.is_empty() || cfg.stratum_user.is_empty() {
             update(|s| s.last_error = "no pool or user configured".into());
+            // Nothing to mine for: counts like a pool that does not
+            // answer, so the chips do not idle at full clock.
+            pools(|w, now| w.failed(now, false, false));
             std::thread::sleep(Duration::from_secs(10));
             continue;
         }
@@ -445,11 +499,28 @@ fn run() {
         if started.elapsed() < SHORT_SESSION {
             if CLOCK_UNSURE.swap(false, Ordering::Relaxed) {
                 log::warn!("stratum: the pool certificate failed against a clock NTP has not set yet: not counted towards the fallback");
-            } else if !on_fallback {
-                fails += 1;
+            } else {
+                if !on_fallback {
+                    fails += 1;
+                }
+                pools(|w, now| w.failed(now, on_fallback, fallback_ok));
             }
-            pause_unless_reconnect(backoff);
-            backoff = (backoff * 2).min(Duration::from_secs(60));
+            if pools_out() {
+                // No pool answers and the chips are off: both pools in
+                // turn, a round every half minute, until one sends work
+                // (`publish`). The main pool is tried again too, which
+                // the fallback's own backoff never did.
+                let (next_fallback, pause_s) = outage::next_probe(on_fallback, fallback_ok);
+                on_fallback = next_fallback;
+                fails = 0;
+                if pause_s > 0 {
+                    pause_unless_reconnect(Duration::from_secs(pause_s), fallback_ok);
+                }
+                backoff = Duration::from_secs(3);
+            } else {
+                pause_unless_reconnect(backoff, fallback_ok);
+                backoff = (backoff * 2).min(Duration::from_secs(60));
+            }
         } else {
             fails = 0;
             backoff = Duration::from_secs(3);
@@ -459,10 +530,12 @@ fn run() {
 
 /// The backoff, cut short by a settings change: a saved pool chosen while
 /// the old one keeps failing applies within a second, not a minute.
-fn pause_unless_reconnect(d: Duration) {
+fn pause_unless_reconnect(d: Duration, has_fallback: bool) {
     let end = Instant::now() + d;
     while Instant::now() < end && !RECONNECT.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(250));
+        // The outage's minute may run out in a backoff.
+        pools(|w, now| w.tick(now, has_fallback));
     }
 }
 

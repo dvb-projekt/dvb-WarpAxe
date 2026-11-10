@@ -394,6 +394,8 @@ fn run(mut uart: ChipUart) {
                 "OVERHEAT"
             } else if board::shutdown() {
                 "OFF"
+            } else if board::no_pool() {
+                "NOPOOL"
             } else {
                 "POWER"
             };

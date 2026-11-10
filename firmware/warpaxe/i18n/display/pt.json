@@ -31,6 +31,8 @@
  "Fans 100 % · clear it in the web UI under System": "Ventoinhas 100% · libere na interface web em Sistema",
  "CHIPS OFF": "CHIPS PARADOS",
  "Device stays reachable · switch on in the web UI": "Continua acessível · ligue os chips pela interface web",
+ "NO POOL": "SEM POOL",
+ "Chips off until a pool answers": "Chips parados até um pool responder",
  "Preparing flash · do not power off": "Preparando gravação · não desligue",
  "{p} % · do not power off": "{p}% · não desligue",
  "CORE OFF": "NÚCLEO DESL.",

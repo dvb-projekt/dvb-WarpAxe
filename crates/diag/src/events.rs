@@ -310,6 +310,18 @@ pub mod detail {
         coded("pool_back", &[])
     }
 
+    /// Neither the main nor the fallback pool answers: the chips are
+    /// off until one does.
+    pub fn pools_out() -> Detail {
+        coded("pools_out", &[])
+    }
+
+    /// A pool sent work again after `off_s` seconds: the chips are back
+    /// on.
+    pub fn pools_back(off_s: u64) -> Detail {
+        coded("pools_back", &[("s", Value::from(off_s))])
+    }
+
     /// A saved pool was made the main pool.
     pub fn pool_saved(pool: &str) -> Detail {
         coded("pool_saved", &[("p", name(pool))])
@@ -614,6 +626,8 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "block_found" => format!("block {} found ({})", g("h"), g("coin")),
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
         "pool_back" => "main pool answers again, back from the fallback".into(),
+        "pools_out" => "no pool answers, chips off until one does".into(),
+        "pools_back" => format!("a pool answers again after {} s, chips back on", g("s")),
         "pool_saved" => format!("saved pool {} used", g("p")),
         // The text is stored with the code (detail::boot).
         "boot" | "boot_dump" | "boot_old_dump" => return None,
@@ -959,6 +973,11 @@ mod tests {
             ),
             (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
             (detail::pool_back(), "main pool answers again, back from the fallback"),
+            (detail::pools_out(), "no pool answers, chips off until one does"),
+            (
+                detail::pools_back(125),
+                "a pool answers again after 125 s, chips back on",
+            ),
             (detail::pool_saved("Braiins"), "saved pool Braiins used"),
             (detail::boot("power-on", None), "power-on"),
             (

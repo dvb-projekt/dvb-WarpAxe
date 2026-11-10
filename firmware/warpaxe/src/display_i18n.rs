@@ -23,6 +23,10 @@ static ES: &[(&str, &str)] = &[
         "Chip {t} °C · voltaje del núcleo cortado",
     ),
     ("Chips", "Chips"),
+    (
+        "Chips off until a pool answers",
+        "Chips apagados hasta que responda un pool",
+    ),
     ("Clock", "Frecuencia"),
     (
         "Clock or voltage changed during the test",
@@ -80,6 +84,7 @@ static ES: &[(&str, &str)] = &[
     ("Join {n}", "Conéctate a {n}"),
     ("Log", "Registro"),
     ("Mining continues", "Sigue minando"),
+    ("NO POOL", "SIN POOL"),
     ("Network difficulty", "Dificultad de red"),
     ("Network hashrate", "Hashrate de red"),
     ("OVERHEAT", "SOBRECALENTADO"),
@@ -154,6 +159,10 @@ static FR: &[(&str, &str)] = &[
         "Puce {t} °C · tension cœur coupée",
     ),
     ("Chips", "Puces"),
+    (
+        "Chips off until a pool answers",
+        "Puces coupées jusqu’à ce qu’un pool réponde",
+    ),
     ("Clock", "Fréquence"),
     (
         "Clock or voltage changed during the test",
@@ -211,6 +220,7 @@ static FR: &[(&str, &str)] = &[
     ("Join {n}", "Rejoindre {n}"),
     ("Log", "Journal"),
     ("Mining continues", "Le minage continue"),
+    ("NO POOL", "AUCUN POOL"),
     ("Network difficulty", "Difficulté réseau"),
     ("Network hashrate", "Hashrate réseau"),
     ("OVERHEAT", "SURCHAUFFE"),
@@ -279,6 +289,10 @@ static IT: &[(&str, &str)] = &[
         "Chip {t} °C · tensione core spenta",
     ),
     ("Chips", "Chip"),
+    (
+        "Chips off until a pool answers",
+        "Chip spenti finché un pool non risponde",
+    ),
     ("Clock", "Frequenza"),
     (
         "Clock or voltage changed during the test",
@@ -336,6 +350,7 @@ static IT: &[(&str, &str)] = &[
     ("Join {n}", "Collegati a {n}"),
     ("Log", "Log"),
     ("Mining continues", "Il mining continua"),
+    ("NO POOL", "NESSUN POOL"),
     ("Network difficulty", "Difficoltà di rete"),
     ("Network hashrate", "Hashrate di rete"),
     ("OVERHEAT", "SURRISCALDATO"),
@@ -407,6 +422,10 @@ static PT: &[(&str, &str)] = &[
         "Chip {t} °C · tensão do núcleo cortada",
     ),
     ("Chips", "Chips"),
+    (
+        "Chips off until a pool answers",
+        "Chips parados até um pool responder",
+    ),
     ("Clock", "Frequência"),
     (
         "Clock or voltage changed during the test",
@@ -464,6 +483,7 @@ static PT: &[(&str, &str)] = &[
     ("Join {n}", "Conecte-se a {n}"),
     ("Log", "Log"),
     ("Mining continues", "A mineração continua"),
+    ("NO POOL", "SEM POOL"),
     ("Network difficulty", "Dificuldade da rede"),
     ("Network hashrate", "Hashrate da rede"),
     ("OVERHEAT", "SUPERAQUECIDO"),

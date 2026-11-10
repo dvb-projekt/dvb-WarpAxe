@@ -141,6 +141,11 @@ static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 static FANS_FULL: AtomicBool = AtomicBool::new(false);
 /// The board thread runs, so it is the one switching the rail.
 static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
+/// No pool answers (`stratum.rs`, `warpaxe_stratum::outage`): the chips
+/// are off until one does. Its own flag, not [`SHUTDOWN`]: `shutdown` in
+/// the API stays the switch a person set, and the two do not undo each
+/// other.
+static NO_POOL: AtomicBool = AtomicBool::new(false);
 /// Set by [`cycle_chips`]: the shutdown in force is the board's own, to
 /// be lifted once the rails have been down for [`warm_boot::WARM_OFF_MS`].
 /// A shutdown asked for over the API meanwhile clears it and stands.
@@ -462,7 +467,22 @@ pub fn reject_choice(verdict: FirstStart) {
 /// The chain must not run: overheat, a manual shutdown, or the core rail
 /// not (yet) back up.
 pub fn chain_stopped() -> bool {
-    overheat() || shutdown() || !POWERED.load(Ordering::Relaxed)
+    overheat() || shutdown() || no_pool() || !POWERED.load(Ordering::Relaxed)
+}
+
+/// The chips are (to be) off because no pool answers. Not during a
+/// pending first start: the chain has to come up once for its
+/// enumeration to judge the chosen board, pool or no pool.
+pub fn no_pool() -> bool {
+    NO_POOL.load(Ordering::Relaxed) && !choice_pending()
+}
+
+/// No pool answers (`true`: core rail down, chain in reset, fans low) or
+/// one does again (`false`: the board loop brings the rail back at the
+/// voltage it had, the miner starts the chain over at the configured
+/// clock). Atomics only: callable from any thread.
+pub fn set_no_pool(off: bool) {
+    NO_POOL.store(off, Ordering::Relaxed);
 }
 
 /// Boot, before anything slow: the chain in reset and the core rail off.
@@ -2187,7 +2207,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         if CLEAR_LOST.swap(false, Ordering::Relaxed) {
             temp_lost_s = 0;
         }
-        let halt = overheat() || shutdown();
+        let halt = overheat() || shutdown() || no_pool();
         if halt && POWERED.load(Ordering::Relaxed) {
             if let Some(vr) = vr.as_mut() {
                 vr.off();
@@ -2220,7 +2240,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if ok {
                 // Let the rail settle before the miner resets the chain.
                 std::thread::sleep(Duration::from_millis(500));
-                if overheat() || shutdown() {
+                if overheat() || shutdown() || no_pool() {
                     // A stop asked for while the rail came up (a
                     // `prepare_reset` right after a chips-on or at the
                     // end of an off/on cycle: it sees the rail still
@@ -2378,26 +2398,42 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 warmup = None;
                 update(|s| s.fan_warmup = false);
             }
+            // Chips off for want of a pool: nothing heats, so a fan set
+            // by hand or one without a reading runs at the lowest duty
+            // instead of its setting or full (the PID gets there on its
+            // own as the chips cool). An overheat still means full.
+            let idle = no_pool() && !POWERED.load(Ordering::Relaxed);
+            let low = cfg.min_fan_speed.min(100);
             let want = if overheat() || FANS_FULL.load(Ordering::Relaxed) {
                 (100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {
-                    cfg.fanspeed.min(100)
-                } else if hold {
+                    if idle {
+                        cfg.fanspeed.min(low)
+                    } else {
+                        cfg.fanspeed.min(100)
+                    }
+                } else if hold && !idle {
                     100
                 } else {
                     match temp {
                         Some(c) => pid.compute(c, target_c) as u8,
+                        None if idle => low,
                         None => 100, // no reading: full fan
                     }
                 };
                 let vrf = if !cfg.autofanspeed2 {
-                    cfg.manual_fan_speed2.min(100)
-                } else if hold {
+                    if idle {
+                        cfg.manual_fan_speed2.min(low)
+                    } else {
+                        cfg.manual_fan_speed2.min(100)
+                    }
+                } else if hold && !idle {
                     100
                 } else {
                     match vr_temp {
                         Some(c) => pid_vr.compute(c as f32, vr_target_c) as u8,
+                        None if idle => low,
                         None => 100,
                     }
                 };

@@ -1362,3 +1362,245 @@ mod core_hold {
         assert_eq!(went, Some((100 + MAX_HOLD_MS, Step::ApplyLate)));
     }
 }
+
+// ---------------------------------------------------------- pool outage
+
+/// No pool answers: the chips go off, and come back when one does. The
+/// rule (`warpaxe_stratum::outage`) is driven by a model of the
+/// firmware's connect loop (`stratum.rs`: failures 3 s, 6 s, 12 s …
+/// apart, the fallback after three on the main pool, both pools in turn
+/// every half minute once they are out) against pools that come and go
+/// on a script, with the simulated chain behind it: off means the chain
+/// is gone, back on means a fresh chain started at the configured clock,
+/// as the firmware's chain restart does.
+mod pool_outage {
+    use super::*;
+    use warpaxe_stratum::outage::{next_probe, Change, PoolWatch};
+
+    /// The configured point: not the profile's default, so "the old
+    /// values" is a statement.
+    const MHZ: u32 = 600;
+    const MV: u16 = 1180;
+
+    struct Rig {
+        /// The chain while the chips are on.
+        chain: Option<Bench>,
+        chain_starts: u32,
+        /// The board task's applied core voltage; kept while the rail
+        /// is off and used again when it comes back.
+        applied_mv: u16,
+        has_fallback: bool,
+        watch: PoolWatch,
+        // The connect loop.
+        on_fallback: bool,
+        fails: u32,
+        backoff_s: u64,
+        next_attempt_s: u64,
+        /// A session is up since (s), on the fallback or not.
+        session: Option<(u64, bool)>,
+        changes: Vec<(u64, Change)>,
+    }
+
+    fn config() -> Config {
+        Config {
+            frequency_hz: MHZ * 1_000_000,
+            ..Bench::config()
+        }
+    }
+
+    impl Rig {
+        fn new(has_fallback: bool) -> Rig {
+            let mut r = Rig {
+                chain: None,
+                chain_starts: 0,
+                applied_mv: MV,
+                has_fallback,
+                watch: PoolWatch::new(),
+                on_fallback: false,
+                fails: 0,
+                backoff_s: 3,
+                next_attempt_s: 0,
+                session: None,
+                changes: Vec::new(),
+            };
+            r.start_chain();
+            r
+        }
+
+        fn start_chain(&mut self) {
+            let mut b = Bench::new(2, config());
+            b.run_until_ready(30_000);
+            self.chain = Some(b);
+            self.chain_starts += 1;
+        }
+
+        fn note(&mut self, t: u64, c: Option<Change>) {
+            match c {
+                Some(Change::Unavailable) => self.chain = None,
+                Some(Change::Available { .. }) => self.start_chain(),
+                None => return,
+            }
+            self.changes.extend(c.map(|c| (t, c)));
+        }
+
+        /// One second of the connect loop at `t`, with the pools up or
+        /// not as given.
+        fn second(&mut self, t: u64, main_up: bool, fallback_up: bool) {
+            let up = |fallback: bool| if fallback { fallback_up } else { main_up };
+            if let Some((since, fallback)) = self.session {
+                if up(fallback) {
+                    // The pool sends work.
+                    let c = self.watch.answered(t);
+                    self.note(t, c);
+                } else {
+                    // The session breaks: a short one is a failure.
+                    self.session = None;
+                    if t - since < 60 {
+                        self.failure(t, fallback);
+                    } else {
+                        self.fails = 0;
+                        self.backoff_s = 3;
+                        self.next_attempt_s = t;
+                    }
+                }
+            } else if t >= self.next_attempt_s {
+                if self.has_fallback && !self.on_fallback && self.fails >= 3 {
+                    self.on_fallback = true;
+                    self.fails = 0;
+                }
+                if up(self.on_fallback) {
+                    self.session = Some((t, self.on_fallback));
+                } else {
+                    self.failure(t, self.on_fallback);
+                }
+            }
+            let c = self.watch.tick(t, self.has_fallback);
+            self.note(t, c);
+            if let Some(b) = self.chain.as_mut() {
+                b.mine_ms(1000);
+            }
+        }
+
+        fn failure(&mut self, t: u64, fallback: bool) {
+            if !fallback {
+                self.fails += 1;
+            }
+            let c = self.watch.failed(t, fallback, self.has_fallback);
+            self.note(t, c);
+            if self.watch.unavailable() {
+                let (next, pause) = next_probe(fallback, self.has_fallback);
+                self.on_fallback = next;
+                self.fails = 0;
+                self.next_attempt_s = t + pause.max(1);
+                self.backoff_s = 3;
+            } else {
+                self.next_attempt_s = t + self.backoff_s;
+                self.backoff_s = (self.backoff_s * 2).min(60);
+            }
+        }
+
+        fn run(&mut self, from: u64, to: u64, main_up: bool, fallback_up: bool) {
+            for t in from..to {
+                self.second(t, main_up, fallback_up);
+            }
+        }
+
+        fn chips_on(&self) -> bool {
+            self.chain.is_some()
+        }
+    }
+
+    #[test]
+    fn both_pools_gone_switches_the_chips_off_after_a_minute_and_one_back_brings_them_on() {
+        let mut r = Rig::new(true);
+        r.run(0, 300, true, true);
+        assert!(r.chips_on());
+        assert!(r.changes.is_empty());
+        // Both pools gone at 300 s.
+        r.run(300, 800, false, false);
+        assert!(!r.chips_on(), "chips off");
+        assert_eq!(r.changes.len(), 1, "{:?}", r.changes);
+        let (off_at, c) = r.changes[0];
+        assert_eq!(c, Change::Unavailable);
+        // Not before a minute of failures on both, not long after it.
+        assert!((360..=420).contains(&off_at), "off at {off_at}");
+        // Only the fallback comes back at 800 s: found within one round
+        // of probes, and the chain starts over at the configured clock;
+        // the voltage is the one the rail had.
+        r.run(800, 900, false, true);
+        assert!(r.chips_on(), "chips back on");
+        let (on_at, c) = r.changes[1];
+        assert!(matches!(c, Change::Available { off_s } if off_s == on_at - off_at));
+        assert!((800..=835).contains(&on_at), "on at {on_at}");
+        assert_eq!(r.chain_starts, 2);
+        let b = r.chain.as_ref().unwrap();
+        assert!(b.drv.accepting_work());
+        assert_eq!(b.drv.frequency_hz(), MHZ * 1_000_000);
+        assert_eq!(b.drv.chip_count(), 2);
+        assert_eq!(r.applied_mv, MV);
+        assert!(
+            b.count(|e| matches!(e, Event::Nonce(_))) > 0,
+            "hashing again"
+        );
+        assert_eq!(r.changes.len(), 2);
+    }
+
+    #[test]
+    fn the_main_pool_back_is_found_too_while_the_fallback_stays_down() {
+        let mut r = Rig::new(true);
+        r.run(0, 100, true, true);
+        r.run(100, 400, false, false);
+        assert!(!r.chips_on());
+        // The connect loop used to stay on the fallback's backoff here.
+        r.run(400, 480, true, false);
+        assert!(r.chips_on());
+        assert_eq!(r.session.map(|s| s.1), Some(false), "on the main pool");
+    }
+
+    #[test]
+    fn a_short_outage_leaves_the_chips_on() {
+        let mut r = Rig::new(true);
+        r.run(0, 100, true, true);
+        // Wi-Fi gone for 40 s.
+        r.run(100, 140, false, false);
+        r.run(140, 600, true, true);
+        assert!(r.changes.is_empty(), "{:?}", r.changes);
+        assert_eq!(r.chain_starts, 1, "the chain was never touched");
+        assert!(r.chips_on());
+    }
+
+    #[test]
+    fn the_main_pool_gone_with_the_fallback_up_is_the_fallback_s_case() {
+        let mut r = Rig::new(true);
+        r.run(0, 100, true, true);
+        r.run(100, 1000, false, true);
+        assert!(r.changes.is_empty(), "{:?}", r.changes);
+        assert!(r.chips_on());
+        assert_eq!(r.session.map(|s| s.1), Some(true), "on the fallback");
+    }
+
+    #[test]
+    fn without_a_fallback_the_main_pool_alone_decides() {
+        let mut r = Rig::new(false);
+        r.run(0, 100, true, false);
+        r.run(100, 400, false, false);
+        assert!(!r.chips_on());
+        let off_at = r.changes[0].0;
+        assert!((160..=220).contains(&off_at), "off at {off_at}");
+        r.run(400, 460, true, false);
+        assert!(r.chips_on());
+        assert_eq!(r.chain_starts, 2);
+    }
+
+    #[test]
+    fn no_pool_from_the_start_switches_off_and_the_first_job_switches_on() {
+        // A miner booted without Wi-Fi: the chain comes up, no pool ever
+        // answers.
+        let mut r = Rig::new(false);
+        r.run(0, 200, false, false);
+        assert!(!r.chips_on());
+        assert_eq!(r.changes[0].1, Change::Unavailable);
+        r.run(200, 260, true, false);
+        assert!(r.chips_on());
+    }
+}

@@ -31,6 +31,8 @@
  "Fans 100 % · clear it in the web UI under System": "Vent. 100 % · desbloquear en la web, en Sistema",
  "CHIPS OFF": "CHIPS APAGADOS",
  "Device stays reachable · switch on in the web UI": "Sigue accesible · enciende los chips en la interfaz web",
+ "NO POOL": "SIN POOL",
+ "Chips off until a pool answers": "Chips apagados hasta que responda un pool",
  "Preparing flash · do not power off": "Preparando memoria flash · no apagar",
  "{p} % · do not power off": "{p} % · no apagar",
  "CORE OFF": "NÚCLEO APAG.",

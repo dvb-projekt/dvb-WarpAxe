@@ -16,3 +16,6 @@ warpaxe-core = { path = "../core" }
 warpaxe-sim = { path = "../sim" }
 # The self-test's judgement, driven here against the simulated chain.
 warpaxe-board = { path = "../board" }
+# The pool-outage rule, driven here with the simulated chain behind it
+# (a dev-dependency only: warpaxe-stratum itself depends on this crate).
+warpaxe-stratum = { path = "../stratum" }

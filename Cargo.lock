@@ -870,6 +870,7 @@ dependencies = [
  "warpaxe-board",
  "warpaxe-core",
  "warpaxe-sim",
+ "warpaxe-stratum",
 ]
 
 [[package]]

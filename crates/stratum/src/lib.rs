@@ -16,6 +16,7 @@ pub mod gate;
 pub mod job;
 pub mod line;
 pub mod message;
+pub mod outage;
 pub mod payout;
 
 pub use gate::WorkGate;

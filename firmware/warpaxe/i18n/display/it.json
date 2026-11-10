@@ -31,6 +31,8 @@
  "Fans 100 % · clear it in the web UI under System": "Ventole 100 % · sblocca nell’interfaccia web in Sistema",
  "CHIPS OFF": "CHIP SPENTI",
  "Device stays reachable · switch on in the web UI": "Dispositivo raggiungibile · accendi dall’interfaccia web",
+ "NO POOL": "NESSUN POOL",
+ "Chips off until a pool answers": "Chip spenti finché un pool non risponde",
  "Preparing flash · do not power off": "Preparazione flash · non spegnere",
  "{p} % · do not power off": "{p} % · non spegnere",
  "CORE OFF": "CORE SPENTO",

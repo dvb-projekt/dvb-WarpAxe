@@ -36,7 +36,11 @@ enum Event {
     Ota(Option<u8>),
     Block(u64),
     Overheat,
-    ChipsOff,
+    /// The chips are off: switched off by hand, or (`no_pool`) because
+    /// no pool answers.
+    ChipsOff {
+        no_pool: bool,
+    },
     /// The setup hotspot is up: how to join it.
     Setup,
     /// A self-test running, or its result for a while after (run id).
@@ -349,7 +353,8 @@ impl Ui {
                 return Some(match ev.as_str() {
                     "block" => Event::Block(stratum::state().block_height.max(1)),
                     "overheat" => Event::Overheat,
-                    "off" => Event::ChipsOff,
+                    "off" => Event::ChipsOff { no_pool: false },
+                    "nopool" => Event::ChipsOff { no_pool: true },
                     _ => Event::Ota(Some(((now % 20) * 5) as u8)),
                 });
             }
@@ -368,7 +373,11 @@ impl Ui {
             return Some(Event::Overheat);
         }
         if board::shutdown() {
-            return Some(Event::ChipsOff);
+            return Some(Event::ChipsOff { no_pool: false });
+        }
+        // Not on the board without chips: there is nothing to be off.
+        if board::no_pool() && !board::devkit() {
+            return Some(Event::ChipsOff { no_pool: true });
         }
         if let Some(s) = crate::selftest::shown() {
             // Dismissed while running: the result still shows once it is in.
@@ -1996,7 +2005,7 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W - 16,
             );
         }
-        Event::ChipsOff => {
+        Event::ChipsOff { no_pool } => {
             c.fill(gfx::rgb(0x0b, 0x0c, 0x14));
             c.disc(
                 W as f32 / 2.0,
@@ -2010,13 +2019,24 @@ fn event_screen(c: &mut Canvas, ev: Event, t: f32) {
                 W / 2,
                 84,
                 gfx::WARN,
-                l("CHIPS OFF", "CHIPS AUS"),
+                if no_pool {
+                    l("NO POOL", "KEIN POOL")
+                } else {
+                    l("CHIPS OFF", "CHIPS AUS")
+                },
                 Align::Center,
             );
-            let l = l(
-                "Device stays reachable · switch on in the web UI",
-                "Gerät bleibt erreichbar · Einschalten in der Weboberfläche",
-            );
+            let l = if no_pool {
+                l(
+                    "Chips off until a pool answers",
+                    "Chips aus, bis ein Pool antwortet",
+                )
+            } else {
+                l(
+                    "Device stays reachable · switch on in the web UI",
+                    "Gerät bleibt erreichbar · Einschalten in der Weboberfläche",
+                )
+            };
             fit_text(
                 c,
                 &[&LABEL11, &LABEL10, &MONO9],
@@ -2272,8 +2292,13 @@ fn oled_event(o: &mut Oled, ev: Event, t: f32, rng: &mut u32) {
                 &format!("{tc} {}", oled_str(l("CORE OFF", "KERN AUS"))),
             );
         }
-        Event::ChipsOff => {
-            oled_center(o, 6, &oled_str(l("CHIPS OFF", "CHIPS AUS")));
+        Event::ChipsOff { no_pool } => {
+            let title = if no_pool {
+                l("NO POOL", "KEIN POOL")
+            } else {
+                l("CHIPS OFF", "CHIPS AUS")
+            };
+            oled_center(o, 6, &oled_str(title));
             let n = net::state();
             oled_center(o, 19, &n.wifi_ip.or(n.usb_ip).unwrap_or_default());
         }

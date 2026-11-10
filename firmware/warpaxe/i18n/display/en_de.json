@@ -31,6 +31,8 @@
  "Fans 100 % · clear it in the web UI under System": "Lüfter 100 % · Freigabe unter System (Weboberfläche)",
  "CHIPS OFF": "CHIPS AUS",
  "Device stays reachable · switch on in the web UI": "Gerät bleibt erreichbar · Einschalten in der Weboberfläche",
+ "NO POOL": "KEIN POOL",
+ "Chips off until a pool answers": "Chips aus, bis ein Pool antwortet",
  "Preparing flash · do not power off": "Speicher wird vorbereitet · nicht ausschalten",
  "{p} % · do not power off": "{p} % · nicht ausschalten",
  "CORE OFF": "KERN AUS",
