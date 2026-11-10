@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-556%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-589%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -82,7 +82,7 @@ move fast; corrections welcome.
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | no (the page asks for a restart) | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
 | Who a found block pays (coinbase outputs, your share) | yes, partly (up to six outputs and the total; your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (up to 32 outputs, yours first, the rest summed; your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account; job lines up to 512 KiB since v0.1.41) |
-| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display; no status of whether the chain built on it |
+| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin, and since v0.1.42 `hash` and `status`: pending, confirmed once the pool's next work builds on it, orphaned when the work for the next height builds on another block) in the API, kept in NVS; the banner shows the status and the hash, with a mempool.space link for Bitcoin; entries in the event log for the find and for the status; a warp jump on the display |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
@@ -133,6 +133,9 @@ draw:
 - **Chips off or the chain still coming up**: `chainStopped` and
   `chainPhase`, so a chain that is powering up is not taken for a dead chip.
 - **Fallback pool** and **reject reasons**, as on current AxeOS.
+- **No pool reachable** (`poolsUnavailable`, since v0.1.42, under the
+  name AxeOS and ForgeOS use): the firmware has switched the chips off
+  until a pool answers; a tuner holds its hand meanwhile.
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
   hundreds of pool shares.
@@ -346,6 +349,20 @@ back at any time with `GET /api/v1/display/frame`.
   Noise record, 65,519 bytes (8 KB until v0.1.40).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
+- **No pool, no hashing** (since v0.1.42): when neither the main pool nor
+  (where one is set) the fallback pool answers — at least two failed
+  attempts on each and a minute since the first, so a Wi-Fi or pool
+  hiccup switches nothing — the chips go off: core voltage down, chain
+  in reset, fans at their lowest duty. Both pools are then tried in turn
+  every 30 s, and the first job from either brings the chips back at the
+  clock and voltage they had, through the same path as a chain restart.
+  `poolsUnavailable` in `/api/system/info` (AxeOS's and ForgeOS's name)
+  says so, with `chainStopped` and `chainPhase` `NOPOOL`; the dashboard
+  and the display show it, and the event log has an entry for going off
+  and one for coming back (at most one pair in ten minutes). No pool or
+  no worker name configured counts the same. Nothing is written to flash
+  per attempt. Not during the first start of a newly chosen board, whose
+  chips have to answer once for the choice to be confirmed.
 - **Saved pools**: up to eight, each with a name and the coin it mines;
   the main pool as it is now is saved with one click, a saved one becomes
   the main pool with another, and the miner reconnects at once. Passwords
@@ -369,6 +386,15 @@ back at any time with `GET /api/v1/display/frame`.
   where the regulator reports them. The NerdNOS has none to talk to: its
   rail is fixed by resistors, read on the ADC, and switched with the
   chip's run/stop line.
+- **A lower voltage waits for the clock** (since v0.1.42): a change to a
+  lower clock and a lower core voltage in one `PATCH /api/system` used to
+  set the voltage within a tenth of a second while the clock came down
+  in PLL steps (6.25 MHz every 100 ms: 625 to 425 MHz takes 3.2 s), so
+  the chips ran at the old clock on the new voltage for those seconds.
+  The voltage drop is now held until the chips run at the clock asked
+  for (30 s at the most). A higher voltage is set at once as before, and
+  so are a voltage change on its own and the step from the bring-up
+  voltage to the configured one after the chain init.
 - Never a core voltage below the regulator's clean range: the TPS546
   driver refuses anything under 0.25 V ÷ VOUT_SCALE_LOOP (TI's reference
   range), the API refuses it with 400 and publishes the floor as
@@ -550,8 +576,13 @@ back at any time with `GET /api/v1/display/frame`.
   `gitHash` (the commit the
   image was built from), `blockFound` (blocks found since the start),
   `blocksFoundTotal` (all time) and `lastBlock` (`height`, `time` as Unix
-  time or 0 without a clock, `coin`; null until the first block), both
-  kept across restarts, and AxeOS's `hashrateMonitor` (per chip the
+  time or 0 without a clock, `coin`, and since v0.1.42 `hash` as block
+  explorers show it and `status`: `pending`, `confirmed` once work from
+  the pool names the block as its parent, `orphaned` when the work for
+  the next height names another one; both null for a block found before
+  v0.1.42; `lastBlock` itself null until the first block), both
+  kept across restarts, `poolsUnavailable` (no pool answers and the
+  chips are off for it, since v0.1.42), and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second
