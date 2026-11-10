@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-619%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-625%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -422,8 +422,11 @@ back at any time with `GET /api/v1/display/frame`.
   unknown, never cool: fans at full, and the lost-sensor stop after a
   minute; a chip that is already over the line stops at once whatever
   the other diode says. A diode that has never read since boot is left
-  out, and that is said after a minute, in the log and as the board's
-  notice (`boardError`). `temp` is the hotter chip, `temp2` the
+  out of the temperature; after a minute of that the fans run at full
+  (its chip has no stop line of its own, and a reboot must not take the
+  protection away), with a line in the log and the board's notice
+  (`boardError`), and the chips keep running. When the diode reads
+  after all, everything is as normal. `temp` is the hotter chip, `temp2` the
   second chip's own (AxeOS's field, -1 without a reading) and
   `asicTemps` both. On the Gamma Hex the other diode (diode 1) is not
   taken for a chip.
@@ -625,8 +628,9 @@ back at any time with `GET /api/v1/display/frame`.
   `lastBlock` itself null until the first block; the count is stored in
   the form older versions read, hash and status in a second entry, and
   a block is stored once however many nonces meet its target: further
-  ones on the same parent, or at the same height unless the stored one
-  was orphaned, only count in `blockFound`), both
+  ones on the parent of one of the last few recorded blocks, at a lower
+  height, or at the same height unless the stored one was orphaned,
+  only count in `blockFound`), both
   kept across restarts, `poolsUnavailable` (no pool answers, since
   v0.1.42; the chips are off for it, `chainStopped`, except on a board
   without chips, during a first start and while a self-test runs), and AxeOS's `hashrateMonitor` (per chip the
