@@ -480,7 +480,7 @@ pub fn chain_stopped() -> bool {
 /// enumeration to judge the chosen board, pool or no pool. Not while a
 /// self-test runs or the one after a verified first start is due: the
 /// chips stay on for it (and come on for one started while they were
-/// off; without work it finds no hashrate, but the board's checks
+/// off; without work it finds no hashrate, as before, but the board's checks
 /// run). Not on a board without chips (the T-Display-S3, an undetected
 /// board): nothing is off there.
 pub fn no_pool() -> bool {
@@ -1251,23 +1251,30 @@ pub fn init_bus(mut i2c0: I2C0) {
     // one since v0.1.42, but a config written before may hold it. The
     // chain would start at the chip's stock clock with that clock still
     // asked for, and every voltage drop would wait for it for ever.
+    // The config as it is now: a first start above may have taken the
+    // stock firmware's clock over since `cfg` was read.
+    let stored_mhz = config::get().frequency;
+    let above = profile.abs_max_frequency_mhz > 0 && stored_mhz > profile.abs_max_frequency_mhz;
     let unsettable = profile.asic_count > 0
         && profile.default_frequency_mhz >= MIN_FREQUENCY_MHZ
-        && (cfg.frequency < MIN_FREQUENCY_MHZ
-            || cfg
-                .frequency
+        && (stored_mhz < MIN_FREQUENCY_MHZ
+            || stored_mhz
                 .checked_mul(1_000_000)
                 .and_then(|hz| warpaxe_core::pll::solve(&chip().pll, hz))
                 .is_none());
-    if (profile.abs_max_frequency_mhz > 0 && cfg.frequency > profile.abs_max_frequency_mhz)
-        || unsettable
-    {
+    if above || unsettable {
         let mut fixed = config::get();
+        let why = if above {
+            format!("above its ceiling of {} MHz", profile.abs_max_frequency_mhz)
+        } else if stored_mhz < MIN_FREQUENCY_MHZ {
+            format!("below {MIN_FREQUENCY_MHZ} MHz")
+        } else {
+            "without a PLL setting".into()
+        };
         log::warn!(
-            "board: clock {} MHz is not one {} runs at (ceiling {} MHz): starting at its default {} MHz",
+            "board: clock {} MHz is {why} on {}: starting at its default {} MHz",
             fixed.frequency,
             profile.name,
-            profile.abs_max_frequency_mhz,
             profile.default_frequency_mhz
         );
         fixed.frequency = profile.default_frequency_mhz;
@@ -1944,6 +1951,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     }
     // A `cycle_chips` in progress: when the rail went down for it.
     let mut cycle_off_at: Option<Instant> = None;
+    // The reset line was pulled low for a no-pool stop with the rail off.
+    let mut pool_reset_held = false;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -2249,21 +2258,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
-            if no_pool() {
-                // Off for want of a pool, for as long as that takes: the
-                // chain in reset on every board, as `quiesce` leaves it
-                // at boot (the TPS546 boards otherwise keep the line
-                // released with the core gone; the miner's reset pulse
-                // releases it again before the next init).
-                if let Some(pin) = RESET.lock().unwrap().as_ref() {
-                    pin.set(false);
-                }
-                // A warm-up still under way is over (its end would hand
-                // the fans to the PID from full duty, with nothing left
-                // to cool); the rail's return starts one.
-                if warmup.take().is_some() {
-                    update(|s| s.fan_warmup = false);
-                }
+            // Off for want of a pool: a warm-up still under way is over
+            // (its end would hand the fans to the PID from full duty,
+            // with nothing left to cool); the rail's return starts one.
+            if no_pool() && warmup.take().is_some() {
+                update(|s| s.fan_warmup = false);
             }
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             // The chip power-enable line first (ESP-Miner's order); on a
@@ -2316,6 +2315,23 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     log::warn!("board: core voltage back on, {applied_mv} mV");
                 }
             }
+        }
+
+        // Off for want of a pool, for as long as that takes: the chain
+        // in reset on every board, as `quiesce` leaves it at boot (the
+        // TPS546 boards otherwise keep the line released with the core
+        // gone). By state, not at the switch-off: the rail may have
+        // gone down for another stop first. The miner's reset pulse
+        // releases the line again before the next init.
+        if !POWERED.load(Ordering::Relaxed) {
+            if no_pool() && !pool_reset_held {
+                if let Some(pin) = RESET.lock().unwrap().as_ref() {
+                    pin.set(false);
+                }
+                pool_reset_held = true;
+            }
+        } else {
+            pool_reset_held = false;
         }
 
         // A `cycle_chips` and the rail down (this pass or, when another

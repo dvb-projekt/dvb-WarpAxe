@@ -191,12 +191,7 @@ fn readings(cfg: &config::Config) -> BoardReadings {
     BoardReadings {
         chips_found: m.chips,
         chips_expected: board::chips_expected(),
-        // Ready, and with work to hash: without a pool the chain is
-        // up but the counters stand still, which is no fault of the
-        // board's (the hash checks are skipped with "not hashing").
-        hashing: m.phase == "READY"
-            && !board::chain_stopped()
-            && crate::stratum::tip().is_some(),
+        hashing: m.phase == "READY" && !board::chain_stopped(),
         has_regulator: b.has_vr,
         core_set_mv: cfg.core_voltage,
         core_actual_mv: b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)),

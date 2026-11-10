@@ -255,21 +255,40 @@ mod tests {
         assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1100, clock), Step::Hold);
         // A raise still goes.
         assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1250, clock), Step::Apply);
-        // A clock that can be made is asked for after ten minutes of
-        // that: its ramp gets the full 30 s, the drop does not go on
-        // the first pass.
+    }
+
+    #[test]
+    fn a_clock_that_can_be_made_after_one_that_cannot_gets_its_full_time() {
+        let mut h = CoreHold::new();
+        let unreachable = Clock {
+            wanted_mhz: 425,
+            unreachable: true,
+            ..AT_625
+        };
+        assert_eq!(h.decide(0, 1200, 1100, unreachable), Step::Hold);
+        let t = 10 * MAX_HOLD_MS;
+        assert_eq!(h.decide(t, 1200, 1100, unreachable), Step::Hold);
+        // Straight from there: 450 MHz is asked for, the chips still at
+        // 625. Ten minutes of waiting are not this ramp's: the drop
+        // does not go on the first pass, nor before 30 s of it.
         let ramping = Clock {
             wanted_mhz: 450,
             unreachable: false,
             ..AT_625
         };
-        let t = 10 * MAX_HOLD_MS + 100;
-        assert_eq!(h.decide(t, 1200, 1100, ramping), Step::Hold);
+        assert_eq!(h.decide(t + 100, 1200, 1100, ramping), Step::Hold);
         assert_eq!(
-            h.decide(t + MAX_HOLD_MS - 200, 1200, 1100, ramping),
+            h.decide(t + MAX_HOLD_MS - 1, 1200, 1100, ramping),
             Step::Hold
         );
-        // Reached: the drop goes.
+        assert_eq!(
+            h.decide(t + MAX_HOLD_MS, 1200, 1100, ramping),
+            Step::ApplyLate
+        );
+        // Or, the ramp over in time: the drop goes with it.
+        let mut h = CoreHold::new();
+        assert_eq!(h.decide(t, 1200, 1100, unreachable), Step::Hold);
+        assert_eq!(h.decide(t + 100, 1200, 1100, ramping), Step::Hold);
         let down = Clock {
             wanted_mhz: 450,
             settled_mhz: 450,

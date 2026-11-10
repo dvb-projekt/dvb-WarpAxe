@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-597%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-598%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -595,7 +595,9 @@ back at any time with `GET /api/v1/display/frame`.
   was offline in between); both null for a block found before v0.1.42;
   `lastBlock` itself null until the first block; the count is stored in
   the form older versions read, hash and status in a second entry, and
-  a height is stored once however many nonces meet its target), both
+  a block is stored once however many nonces meet its target: further
+  ones on the same parent, or at the same height unless the stored one
+  was orphaned, only count in `blockFound`), both
   kept across restarts, `poolsUnavailable` (no pool answers, since
   v0.1.42; the chips are off for it, `chainStopped`, except on a board
   without chips, during a first start and while a self-test runs), and AxeOS's `hashrateMonitor` (per chip the

@@ -281,9 +281,10 @@ pub fn reg_scan() -> Option<RegScan> {
 /// whose stacks are internal (an NVS write).
 ///
 /// `false`, and nothing stored, logged or put into the event log, for
-/// another nonce that meets the target at the height of the block
-/// already recorded (`config::record_block`): at minimum difficulty
-/// that is every nonce.
+/// another nonce that meets the target on the parent of the block
+/// already recorded, or at its height unless that one was orphaned
+/// (`config::record_block`): at minimum difficulty that is every
+/// nonce.
 pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) -> bool {
     let hex = block::hash_hex(hash);
     if !config::record_block(
@@ -698,7 +699,7 @@ fn run(mut uart: ChipUart) {
                         // network difficulty of whatever job is current).
                         if block::meets_target(&hash, job.nbits) {
                             // Counted in RAM every time; stored, logged
-                            // and shown once per height.
+                            // and shown once per block.
                             let height = job.height;
                             let first = block_found(height, &hash, &job.prev_hash);
                             update(|s| {
