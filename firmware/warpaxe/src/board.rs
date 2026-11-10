@@ -2325,10 +2325,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // releases the line again before the next init.
         if !POWERED.load(Ordering::Relaxed) {
             if no_pool() && !pool_reset_held {
-                if let Some(pin) = RESET.lock().unwrap().as_ref() {
-                    pin.set(false);
-                }
-                pool_reset_held = true;
+                // Tried again next pass if the pin did not take it (an
+                // expander pin's write can fail on the bus).
+                pool_reset_held = RESET
+                    .lock()
+                    .unwrap()
+                    .as_ref()
+                    .is_none_or(|pin| pin.set(false));
             }
         } else {
             pool_reset_held = false;

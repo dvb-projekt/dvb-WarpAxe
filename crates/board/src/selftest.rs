@@ -1197,6 +1197,12 @@ mod tests {
         let r = judge(Asic::Bm1397, &Limits::DEFAULT, &b, None, Some(&fan_ok()));
         assert_eq!(r.get(Check::Errors).note, Note::NoCounter);
         assert_eq!(r.get(Check::Hashrate).note, Note::NoWork);
+        // Its missing domain counters show only in a window: without
+        // work the domains are skipped for want of work.
+        assert_eq!(
+            (r.get(Check::Domains).status, r.get(Check::Domains).note),
+            (Status::Skip, Note::NoWork)
+        );
     }
 
     #[test]

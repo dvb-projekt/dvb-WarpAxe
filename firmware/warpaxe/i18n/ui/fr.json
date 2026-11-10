@@ -504,7 +504,7 @@
   "ckd_temp1": "puce {v} °C (arrêt {l} °C)",
   "ckd_vin": "{v} V, nominale {l} ±{t} V",
   "nt_notHashing": "les puces ne minent pas",
-  "nt_noWork": "pas de travail du pool",
+  "nt_noWork": "aucun travail du pool",
   "nt_noReading": "aucune mesure",
   "nt_noRegulator": "pas de régulateur sur cette carte",
   "nt_noFan": "aucun ventilateur pilotable sur cette carte",

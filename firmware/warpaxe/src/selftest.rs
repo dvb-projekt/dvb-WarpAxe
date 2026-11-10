@@ -7,12 +7,18 @@
 //!
 //! What it does, in order (about 80 s):
 //!
-//! 1. a snapshot of the board (chips, regulator, temperatures, input);
-//! 2. the hash window: once a second for [`WINDOW_S`] seconds, every
+//! 1. a snapshot of the board (chips, regulator, temperatures, input),
+//!    after waiting for a chain that is not up yet (chips that were off
+//!    for want of a pool come back on for the test) and, briefly, for
+//!    work from a pool;
+//! 2. the hash window, with work from a pool: once a second for
+//!    [`WINDOW_S`] seconds, every
 //!    chip's total, error and domain rates from the chips' own counters
 //!    as the miner reads them, a chip that has not answered a counter
 //!    read for a few seconds (`miner::AsicMonitor::fresh`) counting as
-//!    hashing nothing;
+//!    hashing nothing. Without work, or with the pool gone for more
+//!    than [`WORK_LOST_S`] seconds of it, there is no window and the
+//!    hash checks are skipped (`Note::NoWork`);
 //! 3. the fan step: both fan outputs held at least at 100 % for
 //!    [`FAN_HOLD_S`] seconds through the board task's own loop
 //!    (`board::fan_boost`), speed read before and at the end, then the
@@ -243,11 +249,14 @@ const WORK_LOST_S: u32 = 5;
 fn perform(cfg: &config::Config) -> Outcome {
     let profile = board::profile();
     let chip = board::chip();
-    // Chips off because no pool answers come back on for the test
-    // (`board::no_pool` steps aside while one runs): the rail, the
-    // warm-up and the chain's bring-up take some seconds, and a reading
-    // before that would call the core voltage wrong.
-    if profile.asic_count > 0 && crate::stratum::state().pools_unavailable {
+    // A chain that is not up yet gets time to come up: chips off
+    // because no pool answers come back on for the test (`board::no_pool`
+    // steps aside while one runs), and a pool that has just come back
+    // has the chain in its bring-up. The rail, the warm-up and the
+    // bring-up take some seconds, and a reading before that would call
+    // the core voltage wrong and the chips not hashing. A chain that is
+    // off for an overheat or by hand is not waited for.
+    if profile.asic_count > 0 {
         let end = Instant::now() + POWER_UP_WAIT;
         while Instant::now() < end
             && !board::overheat()

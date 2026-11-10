@@ -64,7 +64,10 @@ while `state` is `running`; Warppool #2, 2026-10-21).
 **It runs while the miner mines**, at the configured clock and voltage,
 no restart, no mock job; about 80 s:
 
-1. a snapshot of the board;
+1. a snapshot of the board. Since v0.1.42 a test that finds the chain
+   not up waits up to 45 s for it (chips that were off for want of a
+   pool come back on for the test), and one that finds no work from a
+   pool waits up to 10 s for some (a session between two connects);
 2. the hash window: 60 one-second samples of every chip's total, error
    and domain rates from the chips' own counters, as the miner already
    reads them for `hashrateMonitor`. Averaging over the window is what
@@ -73,7 +76,11 @@ no restart, no mock job; about 80 s:
    97–104 % (fleet, 2026-10-21: 60-s averages 99–101 % per chip and
    domain on every BM1370 and BM1373, 88 % on the BM1397's rate
    register). A chip whose last counter reading is older than 5 s has
-   stopped answering and counts as hashing nothing;
+   stopped answering and counts as hashing nothing. Without work from a
+   pool there is no window, and a window during which the pool sent no
+   work for more than 5 of its 60 s is discarded (a reconnect that
+   needs a second attempt is enough for that): the three hash checks
+   are then skipped, see below;
 3. the fan step: both outputs held at least at 100 % for 10 s, through
    the board task's own loop (`board::fan_boost`), the speed read before
    and at the end.
@@ -83,9 +90,9 @@ no restart, no mock job; about 80 s:
 | Check | PASS when | Skipped when | From |
 |---|---|---|---|
 | chips | the chain hashes and found = expected (config `asicCount`, else the profile) | the board has no chain (devkit) | ESP-Miner stops at a mismatch |
-| hashrate | every chip's window average ≥ 80 % of small cores × clock | | ESP-Miner wants ≥ 85 % from nonces; the fleet's counters sit at 99–101 % (BM1370/73) and 88 % (BM1397), so 80 % leaves the BM1397 room and still catches a chip at half rate |
-| domains | every domain's average ≥ 67 % of the chip's share; samples above 3× the share dropped | the chip has no domain counters (BM1397) | ESP-Miner's 33 % tolerance and 3× plausibility |
-| errors | every chip's error rate over the window ≤ 5 % (BM1370), ≤ 8 % (BM1373) | no error counter (BM1397) | ESP-Miner has none; the fleet runs 0–1.3 % (BM1370 at stock and max points), 2.6 % at WarpTune's eco point (the Nano), 3–6 % (BM1373, docs/05). The rate rises as the voltage drops, so it is a tuning figure as much as a hardware one: the line sits well above any tuned point, and the measured value is always in the report, so a 2.6 % reads as what it is |
+| hashrate | every chip's window average ≥ 80 % of small cores × clock | the chain is up but no pool sent work (v0.1.42) | ESP-Miner wants ≥ 85 % from nonces; the fleet's counters sit at 99–101 % (BM1370/73) and 88 % (BM1397), so 80 % leaves the BM1397 room and still catches a chip at half rate |
+| domains | every domain's average ≥ 67 % of the chip's share; samples above 3× the share dropped | the chip has no domain counters (BM1397); no work from a pool | ESP-Miner's 33 % tolerance and 3× plausibility |
+| errors | every chip's error rate over the window ≤ 5 % (BM1370), ≤ 8 % (BM1373) | no error counter (BM1397); no work from a pool | ESP-Miner has none; the fleet runs 0–1.3 % (BM1370 at stock and max points), 2.6 % at WarpTune's eco point (the Nano), 3–6 % (BM1373, docs/05). The rate rises as the voltage drops, so it is a tuning figure as much as a hardware one: the line sits well above any tuned point, and the measured value is always in the report, so a 2.6 % reads as what it is |
 | coreVoltage | the regulator's output within ± 5 % of the set value | no regulator (NerdNOS, devkit) | ESP-Miner ± 10 % of the default; the fleet reads back within 0.5 % |
 | regulator | no fault condition (AxeOS `power_fault` as a fault, or a stop with cause `power`; a temperature warning is not a fault) | no regulator | ESP-Miner `test_vreg_faults` |
 | fan | ≥ 500 rpm at 100 %, and at least 10 % faster than before when the duty before was under 90 %; a second output is judged only when something spins on it, an empty header is a note | no fan the firmware drives (NerdNOS, devkit) | ESP-Miner's lowest floor (500); the reaction is new |
@@ -103,6 +110,17 @@ carries.
 the note `notHashing` rather than being skipped. A test is asked "does
 the miner work"; a skip would say PASS with the chips off.
 
+**No work from a pool** (v0.1.42) is another matter: the chain is up,
+every chip was found, and there is nothing to hash through no fault of
+the board's. Hashrate, domains and errors are skipped with the note
+`noWork`; the chip count (from the enumeration), voltages, regulator,
+fan and temperatures are judged as ever, and the run passes when they
+do, with six checks judged instead of nine. This is the case of a miner
+whose pools are out (the chips come back on for the test) and of the
+first start's own test before a pool is entered. The stored result and
+`selfTest.passed` do not say that checks were skipped; `judged` and the
+checks' own `status` do.
+
 **Result:** `GET /api/v1/selftest` → `state`, `passed`, `judged`,
 `failed`, `durationS`, `frequency`, `coreVoltage`, the 60-s figure per
 chip (`chips[]`: GH/s, percent of nominal, error percent, the domains'
@@ -110,7 +128,7 @@ percent of their share) and `checks[]`, one per check in a fixed order
 with `status` (`pass`, `fail`, `skip`), the figure it rests on (`value`,
 `limit`, `value2`, `limit2`, meaning per check in the module docs of
 `crates/board/src/selftest.rs`), the worst `chip` and `domain` where
-per chip, and a `note` (`notHashing`, `noReading`, `noRegulator`,
+per chip, and a `note` (`notHashing`, `noWork`, `noReading`, `noRegulator`,
 `noFan`, `noSensor`, `noCounter`, `noDomains`, `noReply`, `noSamples`,
 `noReaction`, `regulatorFault`, `overheat`, `secondFanMissing`). The web
 UI lists every check with its figure, the device display shows the
