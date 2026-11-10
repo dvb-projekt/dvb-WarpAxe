@@ -20,6 +20,7 @@ use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver, I2C0};
 use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::sys::{self, EspError};
 use serde::Serialize;
+use warpaxe_board::chip_temps::ChipTemps;
 use warpaxe_board::choice::{self, FirstStart};
 use warpaxe_board::core_hold::{self, CoreHold, Step};
 use warpaxe_board::detect::{self, Detection};
@@ -73,7 +74,13 @@ pub struct BoardState {
     pub board: String,
     pub has_vr: bool,
     pub has_thermal: bool,
+    /// The chip temperature the fan and the stop line act on: on a
+    /// board with a sensor per chip the hottest (`chip_temps`).
     pub temp_c: Option<f32>,
+    /// Each chip's own temperature on a board with two chip diodes (the
+    /// Naja Duo, the Gamma Turbo), chip 1 first; `None` for a sensor
+    /// without a reading. Empty on every other board.
+    pub chip_temps: Vec<Option<f32>>,
     pub vr_temp_c: Option<i32>,
     pub vin_mv: Option<f32>,
     pub vout_mv: Option<f32>,
@@ -1096,7 +1103,8 @@ impl Regulator {
 enum Thermal {
     Emc2101(Emc2101<SharedI2c>),
     /// Gamma Turbo, Naja Duo, Gamma Hex: two diodes, one fan; the driver
-    /// knows which diode is the chip.
+    /// knows which diode is the chip, and on the Turbo and the Naja the
+    /// other one is the second chip's.
     Emc2103(Emc2103<SharedI2c>),
     /// BitForge Nano: one EMC2101 per chip behind the PCA9544, each with
     /// its own fan; the chip temperature is the hotter of the two.
@@ -1142,6 +1150,17 @@ impl Thermal {
             } => tmp1075::max_celsius(bus, sensors.as_slice())
                 .map(|c| c + *offset)
                 .ok_or_else(|| "no TMP1075 answered".into()),
+        }
+    }
+    /// The second chip's own diode, on the boards that have one (the
+    /// EMC2103's other channel on the Naja Duo and the Gamma Turbo).
+    /// `None` on every other board.
+    fn second_chip_temp_c(&mut self) -> Option<Result<f32, String>> {
+        match self {
+            Thermal::Emc2103(t) if t.second_chip() => {
+                Some(t.second_temp_c().map_err(|e| format!("{e:?}")))
+            }
+            _ => None,
         }
     }
     /// RPM of the chip fan, and of the second output where there is one.
@@ -1926,6 +1945,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut vr_temp: Option<i32> = None;
     let mut polarity = cfg.invertfanpolarity;
     let mut temp_lost_s: u32 = 0;
+    // Two chip diodes: which have read since boot (`chip_temps`).
+    let mut two_chips = ChipTemps::<2>::new();
+    let mut second_missing_warned = false;
     // A chip temperature has been read since boot: losing it then stops
     // the chain (Cause::Blind). A board whose sensor never answered runs
     // without the chip limit, fans at full, as NerdOS does with no
@@ -2036,11 +2058,43 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 );
             }
             let mut rpm = (0, None);
+            let chip_limit = profile.chip_limit_c(cfg.overheat_temp);
             if let Some(t) = thermal.as_mut() {
-                match t.chip_temp_c().and_then(|c| {
-                    plausible(Some(c), -40.0, 150.0, "chip temp")
-                        .ok_or_else(|| "implausible reading".into())
-                }) {
+                let checked = |r: Result<f32, String>| {
+                    r.and_then(|c| {
+                        plausible(Some(c), -40.0, 150.0, "chip temp")
+                            .ok_or_else(|| "implausible reading".to_string())
+                    })
+                };
+                let first = checked(t.chip_temp_c());
+                // A second chip with its own diode: fan and stop line
+                // act on the hotter of the two, and a diode that read
+                // before and fails now makes the temperature unknown,
+                // never cool (ESP-Miner stops on either diode over
+                // 75 °C and runs the fan on the hotter).
+                let acting = match t.second_chip_temp_c().map(checked) {
+                    None => first,
+                    Some(second) => {
+                        let chips = [first.as_ref().ok().copied(), second.as_ref().ok().copied()];
+                        update(|s| s.chip_temps = chips.to_vec());
+                        let acting = two_chips.sample(chips, chip_limit);
+                        if chips[0].is_some() && !two_chips.seen(1) && !second_missing_warned {
+                            second_missing_warned = true;
+                            log::warn!(
+                                "board: the second chip's diode has not read since boot: fan and stop line follow the first chip alone"
+                            );
+                        }
+                        acting.ok_or_else(|| {
+                            let why = |r: &Result<f32, String>| r.as_ref().err().cloned();
+                            match (why(&first), why(&second)) {
+                                (Some(e), _) => format!("chip 1: {e}"),
+                                (None, Some(e)) => format!("chip 2: {e}"),
+                                (None, None) => "no reading".into(),
+                            }
+                        })
+                    }
+                };
+                match acting {
                     Ok(c) => {
                         temp = Some(c);
                         temp_lost_s = 0;
@@ -2059,7 +2113,6 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 }
                 rpm = t.rpm();
             }
-            let chip_limit = profile.chip_limit_c(cfg.overheat_temp);
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_stop_c);
             let blind = temp_seen && temp_lost_s >= TEMP_LOST_S;

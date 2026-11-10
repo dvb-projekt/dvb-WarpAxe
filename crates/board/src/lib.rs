@@ -9,6 +9,7 @@
 //! function where they matter.
 #![cfg_attr(not(test), no_std)]
 
+pub mod chip_temps;
 pub mod choice;
 pub mod core_hold;
 pub mod detect;

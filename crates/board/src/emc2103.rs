@@ -75,10 +75,15 @@ pub struct Config {
     pub temp_offset_c: i8,
     /// Calibration of diode 1 and diode 2.
     pub calibration: [Calibration; 2],
+    /// The other diode sits at a second chip: fan and overheat stop
+    /// act on the hotter of the two (`crate::chip_temps`). ESP-Miner
+    /// reads it as `temp2` on every EMC2103 board.
+    pub second_chip: bool,
 }
 
 impl Config {
-    /// Bitaxe Gamma Turbo (801): chip on diode 2, no diode tuning.
+    /// Bitaxe Gamma Turbo (801): two chips; the first on diode 2
+    /// (`temp_flip`), the second on diode 1; no diode tuning.
     pub const GAMMA_TURBO: Config = Config {
         ideality: None,
         beta: None,
@@ -86,6 +91,7 @@ impl Config {
         direct_pwm: false,
         temp_offset_c: 0,
         calibration: [Calibration::NONE, Calibration::NONE],
+        second_chip: true,
     };
     /// Bitaxe Naja Duo (1201): BM1373 diodes, ideality 0x17, beta 0x10,
     /// diode 2 a further 10.7 °C lower (ESP-Miner
@@ -103,8 +109,11 @@ impl Config {
                 offset_c: Calibration::BM1373.offset_c - 10.7,
             },
         ],
+        second_chip: true,
     };
-    /// Bitaxe Gamma Hex (1300): direct PWM, chip on diode 2.
+    /// Bitaxe Gamma Hex (1300): direct PWM, chip on diode 2. Six chips
+    /// on two diodes: what diode 1 sits at is not known here (the board
+    /// has not been run), so it is not taken for a chip.
     pub const GAMMA_HEX: Config = Config {
         ideality: None,
         beta: None,
@@ -112,6 +121,7 @@ impl Config {
         direct_pwm: true,
         temp_offset_c: 0,
         calibration: [Calibration::NONE, Calibration::NONE],
+        second_chip: false,
     };
 }
 
@@ -218,6 +228,11 @@ impl<I: I2c> Emc2103<I> {
     pub fn second_temp_c(&mut self) -> Result<f32, Error<I::Error>> {
         self.diode_c(usize::from(!self.cfg.flip))
     }
+
+    /// The other diode sits at a second chip ([`Config::second_chip`]).
+    pub fn second_chip(&self) -> bool {
+        self.cfg.second_chip
+    }
 }
 
 #[cfg(test)]
@@ -317,5 +332,38 @@ mod tests {
         let mut t = Emc2103::new(bus, Config::NAJA_DUO);
         assert!((t.chip_temp_c().unwrap() - 42.98).abs() < 0.01);
         assert_eq!(t.second_temp_c(), Err(Error::SensorFault));
+    }
+
+    #[test]
+    fn the_naja_s_second_chip_reads_diode_2_another_10_7_degrees_lower() {
+        // Both diodes at a raw 80.0 °C (640 eighths = 0x280 << 5 = 0x5000):
+        // chip 1 = 80 × 0.9613546 − 5.0858 = 71.82, chip 2 = 61.12
+        // (ESP-Miner NAJA_DUO_DIODE2_TEMP_OFFSET).
+        let bus = Bus::new(vec![
+            r(REG_EXT1_MSB, 0x50),
+            r(REG_EXT1_LSB, 0x00),
+            r(REG_EXT2_MSB, 0x50),
+            r(REG_EXT2_LSB, 0x00),
+        ]);
+        let mut t = Emc2103::new(bus, Config::NAJA_DUO);
+        assert!(t.second_chip());
+        let first = t.chip_temp_c().unwrap();
+        let second = t.second_temp_c().unwrap();
+        assert!((first - 71.82).abs() < 0.01, "{first}");
+        assert!((second - 61.12).abs() < 0.01, "{second}");
+        assert!(t.release().script.is_empty());
+    }
+
+    #[test]
+    fn which_boards_have_a_second_chip_on_the_other_diode() {
+        let second = |cfg: Config| Emc2103::new(Bus::new(Vec::new()), cfg).second_chip();
+        assert!(second(Config::NAJA_DUO));
+        assert!(second(Config::GAMMA_TURBO));
+        // The Hex: diode 1 is not taken for a chip.
+        assert!(!second(Config::GAMMA_HEX));
+        // The Turbo's second chip is on diode 1 (its first on diode 2).
+        let bus = Bus::new(vec![r(REG_EXT1_MSB, 0x32), r(REG_EXT1_LSB, 0x00)]);
+        let mut t = Emc2103::new(bus, Config::GAMMA_TURBO);
+        assert_eq!(t.second_temp_c().unwrap(), 50.0);
     }
 }

@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-599%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-607%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -407,6 +407,18 @@ back at any time with `GET /api/v1/display/frame`.
   by the API, as is one below 50 MHz). A higher voltage is set at once as before, and
   so are a voltage change on its own and the step from the bring-up
   voltage to the configured one after the chain init.
+- **Both chips' temperatures on the two-chip Bitaxe boards** (since
+  v0.1.42): the Naja Duo and the Gamma Turbo carry a diode per chip on
+  the EMC2103's two channels, and only the first was read, so the second
+  chip had neither a fan control nor an overheat stop. Fan and stop line
+  now act on the hotter of the two, as ESP-Miner does (either diode over
+  75 °C stops). A diode that read before and fails makes the temperature
+  unknown, never cool: fans at full, and the lost-sensor stop after a
+  minute; a chip that is already over the line stops at once whatever
+  the other diode says. A diode that has never read since boot is left
+  out, with a line in the log. `temp` is the hotter chip, `temp2` the
+  second chip's own (AxeOS's field) and `asicTemps` both. The Gamma
+  Hex's second diode is not taken for a chip.
 - Never a core voltage below the regulator's clean range: the TPS546
   driver refuses anything under 0.25 V ÷ VOUT_SCALE_LOOP (TI's reference
   range), the API refuses it with 400 and publishes the floor as
