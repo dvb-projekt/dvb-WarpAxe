@@ -53,11 +53,25 @@ fn agent() -> &'static str {
 /// A pool that sorts by user agent (WarpPool's hardware classes) sees the
 /// board's marker ("bitaxe", "nerdaxe", "nerdnos" ...) where it has one.
 fn v1_agent() -> String {
-    let p = board::profile();
-    if board::devkit() || board::choice_pending() || p.name == "undetected" {
+    if board::devkit() {
         return agent().to_string();
     }
-    format!("{AGENT} ({})", p.name)
+    match board_id() {
+        "" => agent().to_string(),
+        id => format!("{AGENT} ({id})"),
+    }
+}
+
+/// The board as the pools see it (Sv2 hardware field, V1 agent): the
+/// profile name, empty while no board is settled (first start pending,
+/// nothing detected).
+fn board_id() -> &'static str {
+    let p = board::profile();
+    if board::choice_pending() || p.name == "undetected" {
+        ""
+    } else {
+        p.name
+    }
 }
 const BIP320_MASK: u32 = 0x1fff_e000;
 
@@ -1075,7 +1089,7 @@ fn session_v2(
     let client = Arc::new(Mutex::new(Client::new(ClientConfig {
         user: user.into(),
         vendor: "dvb-projekt".into(),
-        hardware_version: board::profile().name.into(),
+        hardware_version: board_id().into(),
         firmware: agent().into(),
         device_id: String::new(),
         endpoint_host: host.into(),
