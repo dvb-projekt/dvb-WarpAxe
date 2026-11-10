@@ -15,6 +15,13 @@
 //!   out (the window as a whole, since the counters are noisy second by
 //!   second; a weak domain at 50 % is not a latch, the self-test's limit
 //!   is 67 %),
+//! - sooner for a domain that is dead from the chain's start: in the
+//!   first window after the chain came up ([`DomainLatch::chain_ready`]),
+//!   a domain below [`EARLY_DEAD_PERCENT`] after [`EARLY_WINDOW_S`]
+//!   samples does not have to wait for the window's end (two Bitaxe
+//!   Gammas in the field, v0.1.41: a domain at 0 % right after the
+//!   start, healed by the reset ten minutes later). A domain that is
+//!   only weak, or one that dies later, has the full window,
 //! - at most once per [`SPACING_S`], shared with the single-chip restart
 //!   through [`DomainLatch::note_reset`],
 //! - and not again for a domain whose last [`MAX_TRIES`] resets each saw
@@ -36,6 +43,12 @@ pub const WINDOW_S: u32 = 600;
 /// A domain below this share of the mean of the chip's other domains
 /// over a whole window is stuck.
 pub const STUCK_PERCENT: u32 = 25;
+/// Fresh samples after which the first window of a chain is looked at
+/// for a domain dead from the start.
+pub const EARLY_WINDOW_S: u32 = 180;
+/// A domain below this share of the mean of the chip's other domains at
+/// that early look is dead: nothing a longer look would change.
+pub const EARLY_DEAD_PERCENT: u32 = 5;
 /// Least time between two resets (shared with the single-chip restart),
 /// and the clean running a domain has to show after one for the reset to
 /// count as a success, s.
@@ -59,6 +72,9 @@ pub enum Verdict {
         /// The domain's share of the mean of the chip's other domains
         /// over the window, %.
         percent: u8,
+        /// Dead from the chain's start, found at the early look after
+        /// [`EARLY_WINDOW_S`] samples instead of the full window.
+        early: bool,
     },
     /// Stop trying for this domain until a new point or the next boot.
     GiveUp {
@@ -87,12 +103,21 @@ pub struct ChipSample<'a> {
 struct Window {
     sum: [f32; MAX_DOMAINS],
     samples: u32,
+    /// The first window of a chain that has just come up, not yet
+    /// looked at early.
+    early: bool,
 }
 
 impl Window {
     const EMPTY: Window = Window {
         sum: [0.0; MAX_DOMAINS],
         samples: 0,
+        early: false,
+    };
+    /// The first window after the chain came up.
+    const FIRST: Window = Window {
+        early: true,
+        ..Window::EMPTY
     };
 
     fn add(&mut self, rates: &[f32]) {
@@ -102,13 +127,18 @@ impl Window {
         self.samples += 1;
     }
 
-    /// The domain furthest under the limit, with its share of the mean
-    /// of the others in percent (rounded down, so a reported figure is
-    /// always under the limit): `None` when none is stuck. Domains
+    /// The domain furthest under `limit` (percent of the mean of the
+    /// others), with its share in percent (rounded down, so a reported
+    /// figure is always under the limit): `None` when none is. Domains
     /// given up are out of the judgement on both sides: not candidates,
     /// and not in the mean a sibling is held against (a dead one would
     /// pull that mean down).
-    fn stuck(&self, domains: usize, given_up: &[bool; MAX_DOMAINS]) -> Option<(u8, u8)> {
+    fn stuck(
+        &self,
+        domains: usize,
+        given_up: &[bool; MAX_DOMAINS],
+        limit: u32,
+    ) -> Option<(u8, u8)> {
         let judged = (0..domains).filter(|&d| !given_up[d]);
         let total: f32 = judged.clone().map(|d| self.sum[d]).sum();
         let count = judged.clone().count();
@@ -123,7 +153,7 @@ impl Window {
                 continue;
             }
             let share = own / others * 100.0;
-            if share < STUCK_PERCENT as f32 && worst.is_none_or(|(_, p)| share < p) {
+            if share < limit as f32 && worst.is_none_or(|(_, p)| share < p) {
                 worst = Some((d as u8, share));
             }
         }
@@ -147,6 +177,9 @@ pub struct DomainLatch {
     chips: usize,
     /// Clock (MHz) and core voltage (mV) the tries belong to.
     point: Option<(u32, u16)>,
+    /// A chain has come up since the last look: its windows start as
+    /// first windows.
+    ready: bool,
 }
 
 impl Default for DomainLatch {
@@ -166,7 +199,16 @@ impl DomainLatch {
             last_reset: None,
             chips: 0,
             point: None,
+            ready: false,
         }
+    }
+
+    /// The chain has come up (after a boot, a chain restart, a reset of
+    /// this policy's own, chips switched on): every window starts over
+    /// as the chain's first, which gets the early look for a domain dead
+    /// from the start.
+    pub fn chain_ready(&mut self) {
+        self.ready = true;
     }
 
     /// Domains given up, as (chip, domain), until a new point or the
@@ -212,6 +254,10 @@ impl DomainLatch {
             self.clean_s = [[0; MAX_DOMAINS]; MAX_CHIPS];
             self.chips = n;
         }
+        if self.ready {
+            self.windows = [Window::FIRST; MAX_CHIPS];
+            self.ready = false;
+        }
         if !working {
             return None;
         }
@@ -231,26 +277,39 @@ impl DomainLatch {
                 continue;
             }
             self.windows[i].add(&c.domains[..domains]);
-            if self.windows[i].samples < WINDOW_S {
-                continue;
+            // The early look, once, in a chain's first window: a domain
+            // that is dead from the start. Anything else (weak, or fine
+            // so far) goes on to the window's end.
+            let mut found = None;
+            if self.windows[i].early && self.windows[i].samples >= EARLY_WINDOW_S {
+                self.windows[i].early = false;
+                found = self.windows[i]
+                    .stuck(domains, &self.given_up[i], EARLY_DEAD_PERCENT)
+                    .map(|(d, percent)| (d, percent, true));
             }
-            let judged = self.windows[i];
-            self.windows[i] = Window::EMPTY;
-            let stuck = judged.stuck(domains, &self.given_up[i]);
-            // A clean window is credit towards the hour; a stuck one
-            // sends the domain's credit back to zero.
-            for d in 0..domains {
-                if stuck.is_some_and(|(sd, _)| usize::from(sd) == d) {
-                    self.clean_s[i][d] = 0;
-                } else if self.tries[i][d] > 0 && !self.given_up[i][d] {
-                    self.clean_s[i][d] = self.clean_s[i][d].saturating_add(judged.samples);
-                    if u64::from(self.clean_s[i][d]) >= SPACING_S {
-                        self.tries[i][d] = 0;
+            if found.is_none() {
+                if self.windows[i].samples < WINDOW_S {
+                    continue;
+                }
+                let judged = self.windows[i];
+                self.windows[i] = Window::EMPTY;
+                let stuck = judged.stuck(domains, &self.given_up[i], STUCK_PERCENT);
+                // A clean window is credit towards the hour; a stuck one
+                // sends the domain's credit back to zero.
+                for d in 0..domains {
+                    if stuck.is_some_and(|(sd, _)| usize::from(sd) == d) {
                         self.clean_s[i][d] = 0;
+                    } else if self.tries[i][d] > 0 && !self.given_up[i][d] {
+                        self.clean_s[i][d] = self.clean_s[i][d].saturating_add(judged.samples);
+                        if u64::from(self.clean_s[i][d]) >= SPACING_S {
+                            self.tries[i][d] = 0;
+                            self.clean_s[i][d] = 0;
+                        }
                     }
                 }
+                found = stuck.map(|(d, percent)| (d, percent, false));
             }
-            let Some((d, percent)) = stuck else {
+            let Some((d, percent, early)) = found else {
                 continue;
             };
             let di = usize::from(d);
@@ -265,7 +324,8 @@ impl DomainLatch {
                 continue;
             }
             if !spaced {
-                // Judged again when the next window is full.
+                // Judged again when the window is full (after an early
+                // look), or the next one is.
                 continue;
             }
             self.tries[i][di] += 1;
@@ -277,6 +337,7 @@ impl DomainLatch {
                 chip: i as u8,
                 domain: d,
                 percent,
+                early,
             });
         }
         gave_up
@@ -327,6 +388,7 @@ mod tests {
         chip: 4,
         domain: 2,
         percent: 3,
+        early: false,
     };
 
     #[test]
@@ -349,7 +411,8 @@ mod tests {
                 Verdict::Reset {
                     chip: 1,
                     domain: 3,
-                    percent: 24
+                    percent: 24,
+                    early: false,
                 }
             )]
         );
@@ -387,7 +450,8 @@ mod tests {
                 Verdict::Reset {
                     chip: 2,
                     domain: 0,
-                    percent: 0
+                    percent: 0,
+                    early: false,
                 }
             )]
         );
@@ -444,7 +508,8 @@ mod tests {
             Some(Verdict::Reset {
                 chip: 4,
                 domain: 2,
-                percent: 0
+                percent: 0,
+                early: false,
             })
         );
     }
@@ -486,7 +551,8 @@ mod tests {
             Verdict::Reset {
                 chip: 6,
                 domain: 1,
-                percent: 0
+                percent: 0,
+                early: false,
             }
         );
         assert!(t >= 600 + SPACING_S, "{t}");
@@ -568,7 +634,8 @@ mod tests {
                     Verdict::Reset {
                         chip: 5,
                         domain: 3,
-                        percent: 20
+                        percent: 20,
+                        early: false,
                     }
                 ))
                 .count(),
@@ -646,10 +713,180 @@ mod tests {
                 Verdict::Reset {
                     chip: 2,
                     domain: 3,
-                    percent: 7
+                    percent: 7,
+                    early: false,
                 }
             )]
         );
+    }
+
+    /// Like `run`, for a chain that has just come up.
+    fn run_from_start<const D: usize>(
+        p: &mut DomainLatch,
+        from: u64,
+        to: u64,
+        rates: &[[f32; D]],
+    ) -> Vec<(u64, Verdict)> {
+        p.chain_ready();
+        run(p, from, to, rates)
+    }
+
+    #[test]
+    fn a_domain_dead_from_the_chains_start_is_reset_after_three_minutes() {
+        for (share, percent) in [(0.0, 0), (0.03, 3), (0.049, 4)] {
+            let mut p = DomainLatch::new();
+            let v = run_from_start(&mut p, 1, 1500, &stuck(4, 2, share));
+            assert_eq!(
+                v,
+                vec![(
+                    u64::from(EARLY_WINDOW_S),
+                    Verdict::Reset {
+                        chip: 4,
+                        domain: 2,
+                        percent,
+                        early: true
+                    }
+                )],
+                "share {share}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_weak_domain_from_the_start_has_the_full_window() {
+        // At 5 % and above it is not dead: the ten minutes, then the
+        // usual verdict (stuck under 25 %, nothing at 50 %).
+        for (share, percent) in [(0.05, 5), (0.2, 20)] {
+            let mut p = DomainLatch::new();
+            let v = run_from_start(&mut p, 1, 900, &stuck(4, 2, share));
+            assert_eq!(
+                v,
+                vec![(
+                    u64::from(WINDOW_S),
+                    Verdict::Reset {
+                        chip: 4,
+                        domain: 2,
+                        percent,
+                        early: false
+                    }
+                )],
+                "share {share}"
+            );
+        }
+        let mut p = DomainLatch::new();
+        assert!(run_from_start(&mut p, 1, 3 * u64::from(WINDOW_S), &stuck(4, 2, 0.5)).is_empty());
+    }
+
+    #[test]
+    fn a_domain_that_dies_later_has_the_full_window() {
+        // Fine for the chain's first ten minutes, dead from then on: no
+        // early look in a later window, the reset ten minutes after.
+        let mut p = DomainLatch::new();
+        assert!(run_from_start(&mut p, 1, 600, &healthy()).is_empty());
+        let v = run(&mut p, 601, 1500, &stuck(4, 2, 0.0));
+        assert_eq!(
+            v,
+            vec![(
+                1200,
+                Verdict::Reset {
+                    chip: 4,
+                    domain: 2,
+                    percent: 0,
+                    early: false
+                }
+            )]
+        );
+        // Dead from the second minute of the first window: at the early
+        // look it averages a third, which is not dead from the start;
+        // the window's end finds it.
+        let mut p = DomainLatch::new();
+        assert!(run_from_start(&mut p, 1, 60, &healthy()).is_empty());
+        let v = run(&mut p, 61, 900, &stuck(4, 2, 0.0));
+        assert_eq!(
+            v,
+            vec![(
+                600,
+                Verdict::Reset {
+                    chip: 4,
+                    domain: 2,
+                    percent: 10,
+                    early: false
+                }
+            )]
+        );
+    }
+
+    #[test]
+    fn without_a_chain_start_there_is_no_early_look() {
+        let mut p = DomainLatch::new();
+        let v = run(&mut p, 1, 900, &stuck(4, 2, 0.0));
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].0, u64::from(WINDOW_S));
+        // And only a chain's first window has one: the start is over
+        // once that window was looked at.
+        let mut p = DomainLatch::new();
+        assert!(run_from_start(&mut p, 1, 200, &healthy()).is_empty());
+        let v = run(&mut p, 201, 2000, &stuck(4, 2, 0.0));
+        assert_eq!(v.len(), 1, "{v:?}");
+        assert!(matches!(v[0].1, Verdict::Reset { early: false, .. }));
+    }
+
+    #[test]
+    fn the_early_look_counts_working_seconds_and_keeps_the_hour() {
+        // A pool outage right after the start: the three minutes are
+        // three minutes of work.
+        let mut p = DomainLatch::new();
+        let rates = stuck(4, 2, 0.0);
+        let samples: Vec<ChipSample> = rates.iter().map(|r| chip(r)).collect();
+        assert!(run_from_start(&mut p, 1, 100, &rates).is_empty());
+        for t in 101..=2000 {
+            assert_eq!(p.observe(t, false, &samples), None);
+        }
+        let v = run(&mut p, 2001, 2200, &rates);
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].0, 2080);
+        assert!(matches!(v[0].1, Verdict::Reset { early: true, .. }));
+        // Within the hour of another intervention the early look does
+        // nothing, and neither does the window's end: the hour is shared.
+        let mut p = DomainLatch::new();
+        p.note_reset(0);
+        let v = run_from_start(&mut p, 1, SPACING_S + 1200, &rates);
+        assert_eq!(v.len(), 1, "{v:?}");
+        assert!(v[0].0 >= SPACING_S);
+        assert!(matches!(v[0].1, Verdict::Reset { early: false, .. }));
+    }
+
+    #[test]
+    fn a_domain_dead_after_every_reset_is_given_up_as_before() {
+        // The chain comes up again after each reset; the domain is dead
+        // each time. Three resets an hour apart, then given up.
+        let mut p = DomainLatch::new();
+        let rates = stuck(5, 1, 0.0);
+        let samples: Vec<ChipSample> = rates.iter().map(|r| chip(r)).collect();
+        p.chain_ready();
+        let (mut resets, mut gave_up) = (Vec::new(), None);
+        for t in 1..=4 * SPACING_S {
+            match p.observe(t, true, &samples) {
+                Some(Verdict::Reset { early, .. }) => {
+                    resets.push((t, early));
+                    p.chain_ready();
+                }
+                Some(Verdict::GiveUp { chip: 5, domain: 1 }) => {
+                    gave_up = Some(t);
+                    break;
+                }
+                None => {}
+                other => panic!("unexpected {other:?}"),
+            }
+        }
+        assert_eq!(resets.len(), usize::from(MAX_TRIES), "{resets:?}");
+        // The first after three minutes; the next two wait for the hour.
+        assert_eq!(resets[0], (u64::from(EARLY_WINDOW_S), true));
+        assert!(resets[1].0 >= resets[0].0 + SPACING_S);
+        assert!(resets[2].0 >= resets[1].0 + SPACING_S);
+        // Given up at the early look after the third.
+        assert_eq!(gave_up, Some(resets[2].0 + u64::from(EARLY_WINDOW_S)));
+        assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
     }
 
     #[test]
@@ -666,7 +903,8 @@ mod tests {
                 Verdict::Reset {
                     chip: 3,
                     domain: 7,
-                    percent: 1
+                    percent: 1,
+                    early: false,
                 }
             )]
         );

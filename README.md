@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-607%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-617%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -85,7 +85,7 @@ move fast; corrections welcome.
 | A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin, and since v0.1.42 `hash` and `status`: pending, confirmed once the pool's next work builds on it, orphaned when the work for the next height builds on another block, unknown when the miner was offline in between) in the API, kept in NVS; the banner shows the status and the hash, with a mempool.space link for Bitcoin; entries in the event log for the find and for the status; a warp jump on the display |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
-| One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
+| One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**, or since v0.1.42 under 5 % three minutes after the chain came up: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
@@ -274,8 +274,14 @@ back at any time with `GET /api/v1/display/frame`.
   stays up —, 5 s down, back on; clock and voltage unchanged): the
   strongest re-init the firmware has short of a new clock or voltage,
   which stays WarpTune's (docs/04 found the warm-reboot latch was an
-  init trim and a clock dip brought a dead domain back; a mid-run latch
-  has no bench yet). `shutdown` reads true and the phase `OFF` for the
+  init trim and a clock dip brought a dead domain back). In the field
+  the reset has taken twice on a Bitaxe Gamma (a user's report,
+  v0.1.41): a domain at 0 % right after the chain came up, whole after
+  the reset ten minutes later. Since v0.1.42 such a domain does not
+  wait that long: one that is under 5 % of the others three minutes
+  after the chain came up is reset then (also after a chain restart or
+  a reset of this kind); a domain between 5 and 25 %, or one that dies
+  later, has the ten minutes. `shutdown` reads true and the phase `OFF` for the
   six seconds or so of the intervention, as for a chips-off by hand;
   the event and `lastDomainLatchReset` say why. The same limits as for
   the silent chip: one intervention an hour over both cases, three

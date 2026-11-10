@@ -274,6 +274,21 @@ pub mod detail {
         )
     }
 
+    /// The same for a domain dead from the chain's start, found at the
+    /// early look after three minutes: the same code, with the minutes
+    /// (`min`) the text names instead of its ten.
+    pub fn domain_latch_early(chip: u8, domain: u8, percent: u8) -> Detail {
+        coded(
+            "domain_latch",
+            &[
+                ("c", Value::from(chip)),
+                ("d", Value::from(domain)),
+                ("pct", Value::from(percent)),
+                ("min", Value::from(3)),
+            ],
+        )
+    }
+
     /// Resets did not keep the domain running: no more for it until a
     /// new clock or voltage, or the next boot.
     pub fn domain_given_up(chip: u8, domain: u8) -> Detail {
@@ -626,10 +641,13 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("c")
         ),
         "domain_latch" => format!(
-            "chip {} domain {} at {} % of the chip's other domains for 10 min, chips switched off and on",
+            "chip {} domain {} at {} % of the chip's other domains for {} min, chips switched off and on",
             g("c"),
             g("d"),
-            g("pct")
+            g("pct"),
+            // Ten minutes unless the event says otherwise (the early
+            // look after a chain start: three).
+            p.get("min").map_or_else(|| "10".into(), |m| show(Some(m)))
         ),
         "domain_given_up" => format!(
             "chip {} domain {} still stuck after 3 resets, no more until a new clock, a new voltage or the next boot",
@@ -1003,6 +1021,10 @@ mod tests {
                 "chip 4 still silent after 3 restarts, no more until a new clock, a new voltage or the next boot",
             ),
             (
+                detail::domain_latch_early(4, 2, 0),
+                "chip 4 domain 2 at 0 % of the chip's other domains for 3 min, chips switched off and on",
+            ),
+            (
                 detail::domain_latch(4, 2, 3),
                 "chip 4 domain 2 at 3 % of the chip's other domains for 10 min, chips switched off and on",
             ),
@@ -1225,6 +1247,7 @@ mod tests {
             ("chain", detail::chip_restart(7, 1210)),
             ("chain", detail::chip_given_up(7)),
             ("chain", detail::domain_latch(15, 7, 24)),
+            ("chain", detail::domain_latch_early(15, 7, 4)),
             ("chain", detail::domain_given_up(15, 7)),
             (
                 "update",

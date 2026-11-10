@@ -714,6 +714,9 @@ fn run(mut uart: ChipUart) {
                         log::info!("miner: chain ready, {} chip(s)", chain.chip_count());
                         CORES.lock().unwrap().clear();
                         board::chain_ready();
+                        // The chain's first window gets the early look
+                        // for a domain dead from the start.
+                        latch.chain_ready();
                         crate::update::mark_app_valid("chain ready");
                     }
                     Event::Register {
@@ -1247,7 +1250,15 @@ fn run(mut uart: ChipUart) {
                         chip,
                         domain,
                         percent,
+                        early,
                     }) => {
+                        // Dead from the chain's start: found after three
+                        // minutes instead of ten.
+                        let (mins, when) = if early {
+                            (3, " (early, from the chain's start)")
+                        } else {
+                            (10, "")
+                        };
                         lone.note_restart(now_s);
                         // The full off/on path. `false` only without the
                         // board thread (no chips to speak of) or in the
@@ -1261,18 +1272,24 @@ fn run(mut uart: ChipUart) {
                             s.last_domain_latch_reset = Some((chip, domain, percent, now_s));
                             s.hashrate_now_ghs = 0.0;
                             s.last_error = format!(
-                                "chip {chip} domain {domain} at {percent} % of the chip's other domains for 10 min, chips {}",
+                                "chip {chip} domain {domain} at {percent} % of the chip's other domains for {mins} min, chips {}",
                                 if cycled { "switched off and on" } else { "restarted" }
                             );
                         });
                         log::warn!(
-                            "miner: chip {chip} domain {domain} at {percent} % of the chip's other domains for 10 min at {} MHz / {mv} mV, chips {}",
+                            "miner: chip {chip} domain {domain} at {percent} % of the chip's other domains for {mins} min{when} at {} MHz / {mv} mV, chips {}",
                             cfg.frequency,
                             if cycled { "off and on" } else { "restarted" }
                         );
                         crate::events::record(
                             "chain",
-                            warpaxe_diag::events::detail::domain_latch(chip, domain, percent),
+                            if early {
+                                warpaxe_diag::events::detail::domain_latch_early(
+                                    chip, domain, percent,
+                                )
+                            } else {
+                                warpaxe_diag::events::detail::domain_latch(chip, domain, percent)
+                            },
                         );
                         break;
                     }

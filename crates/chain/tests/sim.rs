@@ -1089,11 +1089,13 @@ mod domain_latch {
             chip,
             domain,
             percent,
+            early,
         } = verdict
         else {
             panic!("{verdict:?}");
         };
         assert_eq!((chip, domain), (1, 2));
+        assert!(!early, "the policy was not told of a chain start");
         assert!((2..=4).contains(&percent), "percent {percent}");
         // The 600th fresh sample; the first read or two carry no rate
         // yet but are fresh all the same.
@@ -1127,6 +1129,109 @@ mod domain_latch {
         b.mine_ms(2_000);
         let mut p = DomainLatch::new();
         assert!(observe(&mut b, &mut p, 650).is_empty());
+    }
+
+    /// A chain that has just come up with chip 1's domain 2 at
+    /// `per_mille` of its share, the policy told of the start as the
+    /// firmware tells it at chain ready; the verdicts of `seconds`, in
+    /// seconds from the start.
+    fn from_start(per_mille: u16, seconds: u64) -> Vec<(u64, LatchVerdict)> {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        b.uart.sim.chip_mut(1).inject(Fault::WeakDomain {
+            domain: 2,
+            per_mille,
+        });
+        let mut p = DomainLatch::new();
+        p.chain_ready();
+        let start = b.now / 1_000_000;
+        observe(&mut b, &mut p, seconds)
+            .into_iter()
+            .map(|(t, v)| (t - start, v))
+            .collect()
+    }
+
+    #[test]
+    fn a_domain_dead_from_the_start_is_healed_after_three_minutes() {
+        // The two Gammas in the field: a domain at 0 % right after the
+        // chain came up.
+        let v = from_start(0, 400);
+        assert_eq!(v.len(), 1, "{v:?}");
+        let (at, verdict) = v[0];
+        assert_eq!(
+            verdict,
+            LatchVerdict::Reset {
+                chip: 1,
+                domain: 2,
+                percent: 0,
+                early: true
+            }
+        );
+        // The 180th fresh sample, give or take the first reads.
+        assert!((180..=190).contains(&at), "at {at} s");
+    }
+
+    #[test]
+    fn a_domain_at_three_percent_from_the_start_is_healed_after_three_minutes_too() {
+        let v = from_start(30, 400);
+        assert_eq!(v.len(), 1, "{v:?}");
+        let (at, verdict) = v[0];
+        let LatchVerdict::Reset {
+            chip,
+            domain,
+            percent,
+            early,
+        } = verdict
+        else {
+            panic!("{verdict:?}");
+        };
+        assert_eq!((chip, domain, early), (1, 2, true));
+        assert!((2..=4).contains(&percent), "percent {percent}");
+        assert!((180..=190).contains(&at), "at {at} s");
+    }
+
+    #[test]
+    fn a_domain_at_half_its_share_from_the_start_is_never_healed() {
+        // Two full windows and change, early look included.
+        let v = from_start(500, 1300);
+        assert!(v.is_empty(), "{v:?}");
+    }
+
+    #[test]
+    fn a_domain_that_dies_ten_minutes_in_has_its_ten_minutes() {
+        let mut b = Bench::new(4, Bench::config());
+        b.run_until_ready(20_000);
+        let mut p = DomainLatch::new();
+        p.chain_ready();
+        // Ten minutes of a healthy chain: the first window, clean.
+        assert!(observe(&mut b, &mut p, 600).is_empty());
+        // Then the domain goes to 0 %.
+        b.uart.sim.chip_mut(1).inject(Fault::WeakDomain {
+            domain: 2,
+            per_mille: 0,
+        });
+        let dead_from = b.now / 1_000_000;
+        let v = observe(&mut b, &mut p, 700);
+        assert_eq!(v.len(), 1, "{v:?}");
+        let (at, verdict) = v[0];
+        let LatchVerdict::Reset {
+            chip,
+            domain,
+            early,
+            ..
+        } = verdict
+        else {
+            panic!("{verdict:?}");
+        };
+        assert_eq!((chip, domain), (1, 2));
+        assert!(!early, "not the chain's start any more");
+        // Not after three minutes: with the window that began at its
+        // death, ten minutes on.
+        assert!(
+            (595..=610).contains(&(at - dead_from)),
+            "{} s after it died",
+            at - dead_from
+        );
     }
 }
 

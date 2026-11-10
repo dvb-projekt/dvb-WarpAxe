@@ -543,7 +543,7 @@
   "evd_chain_restart": "todos los {n} chips sin respuesta durante 60 s a {mv} mV, chips reiniciados",
   "evd_chip_restart": "chip {c} sin respuesta durante 10 min a {mv} mV, chips reiniciados",
   "evd_chip_given_up": "chip {c} sigue sin respuesta tras 3 reinicios, no habrá más reinicios hasta una nueva frecuencia, un nuevo voltaje o el próximo arranque",
-  "evd_domain_latch": "chip {c}, dominio {d} al {pct} % de los demás dominios del chip durante 10 min, chips apagados y encendidos de nuevo",
+  "evd_domain_latch": "chip {c}, dominio {d} al {pct} % de los demás dominios del chip durante {min} min, chips apagados y encendidos de nuevo",
   "evd_domain_given_up": "chip {c}, dominio {d} sigue bloqueado tras 3 intervenciones, no habrá más hasta una nueva frecuencia, un nuevo voltaje o el próximo arranque",
   "evd_pool_fallback": "el pool principal falló {n} veces, se cambió al pool de respaldo",
   "evd_pool_back": "el pool principal vuelve a responder, se dejó el pool de respaldo",
