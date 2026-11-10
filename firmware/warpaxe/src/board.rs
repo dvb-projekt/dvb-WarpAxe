@@ -30,7 +30,7 @@ use warpaxe_board::emc2302::{Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, Warmup, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
 use warpaxe_board::ina260::Ina260;
-use warpaxe_board::overheat::{Cause, Guard, Reading};
+use warpaxe_board::overheat::{Cause, Guard, Reading, SensorWatch};
 use warpaxe_board::pca9544::Muxed;
 use warpaxe_board::pmbus;
 use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
@@ -1951,7 +1951,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp: Option<f32> = None;
     let mut vr_temp: Option<i32> = None;
     let mut polarity = cfg.invertfanpolarity;
-    let mut temp_lost_s: u32 = 0;
+    // The lost-sensor clock: it runs only while the core rail is on
+    // (`SensorWatch`: chips that are off on purpose never go blind).
+    let mut sensor = SensorWatch::new();
     // Two chip diodes: which have read since boot (`chip_temps`).
     let mut two_chips = ChipTemps::<2>::new();
     // A chip diode that has never read since boot while the other one
@@ -1964,7 +1966,6 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // without the chip limit, fans at full, as NerdOS does with no
     // ASIC-side TMP1075 (it shows 0 °C). Seen 2026-10-01 on a NerdOctaxe
     // v2.2 under both Nerd profiles: "overheated" after exactly 60 s.
-    let mut temp_seen = false;
     let mut no_sensor_warned = false;
     let t0 = Instant::now();
     // The least stack this thread has had left, logged at each new low by
@@ -2071,6 +2072,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             }
             let mut rpm = (0, None);
             let chip_limit = profile.chip_limit_c(cfg.overheat_temp);
+            // The rail as this sample finds it: a reading that fails with
+            // the rail off is not a lost sensor (a Gamma's chip diode
+            // gives nothing without the chip's power).
+            let rail_on = POWERED.load(Ordering::Relaxed);
             if let Some(t) = thermal.as_mut() {
                 let checked = |r: Result<f32, String>| {
                     r.and_then(|c| {
@@ -2147,8 +2152,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 match acting {
                     Ok(c) => {
                         temp = Some(c);
-                        temp_lost_s = 0;
-                        temp_seen = true;
+                        sensor.sample(true, rail_on);
                         update(|s| {
                             if s.last_error.starts_with("temp:") {
                                 s.last_error.clear();
@@ -2157,16 +2161,25 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     }
                     Err(e) => {
                         temp = None;
-                        temp_lost_s = temp_lost_s.saturating_add(1);
-                        update(|s| s.last_error = format!("temp: {e}"));
+                        sensor.sample(false, rail_on);
+                        // With the rail off this is no fault to report:
+                        // no notice, and one from before goes.
+                        update(|s| {
+                            if rail_on {
+                                s.last_error = format!("temp: {e}");
+                            } else if s.last_error.starts_with("temp:") {
+                                s.last_error.clear();
+                            }
+                        });
                     }
                 }
                 rpm = t.rpm();
             }
             let hot_chip = temp.is_some_and(|c| c > chip_limit);
             let hot_vr = vr_temp.is_some_and(|c| c as f32 > profile.vr_stop_c);
-            let blind = temp_seen && temp_lost_s >= TEMP_LOST_S;
-            if !temp_seen && temp_lost_s >= TEMP_LOST_S && !no_sensor_warned {
+            let blind = sensor.blind(TEMP_LOST_S);
+            let temp_lost_s = sensor.lost_s();
+            if sensor.never(TEMP_LOST_S) && !no_sensor_warned {
                 no_sensor_warned = true;
                 log::warn!(
                     "board: no chip temperature since boot ({temp_lost_s} s): running without the chip limit, fans at full"
@@ -2285,14 +2298,17 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         vr_c: vr_temp.map(|c| c as f32),
                         vr_limit_c: profile.vr_stop_c,
                         vr_expected: vr_temp_seen,
-                        chip_expected: temp_seen,
+                        chip_expected: sensor.seen(),
+                        // Off, and the sensor that read while the chips
+                        // ran gives nothing now.
+                        chip_dark_off: !rail_on && temp.is_none() && sensor.seen(),
                     },
                 );
                 if cooled {
                     let was_hot = matches!(g.stopped(), Some(Cause::Hot));
                     g.resumed();
                     drop(g);
-                    temp_lost_s = 0;
+                    sensor.clear();
                     OVERHEAT.store(false, Ordering::Relaxed);
                     log::warn!(
                         "board: cooled down (chip {temp:?} °C, regulator {vr_temp:?} °C): core voltage back on"
@@ -2353,7 +2369,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // Core rail down on an overheat or a manual shutdown, back up once
         // both are cleared; the miner restarts the chain after that.
         if CLEAR_LOST.swap(false, Ordering::Relaxed) {
-            temp_lost_s = 0;
+            sensor.clear();
         }
         let halt = overheat() || shutdown() || no_pool();
         if halt && POWERED.load(Ordering::Relaxed) {
@@ -2410,6 +2426,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 } else {
                     pf.enabled(t0.elapsed().as_secs() as u32);
                     POWERED.store(true, Ordering::Relaxed);
+                    // The lost-sensor count starts anew with the rail.
+                    sensor.clear();
                     // Start the fans from full again, as at boot: the PID
                     // ran down to its minimum over cold chips while the
                     // core was off, and a Gaia restarted at 420 MHz then
@@ -2585,6 +2603,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // instead of its setting or full (the PID gets there on its
             // own as the chips cool). An overheat still means full.
             let idle = no_pool() && !POWERED.load(Ordering::Relaxed);
+            // Off on purpose (no pool, by hand, the firmware's own off
+            // and on) and no reading: nothing heats and nothing is
+            // wrong, so not the full fan a missing reading means while
+            // the chips run.
+            let dark = !POWERED.load(Ordering::Relaxed) && (no_pool() || shutdown());
             let low = cfg.min_fan_speed.min(100);
             // A chip whose diode has never read runs unwatched: full
             // fan while the rail is on.
@@ -2603,7 +2626,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 } else {
                     match temp {
                         Some(c) => pid.compute(c, target_c) as u8,
-                        None if idle => low,
+                        None if dark => low,
                         None => 100, // no reading: full fan
                     }
                 };
@@ -2618,7 +2641,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 } else {
                     match vr_temp {
                         Some(c) => pid_vr.compute(c as f32, vr_target_c) as u8,
-                        None if idle => low,
+                        None if dark => low,
                         None => 100,
                     }
                 };
