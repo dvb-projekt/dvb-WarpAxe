@@ -16,14 +16,21 @@
 //!   counts towards its lost-sensor stop, as for a single sensor.
 //! - Unless a readable chip is already over the stop line: that is hot
 //!   whatever the silent one would say, and stops at once.
-//! - A sensor that has never read since boot is not there (a board
-//!   variant without that diode): it is left out, as a board whose only
-//!   sensor never reads runs without the chip limit.
+//! - A sensor that has never read since boot is left out of the
+//!   temperature, as a board whose only sensor never reads runs without
+//!   the chip limit. But its chip has no stop line of its own then, so
+//!   the caller runs the fans at full once that has lasted
+//!   ([`ChipTemps::never_read_s`]) while another sensor reads: a reboot
+//!   must not take a chip's protection away with a failed diode. When
+//!   it reads after all, everything is as normal.
 
 /// The sensors' memory: which have read since boot.
 #[derive(Debug, Clone, Copy)]
 pub struct ChipTemps<const N: usize> {
     seen: [bool; N],
+    /// Samples (seconds) each sensor has gone without ever reading
+    /// while another one read.
+    never_s: [u32; N],
 }
 
 impl<const N: usize> Default for ChipTemps<N> {
@@ -35,7 +42,18 @@ impl<const N: usize> Default for ChipTemps<N> {
 impl<const N: usize> ChipTemps<N> {
     /// Nothing read yet, as after a boot.
     pub const fn new() -> Self {
-        Self { seen: [false; N] }
+        Self {
+            seen: [false; N],
+            never_s: [0; N],
+        }
+    }
+
+    /// For how many samples sensor `i` has not read, never having read
+    /// since boot, while another sensor did: 0 once it has read, and
+    /// while no sensor has read at all (that is the caller's "no chip
+    /// temperature" case, not one diode's).
+    pub fn never_read_s(&self, i: usize) -> u32 {
+        self.never_s.get(i).copied().unwrap_or(0)
     }
 
     /// Sensor `i` has read at least once since boot.
@@ -55,6 +73,20 @@ impl<const N: usize> ChipTemps<N> {
                     hottest = Some(hottest.map_or(c, |h| h.max(c)));
                 }
                 None => missing |= *seen,
+            }
+        }
+        for (i, never) in self.never_s.iter_mut().enumerate() {
+            let another_reads = readings
+                .iter()
+                .enumerate()
+                .any(|(j, r)| j != i && r.is_some());
+            // A second in which no other sensor reads either does not
+            // count, and does not start the count over: one failed read
+            // of the working diode must not take the fans off full.
+            if self.seen[i] {
+                *never = 0;
+            } else if another_reads {
+                *never = never.saturating_add(1);
             }
         }
         match hottest {
@@ -134,6 +166,41 @@ mod tests {
         let mut t = ChipTemps::<2>::new();
         assert_eq!(t.sample([None, None], STOP), None);
         assert!(!t.seen(0) && !t.seen(1));
+    }
+
+    #[test]
+    fn a_sensor_that_never_read_is_counted_while_the_other_reads() {
+        let mut t = ChipTemps::<2>::new();
+        // Chip 2's diode has not read since boot, chip 1's does.
+        for s in 1..=90 {
+            assert_eq!(t.sample([Some(60.0), None], STOP), Some(60.0));
+            assert_eq!((t.never_read_s(0), t.never_read_s(1)), (0, s));
+        }
+        // A second in which chip 1 does not read either is not counted,
+        // and does not start the count over.
+        t.sample([None, None], STOP);
+        assert_eq!(t.never_read_s(1), 90);
+        t.sample([Some(60.0), None], STOP);
+        assert_eq!(t.never_read_s(1), 91);
+        // It reads after all: over, and a later failure is a lost
+        // sensor (unknown), not a never-read one.
+        assert_eq!(t.sample([Some(60.0), Some(58.0)], STOP), Some(60.0));
+        assert_eq!(t.never_read_s(1), 0);
+        assert_eq!(t.sample([Some(60.0), None], STOP), None);
+        assert_eq!(t.never_read_s(1), 0);
+        // The mirror: chip 1's diode never reads, chip 2's does.
+        let mut t = ChipTemps::<2>::new();
+        for _ in 0..5 {
+            t.sample([None, Some(55.0)], STOP);
+        }
+        assert_eq!((t.never_read_s(0), t.never_read_s(1)), (5, 0));
+        // No sensor at all, or a single one: nothing to count.
+        let mut t = ChipTemps::<2>::new();
+        t.sample([None, None], STOP);
+        assert_eq!((t.never_read_s(0), t.never_read_s(1)), (0, 0));
+        let mut t = ChipTemps::<1>::new();
+        t.sample([None], STOP);
+        assert_eq!((t.never_read_s(0), t.never_read_s(7)), (0, 0));
     }
 
     #[test]

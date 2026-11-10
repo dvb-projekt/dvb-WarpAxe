@@ -133,11 +133,16 @@ impl Window {
     /// given up are out of the judgement on both sides: not candidates,
     /// and not in the mean a sibling is held against (a dead one would
     /// pull that mean down).
+    ///
+    /// `skip` takes domains out as candidates only (they stay in the
+    /// mean): the early look passes the ones without a try left, so a
+    /// second dead domain is not hidden behind one it may not act on.
     fn stuck(
         &self,
         domains: usize,
         given_up: &[bool; MAX_DOMAINS],
         limit: u32,
+        skip: &[bool; MAX_DOMAINS],
     ) -> Option<(u8, u8)> {
         let judged = (0..domains).filter(|&d| !given_up[d]);
         let total: f32 = judged.clone().map(|d| self.sum[d]).sum();
@@ -146,7 +151,7 @@ impl Window {
             return None;
         }
         let mut worst: Option<(u8, f32)> = None;
-        for d in judged {
+        for d in judged.filter(|&d| !skip[d]) {
             let own = self.sum[d];
             let others = (total - own) / (count - 1) as f32;
             if others <= 0.0 {
@@ -292,9 +297,14 @@ impl DomainLatch {
                 // Only for a domain that still has a try: giving one up
                 // is the full window's verdict, as it always was (three
                 // minutes dead after the third reset is not yet that).
+                // The ones without a try are out of the choice, so a
+                // second dead domain behind one of them is found.
+                let mut no_try = [false; MAX_DOMAINS];
+                for (d, skip) in no_try.iter_mut().enumerate() {
+                    *skip = self.tries[i][d] >= MAX_TRIES;
+                }
                 found = self.windows[i]
-                    .stuck(domains, &self.given_up[i], EARLY_DEAD_PERCENT)
-                    .filter(|&(d, _)| self.tries[i][usize::from(d)] < MAX_TRIES)
+                    .stuck(domains, &self.given_up[i], EARLY_DEAD_PERCENT, &no_try)
                     .map(|(d, percent)| (d, percent, true));
             }
             if found.is_none() {
@@ -303,7 +313,12 @@ impl DomainLatch {
                 }
                 let judged = self.windows[i];
                 self.windows[i] = Window::EMPTY;
-                let stuck = judged.stuck(domains, &self.given_up[i], STUCK_PERCENT);
+                let stuck = judged.stuck(
+                    domains,
+                    &self.given_up[i],
+                    STUCK_PERCENT,
+                    &[false; MAX_DOMAINS],
+                );
                 // A clean window is credit towards the hour; a stuck one
                 // sends the domain's credit back to zero.
                 for d in 0..domains {
@@ -864,6 +879,41 @@ mod tests {
         assert_eq!(v.len(), 1, "{v:?}");
         assert!(v[0].0 >= SPACING_S);
         assert!(matches!(v[0].1, Verdict::Reset { early: false, .. }));
+    }
+
+    #[test]
+    fn the_early_look_finds_a_dead_domain_behind_one_without_a_try() {
+        // Chip 5's domain 1 is dead and has had its three resets (the
+        // full window will give it up); its domain 3 is dead from this
+        // start as well, at 2 % against domain 1's 0 %.
+        let mut p = DomainLatch::new();
+        p.tries[5][1] = MAX_TRIES;
+        let mut rates = stuck(5, 1, 0.0);
+        rates[5][3] = 2.0;
+        let v = run_from_start(&mut p, 1, 400, &rates);
+        // Against the mean of the other three, the dead one included:
+        // 2 of (100 + 0 + 100) / 3 = 3 %.
+        assert_eq!(
+            v,
+            vec![(
+                u64::from(EARLY_WINDOW_S),
+                Verdict::Reset {
+                    chip: 5,
+                    domain: 3,
+                    percent: 3,
+                    early: true
+                }
+            )]
+        );
+        // Without a second dead domain the early look does nothing for
+        // the one without a try, and the full window gives it up.
+        let mut p = DomainLatch::new();
+        p.tries[5][1] = MAX_TRIES;
+        let v = run_from_start(&mut p, 1, 700, &stuck(5, 1, 0.0));
+        assert_eq!(
+            v,
+            vec![(u64::from(WINDOW_S), Verdict::GiveUp { chip: 5, domain: 1 })]
+        );
     }
 
     #[test]

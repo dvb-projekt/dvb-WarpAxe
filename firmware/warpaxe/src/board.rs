@@ -1954,10 +1954,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp_lost_s: u32 = 0;
     // Two chip diodes: which have read since boot (`chip_temps`).
     let mut two_chips = ChipTemps::<2>::new();
-    // Seconds each diode has gone without ever reading while the other
-    // read, and whether that was said.
-    let mut never_read_s = [0u32; 2];
+    // A chip diode that has never read since boot while the other one
+    // reads: whether that was said, and that the fans run at full for
+    // it (the chip has no stop line of its own).
     let mut never_read_warned = [false; 2];
+    let mut diode_never_read = false;
     // A chip temperature has been read since boot: losing it then stops
     // the chain (Cause::Blind). A board whose sensor never answered runs
     // without the chip limit, fans at full, as NerdOS does with no
@@ -2090,21 +2091,21 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         update(|s| s.chip_temps = chips.to_vec());
                         let acting = two_chips.sample(chips, chip_limit);
                         // A diode that has never read while the other
-                        // does: left out, and said once after the time a
-                        // lost sensor is given, in the log and as the
-                        // board's standing notice (`boardError`), so a
-                        // chip without its own stop line does not go
-                        // unnoticed. One failed read at boot is not it.
-                        let other_reads = [chips[1].is_some(), chips[0].is_some()];
+                        // does: left out of the temperature, and after
+                        // the time a lost sensor is given the fans go to
+                        // full (its chip has no stop line of its own; a
+                        // reboot must not take the protection a failed
+                        // diode had before it), with a line in the log
+                        // and the board's standing notice (`boardError`).
+                        // The chips keep running. One failed read at
+                        // boot is not it; when the diode reads after
+                        // all, everything is as normal.
+                        diode_never_read =
+                            (0..2).any(|i| two_chips.never_read_s(i) >= TEMP_LOST_S);
                         for i in 0..2 {
-                            if two_chips.seen(i) || !other_reads[i] {
-                                never_read_s[i] = 0;
-                                continue;
-                            }
-                            never_read_s[i] = never_read_s[i].saturating_add(1);
-                            if never_read_s[i] >= TEMP_LOST_S {
+                            if two_chips.never_read_s(i) >= TEMP_LOST_S {
                                 let text = format!(
-                                    "chip {}'s temperature diode has not read since boot: fan and stop line follow chip {} alone",
+                                    "chip {}'s temperature diode has not read since boot: fans at full, the stop line follows chip {} alone",
                                     i + 1,
                                     2 - i
                                 );
@@ -2585,7 +2586,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // own as the chips cool). An overheat still means full.
             let idle = no_pool() && !POWERED.load(Ordering::Relaxed);
             let low = cfg.min_fan_speed.min(100);
-            let want = if overheat() || FANS_FULL.load(Ordering::Relaxed) {
+            // A chip whose diode has never read runs unwatched: full
+            // fan while the rail is on.
+            let unwatched = diode_never_read && POWERED.load(Ordering::Relaxed);
+            let want = if overheat() || FANS_FULL.load(Ordering::Relaxed) || unwatched {
                 (100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {

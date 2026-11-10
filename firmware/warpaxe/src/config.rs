@@ -5,6 +5,7 @@ use std::sync::Mutex;
 
 use esp_idf_svc::nvs::{EspDefaultNvsPartition, EspNvs, NvsDefault};
 use serde::{Deserialize, Serialize};
+use warpaxe_stratum::block;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -441,6 +442,9 @@ struct BlockInfo {
 }
 
 static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
+/// The parents of the blocks recorded lately (RAM only): a find on one
+/// of them is a leftover, not a new block. Locked inside [`BLOCKS`].
+static RECENT_PARENTS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 const BLOCKS_KEY: &str = "blocks";
 const BLOCK_INFO_KEY: &str = "blockinfo";
 
@@ -465,29 +469,30 @@ fn blocks_from(count: Option<&str>, info: Option<&str>) -> Option<Blocks> {
 
 /// Count a found block and store it with its hash and its parent's
 /// (hex, as explorers show them), pending: two writes. `false`, and
-/// nothing written or counted, for another block on the parent of the
-/// one recorded last, or at its height on the same coin while that one
-/// has not been orphaned: on a chain at minimum difficulty (testnet4,
-/// regtest) every nonce meets the target, hundreds a second, and only
-/// the first is the block. The parent decides where the height cannot
-/// be read (a coinbase without BIP34: every such block is "height 0");
-/// a record from before v0.1.42 has neither hash nor parent and never
-/// stands in the way. From a thread with an internal stack (the miner
-/// loops, like `raise_best_diff`).
+/// nothing written or counted, for a find that is a block already on
+/// record or a leftover of one (`warpaxe_stratum::block::repeats`): on
+/// a chain at minimum difficulty (testnet4, regtest) every nonce meets
+/// the target, hundreds a second, also for the job before the block
+/// just found. From a thread with an internal stack (the miner loops,
+/// like `raise_best_diff`).
 pub fn record_block(height: u64, unix: u64, hash: &str, prev: &str) -> bool {
     let coin = get().coin_ticker;
     let b = {
         let mut g = BLOCKS.lock().unwrap();
         let b = g.get_or_insert_with(Blocks::default);
-        let same_parent = !b.prev.is_empty() && b.prev == prev;
-        let same_height = height > 0
-            && b.h == height
-            && b.coin == coin
-            && !b.hash.is_empty()
-            && b.status != "orphaned";
-        if b.n > 0 && (same_parent || same_height) {
+        let mut recent = RECENT_PARENTS.lock().unwrap();
+        let last = (b.n > 0).then(|| block::OnRecord {
+            height: b.h,
+            coin: &b.coin,
+            prev: &b.prev,
+            has_hash: !b.hash.is_empty(),
+            orphaned: b.status == "orphaned",
+        });
+        if block::repeats(last.as_ref(), &recent, height, &coin, prev) {
             return false;
         }
+        block::remember_parent(&mut recent, prev);
+        drop(recent);
         b.n += 1;
         b.h = height;
         b.t = unix;
