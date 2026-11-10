@@ -504,6 +504,7 @@
   "ckd_temp1": "芯片 {v} °C（关断 {l} °C）",
   "ckd_vin": "{v} V，标称 {l} ±{t} V",
   "nt_notHashing": "芯片没有在计算哈希",
+  "nt_noWork": "矿池未下发任务",
   "nt_noReading": "无读数",
   "nt_noRegulator": "此板卡没有稳压器",
   "nt_noFan": "此板卡没有可控制的风扇",

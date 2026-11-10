@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-598%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-599%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -370,7 +370,10 @@ back at any time with `GET /api/v1/display/frame`.
   per attempt. Not during the first start of a newly chosen board, whose
   chips have to answer once for the choice to be confirmed, and not
   while a self-test runs: the chips stay on for it, and come on for one
-  started while they were off.
+  started while they were off. Without work from a pool the self-test
+  skips the checks that count hashes (hashrate, domains, error rate)
+  with the note "no work from the pool" and passes on the rest: chip
+  count, voltages, regulator, fan and temperatures.
 - **Saved pools**: up to eight, each with a name and the coin it mines;
   the main pool as it is now is saved with one click, a saved one becomes
   the main pool with another, and the miner reconnects at once. Passwords

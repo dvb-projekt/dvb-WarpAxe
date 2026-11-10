@@ -480,7 +480,7 @@ pub fn chain_stopped() -> bool {
 /// enumeration to judge the chosen board, pool or no pool. Not while a
 /// self-test runs or the one after a verified first start is due: the
 /// chips stay on for it (and come on for one started while they were
-/// off; without work it finds no hashrate, as before, but the board's checks
+/// off; without work its hash checks are skipped and the board's
 /// run). Not on a board without chips (the T-Display-S3, an undetected
 /// board): nothing is off there.
 pub fn no_pool() -> bool {

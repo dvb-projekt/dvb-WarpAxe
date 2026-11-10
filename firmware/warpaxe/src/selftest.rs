@@ -192,6 +192,7 @@ fn readings(cfg: &config::Config) -> BoardReadings {
         chips_found: m.chips,
         chips_expected: board::chips_expected(),
         hashing: m.phase == "READY" && !board::chain_stopped(),
+        has_work: crate::stratum::tip().is_some(),
         has_regulator: b.has_vr,
         core_set_mv: cfg.core_voltage,
         core_actual_mv: b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)),
@@ -229,6 +230,15 @@ type Outcome = Result<(BoardReadings, Option<Box<Window>>, Option<FanReadings>),
 /// How long a test waits for chips that were off for want of a pool to
 /// be back up before its first reading.
 const POWER_UP_WAIT: Duration = Duration::from_secs(45);
+/// How long a test waits for work when there is none at its start: a
+/// pool session may be between two connects, which is no reason to skip
+/// the hash checks.
+const WORK_WAIT: Duration = Duration::from_secs(10);
+/// Seconds of the hash window without work from a pool after which the
+/// window says nothing about the chips: the pool went away under the
+/// test, and the hash checks are skipped as they are without work from
+/// the start.
+const WORK_LOST_S: u32 = 5;
 
 fn perform(cfg: &config::Config) -> Outcome {
     let profile = board::profile();
@@ -249,10 +259,21 @@ fn perform(cfg: &config::Config) -> Outcome {
             }
         }
     }
+    if profile.asic_count > 0 {
+        let end = Instant::now() + WORK_WAIT;
+        while Instant::now() < end && crate::stratum::tip().is_none() {
+            if !wait(Duration::from_millis(500)) {
+                return Err("cancelled");
+            }
+        }
+    }
     let first = readings(cfg);
-    // The hash window, while the chain hashes.
+    // The hash window, while the chain hashes: it needs work from a
+    // pool. Without any the chain is up and counts nothing, and the
+    // hash checks are skipped (`Note::NoWork`), not failed at 0 %.
+    let mut has_work = first.has_work;
     let mut window = None;
-    if first.hashing && first.chips_found > 0 {
+    if first.hashing && has_work && first.chips_found > 0 {
         let m = miner::state();
         let expected = f32::from(chip.small_cores) * m.frequency_hz as f32 / 1e9;
         let mut w = Box::new(Window::new(
@@ -267,6 +288,7 @@ fn perform(cfg: &config::Config) -> Outcome {
                 progress: 5,
             }
         });
+        let mut without_work = 0;
         for i in 0..WINDOW_S {
             if !wait(Duration::from_secs(1)) {
                 return Err("cancelled");
@@ -276,6 +298,9 @@ fn perform(cfg: &config::Config) -> Outcome {
             }
             if board::chain_stopped() {
                 return Err("chainStopped");
+            }
+            if crate::stratum::tip().is_none() {
+                without_work += 1;
             }
             let m = miner::state();
             for (c, a) in m.hashrate_monitor.iter().enumerate() {
@@ -289,7 +314,14 @@ fn perform(cfg: &config::Config) -> Outcome {
                 };
             });
         }
-        window = Some(w);
+        if without_work > WORK_LOST_S {
+            log::warn!(
+                "selftest: the pool sent no work for {without_work} s of the hash window: hash checks skipped"
+            );
+            has_work = false;
+        } else {
+            window = Some(w);
+        }
     }
     // The fan step.
     let mut fan = None;
@@ -324,7 +356,10 @@ fn perform(cfg: &config::Config) -> Outcome {
     });
     // The board as it is at the end: temperatures after the window, the
     // regulator's status now.
-    let last = readings(cfg);
+    let mut last = readings(cfg);
+    // Whether there was work is the window's matter, not the last
+    // second's.
+    last.has_work = has_work;
     Ok((last, window, fan))
 }
 

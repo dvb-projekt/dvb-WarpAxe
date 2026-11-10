@@ -504,6 +504,7 @@
   "ckd_temp1": "チップ {v} °C（停止 {l} °C）",
   "ckd_vin": "{v} V、公称 {l} ±{t} V",
   "nt_notHashing": "チップがハッシュ計算をしていません",
+  "nt_noWork": "プールからジョブが届いていません",
   "nt_noReading": "測定値なし",
   "nt_noRegulator": "このボードにはレギュレーターがありません",
   "nt_noFan": "このボードには制御できるファンがありません",

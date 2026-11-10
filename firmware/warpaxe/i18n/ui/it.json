@@ -504,6 +504,7 @@
   "ckd_temp1": "chip {v} °C (spegnimento {l} °C)",
   "ckd_vin": "{v} V, nominale {l} ±{t} V",
   "nt_notHashing": "i chip non producono hash",
+  "nt_noWork": "nessun lavoro dal pool",
   "nt_noReading": "nessuna lettura",
   "nt_noRegulator": "nessun regolatore su questa scheda",
   "nt_noFan": "nessuna ventola controllabile su questa scheda",

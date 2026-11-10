@@ -780,6 +780,7 @@ mod selftest_window {
             chips_found: chips,
             chips_expected: chips,
             hashing: true,
+            has_work: true,
             has_regulator: true,
             core_set_mv: 1150,
             core_actual_mv: Some(1148),

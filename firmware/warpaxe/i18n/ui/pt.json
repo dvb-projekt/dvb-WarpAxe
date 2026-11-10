@@ -504,6 +504,7 @@
   "ckd_temp1": "chip {v} °C (desliga em {l} °C)",
   "ckd_vin": "{v} V, nominal {l} ±{t} V",
   "nt_notHashing": "os chips não estão minerando",
+  "nt_noWork": "sem trabalho do pool",
   "nt_noReading": "sem leitura",
   "nt_noRegulator": "esta placa não tem regulador",
   "nt_noFan": "esta placa não tem ventoinha controlável",

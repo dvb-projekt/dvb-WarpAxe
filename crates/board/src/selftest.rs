@@ -119,6 +119,9 @@ pub enum Note {
     /// The chain is not hashing (chips off, overheat stop, bring-up
     /// failed), so there was nothing to measure.
     NotHashing,
+    /// The chain is up but no pool sends work: nothing to hash, so the
+    /// checks that count hashes are skipped, not failed.
+    NoWork,
     /// A reading the board should have was missing.
     NoReading,
     /// The board has no regulator the firmware reads.
@@ -152,6 +155,7 @@ impl Note {
         match self {
             Note::None => "",
             Note::NotHashing => "notHashing",
+            Note::NoWork => "noWork",
             Note::NoReading => "noReading",
             Note::NoRegulator => "noRegulator",
             Note::NoFan => "noFan",
@@ -479,6 +483,10 @@ pub struct BoardReadings {
     pub chips_expected: u8,
     /// The chain is up and taking work.
     pub hashing: bool,
+    /// A pool has work for it. Without work a chain that is up hashes
+    /// nothing through no fault of the board's: the hash checks are
+    /// skipped then ([`Note::NoWork`]), the rest is judged as ever.
+    pub has_work: bool,
     /// The board has a regulator the firmware reads.
     pub has_regulator: bool,
     /// The configured core voltage, mV.
@@ -528,8 +536,8 @@ fn abs(x: f32) -> f32 {
 }
 
 /// Judge everything. `window` is `None` when the chain was not hashing
-/// (nothing could be sampled); `fan` is `None` on a board without a fan
-/// the firmware drives.
+/// or had no work (nothing could be sampled); `fan` is `None` on a
+/// board without a fan the firmware drives.
 pub fn judge(
     asic: Asic,
     limits: &Limits,
@@ -566,6 +574,14 @@ fn judge_chips(b: &BoardReadings) -> Outcome {
     o
 }
 
+/// A chain that is up but had no work and so no window: the checks
+/// that count hashes have nothing to judge. A chain that is not up
+/// (chips off, an overheat stop, a failed bring-up) is another matter
+/// and stays a failure.
+fn no_work(b: &BoardReadings, w: Option<&Window>) -> bool {
+    b.hashing && !b.has_work && w.is_none()
+}
+
 /// The worst chip of the window against `min_ratio`: (ratio, chip,
 /// mostly stale).
 fn worst_chip(w: &Window) -> (f32, u8, bool) {
@@ -591,6 +607,9 @@ fn judge_hashrate(limits: &Limits, b: &BoardReadings, w: Option<&Window>) -> Out
     if b.chips_expected == 0 {
         return Outcome::skip(Check::Hashrate, Note::NotHashing);
     }
+    if no_work(b, w) {
+        return Outcome::skip(Check::Hashrate, Note::NoWork);
+    }
     let mut o = Outcome::with(Check::Hashrate, Status::Fail);
     o.limit = Some(limits.chip_min_ratio * 100.0);
     let Some(w) = w.filter(|w| w.chips() > 0 && w.samples() > 0) else {
@@ -611,6 +630,9 @@ fn judge_hashrate(limits: &Limits, b: &BoardReadings, w: Option<&Window>) -> Out
 fn judge_domains(limits: &Limits, b: &BoardReadings, w: Option<&Window>) -> Outcome {
     if b.chips_expected == 0 {
         return Outcome::skip(Check::Domains, Note::NotHashing);
+    }
+    if no_work(b, w) {
+        return Outcome::skip(Check::Domains, Note::NoWork);
     }
     let mut o = Outcome::with(Check::Domains, Status::Fail);
     o.limit = Some(limits.domain_min_ratio * 100.0);
@@ -656,6 +678,9 @@ fn judge_errors(asic: Asic, limits: &Limits, b: &BoardReadings, w: Option<&Windo
     let Some(max) = limits.error_max_percent(asic) else {
         return Outcome::skip(Check::Errors, Note::NoCounter);
     };
+    if no_work(b, w) {
+        return Outcome::skip(Check::Errors, Note::NoWork);
+    }
     let mut o = Outcome::with(Check::Errors, Status::Fail);
     o.limit = Some(max);
     let Some(w) = w.filter(|w| w.chips() > 0 && w.samples() > 0) else {
@@ -806,6 +831,7 @@ mod tests {
             chips_found: 1,
             chips_expected: 1,
             hashing: true,
+            has_work: true,
             has_regulator: true,
             core_set_mv: 1020,
             core_actual_mv: Some(1017),
@@ -1088,6 +1114,89 @@ mod tests {
             (c.status, c.value, c.limit),
             (Status::Fail, Some(3.0), Some(4.0))
         );
+        // Chips off with no work either (no pool is why they are off, or
+        // an overheat during an outage): still a failure, not a skip.
+        let b = BoardReadings {
+            hashing: false,
+            has_work: false,
+            chips_found: 0,
+            ..gamma()
+        };
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &b, None, Some(&fan_ok()));
+        for c in [Check::Chips, Check::Hashrate, Check::Domains, Check::Errors] {
+            let o = r.get(c);
+            assert_eq!((c, o.status, o.note), (c, Status::Fail, Note::NotHashing));
+        }
+    }
+
+    #[test]
+    fn a_chain_that_is_up_without_work_skips_the_hash_checks_and_passes_on_the_rest() {
+        // No pool answers: the chain is ready, every chip was found, but
+        // there is nothing to hash and so no window.
+        let b = BoardReadings {
+            has_work: false,
+            ..gamma()
+        };
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &b, None, Some(&fan_ok()));
+        for c in [Check::Hashrate, Check::Domains, Check::Errors] {
+            let o = r.get(c);
+            assert_eq!((c, o.status, o.note), (c, Status::Skip, Note::NoWork));
+            assert_eq!((o.value, o.chip), (None, None));
+        }
+        // The chip count comes from the enumeration, not from hashes.
+        let c = r.get(Check::Chips);
+        assert_eq!((c.status, c.note), (Status::Pass, Note::None));
+        // Voltages, regulator, fan and temperatures as with work.
+        for c in [
+            Check::CoreVoltage,
+            Check::Regulator,
+            Check::Fan,
+            Check::Temperature,
+            Check::InputVoltage,
+        ] {
+            assert_eq!(r.get(c).status, Status::Pass, "{c:?}");
+        }
+        assert!(r.passed(), "{r:?}");
+        assert_eq!((r.failed(), r.judged()), (0, 6));
+        // A fault elsewhere still fails the run.
+        let hot = BoardReadings {
+            has_work: false,
+            chip_temp_c: Some(80.0),
+            ..gamma()
+        };
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &hot, None, Some(&fan_ok()));
+        assert!(!r.passed());
+        assert_eq!(r.get(Check::Temperature).status, Status::Fail);
+        assert_eq!(r.get(Check::Hashrate).status, Status::Skip);
+        // A chip short is found without work too.
+        let short = BoardReadings {
+            has_work: false,
+            chips_found: 3,
+            chips_expected: 4,
+            ..gamma()
+        };
+        let r = judge(
+            Asic::Bm1370,
+            &Limits::DEFAULT,
+            &short,
+            None,
+            Some(&fan_ok()),
+        );
+        assert_eq!(r.get(Check::Chips).status, Status::Fail);
+        // With a window the window decides, work at the end or not (the
+        // pool went away after the sampling).
+        let r = judge(
+            Asic::Bm1370,
+            &Limits::DEFAULT,
+            &b,
+            Some(&window(1, 1.0, 0.0)),
+            Some(&fan_ok()),
+        );
+        assert_eq!(r.get(Check::Hashrate).status, Status::Pass);
+        // The BM1397 has no error counter: that skip keeps its own note.
+        let r = judge(Asic::Bm1397, &Limits::DEFAULT, &b, None, Some(&fan_ok()));
+        assert_eq!(r.get(Check::Errors).note, Note::NoCounter);
+        assert_eq!(r.get(Check::Hashrate).note, Note::NoWork);
     }
 
     #[test]
