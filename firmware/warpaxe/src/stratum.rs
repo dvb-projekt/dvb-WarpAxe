@@ -37,12 +37,27 @@ const AGENT_CPU: &str = concat!(
     " (nerdminer-class)"
 );
 
-/// The user agent for `mining.subscribe`.
+/// The firmware name and version (Sv2 `SetupConnection.firmware`, which
+/// carries the board in its own field), and the base of the V1 agent.
 fn agent() -> &'static str {
     if board::devkit() {
         return AGENT_CPU;
     }
     AGENT
+}
+
+/// The user agent for `mining.subscribe`: "warpaxe/0.1.42 (nerdaxe-gaia)",
+/// the board's profile name in brackets as in the Sv2 hardware field, so
+/// a pool can tell the boards apart. Without a settled board (first start
+/// pending, nothing detected) the bare agent; the devkit keeps its own.
+/// A pool that sorts by user agent (WarpPool's hardware classes) sees the
+/// board's marker ("bitaxe", "nerdaxe", "nerdnos" ...) where it has one.
+fn v1_agent() -> String {
+    let p = board::profile();
+    if board::devkit() || board::choice_pending() || p.name == "undetected" {
+        return agent().to_string();
+    }
+    format!("{AGENT} ({})", p.name)
 }
 const BIP320_MASK: u32 = 0x1fff_e000;
 
@@ -662,7 +677,7 @@ fn session(
         let mut hello = String::new();
         for r in [
             configure_request(1, BIP320_MASK),
-            subscribe_request(2, agent()),
+            subscribe_request(2, &v1_agent()),
             authorize_request(3, user, pass),
         ] {
             hello.push_str(&r.to_line());
