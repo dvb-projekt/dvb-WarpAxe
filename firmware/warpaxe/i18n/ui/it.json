@@ -282,7 +282,7 @@
   "hs_banner": "Scegli la tua rete qui sotto, inserisci la password se è nuova e premi Salva. Il miner si riavvia e si connette alla rete, e questo hotspot scompare.",
   "hs_restarting": "Salvato. Il miner si riavvia e si connette a {n}; questo hotspot si chiude. Ricollega il telefono al Wi-Fi di casa.",
   "nav_swarm": "Swarm",
-  "sw_hint": "Gli altri miner della tua rete. Il tuo browser interroga direttamente ciascuno di essi (AxeOS, NerdOS e WarpAxe rispondono tutti); un Avalon viene letto da questo miner tramite l’API cgminer. Questo miner salva solo l’elenco.",
+  "sw_hint": "Gli altri miner della tua rete. Il tuo browser interroga direttamente i dispositivi AxeOS, NerdOS, ForgeOS e WarpAxe. Il browser non può raggiungere un Avalon (API cgminer, porta 4028), quindi è il tuo WarpAxe a leggerlo per te. Il tuo WarpAxe salva solo i loro indirizzi, nessuna misurazione.",
   "sw_eff": "Efficienza",
   "sw_shares": "Share",
   "sw_best": "Miglior diff",

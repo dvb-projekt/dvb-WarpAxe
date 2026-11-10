@@ -282,7 +282,7 @@
   "hs_banner": "在下方选择你的网络，如果是新网络请输入密码，然后点击“保存”。矿机随后会重启并加入该网络，此热点将消失。",
   "hs_restarting": "已保存。矿机正在重启并加入 {n}，此热点将关闭。请把手机重新连回家里的 Wi-Fi。",
   "nav_swarm": "Swarm",
-  "sw_hint": "你网络中的其他矿机。浏览器会直接逐台查询（AxeOS、NerdOS 和 WarpAxe 都会响应）；Avalon 由本机通过 cgminer API 读取。本机只保存列表。",
+  "sw_hint": "你网络中的其他矿机。你的浏览器会直接查询 AxeOS、NerdOS、ForgeOS 和 WarpAxe 设备。浏览器无法访问 Avalon（cgminer API，4028 端口），因此由你的 WarpAxe 代为读取。你的 WarpAxe 只保存它们的地址，不保存任何测量数据。",
   "sw_eff": "能效",
   "sw_shares": "份额",
   "sw_best": "最佳难度",
