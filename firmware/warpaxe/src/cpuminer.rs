@@ -106,6 +106,7 @@ impl CpuJob {
                 nbits: 0x1700_0000,
                 ntime: 0x6ac3_0000,
                 clean_jobs: false,
+                height: 0,
             },
             0,
         );
@@ -684,16 +685,14 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
     });
     config::raise_best_diff(diff as u64);
     config::raise_best_diff_f(diff);
-    if st.network_difficulty > 0.0 && diff >= st.network_difficulty {
-        log::warn!(
-            "cpu miner: BLOCK FOUND at height {} (diff {diff:.0})",
-            st.block_height
-        );
+    if warpaxe_stratum::block::meets_target(&hash, job.job.nbits) {
+        let height = job.job.height;
+        log::warn!("cpu miner: BLOCK FOUND at height {height} (diff {diff:.0})");
         miner::update_state(|s| {
             s.blocks_found += 1;
-            s.last_block = Some((st.block_height, diag::uptime_s()));
+            s.last_block = Some((height, diag::uptime_s()));
         });
-        crate::miner::block_found(st.block_height);
+        crate::miner::block_found(height, &hash, &job.job.prev_hash);
     }
     if diff >= want {
         let age_n = st.jobs_received.saturating_sub(job.seq);
@@ -732,6 +731,7 @@ fn run() {
     loop {
         if last_temp.elapsed() >= Duration::from_secs(1) {
             last_temp = Instant::now();
+            miner::watch_block();
             let temp = die_temp_c();
             board::set_devkit_temp(temp);
             if let Some(t) = temp {

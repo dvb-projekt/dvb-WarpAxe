@@ -323,7 +323,9 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     );
     *CONFIG.lock().unwrap() = Some(cfg);
     *BEST_DIFF.lock().unwrap() = nvs.get_u64(BEST_KEY).ok().flatten().unwrap_or(0);
-    let mut buf = [0u8; 160];
+    // Room for the record with both hashes (about 230 bytes with a
+    // short ticker); 160 held the one without them.
+    let mut buf = [0u8; 384];
     *BLOCKS.lock().unwrap() = nvs
         .get_str(BLOCKS_KEY, &mut buf)
         .ok()
@@ -392,14 +394,27 @@ pub fn raise_best_diff_f(diff: f64) {
 }
 
 /// Blocks found, kept across reboots: how many, and the last one
-/// (height, unix time or 0 without a clock, coin ticker) for the web UI's
-/// banner. One NVS string, written only when a block is found.
+/// (height, unix time or 0 without a clock, coin ticker, its hash and
+/// its parent's as block explorers show them, and what became of it)
+/// for the web UI's banner. One NVS string, written when a block is
+/// found and when its status changes. A record from before v0.1.42 has
+/// no hash and no status.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Blocks {
     pub n: u32,
     pub h: u64,
     pub t: u64,
     pub coin: String,
+    /// The block's hash, hex, as explorers show it.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub hash: String,
+    /// The hash of the block it builds on, the same way.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub prev: String,
+    /// `pending`, `confirmed` or `orphaned`
+    /// (`warpaxe_stratum::block::Status`).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub status: String,
 }
 static BLOCKS: Mutex<Option<Blocks>> = Mutex::new(None);
 const BLOCKS_KEY: &str = "blocks";
@@ -409,19 +424,44 @@ pub fn blocks() -> Blocks {
     BLOCKS.lock().unwrap().clone().unwrap_or_default()
 }
 
-/// Count a found block and store it. From a thread with an internal
-/// stack (the miner loops, like `raise_best_diff`).
-pub fn record_block(height: u64, unix: u64) {
+/// Count a found block and store it with its hash and its parent's
+/// (hex, as explorers show them), pending. From a thread with an
+/// internal stack (the miner loops, like `raise_best_diff`).
+pub fn record_block(height: u64, unix: u64, hash: &str, prev: &str) {
+    let coin = get().coin_ticker;
     let b = {
         let mut g = BLOCKS.lock().unwrap();
         let b = g.get_or_insert_with(Blocks::default);
         b.n += 1;
         b.h = height;
         b.t = unix;
-        b.coin = get().coin_ticker;
+        b.coin = coin;
+        b.hash = hash.into();
+        b.prev = prev.into();
+        b.status = "pending".into();
         b.clone()
     };
-    if let Ok(json) = serde_json::to_string(&b) {
+    store_blocks(&b);
+}
+
+/// The last found block's status changed: stored (one write). `false`
+/// when it already was `status` or there is no block with a hash. From
+/// a thread with an internal stack.
+pub fn set_block_status(status: &str) -> bool {
+    let b = {
+        let mut g = BLOCKS.lock().unwrap();
+        let Some(b) = g.as_mut().filter(|b| !b.hash.is_empty() && b.status != status) else {
+            return false;
+        };
+        b.status = status.into();
+        b.clone()
+    };
+    store_blocks(&b);
+    true
+}
+
+fn store_blocks(b: &Blocks) {
+    if let Ok(json) = serde_json::to_string(b) {
         if let Some(nvs) = NVS.lock().unwrap().as_mut() {
             if let Err(e) = nvs.set_str(BLOCKS_KEY, &json) {
                 log::warn!("config: storing the found block: {e}");

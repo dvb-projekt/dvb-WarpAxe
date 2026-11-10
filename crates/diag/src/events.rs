@@ -300,6 +300,17 @@ pub mod detail {
         )
     }
 
+    /// The pool's next work builds on the block found at this height.
+    pub fn block_confirmed(height: u64) -> Detail {
+        coded("block_confirmed", &[("h", Value::from(height))])
+    }
+
+    /// Work for the next height builds on another block: the one found
+    /// at this height did not make it into the chain.
+    pub fn block_orphaned(height: u64) -> Detail {
+        coded("block_orphaned", &[("h", Value::from(height))])
+    }
+
     /// The main pool failed `fails` times: on the fallback.
     pub fn pool_fallback(fails: u32) -> Detail {
         coded("pool_fallback", &[("n", Value::from(fails))])
@@ -624,6 +635,11 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("mv")
         ),
         "block_found" => format!("block {} found ({})", g("h"), g("coin")),
+        "block_confirmed" => format!("block {} confirmed: the pool's next work builds on it", g("h")),
+        "block_orphaned" => format!(
+            "block {} orphaned: the work for the next height builds on another block",
+            g("h")
+        ),
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
         "pool_back" => "main pool answers again, back from the fallback".into(),
         "pools_out" => "no pool answers, chips off until one does".into(),
@@ -952,6 +968,14 @@ mod tests {
             (detail::chip_silent(3), "chip 3 silent"),
             (detail::block_found(54110, "FIX"), "block 54110 found (FIX)"),
             (
+                detail::block_confirmed(54110),
+                "block 54110 confirmed: the pool's next work builds on it",
+            ),
+            (
+                detail::block_orphaned(54110),
+                "block 54110 orphaned: the work for the next height builds on another block",
+            ),
+            (
                 detail::chain_restart(4, 1150),
                 "all 4 chips silent for 60 s at 1150 mV, chain restarted",
             ),
@@ -1178,6 +1202,9 @@ mod tests {
                 "power",
                 detail::power(&["off", "vout_ov", "iout_oc", "vin_uv", "temp", "temp_warn"]),
             ),
+            ("block", detail::block_confirmed(99_999_999)),
+            ("block", detail::block_orphaned(99_999_999)),
+            ("pool", detail::pools_back(99_999_999)),
             ("chain", detail::chain_restart(12, 1350)),
             ("chain", detail::chip_restart(7, 1210)),
             ("chain", detail::chip_given_up(7)),

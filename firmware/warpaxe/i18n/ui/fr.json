@@ -598,5 +598,10 @@
   "blk_s": "Hauteur {h} · {coin}",
   "blk_total": "blocs : {n}",
   "evk_block": "Bloc",
-  "evd_block_found": "bloc {h} trouvé ({coin})"
+  "evd_block_found": "bloc {h} trouvé ({coin})",
+  "evd_block_confirmed": "bloc {h} confirmé : le travail suivant du pool s’appuie dessus",
+  "evd_block_orphaned": "bloc {h} orphelin : le travail pour la hauteur suivante s’appuie sur un autre bloc",
+  "blk_st_pending": "En attente : attend le prochain travail du pool",
+  "blk_st_confirmed": "Confirmé : le travail suivant du pool s’appuie dessus",
+  "blk_st_orphaned": "Orphelin : le réseau a continué avec un autre bloc"
 }

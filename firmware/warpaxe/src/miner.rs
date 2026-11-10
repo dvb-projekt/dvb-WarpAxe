@@ -13,7 +13,7 @@ use warpaxe_chain::{
     LoneSilence, LoneVerdict, NonceWorth, Phase,
 };
 use warpaxe_stratum::job::hash_difficulty;
-use warpaxe_stratum::{sha256d, Job, WorkGate};
+use warpaxe_stratum::{block, sha256d, Job, WorkGate};
 
 use crate::uart::ChipUart;
 use crate::{board, config, diag, stratum};
@@ -257,13 +257,74 @@ pub fn reg_scan() -> Option<RegScan> {
 }
 
 /// A block: counted for good (the web UI's banner and all-time count)
-/// and in the event log. From the mining threads, whose stacks are
-/// internal (an NVS write).
-pub fn block_found(height: u64) {
-    config::record_block(height, crate::clock::unix_now().unwrap_or(0));
+/// with its hash and its parent's (header byte order here, stored as
+/// explorers show them), and in the event log. From the mining threads,
+/// whose stacks are internal (an NVS write).
+pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) {
+    config::record_block(
+        height,
+        crate::clock::unix_now().unwrap_or(0),
+        &block::hash_hex(hash),
+        &block::hash_hex(prev),
+    );
     crate::events::record(
         "block",
         warpaxe_diag::events::detail::block_found(height, &config::get().coin_ticker),
+    );
+}
+
+/// What the block watch looked at last: the newest work's parent and
+/// height.
+static WATCHED_TIP: Mutex<Option<([u8; 32], u64)>> = Mutex::new(None);
+
+/// What became of the last found block, read from the work the pool
+/// sends (`warpaxe_stratum::block::judge`): confirmed when work builds
+/// on it, orphaned when work for the next height builds on another
+/// block. Once a second from the mining loops, whose stacks are internal
+/// (a change is one NVS write and an event); nothing happens until the
+/// newest work's parent or height changes. Work for another coin (a
+/// pool switch, a fallback on another chain) says nothing.
+pub fn watch_block() {
+    let Some(tip) = stratum::tip() else {
+        return;
+    };
+    {
+        let mut g = WATCHED_TIP.lock().unwrap();
+        if *g == Some(tip) {
+            return;
+        }
+        *g = Some(tip);
+    }
+    let b = config::blocks();
+    let (Some(hash), Some(now)) = (
+        block::hash_from_hex(&b.hash),
+        block::Status::parse(&b.status),
+    ) else {
+        return;
+    };
+    if b.coin != config::get().coin_ticker {
+        return;
+    }
+    let Some(next) = block::judge(&hash, b.h, &tip.0, tip.1) else {
+        return;
+    };
+    if next == now || !config::set_block_status(next.as_str()) {
+        return;
+    }
+    log::warn!(
+        "miner: block {} ({}) is {}: the pool's work for height {} builds on {}",
+        b.h,
+        b.hash,
+        next.as_str(),
+        tip.1,
+        block::hash_hex(&tip.0)
+    );
+    crate::events::record(
+        "block",
+        match next {
+            block::Status::Orphaned => warpaxe_diag::events::detail::block_orphaned(b.h),
+            _ => warpaxe_diag::events::detail::block_confirmed(b.h),
+        },
     );
 }
 
@@ -405,6 +466,8 @@ fn run(mut uart: ChipUart) {
                 s.hashrate_ghs = 0.0;
                 s.hashrate_now_ghs = 0.0;
             });
+            // The pool's work goes on while the chips are off.
+            watch_block();
             std::thread::sleep(Duration::from_secs(1));
             continue;
         }
@@ -528,7 +591,8 @@ fn run(mut uart: ChipUart) {
                             continue;
                         };
                         let header = job.header(f.version, f.nonce);
-                        let diff = hash_difficulty(&sha256d(&header));
+                        let hash = sha256d(&header);
+                        let diff = hash_difficulty(&hash);
                         let hex: String = header.iter().map(|b| format!("{b:02x}")).collect();
                         update(|s| {
                             s.last_found = format!(
@@ -555,17 +619,20 @@ fn run(mut uart: ChipUart) {
                             s.best_session_diff = s.best_session_diff.max(diff as u64);
                         });
                         config::raise_best_diff(diff as u64);
-                        let st_now = stratum::state();
-                        if st_now.network_difficulty > 0.0 && diff >= st_now.network_difficulty {
+                        // A block: the hash at or below the target in
+                        // the header's own nbits, exactly (not the rounded
+                        // network difficulty of whatever job is current).
+                        if block::meets_target(&hash, job.nbits) {
+                            let height = job.height;
                             log::warn!(
-                                "miner: BLOCK FOUND at height {} (diff {diff:.0})",
-                                st_now.block_height
+                                "miner: BLOCK FOUND at height {height} (diff {diff:.0}, hash {})",
+                                block::hash_hex(&hash)
                             );
                             update(|s| {
                                 s.blocks_found += 1;
-                                s.last_block = Some((st_now.block_height, diag::uptime_s()));
+                                s.last_block = Some((height, diag::uptime_s()));
                             });
-                            block_found(st_now.block_height);
+                            block_found(height, &hash, &job.prev_hash);
                         }
                         if diff >= want {
                             // How old the stratum job is at submit time, in
@@ -974,6 +1041,7 @@ fn run(mut uart: ChipUart) {
             // enough, and spares the config copy on every 2 ms pass.
             if lone_at.elapsed() >= Duration::from_secs(1) {
                 lone_at = Instant::now();
+                watch_block();
                 let mut flags = [false; warpaxe_chain::MAX_CHIPS];
                 for (f, c) in flags.iter_mut().zip(chain.chips()) {
                     *f = c.silent;

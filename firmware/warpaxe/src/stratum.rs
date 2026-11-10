@@ -236,6 +236,19 @@ pub fn next_job() -> Option<(Job, u64, u64)> {
     Some((job, *seq, *clean_seq))
 }
 
+/// What the newest work builds on: the previous block's hash (header
+/// byte order) and the height of the block it would be (0 = not
+/// readable). Both from the same notify, so a found block's status is
+/// never judged on a hash from one job and a height from another.
+pub fn tip() -> Option<([u8; 32], u64)> {
+    let g = NOTIFY.lock().unwrap();
+    let (feed, _, _) = g.as_ref()?;
+    Some(match feed {
+        Feed::V1(_, prepared) => (*prepared.prev_hash(), prepared.height()),
+        Feed::V2(t) => (t.prev_hash, t.height()),
+    })
+}
+
 /// Count a notify (and a block change), publish the work with those
 /// numbers. The miner compares the numbers it fetched with the work
 /// against the counters, so the order of the two writes no longer

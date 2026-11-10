@@ -11,6 +11,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod block;
 pub mod coinbase;
 pub mod gate;
 pub mod job;

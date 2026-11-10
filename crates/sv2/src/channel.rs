@@ -76,6 +76,12 @@ pub struct Template {
 }
 
 impl Template {
+    /// The height of the block this template builds (BIP34, from the
+    /// coinbase); 0 = not readable.
+    pub fn height(&self) -> u64 {
+        warpaxe_stratum::coinbase::block_height(&self.coinbase_prefix).unwrap_or(0)
+    }
+
     /// Assemble the coinbase with `extranonce2`, fold the merkle path,
     /// return the job. `None` if the extranonce has the wrong size.
     pub fn build(&self, extranonce2: &[u8]) -> Option<Job> {
@@ -98,6 +104,7 @@ impl Template {
             nbits: self.nbits,
             ntime: self.ntime,
             clean_jobs: self.clean,
+            height: self.height(),
         })
     }
 
@@ -684,6 +691,35 @@ mod tests {
         assert_eq!(j.prev_hash, [0xCD; 32]);
         assert!(j.clean_jobs);
         assert!(t.build(&[0]).is_none());
+        // No BIP34 push in this coinbase: the height is unknown.
+        assert_eq!((t.height(), j.height), (0, 0));
+    }
+
+    #[test]
+    fn the_job_carries_the_height_from_the_coinbase() {
+        // The coinbase start of a WarpPool job (height 968279, BIP34):
+        // version, one input, the null outpoint, the script length and
+        // the height's push at the script's start.
+        let mut prefix = vec![2, 0, 0, 0, 1];
+        prefix.extend([0u8; 32]);
+        prefix.extend([0xff; 4]);
+        prefix.extend([0x23, 0x03, 0x57, 0xc6, 0x0e, b'd', b'v', b'b']);
+        let t = Template {
+            job_id: 6,
+            version: 0x2000_0000,
+            version_mask: BIP320_MASK,
+            merkle_path: Vec::new(),
+            coinbase_prefix: prefix,
+            coinbase_suffix: vec![9, 9],
+            extranonce_prefix: vec![0xAA, 0xBB],
+            extranonce2_size: 2,
+            prev_hash: [0xCD; 32],
+            nbits: 0x1703_0000,
+            ntime: 1234,
+            clean: false,
+        };
+        assert_eq!(t.height(), 968_279);
+        assert_eq!(t.build(&[0, 1]).unwrap().height, 968_279);
     }
 
     #[test]

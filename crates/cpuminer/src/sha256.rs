@@ -425,6 +425,7 @@ mod tests {
             nbits: 0x1a44_b9f2,
             ntime: 0x4dd7_f5c7,
             clean_jobs: false,
+            height: 125_552,
         };
         let header = job.header(1, 0x9546_a142);
         assert_eq!(

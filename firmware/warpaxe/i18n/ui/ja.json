@@ -598,5 +598,10 @@
   "blk_s": "ブロック高 {h} · {coin}",
   "blk_total": "ブロック数：{n}",
   "evk_block": "ブロック",
-  "evd_block_found": "ブロック {h} を発見（{coin}）"
+  "evd_block_found": "ブロック {h} を発見（{coin}）",
+  "evd_block_confirmed": "ブロック {h} 承認：プールの次のジョブがこのブロックに続いています",
+  "evd_block_orphaned": "ブロック {h} 孤立：次の高さのジョブは別のブロックに続いています",
+  "blk_st_pending": "保留中：プールの次のジョブを待っています",
+  "blk_st_confirmed": "承認済み：プールの次のジョブがこのブロックに続いています",
+  "blk_st_orphaned": "孤立：ネットワークは別のブロックに続きました"
 }

@@ -69,6 +69,10 @@ fn coinbase_and_merkle_root_match_python() {
     let en2 = hex::decode(v["extranonce2"].as_str().unwrap()).unwrap();
     let job = Job::build(&session, &notify(), &en2).unwrap();
     let prepared = warpaxe_stratum::Prepared::new(notify()).unwrap();
+    // The job carries the height of the block it builds (BIP34) and the
+    // parent it builds on, both from the one notify.
+    assert_eq!((prepared.height(), job.height), (968_279, 968_279));
+    assert_eq!(prepared.prev_hash(), &job.prev_hash);
     assert_eq!(
         hex::encode(prepared.coinbase(&session, &en2)),
         v["coinbase_hex"].as_str().unwrap()

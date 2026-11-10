@@ -59,6 +59,9 @@ pub struct Job {
     pub ntime: u32,
     /// The notify said to drop older jobs.
     pub clean_jobs: bool,
+    /// The height of the block this job builds (BIP34, from the
+    /// coinbase); 0 = not readable.
+    pub height: u64,
 }
 
 /// Swap the bytes within each 32-bit word: how a stratum `prevhash`
@@ -113,6 +116,7 @@ pub struct Prepared {
     version: u32,
     nbits: u32,
     ntime: u32,
+    height: u64,
 }
 
 impl Prepared {
@@ -126,8 +130,10 @@ impl Prepared {
         // Stratum sends prevhash with every 32-bit word byte-swapped
         // relative to the header; undo that.
         let prev_hash = reverse_endianness_per_word(&hex32(&n.prevhash)?);
+        let coinb1 = hex::decode(&n.coinb1).ok()?;
         Some(Prepared {
-            coinb1: hex::decode(&n.coinb1).ok()?,
+            height: crate::coinbase::block_height(&coinb1).unwrap_or(0),
+            coinb1,
             coinb2: hex::decode(&n.coinb2).ok()?,
             branches,
             prev_hash,
@@ -136,6 +142,17 @@ impl Prepared {
             ntime: hex_u32(&n.ntime)?,
             notify: n,
         })
+    }
+
+    /// The previous block hash in the block header's byte order.
+    pub fn prev_hash(&self) -> &[u8; 32] {
+        &self.prev_hash
+    }
+
+    /// The height of the block the notify builds (BIP34); 0 = not
+    /// readable.
+    pub fn height(&self) -> u64 {
+        self.height
     }
 
     /// The coinbase halves as bytes (`coinb1`, `coinb2`).
@@ -185,6 +202,7 @@ impl Prepared {
             nbits: self.nbits,
             ntime: self.ntime,
             clean_jobs: self.notify.clean_jobs,
+            height: self.height,
         })
     }
 }

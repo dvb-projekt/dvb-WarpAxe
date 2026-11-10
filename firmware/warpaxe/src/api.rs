@@ -213,7 +213,7 @@ pub fn system_info() -> serde_json::Value {
         "stratumLinesTooLong": st.lines_too_long,
         "coinbaseValueTotalSatoshis": st.coinbase_total_sat, "coinbaseValueUserSatoshis": st.coinbase_user_sat,
         "coinbaseOwnAddress": st.coinbase_own_address, "coinbaseBitcoin": st.coinbase_bitcoin, "coinTicker": cfg.coin_ticker,
-        "blockFound": m.blocks_found, "blocksFoundTotal": blocks.n, "lastBlock": (blocks.n > 0).then(|| serde_json::json!({"height": blocks.h, "time": blocks.t, "coin": blocks.coin})), "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "showHashCounters": cfg.show_hash_counters, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
+        "blockFound": m.blocks_found, "blocksFoundTotal": blocks.n, "lastBlock": (blocks.n > 0).then(|| serde_json::json!({"height": blocks.h, "time": blocks.t, "coin": blocks.coin, "hash": (!blocks.hash.is_empty()).then_some(&blocks.hash), "status": (!blocks.status.is_empty()).then_some(&blocks.status)})), "updateAvailable": crate::update::state().available, "updateCheck": cfg.update_check, "timezone": cfg.timezone, "btcPrice": cfg.btc_price, "showHashCounters": cfg.show_hash_counters, "priceCurrency": cfg.price_currency, "displayLanguage": cfg.display_language,
         // The display's choosable parts, as they take effect (the
         // config's empty lists resolved to the board's defaults), and
         // what kind of display the board has, so the web UI shows the
