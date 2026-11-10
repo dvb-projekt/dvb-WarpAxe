@@ -72,7 +72,7 @@ move fast; corrections welcome.
 | Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | no (TLS on or off, checked against the built-in bundle only) | over the API only: a TLS mode with a pasted certificate (`stratumCert`); its entry on the Pool page is commented out in the source | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
 | TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1; a cross-signed copy of one of its roots accepted since v1.1.2 | ESP-IDF's bundle without the eMudhra/emSign roots since v1.8; certificate dates checked (TLS waits up to 15 s for NTP, no connection without a clock) | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 without the last eMudhra root `emSign Root CA - G1` (117 roots left), and certificate dates checked once NTP has set the clock (TLS waits up to 15 s for it in the first five minutes; without a clock Stratum V1 over TLS connects with the dates unchecked, Stratum V2 with "require authentication" waits for the clock) |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
-| Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | yes since v0.1.42: after two failed attempts on each configured pool and a minute (core voltage 0, held in reset, fans at their lowest duty); both pools are probed in turn every 30 s, the chips are set up again when one sends work; `poolsUnavailable` in the API, a notice on the dashboard and the display |
+| Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | yes since v0.1.42: after two failed attempts on each configured pool and a minute (core voltage 0, held in reset, fans at their lowest duty); both pools are probed in turn every 30 s, the chips are set up again when one sends work; `poolsUnavailable` in the API, a notice on the dashboard and the display; not while a self-test runs |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
 | An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
@@ -583,7 +583,9 @@ back at any time with `GET /api/v1/display/frame`.
   `externalRegulator` (`{active, expires_in_s}`, a tuner's heartbeat;
   `{false, 0}` without one, also after every boot),
   `gitHash` (the commit the
-  image was built from), `blockFound` (blocks found since the start),
+  image was built from), `blockFound` (nonces since the start that met
+  their block's target: blocks, except on a chain at minimum difficulty,
+  where every nonce does),
   `blocksFoundTotal` (all time) and `lastBlock` (`height`, `time` as Unix
   time or 0 without a clock, `coin`, and since v0.1.42 `hash` as block
   explorers show it and `status`: `pending`, `confirmed` once work from
@@ -596,7 +598,7 @@ back at any time with `GET /api/v1/display/frame`.
   a height is stored once however many nonces meet its target), both
   kept across restarts, `poolsUnavailable` (no pool answers, since
   v0.1.42; the chips are off for it, `chainStopped`, except on a board
-  without chips and during a first start), and AxeOS's `hashrateMonitor` (per chip the
+  without chips, during a first start and while a self-test runs), and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second

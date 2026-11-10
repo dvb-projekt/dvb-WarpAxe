@@ -361,11 +361,11 @@
   "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui.",
   "ota_aborted": "A última atualização não iniciou: o minerador voltou para esta versão.",
   "ntp_ok": "Hora sincronizada via {s}, última sincronização há {t}.",
-  "ntp_wait": "A hora ainda não foi sincronizada. Até lá, o minerador não se conecta a um pool Stratum V2 com autenticação nem via TLS.",
-  "ntp_off": "O NTP está desligado, então a hora nunca é acertada: Stratum V2 com autenticação e TLS não conseguem se conectar.",
+  "ntp_wait": "A hora ainda não foi sincronizada. Até lá, o minerador não se conecta a um pool Stratum V2 com autenticação, e via TLS não verifica as datas de validade do certificado.",
+  "ntp_off": "O NTP está desligado, então a hora nunca é acertada: Stratum V2 com autenticação não consegue se conectar, e via TLS as datas de validade do certificado não são verificadas.",
   "ntp_skew": "O relógio do minerador difere em {d} do relógio deste computador.",
   "clock_time": "Hora",
-  "ntp_dash_unset": "A hora não está acertada, e a conexão com o pool (TLS ou Stratum V2 com autenticação) está esperando por ela.",
+  "ntp_dash_unset": "A hora não está acertada: um pool Stratum V2 com autenticação está esperando por ela, e via TLS o minerador se conecta sem verificar as datas de validade do certificado.",
   "ntp_dash_skew": "O relógio do minerador está defasado em {d}: os certificados do pool e os horários no gráfico e no log podem estar incorretos.",
   "icore": "Corrente do núcleo",
   "psuWatts": "Fonte de alimentação (W)",
@@ -604,6 +604,6 @@
   "blk_st_pending": "Pendente: aguardando o próximo trabalho do pool",
   "blk_st_confirmed": "Confirmado: o próximo trabalho do pool é construído sobre ele",
   "blk_st_orphaned": "Órfão: a rede continuou com outro bloco",
-  "blk_st_unknown": "Desconhecido: o minerador ficou offline nesse meio-tempo e aqui não dá mais para verificar",
-  "evd_block_unknown": "bloco {h}: estado desconhecido, o minerador ficou offline nesse meio-tempo e não dá mais para verificar"
+  "blk_st_unknown": "Desconhecido: o minerador ficou offline nesse meio-tempo e aqui não é mais possível verificar",
+  "evd_block_unknown": "bloco {h}: status desconhecido, o minerador ficou offline nesse meio-tempo e não é mais possível verificar"
 }

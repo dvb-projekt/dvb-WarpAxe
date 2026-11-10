@@ -683,18 +683,6 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
             job.job.ntime
         );
     });
-    config::raise_best_diff(diff as u64);
-    config::raise_best_diff_f(diff);
-    if warpaxe_stratum::block::meets_target(&hash, job.job.nbits) {
-        let height = job.job.height;
-        let first = crate::miner::block_found(height, &hash, &job.job.prev_hash);
-        miner::update_state(|s| {
-            s.blocks_found += 1;
-            if first {
-                s.last_block = Some((height, diag::uptime_s()));
-            }
-        });
-    }
     if diff >= want {
         let age_n = st.jobs_received.saturating_sub(job.seq);
         stratum::submit(&job.job, job.job.ntime, nonce, 0);
@@ -708,6 +696,20 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
         });
     } else {
         miner::update_state(|s| s.low_diff += 1);
+    }
+    // After the share: these may write to flash (a new best difficulty,
+    // a block's record), and a block's share must not wait for that.
+    config::raise_best_diff(diff as u64);
+    config::raise_best_diff_f(diff);
+    if warpaxe_stratum::block::meets_target(&hash, job.job.nbits) {
+        let height = job.job.height;
+        let first = crate::miner::block_found(height, &hash, &job.job.prev_hash);
+        miner::update_state(|s| {
+            s.blocks_found += 1;
+            if first {
+                s.last_block = Some((height, diag::uptime_s()));
+            }
+        });
     }
 }
 

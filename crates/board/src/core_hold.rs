@@ -33,8 +33,9 @@ pub struct Clock {
     /// on the PLL's grid); 0 while no chain runs.
     pub now_hz: u32,
     /// The clock asked for has no PLL setting: the chips stay at the
-    /// clock they have, and a drop that waits for them waits until
-    /// another clock or voltage is asked for.
+    /// clock they have, and a drop that waits for them waits until a
+    /// clock that can be made is asked for (and reached), or the
+    /// voltage asked for is no longer a drop.
     pub unreachable: bool,
 }
 
@@ -96,8 +97,14 @@ impl CoreHold {
             return Step::Apply;
         }
         self.late_mv = None;
+        if clock.unreachable {
+            // No ramp to time: the limit starts once a clock that can be
+            // made is asked for.
+            self.since_ms = Some(now_ms);
+            return Step::Hold;
+        }
         let since = *self.since_ms.get_or_insert(now_ms);
-        if !clock.unreachable && now_ms.saturating_sub(since) >= MAX_HOLD_MS {
+        if now_ms.saturating_sub(since) >= MAX_HOLD_MS {
             self.since_ms = None;
             self.late_mv = Some(wanted_mv);
             return Step::ApplyLate;
@@ -248,14 +255,28 @@ mod tests {
         assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1100, clock), Step::Hold);
         // A raise still goes.
         assert_eq!(h.decide(10 * MAX_HOLD_MS, 1200, 1250, clock), Step::Apply);
-        // A clock that can be made, reached: the drop goes.
+        // A clock that can be made is asked for after ten minutes of
+        // that: its ramp gets the full 30 s, the drop does not go on
+        // the first pass.
+        let ramping = Clock {
+            wanted_mhz: 450,
+            unreachable: false,
+            ..AT_625
+        };
+        let t = 10 * MAX_HOLD_MS + 100;
+        assert_eq!(h.decide(t, 1200, 1100, ramping), Step::Hold);
+        assert_eq!(
+            h.decide(t + MAX_HOLD_MS - 200, 1200, 1100, ramping),
+            Step::Hold
+        );
+        // Reached: the drop goes.
         let down = Clock {
             wanted_mhz: 450,
             settled_mhz: 450,
             now_hz: 450_000_000,
             unreachable: false,
         };
-        assert_eq!(h.decide(11 * MAX_HOLD_MS, 1200, 1100, down), Step::Apply);
+        assert_eq!(h.decide(t + 3000, 1200, 1100, down), Step::Apply);
     }
 
     #[test]

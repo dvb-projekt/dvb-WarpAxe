@@ -141,6 +141,11 @@ static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 static FANS_FULL: AtomicBool = AtomicBool::new(false);
 /// The board thread runs, so it is the one switching the rail.
 static BOARD_THREAD: AtomicBool = AtomicBool::new(false);
+/// The lowest clock the API takes and a stored config may hold, MHz:
+/// the bring-up ramp starts at 56.25 MHz, and nothing is to be gained
+/// below it.
+pub const MIN_FREQUENCY_MHZ: u32 = 50;
+
 /// No pool answers (`stratum.rs`, `warpaxe_stratum::outage`): the chips
 /// are off until one does. Its own flag, not [`SHUTDOWN`]: `shutdown` in
 /// the API stays the switch a person set, and the two do not undo each
@@ -1241,10 +1246,25 @@ pub fn init_bus(mut i2c0: I2C0) {
     // NerdNOS's fanless 1.4 V chip after its first start (2026-10-08)
     // before the API set 300. Clamped to the profile's default and saved,
     // so the first chain start is already at the board's clock.
-    if profile.abs_max_frequency_mhz > 0 && cfg.frequency > profile.abs_max_frequency_mhz {
+    // The same for a clock the chips cannot be set to at all (below
+    // [`MIN_FREQUENCY_MHZ`], or without a PLL setting): the API refuses
+    // one since v0.1.42, but a config written before may hold it. The
+    // chain would start at the chip's stock clock with that clock still
+    // asked for, and every voltage drop would wait for it for ever.
+    let unsettable = profile.asic_count > 0
+        && profile.default_frequency_mhz >= MIN_FREQUENCY_MHZ
+        && (cfg.frequency < MIN_FREQUENCY_MHZ
+            || cfg
+                .frequency
+                .checked_mul(1_000_000)
+                .and_then(|hz| warpaxe_core::pll::solve(&chip().pll, hz))
+                .is_none());
+    if (profile.abs_max_frequency_mhz > 0 && cfg.frequency > profile.abs_max_frequency_mhz)
+        || unsettable
+    {
         let mut fixed = config::get();
         log::warn!(
-            "board: clock {} MHz is above {}'s ceiling of {} MHz: starting at its default {} MHz",
+            "board: clock {} MHz is not one {} runs at (ceiling {} MHz): starting at its default {} MHz",
             fixed.frequency,
             profile.name,
             profile.abs_max_frequency_mhz,
@@ -2229,11 +2249,21 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
-            // Off for want of a pool: a warm-up still under way is over
-            // (its end would hand the fans to the PID from full duty,
-            // with nothing left to cool); the rail's return starts one.
-            if no_pool() && warmup.take().is_some() {
-                update(|s| s.fan_warmup = false);
+            if no_pool() {
+                // Off for want of a pool, for as long as that takes: the
+                // chain in reset on every board, as `quiesce` leaves it
+                // at boot (the TPS546 boards otherwise keep the line
+                // released with the core gone; the miner's reset pulse
+                // releases it again before the next init).
+                if let Some(pin) = RESET.lock().unwrap().as_ref() {
+                    pin.set(false);
+                }
+                // A warm-up still under way is over (its end would hand
+                // the fans to the PID from full duty, with nothing left
+                // to cool); the rail's return starts one.
+                if warmup.take().is_some() {
+                    update(|s| s.fan_warmup = false);
+                }
             }
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             // The chip power-enable line first (ESP-Miner's order); on a

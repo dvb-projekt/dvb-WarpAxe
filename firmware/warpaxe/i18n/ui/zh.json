@@ -361,11 +361,11 @@
   "usb_subnet_s": "同一台电脑上连接第二台 WarpAxe 时，此处需填写不同的数字。",
   "ota_aborted": "上次更新未能启动：矿机已回退到此版本。",
   "ntp_ok": "已通过 {s} 同步时间，最近一次同步：{t} 前。",
-  "ntp_wait": "时间尚未同步。在同步之前，矿机不会连接需要认证的 Stratum V2 矿池，也不会通过 TLS 连接。",
-  "ntp_off": "NTP 已关闭，因此无法设置时间：需要认证的 Stratum V2 和 TLS 无法连接。",
+  "ntp_wait": "时间尚未同步。在同步之前，矿机不会连接需要认证的 Stratum V2 矿池，通过 TLS 连接时也不检查证书有效期。",
+  "ntp_off": "NTP 已关闭，因此无法设置时间：需要认证的 Stratum V2 无法连接，TLS 连接则不检查证书有效期。",
   "ntp_skew": "矿机的时钟与这台电脑相差 {d}。",
   "clock_time": "时间",
-  "ntp_dash_unset": "时间尚未设置，矿池连接（TLS 或需要认证的 Stratum V2）正在等待时间设置。",
+  "ntp_dash_unset": "时间尚未设置：需要认证的 Stratum V2 矿池会等待时间设置，TLS 则在不检查证书有效期的情况下连接。",
   "ntp_dash_skew": "矿机时钟偏差 {d}：矿池证书以及图表和日志中的时间可能不正确。",
   "icore": "核心电流",
   "psuWatts": "电源（W）",
@@ -604,6 +604,6 @@
   "blk_st_pending": "待确认：等待矿池的下一个任务",
   "blk_st_confirmed": "已确认：矿池的下一个任务基于此区块",
   "blk_st_orphaned": "孤块：网络在另一个区块上继续延伸",
-  "blk_st_unknown": "未知：矿机期间曾离线，此处已无法再核实",
-  "evd_block_unknown": "区块 {h}：状态未知，矿机期间曾离线，已无法再核实"
+  "blk_st_unknown": "未知：矿机中途曾离线，此处已无法核实",
+  "evd_block_unknown": "区块 {h}：状态未知，矿机中途曾离线，已无法核实"
 }

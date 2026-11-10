@@ -191,7 +191,12 @@ fn readings(cfg: &config::Config) -> BoardReadings {
     BoardReadings {
         chips_found: m.chips,
         chips_expected: board::chips_expected(),
-        hashing: m.phase == "READY" && !board::chain_stopped(),
+        // Ready, and with work to hash: without a pool the chain is
+        // up but the counters stand still, which is no fault of the
+        // board's (the hash checks are skipped with "not hashing").
+        hashing: m.phase == "READY"
+            && !board::chain_stopped()
+            && crate::stratum::tip().is_some(),
         has_regulator: b.has_vr,
         core_set_mv: cfg.core_voltage,
         core_actual_mv: b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)),
@@ -237,9 +242,11 @@ fn perform(cfg: &config::Config) -> Outcome {
     // (`board::no_pool` steps aside while one runs): the rail, the
     // warm-up and the chain's bring-up take some seconds, and a reading
     // before that would call the core voltage wrong.
-    if crate::stratum::state().pools_unavailable && !board::overheat() && !board::shutdown() {
+    if profile.asic_count > 0 && crate::stratum::state().pools_unavailable {
         let end = Instant::now() + POWER_UP_WAIT;
         while Instant::now() < end
+            && !board::overheat()
+            && !board::shutdown()
             && (board::chain_stopped() || miner::state().phase != "READY")
         {
             if !wait(Duration::from_millis(500)) {

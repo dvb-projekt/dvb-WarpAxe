@@ -130,8 +130,6 @@ pub struct MinerState {
     pub last_submit_age: String,
     /// Best nonce difficulty since boot (AxeOS `bestSessionDiff`).
     pub best_session_diff: u64,
-    /// Blocks found since boot (a nonce at or above the network
-    /// difficulty), and the last one's height and uptime second.
     /// The chips' own hash counters (AxeOS `hashrateMonitor`): one entry
     /// per chip.
     pub hashrate_monitor: Vec<AsicMonitor>,
@@ -144,7 +142,13 @@ pub struct MinerState {
     pub error_percent: Option<f32>,
     /// The same over the last full minute: what a controller acts on.
     pub error_percent_1m: Option<f32>,
+    /// Nonces since boot whose header hash met the target of its own
+    /// nbits (AxeOS `blockFound`). On a chain at minimum difficulty
+    /// that is every nonce; the stored count and `last_block` move once
+    /// per block (`config::record_block`).
     pub blocks_found: u32,
+    /// The last recorded block's height and the uptime second it was
+    /// found at.
     pub last_block: Option<(u64, u64)>,
 }
 
@@ -309,7 +313,10 @@ static WATCHED_TIP: Mutex<Option<([u8; 32], u64)>> = Mutex::new(None);
 /// sends (`warpaxe_stratum::block::judge`): confirmed when work builds
 /// on it, orphaned when work for the next height builds on another
 /// block, unknown when it is still pending and the work is already two
-/// heights on. Once a second from the mining loops, whose stacks are internal
+/// heights on. The newest work is looked at once a second, so on a
+/// chain with blocks less than a second apart the work for the next
+/// height can go by unseen and the block ends as unknown. From the
+/// mining loops, whose stacks are internal
 /// (a change is one NVS write and an event); nothing happens until the
 /// newest work's parent or height changes. Work for another coin (a
 /// pool switch, a fallback on another chain) says nothing.
@@ -667,6 +674,24 @@ fn run(mut uart: ChipUart) {
                             s.last_nonce_uptime_s = diag::uptime_s();
                             s.best_session_diff = s.best_session_diff.max(diff as u64);
                         });
+                        // The share first: what follows may write to flash
+                        // (a new best difficulty, a block's record), and a
+                        // block's share must not wait for that.
+                        if diff >= want {
+                            // How old the stratum job is at submit time, in
+                            // notifies and seconds: a pool keeps only a few
+                            // recent jobs, older ones come back "stale".
+                            let age_n = stratum::state().jobs_received.saturating_sub(*job_seq);
+                            let age_s = diag::uptime_s().saturating_sub(*job_t);
+                            stratum::submit(job, f.ntime, f.nonce, f.version ^ job.version);
+                            update(|s| {
+                                s.shares_sent += 1;
+                                s.submit_age_hist[(age_n as usize).min(3)] += 1;
+                                s.last_submit_age = format!("{age_n} notifies, {age_s} s");
+                            });
+                        } else {
+                            update(|s| s.low_diff += 1);
+                        }
                         config::raise_best_diff(diff as u64);
                         // A block: the hash at or below the target in
                         // the header's own nbits, exactly (not the rounded
@@ -682,21 +707,6 @@ fn run(mut uart: ChipUart) {
                                     s.last_block = Some((height, diag::uptime_s()));
                                 }
                             });
-                        }
-                        if diff >= want {
-                            // How old the stratum job is at submit time, in
-                            // notifies and seconds: a pool keeps only a few
-                            // recent jobs, older ones come back "stale".
-                            let age_n = stratum::state().jobs_received.saturating_sub(*job_seq);
-                            let age_s = diag::uptime_s().saturating_sub(*job_t);
-                            stratum::submit(job, f.ntime, f.nonce, f.version ^ job.version);
-                            update(|s| {
-                                s.shares_sent += 1;
-                                s.submit_age_hist[(age_n as usize).min(3)] += 1;
-                                s.last_submit_age = format!("{age_n} notifies, {age_s} s");
-                            });
-                        } else {
-                            update(|s| s.low_diff += 1);
                         }
                     }
                     Event::Ready => {
@@ -811,10 +821,13 @@ fn run(mut uart: ChipUart) {
                         log::info!("miner: clock {} MHz", hz / 1_000_000)
                     }
                     Event::FrequencyUnreachable { hz } => {
-                        // The chain runs at the chip's stock clock
-                        // instead: the one asked for never arrives.
-                        log::warn!("miner: clock {hz} Hz unreachable");
-                        clock_reachable = false;
+                        // The chain starts at the chip's stock clock
+                        // instead. Only a stored clock can get here
+                        // (the API refuses one without a PLL setting,
+                        // the boot replaces one in the config), and it
+                        // is not a request under way: the voltage is
+                        // not kept waiting for it.
+                        log::warn!("miner: clock {hz} Hz unreachable")
                     }
                     _ => {}
                 }
