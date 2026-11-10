@@ -1637,6 +1637,17 @@ fn scrubber(cfg: &config::Config) -> warpaxe_diag::scrub::Scrubber {
     if let Some((_, pass)) = net::hotspot() {
         s = s.secret(&pass);
     }
+    // A worker's address alone, as the coinbase outputs show it (also
+    // inside a CashAddr "bitcoincash:" form): masked like the worker.
+    let users = [cfg.stratum_user.clone(), cfg.fallback_user.clone()]
+        .into_iter()
+        .chain(config::pools().into_iter().map(|p| p.user));
+    for u in users {
+        let addr = u.split_once('.').map_or(u.as_str(), |(a, _)| a);
+        if addr.chars().count() > 12 {
+            s = s.replace(addr, &mask_worker(addr));
+        }
+    }
     s
 }
 
@@ -1704,8 +1715,9 @@ fn diagnostics(
                        mut v: serde_json::Value|
      -> Result<(), EspIOError> {
         scrub.apply_json(&mut v);
+        let leaked = scrub.leaks_json(&v);
         let text = serde_json::to_string_pretty(&v).unwrap_or_else(|_| "null".into());
-        let text = if scrub.leaks(&text) {
+        let text = if leaked {
             log::error!(
                 "diagnostics: section {key} still carried a secret after scrubbing; left out"
             );

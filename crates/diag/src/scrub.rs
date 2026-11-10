@@ -126,11 +126,38 @@ impl Scrubber {
             .iter()
             .any(|(from, to)| to == MASK && text.contains(from.as_str()))
     }
+
+    /// [`Self::leaks`] over the string values of a JSON document only,
+    /// the same values [`Self::apply_json`] scrubs. Numbers and keys are
+    /// the firmware's own: a pool password that is a number ("1000", a
+    /// difficulty hint) must not drop a whole section because a reading
+    /// or a setting happens to have the same digits.
+    pub fn leaks_json(&self, v: &serde_json::Value) -> bool {
+        match v {
+            serde_json::Value::String(s) => self.leaks(s),
+            serde_json::Value::Array(a) => a.iter().any(|x| self.leaks_json(x)),
+            serde_json::Value::Object(o) => o.values().any(|x| self.leaks_json(x)),
+            _ => false,
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_numeric_password_does_not_count_numbers_as_a_leak() {
+        let s = Scrubber::new().secret("1000");
+        let mut v =
+            serde_json::json!({"difficulty": 1000, "power": 10000.5, "log": ["difficulty 10000"]});
+        s.apply_json(&mut v);
+        assert!(!s.leaks_json(&v));
+        assert_eq!(v["log"][0], "difficulty ***0");
+        assert_eq!(v["difficulty"], 1000);
+        // A string that still carries it after scrubbing is a leak.
+        assert!(s.leaks_json(&serde_json::json!({"x": "pass 1000"})));
+    }
 
     #[test]
     fn a_worker_keeps_its_name_and_loses_the_middle_of_its_address() {
