@@ -13,7 +13,7 @@
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
   <img alt="Tests" src="https://img.shields.io/badge/host%20tests-556%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.40-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
 
 ---
@@ -47,7 +47,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.40).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.41).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -59,19 +59,20 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-11-04, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-11-10, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.4, [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
-(NerdOS) v1.1.1 and [ForgeOS](https://github.com/wantclue/forge-os) v1.7
+(NerdOS) v1.1.2 and [ForgeOS](https://github.com/wantclue/forge-os) v1.8
 (the BitForge Nano's firmware, built on ESP-Miner), from their source. All three
 move fast; corrections welcome.
 
 | | AxeOS | NerdOS | ForgeOS | WarpAxe |
 |---|---|---|---|---|
-| Stratum V2 (Noise, authority key, "require authentication") | yes | yes | no | yes |
+| Stratum V2 (Noise, authority key, "require authentication") | yes | yes | yes (since v1.8; standard or extended channel, not in dual-pool mode) | yes |
 | Stratum V1 over TLS, certificate checked | yes | yes | yes (on in the factory settings) | yes |
-| Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | not checked | not checked | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
-| TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1 | ESP-IDF's built-in lists, which still carry `emSign ECC Root CA - G3` | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 also without the last eMudhra root `emSign Root CA - G1`, and certificate dates checked once NTP has set the clock |
+| Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | no (TLS on or off, checked against the built-in bundle only) | over the API only: a TLS mode with a pasted certificate (`stratumCert`); its entry on the Pool page is commented out in the source | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
+| TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1; a cross-signed copy of one of its roots accepted since v1.1.2 | ESP-IDF's bundle without the eMudhra/emSign roots since v1.8; certificate dates checked (TLS waits up to 15 s for NTP, no connection without a clock) | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 without the last eMudhra root `emSign Root CA - G1` (117 roots left), and certificate dates checked once NTP has set the clock (TLS waits up to 15 s for it in the first five minutes; without a clock Stratum V1 over TLS connects with the dates unchecked, Stratum V2 with "require authentication" waits for the clock) |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
+| Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | no |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
 | Update image signature-checked before flashing | no | no | no | **yes** (BIP-340, key built into the firmware) |
 | An update that does not start falls back to the previous version | no (the bootloader's rollback option is off) | no | no | **yes**, from the bootloader of v0.1.22 on (one reinstall over USB writes it) |
@@ -80,8 +81,8 @@ move fast; corrections welcome.
 | Settings on an update or reinstall | kept on online update; web flasher can keep them | kept with the update's "keep settings" option | kept on online update; reinstalling the factory image resets them | kept on online update and web-flasher reinstall; **taken over from AxeOS, NerdOS and ForgeOS** when switching (Wi-Fi, pools including AxeOS 2.15's saved list, hostname, clock and voltage, fans and temperature limits, display) |
 | Pool changes without a restart | no (the page asks for a restart; instant switching is on ESP-Miner's main branch) | yes | no (the page asks for a restart) | yes |
 | Saved pools (more than main + fallback) | yes (up to 8; main and fallback picked from the list, then a restart) | no (main + fallback) | no (main + fallback) | yes (up to 8, each with its coin; one click makes one the main pool, no restart; AxeOS 2.15's list taken over) |
-| Who a found block pays (coinbase outputs, your share) | yes (all outputs, your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (all outputs, your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account) |
-| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | nothing in the web UI, the API or on the display | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display |
+| Who a found block pays (coinbase outputs, your share) | yes, partly (up to six outputs and the total; your share; Bitcoin addresses only, matched as text, unit BTC) | opt-in (your share and a fee check; Bitcoin addresses only, unit BTC) | yes, partly (up to six outputs and the total; your share not marked; Bitcoin addresses only, unit sats) | yes (up to 32 outputs, yours first, the rest summed; your share; the address decoded for any SHA-256 coin, CashAddr included, unit the pool's coin; "paid by the pool" for a pool account; job lines up to 512 KiB since v0.1.41) |
+| A found block | a banner ("Today is your lucky day!") with the count until dismissed, for every browser (the dismiss is stored on the miner); `blockFound` since the start and a `showNewBlock` flag; nothing kept across a restart; "!!! BLOCK FOUND !!!" on the display | nothing in the web UI (an opt-in Discord/webhook alert); `foundBlocks` since the start and `totalFoundBlocks` all time in the API, the total kept in NVS, no height or time; a full-screen image on the display until a key press | since v1.8 a banner with the block's status (waiting, built on by the pool, or left behind by the chain), time and a mempool.space link, until cleared in the settings; `blocksFound`, `lastBlockHash`, `lastBlockStatus`, `lastBlockTime` in the API, kept in NVS | a banner with height, coin and time (gold confetti) until dismissed in that browser, also after a restart; the all-time count in the best-difficulty tile; `blockFound` since the start, `blocksFoundTotal` and `lastBlock` (height, time, coin) in the API, kept in NVS; an entry in the event log; a warp jump on the display; no status of whether the chain built on it |
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
@@ -98,10 +99,10 @@ move fast; corrections welcome.
 | Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | no (DHCP hostname only) | yes (from v0.1.28) |
 | Web UI over the USB cable | not found | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
 | Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | no | yes |
-| Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | no NTP; set from the pool's job time | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
+| Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP (`pool.ntp.org`, fixed) since v1.8, also set hourly from the pool's job time; no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | no (a fixed 60 W) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | no display; two status LEDs (the share blink can be switched off) | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
-| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | not found | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
+| Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | English | 8 |
 | Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
 | Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 6 run, 7 more with a profile (see below) |
@@ -110,8 +111,9 @@ What the stock firmware offers in addition: AxeOS and NerdOS support far more
 boards and have years of use by a large community; AxeOS has a scoreboard, themes,
 the BAP accessory port and Wi-Fi setup over Bluetooth; NerdOS has two-factor
 login for updates, dual-pool mining, InfluxDB/Grafana export and alerts; ForgeOS
-has dual-pool mining, Wi-Fi and pool setup over Bluetooth, and share and
-self-test signals on the Nano's two LEDs. WarpAxe is early; if you need any of
+has dual-pool mining, Wi-Fi and pool setup over Bluetooth, the status of a found
+block, and share and self-test signals on the Nano's two LEDs; AxeOS and ForgeOS
+switch the chips off while no pool answers. WarpAxe is early; if you need any of
 that, stay with the stock firmware.
 
 ## With WarpTune
@@ -736,7 +738,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
-| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV, just below ForgeOS's Power preset: 2.53 TH/s at 37–38 A); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
+| BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV: 2.53 TH/s at 37–38 A, just below ForgeOS v1.7's Power preset of 636 MHz / 1160 mV (610 MHz / 1200 mV since v1.8)); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers); free clock values with `?oc` as on the Gamma |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
