@@ -199,6 +199,11 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
   <em>Pool — the connection (protocol, Noise/TLS, fallback), shares with reject reasons, and who a found block pays: your share, the coinbase value and each output. Below, the saved pools (up to eight, one click makes one the main pool), then main and fallback pool with the coin the pool pays in, each Stratum V1 with optional TLS or Stratum V2 with the pool's authority key.</em>
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/web-pool-pin.png" alt="Pool page: a pool on a self-signed certificate, with the fingerprint of its key and a Trust this pool button" width="760"><br>
+  <em>A TLS pool on a self-signed certificate, such as WarpPool on Umbrel (since v0.1.41) — the miner shows the SHA-256 fingerprint of the pool's key and a "Trust this pool" button; once you trust it, the miner connects with that key only and checks it on every connection.</em>
+</p>
+
 ### Device display
 
 <p align="center">
