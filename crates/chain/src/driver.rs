@@ -366,6 +366,10 @@ pub struct Chain {
     stats: Stats,
     frequency_hz: u32,
     target_hz: u32,
+    /// The clock the last finished ramp was asked for; 0 before the
+    /// first. A request that arrives while the driver waits for the
+    /// baud switch moves `target_hz` away from it.
+    ramped_to_hz: u32,
     difficulty: u32,
     first_job_us: Option<u64>,
     last_job_us: Option<u64>,
@@ -400,6 +404,7 @@ impl Chain {
             stats: Stats::default(),
             frequency_hz: 0,
             target_hz: config.frequency_hz,
+            ramped_to_hz: 0,
             difficulty: config.difficulty,
             first_job_us: None,
             last_job_us: None,
@@ -425,6 +430,7 @@ impl Chain {
         self.decoder.set_frame_len(self.profile.response_len);
         self.frequency_hz = 0;
         self.target_hz = self.config.frequency_hz;
+        self.ramped_to_hz = 0;
         self.difficulty = self.config.difficulty;
         self.first_job_us = None;
         self.last_job_us = None;
@@ -785,7 +791,17 @@ impl Chain {
                     }
                     uart.set_baud(self.profile.fast_uart.1)
                         .map_err(Error::Uart)?;
-                    self.mode = Mode::Ready;
+                    // A clock asked for during the settle time: the
+                    // bring-up ramp is over, so it gets one of its own
+                    // (Ready alone would leave the chips at the old one).
+                    self.mode = if self.target_hz != self.ramped_to_hz {
+                        Mode::Ramp {
+                            current_hz: self.ramped_to_hz,
+                            next_at: now_us,
+                        }
+                    } else {
+                        Mode::Ready
+                    };
                     self.init_done = true;
                     on_event(Event::Ready);
                 }
@@ -891,6 +907,7 @@ impl Chain {
         now_us: u64,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
+        self.ramped_to_hz = self.target_hz;
         let hcn = match self.profile.hcn {
             Hcn::Computed { errata } => Some(regs::hash_counting_number(
                 self.frequency_hz,

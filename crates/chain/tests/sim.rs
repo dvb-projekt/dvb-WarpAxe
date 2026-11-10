@@ -1410,6 +1410,48 @@ mod core_hold {
         assert_eq!(r.b.drv.frequency_hz(), 425_000_000);
     }
 
+    /// A chip whose bring-up ends with the baud switch (BM1373, BM1397):
+    /// a clock asked for while the driver waits out the settle time.
+    fn request_in_the_baud_settle(profile: &'static ChipProfile, from_hz: u32, to_hz: u32) {
+        let config = Config {
+            frequency_hz: from_hz,
+            ..Config::for_profile(profile)
+        };
+        let mut b = Bench::with(profile, 2, config);
+        // The bring-up ramp is over, the chain not ready yet.
+        while !b.has(|e| matches!(e, Event::FrequencyApplied { .. })) {
+            b.run_ms(1);
+            assert!(b.now < 60_000_000, "{}: no ramp end", profile.name);
+        }
+        assert!(
+            !b.drv.accepting_work(),
+            "{}: in the settle time",
+            profile.name
+        );
+        assert_eq!(b.drv.frequency_hz(), from_hz);
+        b.drv.set_frequency(to_hz).expect("a PLL setting");
+        b.run_until_ready(5_000);
+        // Ready, and not settled: the request gets its ramp.
+        assert!(!b.drv.clock_settled(), "{}", profile.name);
+        for _ in 0..20_000 {
+            b.run_ms(1);
+            if b.drv.clock_settled() {
+                break;
+            }
+        }
+        assert!(b.drv.clock_settled(), "{}", profile.name);
+        assert_eq!(b.drv.frequency_hz(), to_hz, "{}", profile.name);
+        for c in b.uart.sim.chips() {
+            assert_eq!(c.frequency_hz(), u64::from(to_hz), "{}", profile.name);
+        }
+    }
+
+    #[test]
+    fn a_clock_asked_for_during_the_baud_settle_is_ramped_to_afterwards() {
+        request_in_the_baud_settle(&BM1373, 425_000_000, 325_000_000);
+        request_in_the_baud_settle(&BM1397, 425_000_000, 300_000_000);
+    }
+
     #[test]
     fn a_chain_that_stops_answering_its_ramp_does_not_hold_the_voltage_for_ever() {
         let mut r = Rig::up(2);
@@ -1529,7 +1571,11 @@ mod pool_outage {
                     }
                 }
             } else if t >= self.next_attempt_s {
-                if self.has_fallback && !self.on_fallback && self.fails >= 3 {
+                if self.has_fallback
+                    && !self.on_fallback
+                    && self.fails >= 3
+                    && !self.watch.unavailable()
+                {
                     self.on_fallback = true;
                     self.fails = 0;
                 }
@@ -1559,9 +1605,10 @@ mod pool_outage {
                 self.next_attempt_s = t + pause.max(1);
                 self.backoff_s = 3;
             } else {
-                if fallback && self.watch.retry_main() {
-                    self.on_fallback = false;
+                if self.has_fallback && self.watch.alternate() {
+                    self.on_fallback = !self.on_fallback;
                     self.fails = 0;
+                    self.backoff_s = self.backoff_s.min(12);
                 }
                 self.next_attempt_s = t + self.backoff_s;
                 self.backoff_s = (self.backoff_s * 2).min(60);
@@ -1645,6 +1692,27 @@ mod pool_outage {
         assert!(r.chips_on());
         assert_eq!(r.session.map(|s| s.1), Some(false), "on the main pool");
         assert_eq!(r.chain_starts, 2);
+    }
+
+    #[test]
+    fn a_hiccup_of_the_fallback_while_the_main_pool_is_down_switches_nothing() {
+        for blip in [5, 10, 20, 40] {
+            let mut r = Rig::new(true);
+            r.run(0, 100, true, true);
+            r.run(100, 1000, false, true);
+            assert_eq!(r.session.map(|s| s.1), Some(true));
+            // The fallback gone for `blip` seconds, the main pool still
+            // down: both are tried in turn, the fallback is found back.
+            r.run(1000, 1000 + blip, false, false);
+            r.run(1000 + blip, 1400, false, true);
+            assert!(r.changes.is_empty(), "{blip} s: {:?}", r.changes);
+            assert_eq!(r.chain_starts, 1, "{blip} s");
+            assert_eq!(
+                r.session.map(|s| s.1),
+                Some(true),
+                "{blip} s: on the fallback"
+            );
+        }
     }
 
     #[test]

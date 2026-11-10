@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-593%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-595%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -349,6 +349,8 @@ back at any time with `GET /api/v1/display/frame`.
   Noise record, 65,519 bytes (8 KB until v0.1.40).
 - **Fallback pool**: after three failed attempts on the main pool; a probe
   every five minutes brings it back as soon as the main pool answers.
+  Since v0.1.42 a fallback that fails twice in a row no longer keeps the
+  miner to itself: both pools are tried in turn until one sends work.
 - **No pool, no hashing** (since v0.1.42): when neither the main pool nor
   (where one is set) the fallback pool answers — at least two failed
   attempts on each and a minute since the first, so a Wi-Fi or pool
@@ -362,7 +364,8 @@ back at any time with `GET /api/v1/display/frame`.
   `poolsUnavailable` in `/api/system/info` (AxeOS's and ForgeOS's name)
   says so, with `chainStopped` and `chainPhase` `NOPOOL`; the dashboard
   and the display show it, and the event log has an entry for going off
-  and one for coming back (at most one pair in ten minutes). No pool or
+  and one for coming back (at most one pair in ten minutes, and the
+  return from an outage of ten minutes or more in any case). No pool or
   no worker name configured counts the same. Nothing is written to flash
   per attempt. Not during the first start of a newly chosen board, whose
   chips have to answer once for the choice to be confirmed.

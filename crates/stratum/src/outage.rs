@@ -100,13 +100,16 @@ impl PoolWatch {
         None
     }
 
-    /// On the fallback pool, which has now failed [`MIN_FAILS`] times in
-    /// a row while the main pool has not been tried since work last
-    /// came: time to try the main pool again. Without it an outage that
-    /// begins on the fallback is never one, since the main pool's
-    /// failures are from before the fallback's work.
-    pub const fn retry_main(&self) -> bool {
-        self.fallback_fails >= MIN_FAILS && self.main_fails < MIN_FAILS
+    /// The fallback pool has failed [`MIN_FAILS`] times in a row and no
+    /// outage is called yet: from here the connect loop tries the two
+    /// pools in turn after every failure, with short pauses, until one
+    /// sends work or the outage is called. Without it an outage that
+    /// begins on the fallback is never one (the main pool's failures are
+    /// from before the fallback's work, and it was never tried again);
+    /// and with the main pool tried alone from here, a fallback that was
+    /// back after seconds would not be found before the minute is over.
+    pub const fn alternate(&self) -> bool {
+        self.fallback_fails >= MIN_FAILS && self.out_since.is_none()
     }
 
     /// A pool sent work: it answers.
@@ -200,17 +203,25 @@ mod tests {
         assert_eq!(w.answered(5000), None);
         // Now the fallback stops too.
         assert_eq!(w.failed(5010, true, true), None);
-        assert!(!w.retry_main());
+        assert!(!w.alternate());
         assert_eq!(w.failed(5013, true, true), None);
-        assert!(w.retry_main(), "the main pool's turn");
+        assert!(w.alternate(), "both pools in turn from here");
         // However long the fallback fails on: no outage on its word
         // alone.
         assert_eq!(w.tick(9000, true), None);
-        // The main pool, tried again, fails as well: that is an outage.
+        // The main pool, tried again, fails as well: that is an outage,
+        // and the outage's own probing takes over.
         assert_eq!(w.failed(9001, false, true), None);
-        assert!(w.retry_main());
+        assert!(w.alternate());
         assert_eq!(w.failed(9004, false, true), Some(Change::Unavailable));
-        assert!(!w.retry_main());
+        assert!(!w.alternate());
+        // Work from either ends the turn-taking.
+        let mut w = PoolWatch::new();
+        w.failed(0, true, true);
+        w.failed(3, true, true);
+        assert!(w.alternate());
+        w.answered(10);
+        assert!(!w.alternate());
     }
 
     #[test]

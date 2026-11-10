@@ -428,7 +428,7 @@ fn run() {
             cfg.use_fallback && !cfg.fallback_url.is_empty() && !cfg.fallback_user.is_empty();
         if !fallback_ok {
             on_fallback = false;
-        } else if !on_fallback && fails >= FAILS_BEFORE_FALLBACK {
+        } else if !on_fallback && fails >= FAILS_BEFORE_FALLBACK && !pools_out() {
             log::warn!("stratum: main pool failed {fails} times, switching to the fallback");
             crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(fails));
             on_fallback = true;
@@ -539,14 +539,16 @@ fn run() {
                 }
                 backoff = Duration::from_secs(3);
             } else {
-                // The fallback has stopped answering as well: the main
-                // pool's turn again, so that both are known to be out
-                // (or the main pool is found back) and not the fallback
-                // alone retried for ever.
-                if on_fallback && WATCH.lock().unwrap().retry_main() {
-                    log::warn!("stratum: the fallback pool fails too, trying the main pool again");
-                    on_fallback = false;
+                // The fallback has stopped answering as well: both
+                // pools in turn after every failure, with short pauses,
+                // so that within the minute either is found back or both
+                // are known to be out (the fallback alone used to be
+                // retried for ever). `fails` stays at 0 meanwhile: no
+                // switch at the loop's top, no fallback event per turn.
+                if fallback_ok && WATCH.lock().unwrap().alternate() {
+                    on_fallback = !on_fallback;
                     fails = 0;
+                    backoff = backoff.min(Duration::from_secs(12));
                 }
                 pause_unless_reconnect(backoff, fallback_ok);
                 backoff = (backoff * 2).min(Duration::from_secs(60));

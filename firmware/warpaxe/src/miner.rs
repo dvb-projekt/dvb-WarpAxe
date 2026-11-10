@@ -476,6 +476,10 @@ fn run(mut uart: ChipUart) {
         }
         let cfg = config::get();
         let start_mhz = capped_mhz(cfg.frequency);
+        // Before the reset pulse (up to 350 ms): a clock asked for from
+        // here on differs from the one the chain starts with and goes to
+        // it on the loop's first pass, instead of being overwritten.
+        WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
         // The chips filter at the profile's default ticket mask (256 on a
         // BM1370) regardless of the pool difficulty: enough nonces for a
         // steady hashrate estimate, the pool threshold is applied on the
@@ -553,7 +557,6 @@ fn run(mut uart: ChipUart) {
         let mut applied_mhz = start_mhz;
         // The clock asked for last has a PLL setting.
         let mut clock_reachable = true;
-        WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
         let mut buckets: std::collections::VecDeque<(f64, f64)> = std::collections::VecDeque::new();

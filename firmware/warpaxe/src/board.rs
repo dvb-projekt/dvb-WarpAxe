@@ -2319,7 +2319,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 Step::Apply => {
                     if core_held_logged {
                         core_held_logged = false;
-                        log::info!("board: the clock is down, core {want} mV goes now");
+                        if POWERED.load(Ordering::Relaxed) {
+                            log::info!("board: the clock is down, core {want} mV goes now");
+                        }
                     }
                     false
                 }
