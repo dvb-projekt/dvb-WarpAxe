@@ -416,7 +416,8 @@ back at any time with `GET /api/v1/display/frame`.
   unknown, never cool: fans at full, and the lost-sensor stop after a
   minute; a chip that is already over the line stops at once whatever
   the other diode says. A diode that has never read since boot is left
-  out, with a line in the log. `temp` is the hotter chip, `temp2` the
+  out after a minute, with a line in the log and as the board's notice
+  (`boardError`). `temp` is the hotter chip, `temp2` the
   second chip's own (AxeOS's field) and `asicTemps` both. The Gamma
   Hex's second diode is not taken for a chip.
 - Never a core voltage below the regulator's clean range: the TPS546
@@ -597,6 +598,10 @@ back at any time with `GET /api/v1/display/frame`.
   on its own: `["chain_silent", "chip_silent", "domain_latch"]`) and
   `externalRegulator` (`{active, expires_in_s}`, a tuner's heartbeat;
   `{false, 0}` without one, also after every boot),
+  on the boards with a diode per chip (Naja Duo, Gamma Turbo; since
+  v0.1.42) `temp2` (the second chip's own temperature, AxeOS's field)
+  and `asicTemps` (both, chip 1 first), each null for a diode without a
+  reading, with `temp` the hotter of the two,
   `gitHash` (the commit the
   image was built from), `blockFound` (nonces since the start that met
   their block's target: blocks, except on a chain at minimum difficulty,
@@ -811,7 +816,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers); free clock values with `?oc` as on the Gamma |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
-| Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet |
+| Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet; only the EMC2103's diode 2 is read as the chip temperature (ESP-Miner also acts on diode 1: to be settled before its first run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102% of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V); taken on the first start since v0.1.35 (TPS546 and EMC2101 on the Nerd pins with 12 V at the regulator; the same parts at 5 V are a NerdAxe Gamma) |
 | NerdQX (Q1370 / Q1373) | 4× BM1370 / BM1373 | TPS53647 or, on the Q1373, the 6-phase TPS53667 | profile only, not run yet |

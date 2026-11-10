@@ -233,8 +233,9 @@ fn wait(d: Duration) -> bool {
 
 type Outcome = Result<(BoardReadings, Option<Box<Window>>, Option<FanReadings>), &'static str>;
 
-/// How long a test waits for chips that were off for want of a pool to
-/// be back up before its first reading.
+/// How long a test waits for a chain that is not up (chips that were
+/// off for want of a pool, a bring-up under way, the firmware's own
+/// chips off/on) before its first reading.
 const POWER_UP_WAIT: Duration = Duration::from_secs(45);
 /// How long a test waits for work when there is none at its start: a
 /// pool session may be between two connects, which is no reason to skip
@@ -260,7 +261,9 @@ fn perform(cfg: &config::Config) -> Outcome {
         let end = Instant::now() + POWER_UP_WAIT;
         while Instant::now() < end
             && !board::overheat()
-            && !board::shutdown()
+            // Off by hand is not waited for; the firmware's own off/on
+            // (a domain-latch reset) is over in seconds.
+            && (!board::shutdown() || board::cycling())
             && (board::chain_stopped() || miner::state().phase != "READY")
         {
             if !wait(Duration::from_millis(500)) {

@@ -651,6 +651,12 @@ pub fn set_shutdown(off: bool) {
     );
 }
 
+/// A [`cycle_chips`] is under way: the chips are off for a few seconds
+/// and come back on their own.
+pub fn cycling() -> bool {
+    CYCLE.load(Ordering::Relaxed)
+}
+
 /// Chips off and back on, the way `/api/v1/chips/off` and `/on` do it,
 /// in one go: the board loop takes the rail down on its next pass
 /// (`Regulator::off`: chain into reset, core off, 500 ms, LDO off on the
@@ -1947,7 +1953,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut temp_lost_s: u32 = 0;
     // Two chip diodes: which have read since boot (`chip_temps`).
     let mut two_chips = ChipTemps::<2>::new();
-    let mut second_missing_warned = false;
+    // Seconds each diode has gone without ever reading while the other
+    // read, and whether that was said.
+    let mut never_read_s = [0u32; 2];
+    let mut never_read_warned = [false; 2];
     // A chip temperature has been read since boot: losing it then stops
     // the chain (Cause::Blind). A board whose sensor never answered runs
     // without the chip limit, fans at full, as NerdOS does with no
@@ -1975,6 +1984,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut cycle_off_at: Option<Instant> = None;
     // The reset line was pulled low for a no-pool stop with the rail off.
     let mut pool_reset_held = false;
+    let mut pool_reset_failed = false;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -2078,11 +2088,29 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         let chips = [first.as_ref().ok().copied(), second.as_ref().ok().copied()];
                         update(|s| s.chip_temps = chips.to_vec());
                         let acting = two_chips.sample(chips, chip_limit);
-                        if chips[0].is_some() && !two_chips.seen(1) && !second_missing_warned {
-                            second_missing_warned = true;
-                            log::warn!(
-                                "board: the second chip's diode has not read since boot: fan and stop line follow the first chip alone"
-                            );
+                        // A diode that has never read while the other
+                        // does: left out, and said once after the time a
+                        // lost sensor is given, in the log and as the
+                        // board's standing notice (`boardError`), so a
+                        // chip without its own stop line does not go
+                        // unnoticed. One failed read at boot is not it.
+                        let other_reads = [chips[1].is_some(), chips[0].is_some()];
+                        for i in 0..2 {
+                            if two_chips.seen(i) || !other_reads[i] {
+                                never_read_s[i] = 0;
+                                continue;
+                            }
+                            never_read_s[i] = never_read_s[i].saturating_add(1);
+                            if never_read_s[i] >= TEMP_LOST_S && !never_read_warned[i] {
+                                never_read_warned[i] = true;
+                                let text = format!(
+                                    "chip {}'s temperature diode has not read since boot: fan and stop line follow chip {} alone",
+                                    i + 1,
+                                    2 - i
+                                );
+                                log::warn!("board: {text}");
+                                update(|s| s.last_error = text);
+                            }
                         }
                         acting.ok_or_else(|| {
                             let why = |r: &Result<f32, String>| r.as_ref().err().cloned();
@@ -2201,6 +2229,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         "board: OVERHEAT chip {temp:?} °C (limit {chip_limit}), regulator {vr_temp:?} °C (limit {}): core voltage off",
                         profile.vr_stop_c
                     );
+                    let chips = state().chip_temps;
+                    if !chips.is_empty() {
+                        log::error!("board: chip temperatures {chips:?}");
+                    }
                     crate::events::record(
                         "overheat",
                         warpaxe_diag::events::detail::hot(
@@ -2385,6 +2417,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     .unwrap()
                     .as_ref()
                     .is_none_or(|pin| pin.set(false));
+                if !pool_reset_held && !pool_reset_failed {
+                    pool_reset_failed = true;
+                    log::warn!("board: the reset line did not take its level, trying again");
+                }
             }
         } else {
             pool_reset_held = false;
