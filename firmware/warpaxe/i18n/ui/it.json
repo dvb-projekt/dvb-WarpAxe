@@ -549,7 +549,7 @@
   "evd_pools_out": "nessun pool risponde, chip spenti finché uno non risponde",
   "evd_pools_back": "un pool risponde di nuovo dopo {s} s, chip riaccesi",
   "st_nopool": "Nessun pool raggiungibile: chip spenti",
-  "nopool_dash": "Né il pool principale né il pool di riserva rispondono. I chip sono spenti e si riaccendono da soli appena un pool invia lavoro.",
+  "nopool_dash": "Al momento nessun pool risponde. I chip sono spenti e si riaccendono da soli non appena un pool invia lavoro.",
   "evd_pool_saved": "passato al pool salvato “{p}”",
   "evd_boot_dump": "{r}, core dump {tag}",
   "evd_boot_old_dump": "{r}, nessun core dump scritto ({tag} risale a un crash precedente)",

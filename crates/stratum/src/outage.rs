@@ -100,6 +100,15 @@ impl PoolWatch {
         None
     }
 
+    /// On the fallback pool, which has now failed [`MIN_FAILS`] times in
+    /// a row while the main pool has not been tried since work last
+    /// came: time to try the main pool again. Without it an outage that
+    /// begins on the fallback is never one, since the main pool's
+    /// failures are from before the fallback's work.
+    pub const fn retry_main(&self) -> bool {
+        self.fallback_fails >= MIN_FAILS && self.main_fails < MIN_FAILS
+    }
+
     /// A pool sent work: it answers.
     pub fn answered(&mut self, now_s: u64) -> Option<Change> {
         self.main_fails = 0;
@@ -180,6 +189,28 @@ mod tests {
         assert_eq!(w.answered(185), Some(Change::Available { off_s: 125 }));
         assert!(!w.unavailable());
         assert_eq!(w.answered(186), None);
+    }
+
+    #[test]
+    fn an_outage_that_begins_on_the_fallback_sends_the_loop_back_to_the_main_pool() {
+        let mut w = PoolWatch::new();
+        // The main pool died long ago; the fallback has been sending work.
+        fail_main(&mut w, &[0, 3, 9], true);
+        assert_eq!(w.answered(30), None);
+        assert_eq!(w.answered(5000), None);
+        // Now the fallback stops too.
+        assert_eq!(w.failed(5010, true, true), None);
+        assert!(!w.retry_main());
+        assert_eq!(w.failed(5013, true, true), None);
+        assert!(w.retry_main(), "the main pool's turn");
+        // However long the fallback fails on: no outage on its word
+        // alone.
+        assert_eq!(w.tick(9000, true), None);
+        // The main pool, tried again, fails as well: that is an outage.
+        assert_eq!(w.failed(9001, false, true), None);
+        assert!(w.retry_main());
+        assert_eq!(w.failed(9004, false, true), Some(Change::Unavailable));
+        assert!(!w.retry_main());
     }
 
     #[test]

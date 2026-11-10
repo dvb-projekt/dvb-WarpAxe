@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-589%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-593%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
 </p>
@@ -353,7 +353,10 @@ back at any time with `GET /api/v1/display/frame`.
   (where one is set) the fallback pool answers — at least two failed
   attempts on each and a minute since the first, so a Wi-Fi or pool
   hiccup switches nothing — the chips go off: core voltage down, chain
-  in reset, fans at their lowest duty. Both pools are then tried in turn
+  in reset, and the fans come down to their lowest duty (a fan set by
+  hand at once, the automatic one as the chips cool). A session that
+  brings no work at all counts as a failed attempt, however long it
+  stays open. Both pools are then tried in turn
   every 30 s, and the first job from either brings the chips back at the
   clock and voltage they had, through the same path as a chain restart.
   `poolsUnavailable` in `/api/system/info` (AxeOS's and ForgeOS's name)
@@ -581,8 +584,9 @@ back at any time with `GET /api/v1/display/frame`.
   the pool names the block as its parent, `orphaned` when the work for
   the next height names another one; both null for a block found before
   v0.1.42; `lastBlock` itself null until the first block), both
-  kept across restarts, `poolsUnavailable` (no pool answers and the
-  chips are off for it, since v0.1.42), and AxeOS's `hashrateMonitor` (per chip the
+  kept across restarts, `poolsUnavailable` (no pool answers, since
+  v0.1.42; the chips are off for it, `chainStopped`, except on a board
+  without chips and during a first start), and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
   BM1373 — and the error counter, read once a second) with
   `errorPercentage` (AxeOS's per-second

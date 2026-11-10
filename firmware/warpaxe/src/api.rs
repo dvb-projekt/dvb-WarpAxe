@@ -1047,7 +1047,12 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             );
         }
         board::set_shutdown(false);
-        reply_json(req, 200, &json!({"shutdown": false}))
+        // Switched on, but still off while no pool answers: say so.
+        reply_json(
+            req,
+            200,
+            &json!({"shutdown": false, "poolsUnavailable": stratum::state().pools_unavailable}),
+        )
     })?;
     // Diagnostics on the chipless board: run the SHA peripheral bench
     // again (the peripheral worker does it between two batches, results

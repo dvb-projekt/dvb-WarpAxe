@@ -472,9 +472,13 @@ pub fn chain_stopped() -> bool {
 
 /// The chips are (to be) off because no pool answers. Not during a
 /// pending first start: the chain has to come up once for its
-/// enumeration to judge the chosen board, pool or no pool.
+/// enumeration to judge the chosen board, pool or no pool (the
+/// self-test that follows a verified first start then ends with
+/// "chainStopped" if no pool has answered by then). Not on a board
+/// without chips (the T-Display-S3, an undetected board): nothing is
+/// off there.
 pub fn no_pool() -> bool {
-    NO_POOL.load(Ordering::Relaxed) && !choice_pending()
+    NO_POOL.load(Ordering::Relaxed) && !choice_pending() && profile().asic_count > 0
 }
 
 /// No pool answers (`true`: core rail down, chain in reset, fans low) or
@@ -2217,6 +2221,12 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
+            // Off for want of a pool: a warm-up still under way is over
+            // (its end would hand the fans to the PID from full duty,
+            // with nothing left to cool); the rail's return starts one.
+            if no_pool() && warmup.take().is_some() {
+                update(|s| s.fan_warmup = false);
+            }
         } else if !halt && !POWERED.load(Ordering::Relaxed) {
             // The chip power-enable line first (ESP-Miner's order); on a
             // board without a regulator the chain comes back when the
@@ -2300,7 +2310,6 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // the bring-up voltage's drop after the init go at once.
         let want = WANTED_MV.load(Ordering::Relaxed);
         let held = want != 0
-            && POWERED.load(Ordering::Relaxed)
             && match core_hold.decide(
                 t0.elapsed().as_millis() as u64,
                 applied_mv,

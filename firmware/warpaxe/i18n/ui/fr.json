@@ -549,7 +549,7 @@
   "evd_pools_out": "aucun pool ne répond, puces coupées jusqu’à ce que l’un d’eux réponde",
   "evd_pools_back": "un pool répond à nouveau après {s} s, puces rallumées",
   "st_nopool": "Aucun pool joignable : puces coupées",
-  "nopool_dash": "Ni le pool principal ni le pool de secours ne répondent. Les puces sont coupées et se rallument d’elles-mêmes dès qu’un pool envoie du travail.",
+  "nopool_dash": "Aucun pool ne répond pour le moment. Les puces sont coupées et se rallument d’elles-mêmes dès qu’un pool envoie du travail.",
   "evd_pool_saved": "passage au pool enregistré « {p} »",
   "evd_boot_dump": "{r}, core dump {tag}",
   "evd_boot_old_dump": "{r}, aucun core dump écrit ({tag} provient d’un plantage antérieur)",
@@ -599,9 +599,9 @@
   "blk_total": "blocs : {n}",
   "evk_block": "Bloc",
   "evd_block_found": "bloc {h} trouvé ({coin})",
-  "evd_block_confirmed": "bloc {h} confirmé : le travail suivant du pool s’appuie dessus",
-  "evd_block_orphaned": "bloc {h} orphelin : le travail pour la hauteur suivante s’appuie sur un autre bloc",
-  "blk_st_pending": "En attente : attend le prochain travail du pool",
-  "blk_st_confirmed": "Confirmé : le travail suivant du pool s’appuie dessus",
+  "evd_block_confirmed": "bloc {h} confirmé : le job suivant du pool s’appuie dessus",
+  "evd_block_orphaned": "bloc {h} orphelin : le job pour la hauteur suivante s’appuie sur un autre bloc",
+  "blk_st_pending": "En suspens : en attente du prochain job du pool",
+  "blk_st_confirmed": "Confirmé : le job suivant du pool s’appuie dessus",
   "blk_st_orphaned": "Orphelin : le réseau a continué avec un autre bloc"
 }

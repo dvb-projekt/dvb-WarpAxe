@@ -1191,6 +1191,8 @@ mod core_hold {
         /// The mining loop's pass (every simulated millisecond).
         fn miner_pass(&mut self) {
             if self.wanted_mhz != self.handed_mhz {
+                // A new request: what had settled no longer has.
+                self.settled_mhz = 0;
                 self.b.drv.set_frequency(self.wanted_mhz * 1_000_000);
                 self.handed_mhz = self.wanted_mhz;
             }
@@ -1346,6 +1348,69 @@ mod core_hold {
     }
 
     #[test]
+    fn back_to_an_earlier_clock_in_the_middle_of_a_ramp_up_still_waits() {
+        // Settled at 425 MHz.
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        r.run(4_000).expect("the voltage goes");
+        assert_eq!((r.settled_mhz, r.applied_mv), (425, 1100));
+        // Up to 525 MHz with more voltage: at once.
+        r.wanted_mhz = 525;
+        r.wanted_mv = 1200;
+        let went = r.run(800).expect("the voltage goes");
+        assert_eq!(went.after_ms, 100);
+        assert!(
+            r.chips_hz() > 440_000_000,
+            "on the way up: {}",
+            r.chips_hz()
+        );
+        assert!(!r.b.drv.clock_settled());
+        // Back to 425 MHz and 1100 mV before the ramp up is over: the
+        // clock that had settled at 425 is not where the chips are.
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        let went = r.run(4_000).expect("the voltage goes");
+        assert_eq!(went.chips_hz, 425_000_000, "after {} ms", went.after_ms);
+        assert!(went.after_ms > 100);
+    }
+
+    #[test]
+    fn a_lower_clock_during_the_bring_up_becomes_the_ramp_s_target() {
+        // The chain is still coming up towards 525 MHz when 425 MHz and
+        // a lower voltage are asked for: the request goes to the chain
+        // at once, the bring-up ramp ends at 425, and the chips never
+        // run above it, so the voltage has nothing to wait for.
+        let b = Bench::new(2, Bench::config());
+        let mut r = Rig {
+            b,
+            wanted_mhz: 525,
+            handed_mhz: 525,
+            settled_mhz: 0,
+            hold: CoreHold::new(),
+            applied_mv: 1200,
+            wanted_mv: 1200,
+        };
+        while r.chips_hz() < 100_000_000 {
+            r.miner_pass();
+            r.b.run_ms(1);
+        }
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        let went = r.run(300).expect("the voltage goes");
+        assert_eq!(went.after_ms, 100);
+        let mut top = r.chips_hz();
+        for _ in 0..12_000 {
+            r.miner_pass();
+            r.b.run_ms(1);
+            top = top.max(r.chips_hz());
+        }
+        assert!(r.b.drv.clock_settled());
+        assert_eq!(top, 425_000_000, "never above the clock asked for");
+        assert_eq!(r.b.drv.frequency_hz(), 425_000_000);
+    }
+
+    #[test]
     fn a_chain_that_stops_answering_its_ramp_does_not_hold_the_voltage_for_ever() {
         let mut r = Rig::up(2);
         r.wanted_mhz = 425;
@@ -1494,6 +1559,10 @@ mod pool_outage {
                 self.next_attempt_s = t + pause.max(1);
                 self.backoff_s = 3;
             } else {
+                if fallback && self.watch.retry_main() {
+                    self.on_fallback = false;
+                    self.fails = 0;
+                }
                 self.next_attempt_s = t + self.backoff_s;
                 self.backoff_s = (self.backoff_s * 2).min(60);
             }
@@ -1555,6 +1624,27 @@ mod pool_outage {
         r.run(400, 480, true, false);
         assert!(r.chips_on());
         assert_eq!(r.session.map(|s| s.1), Some(false), "on the main pool");
+    }
+
+    #[test]
+    fn an_outage_that_begins_on_the_fallback_is_one_too() {
+        let mut r = Rig::new(true);
+        r.run(0, 100, true, true);
+        // The main pool dies; the miner moves to the fallback and runs
+        // there for a quarter of an hour.
+        r.run(100, 1000, false, true);
+        assert!(r.chips_on());
+        assert_eq!(r.session.map(|s| s.1), Some(true));
+        // Then the internet goes: the fallback is gone as well.
+        r.run(1000, 1300, false, false);
+        assert!(!r.chips_on(), "chips off");
+        let off_at = r.changes[0].0;
+        assert!((1060..=1120).contains(&off_at), "off at {off_at}");
+        // Everything back: the main pool is found within a round.
+        r.run(1300, 1400, true, true);
+        assert!(r.chips_on());
+        assert_eq!(r.session.map(|s| s.1), Some(false), "on the main pool");
+        assert_eq!(r.chain_starts, 2);
     }
 
     #[test]

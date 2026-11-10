@@ -134,7 +134,7 @@ fn pools(f: impl FnOnce(&mut PoolWatch, u64) -> Option<Change>) {
         Some(Change::Unavailable) => {
             update(|s| s.pools_unavailable = true);
             crate::board::set_no_pool(true);
-            log::warn!("stratum: no pool answers, chips off until one does");
+            log::warn!("stratum: no pool answers, chips off until one does (a board on its first start keeps them on)");
             let last = u64::from(OUTAGE_EVENT_AT.load(Ordering::Relaxed));
             if last == 0 || now.saturating_sub(last) >= OUTAGE_EVENT_S {
                 OUTAGE_EVENT_AT.store(now.clamp(1, u64::from(u32::MAX)) as u32, Ordering::Relaxed);
@@ -146,7 +146,10 @@ fn pools(f: impl FnOnce(&mut PoolWatch, u64) -> Option<Change>) {
             update(|s| s.pools_unavailable = false);
             crate::board::set_no_pool(false);
             log::warn!("stratum: a pool answers again after {off_s} s, chips back on");
-            if OUTAGE_RECORDED.swap(false, Ordering::Relaxed) {
+            // Also for an outage whose start was not written (it began
+            // within ten minutes of the last one) once it has been a
+            // long one: it must not go unrecorded altogether.
+            if OUTAGE_RECORDED.swap(false, Ordering::Relaxed) || off_s >= OUTAGE_EVENT_S {
                 crate::events::record("pool", warpaxe_diag::events::detail::pools_back(off_s));
             }
         }
@@ -471,6 +474,7 @@ fn run() {
             s.authorized = false;
         });
         let started = Instant::now();
+        let jobs_before = state().jobs_received;
         // Only this session's verdict counts (a `continue` above could
         // have left the last one's flag standing).
         CLOCK_UNSURE.store(false, Ordering::Relaxed);
@@ -509,7 +513,11 @@ fn run() {
                 s.reconnects += 1;
             });
         }
-        if started.elapsed() < SHORT_SESSION {
+        // A failed attempt: a session under a minute, or one of any
+        // length that brought no work at all (a pool that takes the
+        // connection and then says nothing until the read times out).
+        let no_work = state().jobs_received == jobs_before;
+        if started.elapsed() < SHORT_SESSION || no_work {
             if CLOCK_UNSURE.swap(false, Ordering::Relaxed) {
                 log::warn!("stratum: the pool certificate failed against a clock NTP has not set yet: not counted towards the fallback");
             } else {
@@ -531,6 +539,15 @@ fn run() {
                 }
                 backoff = Duration::from_secs(3);
             } else {
+                // The fallback has stopped answering as well: the main
+                // pool's turn again, so that both are known to be out
+                // (or the main pool is found back) and not the fallback
+                // alone retried for ever.
+                if on_fallback && WATCH.lock().unwrap().retry_main() {
+                    log::warn!("stratum: the fallback pool fails too, trying the main pool again");
+                    on_fallback = false;
+                    fails = 0;
+                }
                 pause_unless_reconnect(backoff, fallback_ok);
                 backoff = (backoff * 2).min(Duration::from_secs(60));
             }
@@ -545,10 +562,15 @@ fn run() {
 /// the old one keeps failing applies within a second, not a minute.
 fn pause_unless_reconnect(d: Duration, has_fallback: bool) {
     let end = Instant::now() + d;
+    let was_out = pools_out();
     while Instant::now() < end && !RECONNECT.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(250));
-        // The outage's minute may run out in a backoff.
+        // The outage's minute may run out in a backoff; the probing
+        // then starts at once, not after the rest of the backoff.
         pools(|w, now| w.tick(now, has_fallback));
+        if !was_out && pools_out() {
+            break;
+        }
     }
 }
 

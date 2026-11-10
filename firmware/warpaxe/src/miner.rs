@@ -271,6 +271,9 @@ pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) {
         "block",
         warpaxe_diag::events::detail::block_found(height, &config::get().coin_ticker),
     );
+    // The watch looks at the newest work again, with this block in
+    // hand (the CPU miner finds on another thread than it watches on).
+    *WATCHED_TIP.lock().unwrap() = None;
 }
 
 /// What the block watch looked at last: the newest work's parent and
@@ -548,6 +551,8 @@ fn run(mut uart: ChipUart) {
         let mut pool_diff_seen = stratum::state().difficulty;
         let mut pool_diff_since = Instant::now();
         let mut applied_mhz = start_mhz;
+        // The clock asked for last has a PLL setting.
+        let mut clock_reachable = true;
         WANTED_MHZ.store(start_mhz, Ordering::Relaxed);
         let mut hashes = 0f64;
         let mut hashes_since = epoch.elapsed();
@@ -791,6 +796,42 @@ fn run(mut uart: ChipUart) {
                 continue;
             }
 
+            // A clock asked for over the API goes to the chain in every
+            // phase: during the bring-up it becomes the ramp's target
+            // (the chips never pass it), afterwards a ramp of its own.
+            let want_mhz = WANTED_MHZ.load(Ordering::Relaxed);
+            if want_mhz != applied_mhz && want_mhz > 0 {
+                // A new request: whatever clock had settled no longer
+                // has (a return to an earlier value in the middle of
+                // another ramp would otherwise read as arrived).
+                SETTLED_MHZ.store(0, Ordering::Relaxed);
+                clock_reachable = match chain.set_frequency(want_mhz.saturating_mul(1_000_000)) {
+                    Some(hz) => {
+                        log::info!(
+                            "miner: ramp to {} MHz (PLL {} MHz)",
+                            want_mhz,
+                            hz / 1_000_000
+                        );
+                        true
+                    }
+                    None => {
+                        log::warn!(
+                            "miner: {} MHz has no PLL setting, keeping {} MHz",
+                            want_mhz,
+                            applied_mhz
+                        );
+                        false
+                    }
+                };
+                applied_mhz = want_mhz;
+            }
+            // The request is with the chain and its ramp is over: from
+            // here a lower voltage that came with it may go. A clock the
+            // PLL cannot make never settles; the board lets the voltage
+            // go after its limit and says so.
+            if clock_reachable && applied_mhz == want_mhz && chain.clock_settled() {
+                SETTLED_MHZ.store(want_mhz, Ordering::Relaxed);
+            }
             if chain.accepting_work() {
                 // A register scan from the API: one read per pass (a burst
                 // loses replies, see Chain::request_counters), the replies
@@ -879,27 +920,6 @@ fn run(mut uart: ChipUart) {
                         worth.set(want, now_us());
                         update(|s| s.difficulty = want);
                     }
-                }
-                let want_mhz = WANTED_MHZ.load(Ordering::Relaxed);
-                if want_mhz != applied_mhz && want_mhz > 0 {
-                    match chain.set_frequency(want_mhz.saturating_mul(1_000_000)) {
-                        Some(hz) => log::info!(
-                            "miner: ramp to {} MHz (PLL {} MHz)",
-                            want_mhz,
-                            hz / 1_000_000
-                        ),
-                        None => log::warn!(
-                            "miner: {} MHz has no PLL setting, keeping {} MHz",
-                            want_mhz,
-                            applied_mhz
-                        ),
-                    }
-                    applied_mhz = want_mhz;
-                }
-                // The request is with the chain and its ramp is over:
-                // from here a lower voltage that came with it may go.
-                if applied_mhz == want_mhz && chain.clock_settled() {
-                    SETTLED_MHZ.store(want_mhz, Ordering::Relaxed);
                 }
                 // New notify, or the chips ran out of nonce space: fresh work.
                 // The counter is only a hint; the work fetched below carries

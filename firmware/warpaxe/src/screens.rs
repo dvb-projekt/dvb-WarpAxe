@@ -375,10 +375,6 @@ impl Ui {
         if board::shutdown() {
             return Some(Event::ChipsOff { no_pool: false });
         }
-        // Not on the board without chips: there is nothing to be off.
-        if board::no_pool() && !board::devkit() {
-            return Some(Event::ChipsOff { no_pool: true });
-        }
         if let Some(s) = crate::selftest::shown() {
             // Dismissed while running: the result still shows once it is in.
             let acked = self
@@ -390,6 +386,12 @@ impl Ui {
         }
         if net::hotspot().is_some() {
             return Some(Event::Setup);
+        }
+        // After the setup screen: a miner without Wi-Fi has no pool
+        // either, and the hotspot's name and password are shown nowhere
+        // else.
+        if board::no_pool() {
+            return Some(Event::ChipsOff { no_pool: true });
         }
         None
     }
