@@ -21,6 +21,7 @@ use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::sys::{self, EspError};
 use serde::Serialize;
 use warpaxe_board::choice::{self, FirstStart};
+use warpaxe_board::core_hold::{self, CoreHold, Step};
 use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2103::Emc2103;
@@ -1857,6 +1858,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // and logged once per value.
     let mut core_retry_at = Instant::now();
     let mut core_refused_logged: Option<u16> = None;
+    // A voltage drop waiting for the clock to come down (core_hold).
+    let mut core_hold = CoreHold::new();
+    let mut core_held_logged = false;
     let mut fans: (u8, u8) = (100, 100);
     let mut last_sample = Instant::now() - Duration::from_secs(1);
     let mut temp: Option<f32> = None;
@@ -2270,9 +2274,47 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // stays where it is, the API shows the refusal, and the request
         // is tried again once a second (a bus hiccup passes, a value
         // outside the window keeps being refused until a new one comes).
+        // A drop that came with a lower clock waits until the mining
+        // loop has ramped the chips down to it (625 to 425 MHz takes
+        // 3.2 s, the voltage one pass): a raise, a drop on its own and
+        // the bring-up voltage's drop after the init go at once.
         let want = WANTED_MV.load(Ordering::Relaxed);
+        let held = want != 0
+            && POWERED.load(Ordering::Relaxed)
+            && match core_hold.decide(
+                t0.elapsed().as_millis() as u64,
+                applied_mv,
+                want,
+                crate::miner::clock(),
+            ) {
+                Step::Apply => {
+                    if core_held_logged {
+                        core_held_logged = false;
+                        log::info!("board: the clock is down, core {want} mV goes now");
+                    }
+                    false
+                }
+                Step::Hold => {
+                    if !core_held_logged {
+                        core_held_logged = true;
+                        log::info!(
+                            "board: core {want} mV waits for the clock to come down (now {applied_mv} mV)"
+                        );
+                    }
+                    true
+                }
+                Step::ApplyLate => {
+                    core_held_logged = false;
+                    log::warn!(
+                        "board: the clock has not come down in {} s, core {want} mV goes now",
+                        core_hold::MAX_HOLD_MS / 1000
+                    );
+                    false
+                }
+            };
         if want != 0
             && want != applied_mv
+            && !held
             && POWERED.load(Ordering::Relaxed)
             && Instant::now() >= core_retry_at
         {

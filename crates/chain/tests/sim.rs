@@ -1128,3 +1128,237 @@ mod domain_latch {
         assert!(observe(&mut b, &mut p, 650).is_empty());
     }
 }
+
+// ------------------------------------------------------------ core hold
+
+/// A lower core voltage that comes with a lower clock, against the
+/// simulated chain: the mining loop's side (hand the request to the
+/// driver, report the clock) and the board task's side (decide every
+/// 100 ms) as the firmware runs them, in simulated time. What counts is
+/// the clock the simulated chips really run at when the voltage goes.
+mod core_hold {
+    use super::*;
+    use warpaxe_board::core_hold::{Clock, CoreHold, Step, MAX_HOLD_MS};
+
+    struct Rig {
+        b: Bench,
+        wanted_mhz: u32,
+        handed_mhz: u32,
+        settled_mhz: u32,
+        hold: CoreHold,
+        applied_mv: u16,
+        wanted_mv: u16,
+    }
+
+    /// The voltage went: when (ms after the request), which step, and
+    /// the fastest clock among the simulated chips at that moment.
+    #[derive(Debug, Clone, Copy)]
+    struct Went {
+        after_ms: u64,
+        step: Step,
+        chips_hz: u32,
+    }
+
+    impl Rig {
+        /// A chain of `chips`, up and settled at the profile's clock
+        /// (525 MHz), 1200 mV applied.
+        fn up(chips: u8) -> Rig {
+            let mut b = Bench::new(chips, Bench::config());
+            b.run_until_ready(20_000);
+            let mhz = b.drv.frequency_hz() / 1_000_000;
+            Rig {
+                b,
+                wanted_mhz: mhz,
+                handed_mhz: mhz,
+                settled_mhz: mhz,
+                hold: CoreHold::new(),
+                applied_mv: 1200,
+                wanted_mv: 1200,
+            }
+        }
+
+        fn chips_hz(&self) -> u32 {
+            self.b
+                .uart
+                .sim
+                .chips()
+                .iter()
+                .map(|c| c.frequency_hz().min(u64::from(u32::MAX)) as u32)
+                .max()
+                .unwrap_or(0)
+        }
+
+        /// The mining loop's pass (every simulated millisecond).
+        fn miner_pass(&mut self) {
+            if self.wanted_mhz != self.handed_mhz {
+                self.b.drv.set_frequency(self.wanted_mhz * 1_000_000);
+                self.handed_mhz = self.wanted_mhz;
+            }
+            if self.handed_mhz == self.wanted_mhz && self.b.drv.clock_settled() {
+                self.settled_mhz = self.wanted_mhz;
+            }
+        }
+
+        /// The board task's pass (every 100 ms): `Some` when the
+        /// voltage was set in it.
+        fn board_pass(&mut self, now_ms: u64) -> Option<Step> {
+            let clock = Clock {
+                wanted_mhz: self.wanted_mhz,
+                settled_mhz: self.settled_mhz,
+                now_hz: self.b.drv.frequency_hz(),
+            };
+            let step = self
+                .hold
+                .decide(now_ms, self.applied_mv, self.wanted_mv, clock);
+            if step != Step::Hold && self.wanted_mv != self.applied_mv {
+                self.applied_mv = self.wanted_mv;
+                return Some(step);
+            }
+            None
+        }
+
+        /// Run for `ms`; the first time the voltage goes.
+        fn run(&mut self, ms: u64) -> Option<Went> {
+            let mut went = None;
+            for t in 1..=ms {
+                self.miner_pass();
+                self.b.run_ms(1);
+                if t % 100 == 0 {
+                    if let Some(step) = self.board_pass(t) {
+                        went.get_or_insert(Went {
+                            after_ms: t,
+                            step,
+                            chips_hz: self.chips_hz(),
+                        });
+                    }
+                }
+            }
+            went
+        }
+    }
+
+    #[test]
+    fn a_lower_voltage_waits_until_the_chips_run_at_the_lower_clock() {
+        let mut r = Rig::up(4);
+        assert_eq!(r.chips_hz(), 525_000_000);
+        // PATCH: 525 → 425 MHz, 1200 → 1100 mV, both at once.
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        let went = r.run(5_000).expect("the voltage goes");
+        assert_eq!(went.step, Step::Apply);
+        // 100 MHz in 6.25 MHz steps every 100 ms: 1.6 s, then the ramp
+        // closes; the board's next pass after that.
+        assert!(
+            (1_600..=2_000).contains(&went.after_ms),
+            "after {} ms",
+            went.after_ms
+        );
+        assert_eq!(went.chips_hz, 425_000_000, "every chip at the new clock");
+        assert_eq!(r.applied_mv, 1100);
+        assert!(r.b.drv.clock_settled());
+    }
+
+    #[test]
+    fn until_then_the_old_voltage_stands_at_every_clock_above_the_new_one() {
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        // Pass by pass: as long as any chip clocks above 425 MHz the
+        // voltage is the old one.
+        for t in 1..=4_000u64 {
+            r.miner_pass();
+            r.b.run_ms(1);
+            if t % 100 == 0 {
+                r.board_pass(t);
+            }
+            if r.chips_hz() > 425_000_000 {
+                assert_eq!(r.applied_mv, 1200, "at {t} ms, {} Hz", r.chips_hz());
+            }
+        }
+        assert_eq!(r.applied_mv, 1100);
+    }
+
+    #[test]
+    fn a_raise_goes_at_once_whatever_the_clock_does() {
+        // Up with the clock: the voltage first, as before.
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 600;
+        r.wanted_mv = 1250;
+        let went = r.run(3_000).expect("the voltage goes");
+        assert_eq!((went.after_ms, went.step), (100, Step::Apply));
+        assert!(went.chips_hz < 600_000_000, "{}", went.chips_hz);
+        // Down with the clock, up with the voltage: at once too.
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1250;
+        let went = r.run(3_000).expect("the voltage goes");
+        assert_eq!(went.after_ms, 100);
+    }
+
+    #[test]
+    fn a_voltage_change_alone_goes_at_once() {
+        let mut r = Rig::up(2);
+        r.wanted_mv = 1100;
+        let went = r.run(1_000).expect("the voltage goes");
+        assert_eq!((went.after_ms, went.step), (100, Step::Apply));
+        assert_eq!(went.chips_hz, 525_000_000);
+    }
+
+    #[test]
+    fn the_bring_up_voltage_drops_at_once_while_the_chain_ramps_up() {
+        // A chain that has just started: the bring-up voltage (1250 mV)
+        // goes down to the configured one right after the init
+        // (`board::chain_ready`), during the ramp up to the target.
+        let b = Bench::new(2, Bench::config());
+        let mut r = Rig {
+            b,
+            wanted_mhz: 525,
+            handed_mhz: 525,
+            settled_mhz: 0,
+            hold: CoreHold::new(),
+            applied_mv: 1250,
+            wanted_mv: 1250,
+        };
+        // Into the ramp: some PLL words written, the target not reached.
+        while r.chips_hz() < 100_000_000 {
+            r.miner_pass();
+            r.b.run_ms(1);
+        }
+        assert!(!r.b.drv.clock_settled());
+        r.wanted_mv = 1150;
+        let went = r.run(500).expect("the voltage goes");
+        assert_eq!((went.after_ms, went.step), (100, Step::Apply));
+        assert!(went.chips_hz < 525_000_000);
+    }
+
+    #[test]
+    fn a_second_lower_clock_during_the_ramp_keeps_the_voltage_waiting() {
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 475;
+        r.wanted_mv = 1150;
+        assert!(r.run(400).is_none(), "still ramping to 475");
+        // Further down before the first ramp is over.
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        let went = r.run(5_000).expect("the voltage goes");
+        assert_eq!(went.chips_hz, 425_000_000);
+        assert_eq!(r.applied_mv, 1100);
+    }
+
+    #[test]
+    fn a_chain_that_stops_answering_its_ramp_does_not_hold_the_voltage_for_ever() {
+        let mut r = Rig::up(2);
+        r.wanted_mhz = 425;
+        r.wanted_mv = 1100;
+        // The mining loop never hands the request on (stuck elsewhere):
+        // the chips stay at 525 MHz. The board lets go after the limit.
+        let mut went = None;
+        for t in (100..=MAX_HOLD_MS + 1_000).step_by(100) {
+            if let Some(step) = r.board_pass(t) {
+                went = Some((t, step));
+                break;
+            }
+        }
+        assert_eq!(went, Some((100 + MAX_HOLD_MS, Step::ApplyLate)));
+    }
+}

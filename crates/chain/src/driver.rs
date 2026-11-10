@@ -468,6 +468,12 @@ impl Chain {
         self.frequency_hz
     }
 
+    /// The chain is up and no ramp is under way: the clock asked for
+    /// last is the one the chips run at.
+    pub fn clock_settled(&self) -> bool {
+        self.init_done && self.mode == Mode::Ready
+    }
+
     /// Current ticket-mask difficulty.
     pub fn difficulty(&self) -> u32 {
         self.difficulty

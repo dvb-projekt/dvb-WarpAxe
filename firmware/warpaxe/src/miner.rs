@@ -158,6 +158,24 @@ static WANTED_MHZ: AtomicU32 = AtomicU32::new(0);
 /// clears it.
 static STEP_CAP_MHZ: AtomicU32 = AtomicU32::new(0);
 
+/// The chips' clock this moment, Hz (the last PLL word written); 0 while
+/// no chain runs. With [`SETTLED_MHZ`] what the board task holds a
+/// voltage drop on (`warpaxe_board::core_hold`).
+static CLOCK_NOW_HZ: AtomicU32 = AtomicU32::new(0);
+/// The [`WANTED_MHZ`] request the chips' clock has arrived at: handed to
+/// the chain and its ramp over. 0 when none has.
+static SETTLED_MHZ: AtomicU32 = AtomicU32::new(0);
+
+/// The clock as the board task needs it to time a voltage drop: what is
+/// asked for, what the chips have arrived at, what they run at now.
+pub fn clock() -> warpaxe_board::core_hold::Clock {
+    warpaxe_board::core_hold::Clock {
+        wanted_mhz: WANTED_MHZ.load(Ordering::Relaxed),
+        settled_mhz: SETTLED_MHZ.load(Ordering::Relaxed),
+        now_hz: CLOCK_NOW_HZ.load(Ordering::Relaxed),
+    }
+}
+
 /// The configured clock under the overheat step, if one is in force.
 fn capped_mhz(mhz: u32) -> u32 {
     let cap = STEP_CAP_MHZ.load(Ordering::Relaxed);
@@ -358,6 +376,10 @@ fn run(mut uart: ChipUart) {
     let mut lone = LoneSilence::new();
     let mut latch = DomainLatch::new();
     loop {
+        // No chain runs from here until the next one's first PLL write:
+        // nothing is coming down, a voltage drop need not wait.
+        CLOCK_NOW_HZ.store(0, Ordering::Relaxed);
+        SETTLED_MHZ.store(0, Ordering::Relaxed);
         if board::chain_stopped() {
             if !parked && board::parks_uart() {
                 match uart.park() {
@@ -805,6 +827,11 @@ fn run(mut uart: ChipUart) {
                     }
                     applied_mhz = want_mhz;
                 }
+                // The request is with the chain and its ramp is over:
+                // from here a lower voltage that came with it may go.
+                if applied_mhz == want_mhz && chain.clock_settled() {
+                    SETTLED_MHZ.store(want_mhz, Ordering::Relaxed);
+                }
                 // New notify, or the chips ran out of nonce space: fresh work.
                 // The counter is only a hint; the work fetched below carries
                 // its own notify number, which decides.
@@ -891,6 +918,7 @@ fn run(mut uart: ChipUart) {
                 hashes = 0.0;
                 hashes_since = epoch.elapsed();
             }
+            CLOCK_NOW_HZ.store(chain.frequency_hz(), Ordering::Relaxed);
             update(|s| {
                 s.chips = chain.chip_count();
                 s.frequency_hz = chain.frequency_hz();
