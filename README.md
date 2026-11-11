@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-630%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-631%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.41-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.42-7B5CFF"></a>
 </p>
 
 ---
@@ -47,7 +47,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.41).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.42).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -86,7 +86,7 @@ move fast; corrections welcome.
 | Chip error rate on the dashboard | yes (next to the hashrate) | no (per chip in the API since v1.1.1: `errorHashRate` in `/api/v2/dashboard`) | no | yes (next to the hashrate; per chip and domain optional) |
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**, or since v0.1.42 under 5 % three minutes after the chain came up: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
-| Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click: nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
+| Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click (without work from a pool the hash checks are skipped, not failed): nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
 | Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
 | Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | no | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
@@ -98,7 +98,7 @@ move fast; corrections welcome.
 | Chip hash counters (per chip, per domain, errors) | yes (`hashrateMonitor`; on the BM1373 four of eight domains, doubled; all eight on ESP-Miner's main branch) | total only | total only (counted per chip and domain, errors too, but not shown) | yes, AxeOS's fields plus a one-minute error rate; **all eight BM1373 domains** |
 | Found by name on the network (mDNS `<hostname>.local`, `_http._tcp` with the `_axeos` subtype) | yes | yes | no (DHCP hostname only) | yes (from v0.1.28) |
 | Web UI over the USB cable | not found | not found | not found | **yes** (USB network adapter, `192.168.7.1`) |
-| Chips off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | no | yes |
+| ASICs off and on again without a restart | yes (pause / resume) | off only; on again needs a restart | no | yes |
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP (`pool.ntp.org`, fixed) since v1.8, also set hourly from the pool's job time; no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | no (a fixed 60 W) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | no display; two status LEDs (the share blink can be switched off) | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
@@ -111,9 +111,8 @@ What the stock firmware offers in addition: AxeOS and NerdOS support far more
 boards and have years of use by a large community; AxeOS has a scoreboard, themes,
 the BAP accessory port and Wi-Fi setup over Bluetooth; NerdOS has two-factor
 login for updates, dual-pool mining, InfluxDB/Grafana export and alerts; ForgeOS
-has dual-pool mining, Wi-Fi and pool setup over Bluetooth, the status of a found
-block, and share and self-test signals on the Nano's two LEDs; AxeOS and ForgeOS
-switch the chips off while no pool answers. WarpAxe is early; if you need any of
+has dual-pool mining, Wi-Fi and pool setup over Bluetooth, and share and
+self-test signals on the Nano's two LEDs. WarpAxe is early; if you need any of
 that, stay with the stock firmware.
 
 ## With WarpTune
@@ -130,11 +129,11 @@ draw:
   the conditions in `powerFaultCodes`). WarpTune holds during the stop,
   and after a hot stop takes the clock one step down (two from the second
   stop in an hour); a lost sensor is no reason to step down.
-- **Chips off or the chain still coming up**: `chainStopped` and
+- **ASICs off or the chain still coming up**: `chainStopped` and
   `chainPhase`, so a chain that is powering up is not taken for a dead chip.
 - **Fallback pool** and **reject reasons**, as on current AxeOS.
 - **No pool reachable** (`poolsUnavailable`, since v0.1.42, under the
-  name AxeOS and ForgeOS use): the firmware has switched the chips off
+  name AxeOS and ForgeOS use): the firmware has switched the ASICs off
   until a pool answers; a tuner holds its hand meanwhile.
 - **Chip error rate over a minute** (`errorPercentage1m`), from the chips'
   own counters: a voltage that is too low shows in minutes, not after
@@ -189,12 +188,12 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-system.png" alt="System: online update, maintenance, self-test, diagnostics file and event log, way back to the stock firmware, live log" width="760"><br>
-  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the chips off while the device stays reachable, reset an overheat stop), the self-test with a ✓ or ✗ per check, the diagnostics file, the event log (in the web UI's language), the way back to the stock firmware and the live log.</em>
+  <em>System — online update from the releases, upload, download mode for a reinstall with the web flasher, maintenance (switch the ASICs off while the device stays reachable, reset an overheat stop), the self-test with a ✓ or ✗ per check, the diagnostics file, the event log (in the web UI's language), the way back to the stock firmware and the live log.</em>
 </p>
 
 <p align="center">
   <img src="docs/screenshots/web-board-choice.png" alt="First start: the boards that fit, with a Show all boards button" width="760"><br>
-  <em>First start on a board WarpAxe cannot identify with certainty — only the boards that fit what answered on the bus are listed, the rest are behind "Show all boards"; the chips stay off until a board is chosen and, after the restart, has passed the bus check.</em>
+  <em>First start on a board WarpAxe cannot identify with certainty — only the boards that fit what answered on the bus are listed, the rest are behind "Show all boards"; the ASICs stay off until a board is chosen and, after the restart, has passed the bus check.</em>
 </p>
 
 <p align="center">
@@ -220,8 +219,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/lcd-special.png" alt="Special screens: overheat, chips off, firmware update" width="760"><br>
-  <em>Special screens — overheat (pulsing frame), chips off, firmware update with progress.</em>
+  <img src="docs/screenshots/lcd-special.png" alt="Special screens: overheat, ASICs off, firmware update" width="760"><br>
+  <em>Special screens — overheat (pulsing frame), ASICs off, firmware update with progress.</em>
 </p>
 
 <p align="center">
@@ -306,7 +305,11 @@ back at any time with `GET /api/v1/display/frame`.
   from NerdOS (`sv2_proto`, `sv2_auth_pk`, `sv2_reqauth`) are taken over on
   the first start.
 - Stratum V1 with version rolling (BIP 310), `mining.suggest_difficulty`,
-  optional **TLS** (esp-tls, hostname checked). Since v0.1.40 every TLS
+  optional **TLS** (esp-tls, hostname checked). Since v0.1.42 the user
+  agent in `mining.subscribe` names the board, `warpaxe/0.1.42
+  (nerdaxe-gaia)`: its profile name, the one Stratum V2 sends in its
+  hardware field (both empty until a first start has settled the board).
+  Since v0.1.40 every TLS
   connection — the pool, the online update, the price fetch — is checked
   against one pinned CA bundle, curl's extract of the Mozilla store of
   20 October 2026, which no longer has the eMudhra root `emSign ECC Root
@@ -360,12 +363,12 @@ back at any time with `GET /api/v1/display/frame`.
 - **No pool, no hashing** (since v0.1.42): when neither the main pool nor
   (where one is set) the fallback pool answers — at least two failed
   attempts on each and a minute since the first, so a Wi-Fi or pool
-  hiccup switches nothing — the chips go off: core voltage down, chain
+  hiccup switches nothing — the ASICs go off: core voltage down, chain
   in reset, and the fans come down to their lowest duty (a fan set by
   hand at once, the automatic one as the chips cool). A session that
   brings no work at all counts as a failed attempt, however long it
   stays open. Both pools are then tried in turn
-  every 30 s, and the first job from either brings the chips back at the
+  every 30 s, and the first job from either brings the ASICs back at the
   clock and voltage they had, through the same path as a chain restart.
   `poolsUnavailable` in `/api/system/info` (AxeOS's and ForgeOS's name)
   says so, with `chainStopped` and `chainPhase` `NOPOOL`; the dashboard
@@ -394,11 +397,17 @@ back at any time with `GET /api/v1/display/frame`.
   NerdNOS is the exception: fanless next to the ESP32-S3, it keeps modem
   sleep on, as its stock firmware does, to keep the heat down.
 - Block height, network difficulty and the pool's coinbase tag read from the
-  job; a nonce at or above the network difficulty is reported as a found
-  block. Since v0.1.39 the miner keeps the count and the last block
-  (height, time, coin) in NVS and records each block in the event log, and
-  the web UI shows a banner with confetti until it is dismissed in the
-  browser.
+  job; a nonce whose header hash meets the target of the header's own
+  `nbits` is reported as a found block (since v0.1.42; before, a nonce at
+  or above the rounded network difficulty). Since v0.1.39 the miner keeps
+  the count and the last block (height, time, coin) in NVS and records
+  each block in the event log, and the web UI shows a banner with
+  confetti until it is dismissed in the browser. Since v0.1.42 the block
+  is kept with its hash and its status — pending, confirmed once the
+  pool's next work builds on it, orphaned when the work for the next
+  height builds on another block, unknown when the miner missed the next
+  height — shown in the banner (again when it changes) and in the event
+  log.
 
 ### Board
 - Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
@@ -482,7 +491,7 @@ back at any time with `GET /api/v1/display/frame`.
 - Plausibility windows for every reading: a
   regulator that answers garbage while it powers up is reported as "no
   reading", never as a value a tuner could act on.
-- Switch the chips off and on again from the web UI or the API; the device
+- Switch the ASICs off and on again from the web UI or the API; the device
   stays reachable. On the Nerd carriers with an LDO for the chips' I/O
   rails (NerdQAxe++ Rev 6, NerdOctaxe, NerdQX) "off" — by hand, by an
   overheat stop, or before a restart — is the stock firmware's
@@ -680,7 +689,7 @@ back at any time with `GET /api/v1/display/frame`.
   maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
   NerdAxe Gaia, NerdNOS, Bitaxe Naja Duo and Gamma Hex), shown with the makers'
   consent; the small-OLED Bitaxes show the model name instead.
-- Special screens for block found, overheat, chips off and firmware update;
+- Special screens for block found, overheat, ASICs off (also "no pool") and firmware update;
   display language, time zone, screen timeout.
 - **What the display shows is yours to choose** (Settings → Display, with
   a live view of the screen): which LCD pages the key steps through, in
@@ -706,7 +715,11 @@ back at any time with `GET /api/v1/display/frame`.
   the regulator's status, the fans' speed at 100% for 10 s (the step
   never lowers what the fan control wants, and the board task drops it
   by itself when the time is up), chip and regulator temperatures under
-  their stop lines, the input voltage. One PASS/FAIL with every check's figure in the web UI,
+  their stop lines, the input voltage. Without work from a pool (since
+  v0.1.42) the hash checks are marked skipped, "no work from the pool",
+  not failed, and the rest is checked; the test switches the ASICs on
+  while no pool answers, so a bench test works before a pool is set up.
+  One PASS/FAIL with every check's figure in the web UI,
   on the display and in the API; a clock or voltage change during the
   test ends it. It also runs once by itself after a board's verified first start.
   The limits and where they come from:
@@ -719,8 +732,9 @@ back at any time with `GET /api/v1/display/frame`.
   knows before it is written.
 - **Event log** across restarts: the last 32 events (restart with its
   reason, overheat stop with its cause, regulator fault, pool switch,
-  update or rollback, silent chip and a chain restart for it, self-test
-  result, board check, found block) with
+  update or rollback, silent chip and a chain restart for it, a stuck
+  domain reset, no pool and a pool back, self-test result, board check,
+  found block and its status) with
   time and uptime, under System, in `/api/v1/state`, `/api/v1/events` and
   in the file. The web UI shows each event's details in its own language;
   the API and the file keep the English text in `d`, with a short code
