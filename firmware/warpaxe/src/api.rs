@@ -115,6 +115,10 @@ pub fn system_info() -> serde_json::Value {
         .then(|| (f64::from(m.hashrate_ghs) / expected_ghs * 100.0).min(999.0));
     let mut v = json!({
         "boardVersion": b.board, "deviceModel": b.board, "boardName": profile.model,
+        // The board's chips by its profile: what the page shows before the
+        // chain has counted them (`asicCount` is 0 until then, and stays 0
+        // when a stop comes first, as on a Gamma Turbo held in OVERHEAT).
+        "boardAsicCount": profile.asic_count,
         "boardDetect": board::detect_info(),
         "boardModels": warpaxe_board::profile::ALL.iter().map(|p| json!({"name": p.name, "model": if p.asic_count == 0 { "WarpMiner (T-Display-S3)" } else { p.model }, "experimental": p.asic_count == 0, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
         "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,

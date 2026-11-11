@@ -484,7 +484,7 @@ function plateSub(i, n) {
   return [`${i.ASICModel} × ${n}`, ...vr.split(" · "), i.nominalVoltage ? i.nominalVoltage + " V" : ""].filter(Boolean).map(x => `<span style="white-space:nowrap">${esc(x)}</span>`).join(" · ");
 }
 function plate(i) {
-  const f = family(i), n = Math.max(1, i.asicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1, px = n > 1 ? 56 : 72;
+  const f = family(i), n = Math.max(1, i.asicCount || i.boardAsicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1, px = n > 1 ? 56 : 72;
   const p = phase(i), dot = p.c === "ok" ? "var(--ok)" : p.c === "err" ? "var(--err)" : "var(--warn)";
   const chips = Array.from({length: n}, (_, k) => `<div class="chip" style="width:${px}px;height:${px}px;border-color:${f.col}"><span class="num">ASIC ${k}</span><i style="background:${dot}"></i></div>`).join("");
   const sub = plateSub(i, n);
@@ -583,7 +583,7 @@ function fanrow(name, note, pct, rpm, optional) {
 function dashboard() {
   const i = info; if (!i) return "";
   const f = family(i), p = phase(i), dot = p.c === "ok" ? "var(--ok)" : p.c === "err" ? "var(--err)" : "var(--warn)";
-  const n = Math.max(1, i.asicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1;
+  const n = Math.max(1, i.asicCount || i.boardAsicCount || 1), cols = n > 4 ? 4 : n > 1 ? 2 : 1;
   const cz = n > 1 ? 16 : 34, chips = `<div class="dhchips" style="grid-template-columns:repeat(${cols},${cz}px);--dc:${dot}">${Array.from({length: n}, () => `<i style="width:${cz}px;height:${cz}px;border-radius:${n > 1 ? 4 : 8}px"></i>`).join("")}</div>`;
   const sub = plateSub(i, n);
   const th = i.hashRate > 0 || i.chainStopped ? i.hashRate / 1000 : null, exp = i.expectedHashrate / 1000, eff = i.hashRate > 0 && i.power != null ? i.power / th : null;
