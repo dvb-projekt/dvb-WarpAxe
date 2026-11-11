@@ -219,8 +219,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/lcd-special.png" alt="Special screens: overheat, ASICs off, firmware update" width="760"><br>
-  <em>Special screens — overheat (pulsing frame), ASICs off, firmware update with progress.</em>
+  <img src="docs/screenshots/lcd-special.png" alt="Special screens: overheat, ASICs off, no pool, firmware update" width="760"><br>
+  <em>Special screens — overheat (pulsing frame), ASICs off (switched off by hand), no pool (since v0.1.42), firmware update with progress.</em>
 </p>
 
 <p align="center">

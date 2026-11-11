@@ -380,6 +380,10 @@ mod board {
     pub fn shutdown() -> bool {
         false
     }
+    /// No pool answers (the special screen comes from the DEMO event).
+    pub fn no_pool() -> bool {
+        false
+    }
 }
 
 mod miner {
@@ -516,6 +520,7 @@ mod selftest {
             chips_found: chips,
             chips_expected: chips,
             hashing: true,
+            has_work: true,
             has_regulator: true,
             core_set_mv: if gamma { 1140 } else { 1250 },
             core_actual_mv: Some(if gamma { 1140 } else { 1238 }),
@@ -600,7 +605,7 @@ fn main() {
         println!("frames in {dir}");
         return;
     }
-    for ev in ["overheat", "off", "ota"] {
+    for ev in ["overheat", "off", "nopool", "ota"] {
         *display::DEMO.lock().unwrap() = Some((ev.into(), u64::MAX));
         ui.frame(&mut d);
         save(&dir, &format!("lcd-ev-{ev}"));
