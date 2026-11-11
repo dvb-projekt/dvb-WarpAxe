@@ -46,6 +46,45 @@ pub fn mask_ssid(ssid: &str) -> String {
     }
 }
 
+/// Every MAC address in `text` (six hex pairs joined by `:`) with its
+/// last three pairs masked: `58:e6:c5:**:**:**`. The first three name
+/// the maker (Espressif, the router's vendor), which support may need;
+/// the rest is the device's own and goes. Covers the miner's own MAC and
+/// the access point's BSSID in the Wi-Fi log lines alike.
+pub fn mask_macs(text: &str) -> String {
+    const LEN: usize = 17;
+    let b = text.as_bytes();
+    let is_mac = |w: &[u8]| {
+        w.len() == LEN
+            && w.iter().enumerate().all(|(i, c)| {
+                if i % 3 == 2 {
+                    *c == b':'
+                } else {
+                    c.is_ascii_hexdigit()
+                }
+            })
+    };
+    let edge = |c: Option<&u8>| c.is_none_or(|c| !(c.is_ascii_hexdigit() || *c == b':'));
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    let mut copied = 0;
+    while i + LEN <= b.len() {
+        if is_mac(&b[i..i + LEN])
+            && edge(i.checked_sub(1).and_then(|j| b.get(j)))
+            && edge(b.get(i + LEN))
+        {
+            out.push_str(&text[copied..i + 9]);
+            out.push_str("**:**:**");
+            i += LEN;
+            copied = i;
+        } else {
+            i += 1;
+        }
+    }
+    out.push_str(&text[copied..]);
+    out
+}
+
 /// Replaces every secret with `***` and every other rule's text with its
 /// replacement, in the order added. Secrets shorter than four characters
 /// are not searched for: the firmware never prints a password, and a
@@ -90,13 +129,17 @@ impl Scrubber {
         r
     }
 
-    /// `text` with every rule applied.
+    /// `text` with every rule applied, and every MAC address masked
+    /// ([`mask_macs`]).
     pub fn apply(&self, text: &str) -> String {
         let mut out = text.to_string();
         for (from, to) in self.ordered() {
             if out.contains(from.as_str()) {
                 out = out.replace(from.as_str(), to);
             }
+        }
+        if out.contains(':') {
+            out = mask_macs(&out);
         }
         out
     }
@@ -175,6 +218,34 @@ mod tests {
         // Thirteen characters is long, twelve is short.
         assert_eq!(mask_worker("abcdefghijklm"), "abcd…jklm");
         assert_eq!(mask_worker("abcdefghijkl"), "ab…");
+    }
+
+    #[test]
+    fn mac_addresses_keep_the_maker_and_lose_the_device() {
+        assert_eq!(mask_macs("58:E6:C5:6A:48:04"), "58:E6:C5:**:**:**");
+        assert_eq!(
+            mask_macs("I (11305) wifi:mode : sta (58:e6:c5:6a:48:04)"),
+            "I (11305) wifi:mode : sta (58:e6:c5:**:**:**)"
+        );
+        assert_eq!(
+            mask_macs("aid = 21, bssid = c8:7f:54:27:96:10, x 00:11:22:33:44:55"),
+            "aid = 21, bssid = c8:7f:54:**:**:**, x 00:11:22:**:**:**"
+        );
+        // Not a MAC: times, version masks, longer colon runs, non-hex.
+        for t in [
+            "12:30:45",
+            "aa:bb:cc:dd:ee:ff:00",
+            "gg:hh:ii:jj:kk:ll",
+            "58:e6:c5:6a:48",
+            "",
+            "ü 12:34",
+        ] {
+            assert_eq!(mask_macs(t), t);
+        }
+        // Through the scrubber, in JSON string values.
+        let mut v = serde_json::json!({"macAddr": "58:E6:C5:6A:48:04", "n": 5});
+        Scrubber::new().apply_json(&mut v);
+        assert_eq!(v["macAddr"], "58:E6:C5:**:**:**");
     }
 
     #[test]

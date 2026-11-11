@@ -34,6 +34,10 @@ const MANUFACTURER_ID: u8 = 0x5D;
 const PWM_CONFIG_PUSH_PULL_NORMAL: u8 = 0x10;
 const FAN_CONFIG1_DIRECT_PWM: u8 = 0x2B;
 const TEMP_DIODE_FAULT: u16 = 0x8000;
+/// The top of the 11-bit scale, 127.875 °C: what a channel reads with
+/// no working diode on it (a Gamma Turbo's second diode without
+/// contact read it from the first sample, John11, 2026-11-11).
+const TEMP_CEILING_EIGHTHS: i16 = 0x3FF;
 /// Tach counts per minute at the 32.768 kHz clock, two pulses per turn.
 const TACH_NUMERATOR: u32 = 7_864_320;
 
@@ -201,7 +205,9 @@ impl<I: I2c> Emc2103<I> {
         Ok(rpm.min(u32::from(u16::MAX)) as u16)
     }
 
-    fn diode_c(&mut self, diode: usize) -> Result<f32, Error<I::Error>> {
+    /// `ceiling_is_fault`: the scale's top counts as no reading (the
+    /// second chip's diode, see [`Self::second_temp_c`]).
+    fn diode_c(&mut self, diode: usize, ceiling_is_fault: bool) -> Result<f32, Error<I::Error>> {
         let (msb, lsb) = if diode == 0 {
             (REG_EXT1_MSB, REG_EXT1_LSB)
         } else {
@@ -215,18 +221,28 @@ impl<I: I2c> Emc2103<I> {
         }
         // 11-bit signed, eighths of a degree.
         let v = ((raw >> 5) as i16) << 5 >> 5;
+        if ceiling_is_fault && v == TEMP_CEILING_EIGHTHS {
+            return Err(Error::SensorFault);
+        }
         let c = self.cfg.calibration[diode];
         Ok(f32::from(v) / 8.0 * c.scale + c.offset_c + f32::from(self.cfg.temp_offset_c))
     }
 
     /// The chip's diode (diode 2 when flipped), calibrated, °C.
     pub fn chip_temp_c(&mut self) -> Result<f32, Error<I::Error>> {
-        self.diode_c(usize::from(self.cfg.flip))
+        self.diode_c(usize::from(self.cfg.flip), false)
     }
 
-    /// The other diode, calibrated, °C.
+    /// The other diode, calibrated, °C. The scale's top (127.875 °C raw)
+    /// is no reading here: a diode that gives it from boot never read,
+    /// so its chip is left out with the fans at full and the stop line
+    /// on the other chip (`crate::chip_temps`), instead of a stop on
+    /// every boot. One that read before and climbs there has crossed
+    /// the stop line on the way and went unknown at the top, which
+    /// keeps the chips off. The chip's own diode keeps the old rule:
+    /// it is the board's only stop line.
     pub fn second_temp_c(&mut self) -> Result<f32, Error<I::Error>> {
-        self.diode_c(usize::from(!self.cfg.flip))
+        self.diode_c(usize::from(!self.cfg.flip), true)
     }
 
     /// The other diode sits at a second chip ([`Config::second_chip`]).
@@ -351,6 +367,27 @@ mod tests {
         let second = t.second_temp_c().unwrap();
         assert!((first - 71.82).abs() < 0.01, "{first}");
         assert!((second - 61.12).abs() < 0.01, "{second}");
+        assert!(t.release().script.is_empty());
+    }
+
+    #[test]
+    fn a_second_diode_at_the_top_of_the_scale_is_no_reading() {
+        // 127.875 °C = 0x3FF << 5 = 0x7FE0 (John11's Gamma Turbo, diode 1
+        // without contact). The chip's own diode at the top still reads
+        // 127.875 and stops the chips as before.
+        let bus = Bus::new(vec![
+            r(REG_EXT1_MSB, 0x7F),
+            r(REG_EXT1_LSB, 0xE0),
+            r(REG_EXT2_MSB, 0x7F),
+            r(REG_EXT2_LSB, 0xE0),
+            r(REG_EXT1_MSB, 0x7F),
+            r(REG_EXT1_LSB, 0xC0),
+        ]);
+        let mut t = Emc2103::new(bus, Config::GAMMA_TURBO);
+        assert_eq!(t.second_temp_c(), Err(Error::SensorFault));
+        assert_eq!(t.chip_temp_c().unwrap(), 127.875);
+        // One step below the top is a reading: 127.75 °C.
+        assert_eq!(t.second_temp_c().unwrap(), 127.75);
         assert!(t.release().script.is_empty());
     }
 
