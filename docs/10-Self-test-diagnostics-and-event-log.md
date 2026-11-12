@@ -94,7 +94,10 @@ no restart, no mock job; about 80 s:
    the `phases` check and switches the chips off (the maintenance
    switch; the owner turns them back on), since the master phase then
    carries the whole current. A read that fails on the bus is reported
-   as `noReading`, not acted on;
+   as `noReading`, not acted on; a read whose phases together carry
+   under 5 A (`phase_load_min_a`: a chain restart or a pause without
+   pool work at that moment) is skipped as `noWork`, not failed, since
+   a dead slave phase leaves the sum high;
 4. the fan step: both outputs held at least at 100 % for 10 s, through
    the board task's own loop (`board::fan_boost`), the speed read before
    and at the end.

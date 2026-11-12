@@ -276,7 +276,11 @@ fn offsets_for(chips: u8) -> config::ChipOffsets {
         return config::ChipOffsets::NONE;
     }
     let base = capped_mhz(config::get().frequency);
-    let max = board::profile().abs_max_frequency_mhz;
+    // The same ceiling as the API's (`api::choices`): the NerdOctaxe's
+    // depends on its regulator part.
+    let max = board::profile()
+        .choices(board::state().vr_part.starts_with("Tps53667"))
+        .abs_max_frequency_mhz;
     if let Err(why) = warpaxe_chain::offsets::check(
         &board::chip().pll,
         base,
