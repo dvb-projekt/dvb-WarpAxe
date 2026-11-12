@@ -106,6 +106,7 @@ MARKS = [
     ("nerd", "nerdaxe-gaia", 40),
     ("nerd", "nerdnos", 40),
     ("bitaxe", "bitaxe", 40),
+    ("bitaxe", "bitaxe-naja-duo", 42),
 ]
 
 

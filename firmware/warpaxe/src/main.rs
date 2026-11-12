@@ -82,6 +82,13 @@ static MARK_NERDQX: (i32, i32, &[u8]) =
     (86, 38, include_bytes!("splash/mark_nerdqx_86x38.rgb565a"));
 static MARK_BITAXE: (i32, i32, &[u8]) =
     (92, 40, include_bytes!("splash/mark_bitaxe_92x40.rgb565a"));
+/// The Naja Duo's front silkscreen: the Bitaxe logo with "1201" (the
+/// board's KiCad layout, docs/brand/bitaxe).
+static MARK_NAJA: (i32, i32, &[u8]) = (
+    97,
+    42,
+    include_bytes!("splash/mark_bitaxe-naja-duo_97x42.rgb565a"),
+);
 static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
 /// One frame: the splash for the first seconds, then the screens.
@@ -120,7 +127,8 @@ fn draw_splash(d: &mut display::Display) {
                 "nerdaxe-gaia" => Some(MARK_GAIA),
                 "nerdnos" => Some(MARK_NERDNOS),
                 "q1370" | "q1373" => Some(MARK_NERDQX),
-                "bitaxe-naja-duo" | "bitaxe-gamma-hex" => Some(MARK_BITAXE),
+                "bitaxe-naja-duo" => Some(MARK_NAJA),
+                "bitaxe-gamma-hex" => Some(MARK_BITAXE),
                 _ => None,
             };
             if let Some((w, h, data)) = mark {
