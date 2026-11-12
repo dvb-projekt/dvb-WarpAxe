@@ -159,10 +159,11 @@ draw:
 - **A clock of its own per chip** (`chipFreqOffsets`, `asicFrequencies`,
   `chipFreqOffsetsSupported`, `voltageDomains`, `chipFreqOffsetSpread`:
   the boards with more than one chip; since v0.1.44): the chips of a board differ, and the weakest one sets the
-  voltage for all. WarpTune can give the one or two chips that hold the
-  voltage up a lower clock and take the board's voltage down; the firmware
-  carries the offsets out and reports each chip's clock, the search is
-  WarpTune's ([`docs/15`](docs/15-A-clock-of-its-own-per-chip.md)).
+  voltage for all. The offsets are set by hand for now; a later WarpPool
+  release lets WarpTune give the one or two chips that hold the voltage up
+  a lower clock and take the board's voltage down on boards whose chips run
+  in parallel. The firmware carries the offsets out and reports each chip's
+  clock ([`docs/15`](docs/15-A-clock-of-its-own-per-chip.md)).
 - **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
   holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.

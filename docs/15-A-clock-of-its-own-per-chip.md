@@ -327,6 +327,15 @@ reads stay by broadcast, as the references do them.
 
 ## Still to run
 
+Run on 2026-11-12 (v0.1.44 test builds, NerdOctaxe on SV1+TLS, 625 MHz /
+1170 mV): chip 2 at −25 MHz, `asicFrequencies[2]` 600 and the others 625;
+measured with `hashCount` over 4 minutes chip 2 hashed 1229 GH/s against
+1265–1289 for the other seven (expected about 4 % less), and on read-back
+only chip 2's PLL word differed (0xd0c00230 against 0xd0c80230); no chain
+restart, no latch reset, no silent-chip restart; back to `[]` within about
+20 s. The limit texts were seen as documented. Items 3–6 below are still
+to run.
+
 Whether a real BM1370 takes a PLL write addressed to it alone while it
 hashes, the way it takes the same register written to all, the simulator
 cannot show. The short test of 2026-10-02 on a NerdQAxe++ (one chip
