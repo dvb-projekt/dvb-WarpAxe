@@ -395,6 +395,15 @@ map; the counters alone cannot tell which). A loss on the wire is the
 unlikely reading: chip 1's nonces, frames of the same length, came
 through the same level shifters at the same rate.
 
+*Correction, 2026-11-12:* the shifted address was the cause. A BM1373
+answers to its own address (0x10 for chip 1), and the references'
+address ÷ 4 reaches no second chip: ESP-Miner's domain-end write for
+chip 1 never arrived either (register 0x58 read back), and a test write
+to 0x10 did. Single-chip writes go to the full address since then;
+reads stay by broadcast. The story is in
+[`docs/15`](15-A-clock-of-its-own-per-chip.md), *What the devices
+said*.
+
 Fixed in the driver: a chip profile says how it is read
 (`ChipProfile::broadcast_reads`, true on every BM1373 profile), and a
 chain of more than one such chip gets one broadcast read per register,

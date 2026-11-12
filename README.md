@@ -156,7 +156,7 @@ draw:
   is regulating the miner; the firmware's own base regulation, a later
   block, will stand back while `externalRegulator.active` holds.
 - **A clock of its own per chip** (`chipFreqOffsets`, `asicFrequencies`,
-  `chipFreqOffsetsSupported`: the BM1370 boards with more than one chip;
+  `chipFreqOffsetsSupported`: the boards with more than one chip;
   after v0.1.43): the chips of a board differ, and the weakest one sets the
   voltage for all. WarpTune can give the one or two chips that hold the
   voltage up a lower clock and take the board's voltage down; the firmware
@@ -262,9 +262,10 @@ back at any time with `GET /api/v1/display/frame`.
   from difficulty 0.001 no longer inflates the hashrate), stale and duplicate
   filtering, per-chip
   silence watchdog. A clock of its own per chip where one is set, on
-  boards with more than one BM1370 (not on the BM1373: on a Naja Duo the
-  write for the second chip reached no chip, and slowing the first
-  slowed both)
+  boards with more than one chip (a BM1373 at its own address: both
+  reference drivers shift it by two bits for a single-chip command,
+  which reached no second chip on a Naja Duo, so its chip 1 also went
+  without the domain-end IO strength of ESP-Miner's init)
   (`chipFreqOffsets`, MHz added to the frequency per chip, after v0.1.43):
   each chip is stepped to its clock by writes to that chip alone, without
   a chain restart, and no chip passes its own clock on the way; the

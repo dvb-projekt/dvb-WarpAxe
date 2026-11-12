@@ -122,7 +122,18 @@ pub struct ChipProfile {
     /// Fixed chain address stride (BM1373: 16); 0 = `256 / chips`.
     pub address_stride: u8,
     /// Single-chip commands go to the chip's address shifted right by
-    /// this (BM1373: 2); replies carry the full address.
+    /// this. 0 on every chip: a chip answers to its own address.
+    ///
+    /// Both reference drivers shift a BM1373's address right by two for
+    /// a single-chip command (ESP-Miner `BM1372_COMMAND_ADDRESS_SHIFT`,
+    /// NerdOS's per-chip writes), and this profile did the same until
+    /// 2026-11-12. On a Naja Duo (chips at 0x00 and 0x10) that address,
+    /// 4, is no chip's: the domain-end IO strength ESP-Miner's init
+    /// writes to chip 1 never arrived (register 0x58 read back), a read
+    /// there brought no reply, a PLL write there changed nothing. A
+    /// write to 0x10 reached chip 1 and chip 1 alone, register and PLL
+    /// both read back. Chip 0 never showed it: 0 shifted is 0. Kept as
+    /// a field so a test can still say what the shift did.
     pub command_address_shift: u8,
     /// The hash counting number: computed, fixed, or never written.
     pub hcn: Hcn,
@@ -204,17 +215,11 @@ pub struct ChipProfile {
     /// other: what a clock of its own per chip needs
     /// (`warpaxe_chain::Chain::set_chip_offsets`). True on the BM1370
     /// (a NerdQAxe++, 2026-10-02: one chip ±25 MHz, its hash counter
-    /// followed, the others' did not). False on the BM1373. On a Naja
-    /// Duo (2026-11-12, chips at 0x00 and 0x10) a write to chip 1's
-    /// command address (0x10 >> 2 = 4, as ESP-Miner derives it) reached
-    /// no chip: a PLL write there changed neither chip's rate, and
-    /// register 0x58 read back from chip 1 held the value written to
-    /// all, not the one ESP-Miner's init writes to it alone. Chip 0
-    /// took its writes (command address 0), yet with chip 0's PLL
-    /// 60 MHz down **both** chips' hash counters fell by the same
-    /// fifth, which nothing explains so far: each chip has its own
-    /// 25 MHz oscillator on that board. Until a write to one BM1373 is
-    /// seen to move that chip and no other, the answer is no. False on
+    /// followed, the others' did not) and on the BM1373 (a Naja Duo,
+    /// 2026-11-12, with a test build that writes one register to one
+    /// address: a PLL word to 0x10 slowed chip 1 alone, one to 0x00
+    /// chip 0 alone, each PLL register read back from both chips and
+    /// each chip's hash counter at the rate of its own clock). False on
     /// the BM1397, which no board has more than one of. A chain whose
     /// chip says false takes no offsets: every chip runs at the
     /// chain's clock.

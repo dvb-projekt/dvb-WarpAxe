@@ -111,7 +111,8 @@ pub const BM1373: ChipProfile = ChipProfile {
     host_midstates: 0,
     chip_id_alias: 0x1373,
     address_stride: 16,
-    command_address_shift: 2,
+    // Not the references' 2: see `ChipProfile::command_address_shift`.
+    command_address_shift: 0,
     // ESP-Miner: "the generic BM13xx nonce-space calculation makes
     // BM1372/BM1373 chips search overlapping work; this is the known-good
     // S21 Pro stock register value." NerdOS uses the same 0x1EB5.
@@ -142,7 +143,7 @@ pub const BM1373: ChipProfile = ChipProfile {
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
     broadcast_reads: true,
-    single_chip_clock: false,
+    single_chip_clock: true,
     init_source: "NerdOS",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
@@ -373,7 +374,9 @@ mod tests {
     }
 
     /// The Naja Duo: two chips in two domains, so both get the domain-end
-    /// strength, at command addresses 0 and 4 (16 ÷ 4).
+    /// strength, each at its own address. ESP-Miner sends chip 1's to
+    /// address 4 (16 ÷ 4), where it reaches no chip
+    /// (`ChipProfile::command_address_shift`).
     #[test]
     fn esp_init_writes_the_domain_end_strength_to_each_chip() {
         use crate::frame::Group;
@@ -387,7 +390,7 @@ mod tests {
             ends,
             vec![
                 Rendered::write(Group::Single, 0x00, 0x58, [0x00, 0x01, 0xF1, 0x11]),
-                Rendered::write(Group::Single, 0x04, 0x58, [0x00, 0x01, 0xF1, 0x11]),
+                Rendered::write(Group::Single, 0x10, 0x58, [0x00, 0x01, 0xF1, 0x11]),
             ]
         );
     }
@@ -526,8 +529,9 @@ mod tests {
         want.push(all(0x58, [0x00, 0x01, 0x11, 0x11]));
         want.push(all(0x68, [0x5A, 0xA5, 0x5A, 0xA5]));
         for addr in [0u8, 16, 32, 48] {
-            // commands go to address ÷ 4
-            let a = addr >> 2;
+            // NerdOS sends these to address ÷ 4; a BM1373 answers to
+            // its own address (`ChipProfile::command_address_shift`).
+            let a = addr;
             want.push(one(a, 0xA8, [0x00, 0x07, 0x01, 0xF0]));
             want.push(one(a, 0x18, [0xFF, 0x00, 0xC1, 0x00]));
             want.push(one(a, 0x3C, [0x80, 0x00, 0x80, 0x0C]));
@@ -545,7 +549,7 @@ mod tests {
         assert_eq!(BM1373.address_interval(4), 16);
         assert_eq!(BM1373.address_interval(1), 16);
         assert_eq!(BM1373.chip_address(4, 3), 48);
-        assert_eq!(BM1373.command_address(48), 12);
+        assert_eq!(BM1373.command_address(48), 48);
         assert_eq!(BM1373.chip_index(4, 48), Some(3));
         assert_eq!(BM1373.chip_index(4, 64), None);
         assert_eq!(BM1373.chip_index(4, 8), None);

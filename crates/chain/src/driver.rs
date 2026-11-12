@@ -561,8 +561,8 @@ impl Chain {
     /// setting does not count (the API refuses one; this is the stored
     /// offset that meets a chain started at its stock clock). None
     /// counts on a chip that cannot be written to alone
-    /// ([`ChipProfile::single_chip_clock`], the BM1373): the write
-    /// meant for one chip would move others, or none.
+    /// ([`ChipProfile::single_chip_clock`]): the write meant for one
+    /// chip would move others, or none.
     fn goal_hz(&self, chip: usize) -> u32 {
         let offset = self.offsets_hz[chip];
         if offset == 0 || !self.profile.single_chip_clock {
@@ -1192,9 +1192,8 @@ impl Chain {
     }
 
     /// Write the PLL for `hz`: to every chip (`chip` `None`), or to one
-    /// chip alone, at its address (BM1370) or its command address
-    /// (BM1373), as the reference drivers write a single chip's
-    /// registers in their init.
+    /// chip alone, at its own address
+    /// ([`ChipProfile::command_address_shift`]).
     fn write_pll<U: Uart>(
         &mut self,
         uart: &mut U,

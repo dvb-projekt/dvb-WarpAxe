@@ -1000,7 +1000,7 @@ function chipClockLive(i) {
 }
 function chipClocks(i) {
   const n = i.asicCount || i.boardAsicCount || 0;
-  // chipFreqOffsetsSupported: false on a chip that cannot be written to alone (the BM1373).
+  // chipFreqOffsetsSupported: false on a board whose chips cannot be written to alone.
   if (!(i.boardAsicCount > 1) || n < 2 || !i.asicFrequencies || i.chipFreqOffsetsSupported === false) return "";
   const off = i.chipFreqOffsets || [], live = chipClockLive(i);
   const rows = Array.from({length: n}, (_, k) => `<label class="f">ASIC ${k} ± MHz<input name="cfo${k}" type="number" step="5" inputmode="numeric" value="${off[k] || 0}" autocomplete="off"><small id="cfl${k}">${live[k] || ""}</small></label>`).join("");

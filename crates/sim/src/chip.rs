@@ -257,19 +257,14 @@ impl SimChip {
                 if header.op() == Op::Read && self.profile.broadcast_reads && self.address != 0 {
                     return false;
                 }
-                // And a single-chip write to such a chip is taken by the
-                // chip whose own address it carries, not the shifted one
-                // ESP-Miner sends. Read back on the same Naja Duo
-                // (2026-11-12, register 0x58 after ESP-Miner's init):
-                // chip 0 (address 0, command address 0) held the
-                // domain-end strength, chip 1 (address 0x10, command
-                // address 4) the value written to all before it; and a
-                // PLL write to command address 4 changed no chip's
-                // rate. Whether chip 1 takes a write at 0x10 nobody has
-                // tried; it is the plain reading of the above.
-                if header.op() == Op::Write && !self.profile.single_chip_clock {
-                    return chip_addr == self.address;
-                }
+                // (That read went to the references' shifted address,
+                // 4, which is no chip's; whether a BM1373 answers a
+                // single-chip read at its own address has not been
+                // tried, and both references read by broadcast, so the
+                // simulator stays with what was seen.) A single-chip
+                // write is taken by the chip whose own address it
+                // carries, as on the same board: register 0x58 and the
+                // PLL word written to 0x10 read back from chip 1 alone.
                 header.op() == Op::SetAddress
                     || chip_addr == self.profile.command_address(self.address)
             }
