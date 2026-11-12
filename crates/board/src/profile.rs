@@ -544,8 +544,10 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 
 /// Bitaxe Naja Duo (1201): two BM1373 in two series voltage domains on
 /// 12 V, two stacked TPS546 (ESP-Miner `TPS546_CONFIG_NAJA_DUO`, VOUT =
-/// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
-/// Color pins. Stock 327 MHz / 1000 mV, 60 W. Profile only: never run
+/// 2 × core), EMC2103 with the BM1373 diode fit, Color pins. Display:
+/// the shipped board has an SSD1306 128×32 OLED on the I²C bus (44/43),
+/// not the prototype schematic's ST7789 (seen 2026-11-12 on stock AxeOS
+/// v2.15.4: `display` "SSD1306 (128x32)", confirmed on the board). Stock 327 MHz / 1000 mV, 60 W. Profile only: never run
 /// under WarpAxe; the BM1373 chain path has run on the Gaia (one chip).
 /// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
@@ -560,7 +562,7 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     vr: Vr::Tps546(tps546::Config::NAJA_DUO),
     voltage_domains: 2,
     thermal: Thermal::Emc2103(emc2103::Config::NAJA_DUO),
-    display: Display::St7789I80,
+    display: Display::Ssd1306 { addr: 0x3C },
     default_frequency_mhz: 327,
     default_core_mv: 1000,
     nominal_voltage_v: 12,
@@ -1376,9 +1378,12 @@ mod tests {
             assert_eq!(p.display, Display::Ssd1306 { addr: 0x3C });
             assert!(p.asic_enable.is_none());
         }
+        // The shipped Naja Duo has an SSD1306 OLED on the I²C bus, the Hex
+        // the ST7789 LCD on the i80 pins.
+        assert_eq!(BITAXE_NAJA_DUO.display, Display::Ssd1306 { addr: 0x3C });
+        assert_eq!(BITAXE_GAMMA_HEX.display, Display::St7789I80);
         for p in [&BITAXE_NAJA_DUO, &BITAXE_GAMMA_HEX] {
             assert_eq!(p.i2c, Some(NERD_I2C), "{}", p.name);
-            assert_eq!(p.display, Display::St7789I80);
             assert_eq!(p.asic_enable, COLOR_ENABLE);
             assert_eq!(p.voltage_domains, 2);
             assert!(p.emc2103().is_some());
