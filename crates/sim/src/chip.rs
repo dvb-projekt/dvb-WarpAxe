@@ -257,16 +257,18 @@ impl SimChip {
                 if header.op() == Op::Read && self.profile.broadcast_reads && self.address != 0 {
                     return false;
                 }
-                // And a single-chip write to such a chip goes by what the
-                // same Naja Duo did with a PLL write (2026-11-12): one to
-                // command address 0 slowed both chips, one to chip 1's
-                // command address (4) slowed neither. So address 0 is
-                // taken by every chip and any other by none. (What the
-                // references' own single-chip writes do there is the
-                // same: the domain-end strength reaches both chips by
-                // the write for chip 0.)
+                // And a single-chip write to such a chip is taken by the
+                // chip whose own address it carries, not the shifted one
+                // ESP-Miner sends. Read back on the same Naja Duo
+                // (2026-11-12, register 0x58 after ESP-Miner's init):
+                // chip 0 (address 0, command address 0) held the
+                // domain-end strength, chip 1 (address 0x10, command
+                // address 4) the value written to all before it; and a
+                // PLL write to command address 4 changed no chip's
+                // rate. Whether chip 1 takes a write at 0x10 nobody has
+                // tried; it is the plain reading of the above.
                 if header.op() == Op::Write && !self.profile.single_chip_clock {
-                    return chip_addr == 0;
+                    return chip_addr == self.address;
                 }
                 header.op() == Op::SetAddress
                     || chip_addr == self.profile.command_address(self.address)

@@ -41,6 +41,14 @@ pub struct AsicMonitor {
     /// without an error counter (the BM1397).
     #[serde(rename = "errorCount")]
     pub error_count: Option<u32>,
+    /// The chip's total hash counter as read: one step per 2^32 hashes,
+    /// like `errorCount`; it wraps at 32 bits (after months) and starts
+    /// over with the chain. The difference of two readings over the
+    /// time between them is the chip's rate at the counter's own
+    /// precision, where `total` is one second's reading. Null on a chip
+    /// without counters (the BM1397). Not part of AxeOS's shape.
+    #[serde(rename = "hashCount")]
+    pub hash_count: Option<u32>,
     /// GH/s per domain, scaled as AxeOS reports them.
     pub domains: Vec<f32>,
     /// GH/s of the error counter (NerdOS `errorHashRate`, served by
@@ -1283,6 +1291,7 @@ fn run(mut uart: ChipUart) {
                         .map(|(i, c)| AsicMonitor {
                             total: c.total.ghs,
                             error_count: mon.has_error_counter().then_some(c.error.value),
+                            hash_count: mon.has_error_counter().then_some(c.total.value),
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
                             error_ghs: c.error.ghs,
                             total_1m: c.total.ghs_1m,

@@ -262,8 +262,9 @@ back at any time with `GET /api/v1/display/frame`.
   from difficulty 0.001 no longer inflates the hashrate), stale and duplicate
   filtering, per-chip
   silence watchdog. A clock of its own per chip where one is set, on
-  boards with more than one BM1370 (a BM1373 cannot be written to alone:
-  on a Naja Duo the write for one chip slowed both, or neither)
+  boards with more than one BM1370 (not on the BM1373: on a Naja Duo the
+  write for the second chip reached no chip, and slowing the first
+  slowed both)
   (`chipFreqOffsets`, MHz added to the frequency per chip, after v0.1.43):
   each chip is stepped to its clock by writes to that chip alone, without
   a chain restart, and no chip passes its own clock on the way; the

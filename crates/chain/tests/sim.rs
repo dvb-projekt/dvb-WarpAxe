@@ -541,12 +541,18 @@ fn two_bm1373_under_esp_init_enumerate_at_3_mbaud_and_both_hash() {
     assert_eq!(b.uart.lost_to_baud, 0, "no byte lost to a rate mismatch");
     assert_eq!(b.uart.sim.totals().violations, 0);
     assert_eq!(b.drv.stats().decoder.crc_failures, 0);
-    for chip in b.uart.sim.chips() {
+    for (i, chip) in b.uart.sim.chips().iter().enumerate() {
         assert_eq!(chip.baud(), 3_000_000);
         assert_eq!(chip.register(reg::FAST_UART_CONFIGURATION), 0x8000_0000);
         assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0x0000_1EB5);
         assert_eq!(chip.register(reg::VERSION_ROLLING), 0x9000_FFFF);
-        assert_eq!(chip.register(reg::IO_DRIVER_STRENGTH), 0x0001_F111);
+        // The domain-end strength reaches chip 0 only: the write for
+        // chip 1 goes to ESP-Miner's shifted address (4), which no chip
+        // has. As read back from a Naja Duo, 2026-11-12.
+        assert_eq!(
+            chip.register(reg::IO_DRIVER_STRENGTH),
+            [0x0001_F111, 0x0001_1111][i]
+        );
         assert_eq!(chip.register(reg::SOFT_RESET_CONTROL), 0xF007_01F0);
         assert_eq!(chip.register(reg::MISC_CONTROL), 0xFF00_C100);
     }
@@ -582,11 +588,14 @@ fn two_bm1373_under_esp_init_at_1_mbaud_switch_after_the_ramp_and_hash() {
     assert_eq!(b.uart.lost_to_baud, 0);
     assert_eq!(b.uart.sim.totals().violations, 0);
     assert_eq!(b.drv.stats().decoder.crc_failures, 0);
-    for chip in b.uart.sim.chips() {
+    for (i, chip) in b.uart.sim.chips().iter().enumerate() {
         assert_eq!(chip.baud(), 1_000_000);
         assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0x0000_1EB5);
         assert_eq!(chip.register(reg::VERSION_ROLLING), 0x9000_FFFF);
-        assert_eq!(chip.register(reg::IO_DRIVER_STRENGTH), 0x0001_F111);
+        assert_eq!(
+            chip.register(reg::IO_DRIVER_STRENGTH),
+            [0x0001_F111, 0x0001_1111][i]
+        );
         assert_eq!(chip.register(reg::SOFT_RESET_CONTROL), 0xF007_01F0);
     }
     b.mine_ms(10_000);

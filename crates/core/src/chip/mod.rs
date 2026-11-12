@@ -204,14 +204,20 @@ pub struct ChipProfile {
     /// other: what a clock of its own per chip needs
     /// (`warpaxe_chain::Chain::set_chip_offsets`). True on the BM1370
     /// (a NerdQAxe++, 2026-10-02: one chip ±25 MHz, its hash counter
-    /// followed, the others' did not). False on the BM1373: on a Naja
-    /// Duo (2026-11-12, chips at 0x00 and 0x10) a PLL write to command
-    /// address 0 slowed **both** chips by what was meant for chip 0,
-    /// and one to chip 1's command address (0x10 >> 2 = 4, as
-    /// ESP-Miner derives it) slowed **neither**. Which address, if any,
-    /// reaches a BM1373 alone is not known. False on the BM1397, which
-    /// no board has more than one of. A chain whose chip says false
-    /// takes no offsets: every chip runs at the chain's clock.
+    /// followed, the others' did not). False on the BM1373. On a Naja
+    /// Duo (2026-11-12, chips at 0x00 and 0x10) a write to chip 1's
+    /// command address (0x10 >> 2 = 4, as ESP-Miner derives it) reached
+    /// no chip: a PLL write there changed neither chip's rate, and
+    /// register 0x58 read back from chip 1 held the value written to
+    /// all, not the one ESP-Miner's init writes to it alone. Chip 0
+    /// took its writes (command address 0), yet with chip 0's PLL
+    /// 60 MHz down **both** chips' hash counters fell by the same
+    /// fifth, which nothing explains so far: each chip has its own
+    /// 25 MHz oscillator on that board. Until a write to one BM1373 is
+    /// seen to move that chip and no other, the answer is no. False on
+    /// the BM1397, which no board has more than one of. A chain whose
+    /// chip says false takes no offsets: every chip runs at the
+    /// chain's clock.
     pub single_chip_clock: bool,
     /// Whose init sequence the three lists below transcribe: the
     /// reference firmware of the boards the profile is chosen for

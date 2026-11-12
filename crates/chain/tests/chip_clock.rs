@@ -730,14 +730,18 @@ fn a_bm1373_chain_takes_no_offsets() {
     }
 }
 
-/// Why it takes none: what a Naja Duo did with a driver that believed a
-/// BM1373 could be written to alone (2026-11-12, main 6c68bea, chips at
-/// 0x00 and 0x10, 327 MHz, hash counters over four minutes each). The
-/// offset for chip 0 slowed both chips, the one for chip 1 slowed
-/// neither, and the driver reported clocks no chip ran at. The
-/// simulator's BM1373 does the same with a single-chip write.
+/// Why it takes none, as far as the simulator can say it: what a
+/// Naja Duo did with a driver that believed a BM1373 could be written
+/// to at ESP-Miner's command address (2026-11-12, main 6c68bea, chips
+/// at 0x00 and 0x10). The offset for chip 1 goes to address 4, which no
+/// chip has: nothing changes, and the driver reports a clock chip 1
+/// does not run at. The offset for chip 0 reaches chip 0.
+///
+/// What the board did beyond that the simulator does not: with chip 0
+/// 60 MHz down, chip 1's hash counter fell by the same fifth, though
+/// its PLL was not written. Unexplained, and reason enough on its own.
 #[test]
-fn what_the_naja_duo_did_with_an_offset_for_one_bm1373() {
+fn an_offset_at_esp_miners_command_address_reaches_no_second_bm1373() {
     let config = Config {
         frequency_hz: 600 * MHZ,
         ..Config::for_profile(&BM1373_ESP)
@@ -747,18 +751,14 @@ fn what_the_naja_duo_did_with_an_offset_for_one_bm1373() {
     b.run_until_settled(30_000);
     assert_eq!(b.chip_mhz(), [600.0, 600.0]);
 
-    // [-60, 0]: meant for chip 0, taken by both.
-    b.drv.set_chip_offsets(&[-60, 0]);
-    b.run_until_settled(30_000);
-    assert_eq!(b.chip_mhz(), [540.0, 540.0]);
-    assert_eq!(b.drv.chip_frequencies_hz(), [540 * MHZ, 600 * MHZ]);
-
-    // Back, then [0, -60]: meant for chip 1, taken by neither.
-    b.drv.set_chip_offsets(&[]);
-    b.run_until_settled(30_000);
-    assert_eq!(b.chip_mhz(), [600.0, 600.0]);
+    // [0, -60]: meant for chip 1, taken by neither.
     b.drv.set_chip_offsets(&[0, -60]);
     b.run_until_settled(30_000);
     assert_eq!(b.chip_mhz(), [600.0, 600.0]);
     assert_eq!(b.drv.chip_frequencies_hz(), [600 * MHZ, 540 * MHZ]);
+
+    // [-60, 0]: chip 0's PLL takes it.
+    b.drv.set_chip_offsets(&[-60, 0]);
+    b.run_until_settled(30_000);
+    assert_eq!(b.chip_mhz(), [540.0, 600.0]);
 }

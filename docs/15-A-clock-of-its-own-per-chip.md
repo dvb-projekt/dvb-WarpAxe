@@ -96,6 +96,7 @@ slip of the hand from parking a chip at next to nothing.
 | `chipFreqOffsets` | the stored list, MHz; `[]` = none |
 | `asicFrequencies` | the clock each chip runs at now, MHz on the PLL's grid, in the order of `hashrateMonitor.asics` |
 | `expectedHashrate` | the sum over the chips, each at its own clock |
+| `hashrateMonitor.asics[i].hashCount` | the chip's total hash counter as read, one step per 2^32 hashes like `errorCount` (wraps at 32 bits, starts over with the chain): two readings give the chip's rate without the noise of `total` |
 | `frequency`, `frequencyActual` | the chain's clock, as before |
 
 The PLL has a grid: an offset of 10 MHz at 600 MHz gives 609.375 MHz.
@@ -205,8 +206,8 @@ the status line are in all eight languages.
   a chip at its own clock.
 
 Flash: the image grew by 9,296 bytes with the feature (2,999,840 →
-3,009,136, built from the same path length), and stands at 3,010,672
-bytes after the changes above (69,520 bytes left below the import
+3,009,136, built from the same path length), and stands at 3,011,072
+bytes after the changes above (69,120 bytes left below the import
 window).
 
 ## What the devices said (2026-11-12, runs by dvb-WarpAxe #2)
@@ -227,9 +228,9 @@ Measured on main 6c68bea: Gaia with TLS 29,787 bytes of internal heap
 free (25,443 on v0.1.43), largest piece 18,432 (17,408); `minerStackFree`
 6,320 on the Gaia, 6,108 on a Gamma, 6,384 on the Naja Duo.
 
-**The BM1373 cannot be given a clock of its own.** On the Naja Duo (two
-BM1373, ESP-Miner's init, chips at 0x00 and 0x10, 327 MHz), the mean of
-each chip's hash counter over four minutes:
+**The BM1373 gets no clock of its own.** On the Naja Duo (two BM1373,
+ESP-Miner's init, chips at 0x00 and 0x10, 327 MHz), the mean of each
+chip's hash counter over four minutes:
 
 | Offsets | Chip 0 | Chip 1 |
 |---|---|---|
@@ -238,25 +239,43 @@ each chip's hash counter over four minutes:
 | chip 1 −60 MHz | 2246 | 2256 |
 | none again | 2272 | 2241 |
 
-The PLL write for chip 0 (command address 0) slowed **both** chips, the
-one for chip 1 (command address 4: its address 0x10 shifted right by
-two, as ESP-Miner derives a BM1373's command address) slowed
-**neither**, and `asicFrequencies` reported clocks no chip ran at.
-ESP-Miner uses that address for one write only, the domain-end IO
-strength in its init, and nothing in it shows that the write for the
-second chip arrives; by the above, the first chip's reaches both. A
-single-chip *read* at that address had already brought nothing back on
-the same board. Which address, if any, reaches one BM1373 alone is not
-known. So: `single_chip_clock` is false for the BM1373, the driver acts
-on no offset there, the API refuses one, the web UI does not offer the
-fold-out, and the simulator's BM1373 takes a single-chip write to
-address 0 with every chip and any other with none, as the board did
-(`what_the_naja_duo_did_with_an_offset_for_one_bm1373`).
+Two things are wrong there, and only one is understood.
 
-To find the addressing one day: after a single-chip write, read the
-register back from every chip (`GET /api/v1/chip/regs?chip=N&from=0x08&
-to=0x08` reads the PLL word of chip N by broadcast) and see which chips
-took it.
+*The write for chip 1 reaches no chip.* The driver sent it to chip 1's
+command address, 4: its address 0x10 shifted right by two, as ESP-Miner
+derives a BM1373's command address. ESP-Miner sets that shift as a
+constant and uses it for one write only, the domain-end IO strength in
+its init (register 0x58). Read back from the board after that init,
+chip 0 holds the domain-end value (`0x0001F111`) and chip 1 the one
+written to all before it (`0x00011111`): the write to address 4 never
+arrived, under ESP-Miner as under WarpAxe, which sends the same bytes.
+(Chip 1 has run with about eight times chip 0's error rate all along,
+0.195 % against 0.025 %; whether the missing pad strength has a part in
+that is open.) The single-chip *read* at that address had brought
+nothing back either. The plain reading is that a BM1373 answers to its
+own address like every other BM13xx, 0x10 here; nobody has tried it.
+
+*With chip 0's clock down, chip 1 slowed too.* Chip 0 took its PLL
+write (command address 0 is its address). Chip 1's PLL was not written,
+and still its hash counter fell by the same fifth. It is not the clock
+line: on this board each chip has its own 25 MHz oscillator (U8 for
+chip 0, U15 through R73 for chip 1; the link from chip 0's clock output
+to chip 1's input, R67, is marked not fitted), and ESP-Miner knows no
+register for a BM1373's clock output. Not understood.
+
+Until a write to one BM1373 is seen to move that chip and no other,
+the answer is no: `single_chip_clock` is false for the BM1373, the
+driver acts on no offset there, the API refuses one, the web UI does not
+offer the fold-out, and `asicFrequencies` shows the chain's clock on
+both chips. The simulator's BM1373 takes a single-chip write only at its
+own address, as the read-back says.
+
+What would settle both: a test build that writes one register to one
+address of choice, and after each write the register read back from
+every chip (`GET /api/v1/chip/regs?chip=N&from=0x08&to=0x08` reads the
+PLL word of chip N by broadcast): first whether chip 1 takes a write at
+0x10, then, with chip 0 alone slowed, whether chip 1's PLL word stays
+while its counter falls.
 
 ## Still to run: the BM1370
 
