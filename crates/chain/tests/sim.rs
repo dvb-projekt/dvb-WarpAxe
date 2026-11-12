@@ -1546,6 +1546,7 @@ mod core_hold {
                 settled_mhz: self.settled_mhz,
                 now_hz: self.b.drv.frequency_hz(),
                 unreachable: false,
+                chip_ramp: false,
             };
             let step = self
                 .hold

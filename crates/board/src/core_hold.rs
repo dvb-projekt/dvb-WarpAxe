@@ -37,16 +37,25 @@ pub struct Clock {
     /// clock that can be made is asked for (and reached), or the
     /// voltage asked for is no longer a drop.
     pub unreachable: bool,
+    /// A chip with a clock of its own (an offset from the chain's) has
+    /// been asked for another one and has not arrived at it: its ramp,
+    /// which the chain's clock above does not show, is under way or
+    /// about to start. Held like the chain's own way down, whichever
+    /// way the chip goes (the request does not say, and a ramp is over
+    /// in a second or two).
+    pub chip_ramp: bool,
 }
 
 impl Clock {
     /// The chips still run above the clock asked for: a ramp down is
-    /// under way or about to start. The settled request, not the clock's
+    /// under way or about to start, the chain's or one chip's own
+    /// ([`Clock::chip_ramp`], while a chain runs). The settled request, not the clock's
     /// value, ends it: the PLL grid may sit a fraction above the request.
     pub const fn coming_down(&self) -> bool {
         self.wanted_mhz != 0
             && self.settled_mhz != self.wanted_mhz
-            && self.now_hz as u64 > self.wanted_mhz as u64 * 1_000_000
+            && (self.now_hz as u64 > self.wanted_mhz as u64 * 1_000_000
+                || (self.chip_ramp && self.now_hz != 0))
     }
 }
 
@@ -122,6 +131,7 @@ mod tests {
         settled_mhz: 625,
         now_hz: 625_000_000,
         unreachable: false,
+        chip_ramp: false,
     };
 
     #[test]
@@ -147,6 +157,45 @@ mod tests {
     }
 
     #[test]
+    fn a_drop_waits_for_one_chips_own_ramp_too() {
+        let mut h = CoreHold::new();
+        // The PATCH: chip 2 another 25 MHz down, 20 mV less. The
+        // chain's clock does not move; the request has not settled.
+        let mut clock = Clock {
+            settled_mhz: 0,
+            chip_ramp: true,
+            ..AT_625
+        };
+        assert_eq!(h.decide(0, 1150, 1130, clock), Step::Hold);
+        assert_eq!(h.decide(300, 1150, 1130, clock), Step::Hold);
+        // A raise is never held, whatever the chips do.
+        assert_eq!(h.decide(300, 1150, 1170, clock), Step::Apply);
+        // The chip has arrived.
+        clock.settled_mhz = 625;
+        clock.chip_ramp = false;
+        assert_eq!(h.decide(500, 1150, 1130, clock), Step::Apply);
+        // No chain running (chips off): nothing to wait for.
+        let off = Clock {
+            settled_mhz: 0,
+            now_hz: 0,
+            chip_ramp: true,
+            ..AT_625
+        };
+        assert_eq!(h.decide(600, 1150, 1130, off), Step::Apply);
+        // A ramp that never ends is given up on like the chain's.
+        let stuck = Clock {
+            settled_mhz: 0,
+            chip_ramp: true,
+            ..AT_625
+        };
+        assert_eq!(h.decide(1000, 1150, 1130, stuck), Step::Hold);
+        assert_eq!(
+            h.decide(1000 + MAX_HOLD_MS, 1150, 1130, stuck),
+            Step::ApplyLate
+        );
+    }
+
+    #[test]
     fn a_clock_right_on_the_request_is_down() {
         let mut h = CoreHold::new();
         let clock = Clock {
@@ -154,6 +203,7 @@ mod tests {
             settled_mhz: 625,
             now_hz: 425_000_000,
             unreachable: false,
+            chip_ramp: false,
         };
         assert_eq!(h.decide(0, 1200, 1100, clock), Step::Apply);
     }
@@ -192,6 +242,7 @@ mod tests {
             settled_mhz: 0,
             now_hz: 56_250_000,
             unreachable: false,
+            chip_ramp: false,
         };
         assert_eq!(h.decide(0, 1200, 1150, bring_up), Step::Apply);
         // No chain running (stopped, restarting, a board without chips).
@@ -201,6 +252,7 @@ mod tests {
             settled_mhz: 625,
             now_hz: 0,
             unreachable: false,
+            chip_ramp: false,
         };
         assert_eq!(h.decide(0, 1200, 1100, stopped), Step::Apply);
     }
@@ -249,6 +301,7 @@ mod tests {
         let clock = Clock {
             wanted_mhz: 425,
             unreachable: true,
+            chip_ramp: false,
             ..AT_625
         };
         assert_eq!(h.decide(0, 1200, 1100, clock), Step::Hold);
@@ -263,6 +316,7 @@ mod tests {
         let unreachable = Clock {
             wanted_mhz: 425,
             unreachable: true,
+            chip_ramp: false,
             ..AT_625
         };
         assert_eq!(h.decide(0, 1200, 1100, unreachable), Step::Hold);
@@ -274,6 +328,7 @@ mod tests {
         let ramping = Clock {
             wanted_mhz: 450,
             unreachable: false,
+            chip_ramp: false,
             ..AT_625
         };
         assert_eq!(h.decide(t + 100, 1200, 1100, ramping), Step::Hold);
@@ -294,6 +349,7 @@ mod tests {
             settled_mhz: 450,
             now_hz: 450_000_000,
             unreachable: false,
+            chip_ramp: false,
         };
         assert_eq!(h.decide(t + 3000, 1200, 1100, down), Step::Apply);
     }

@@ -381,8 +381,10 @@ struct ChipAcc {
 pub struct Window {
     chips: u8,
     domains: u8,
-    expected_chip_ghs: f32,
-    reject_above_ghs: f32,
+    /// What each chip is expected to hash, GH/s.
+    expected_ghs: [f32; MAX_CHIPS],
+    /// A domain sample above this many times its share is dropped.
+    reject_ratio: f32,
     acc: [ChipAcc; MAX_CHIPS],
 }
 
@@ -390,18 +392,31 @@ impl Window {
     /// A window for `chips` chips with `domains` counters each, expected
     /// to hash `expected_chip_ghs` (small cores × clock) apiece.
     pub fn new(chips: u8, domains: u8, expected_chip_ghs: f32, limits: &Limits) -> Self {
-        let domains = domains.min(MAX_DOMAINS as u8);
-        let share = if domains > 0 {
-            expected_chip_ghs / f32::from(domains)
-        } else {
-            0.0
-        };
         Window {
             chips: chips.min(MAX_CHIPS as u8),
-            domains,
-            expected_chip_ghs,
-            reject_above_ghs: share * limits.domain_reject_ratio,
+            domains: domains.min(MAX_DOMAINS as u8),
+            expected_ghs: [expected_chip_ghs; MAX_CHIPS],
+            reject_ratio: limits.domain_reject_ratio,
             acc: [ChipAcc::default(); MAX_CHIPS],
+        }
+    }
+
+    /// Chip `chip` runs at a clock of its own (an offset from the
+    /// chain's): what it is expected to hash at that clock, GH/s. Its
+    /// total and its domains are judged against this, not against the
+    /// chain's figure.
+    pub fn set_chip_expected(&mut self, chip: usize, ghs: f32) {
+        if let Some(e) = self.expected_ghs.get_mut(chip) {
+            *e = ghs;
+        }
+    }
+
+    /// A domain's share of chip `chip`'s expected rate, GH/s.
+    fn share(&self, chip: usize) -> f32 {
+        if self.domains > 0 {
+            self.expected_ghs[chip] / f32::from(self.domains)
+        } else {
+            0.0
         }
     }
 
@@ -415,9 +430,9 @@ impl Window {
         self.domains
     }
 
-    /// What one chip was expected to hash, GH/s.
-    pub fn expected_chip_ghs(&self) -> f32 {
-        self.expected_chip_ghs
+    /// What chip `chip` was expected to hash, GH/s.
+    pub fn expected_chip_ghs(&self, chip: usize) -> f32 {
+        self.expected_ghs.get(chip).copied().unwrap_or(0.0)
     }
 
     /// One reading of chip `chip`: its total rate, its error rate and its
@@ -435,6 +450,7 @@ impl Window {
         if chip >= usize::from(self.chips) {
             return;
         }
+        let reject_above_ghs = self.share(chip) * self.reject_ratio;
         let a = &mut self.acc[chip];
         a.n = a.n.saturating_add(1);
         if !fresh {
@@ -444,7 +460,7 @@ impl Window {
         a.total_sum += total_ghs.max(0.0);
         a.error_sum += error_ghs.max(0.0);
         for (d, &ghs) in domains.iter().enumerate().take(usize::from(self.domains)) {
-            if ghs.is_nan() || ghs > self.reject_above_ghs {
+            if ghs.is_nan() || ghs > reject_above_ghs {
                 a.domain_rejected[d] = a.domain_rejected[d].saturating_add(1);
             } else {
                 a.domain_sum[d] += ghs.max(0.0);
@@ -621,8 +637,8 @@ fn no_work(b: &BoardReadings, w: Option<&Window>) -> bool {
 fn worst_chip(w: &Window) -> (f32, u8, bool) {
     let mut worst = (f32::INFINITY, 0u8, false);
     for i in 0..usize::from(w.chips()) {
-        let ratio = if w.expected_chip_ghs > 0.0 {
-            w.chip_ghs(i) / w.expected_chip_ghs
+        let ratio = if w.expected_ghs[i] > 0.0 {
+            w.chip_ghs(i) / w.expected_ghs[i]
         } else {
             0.0
         };
@@ -677,9 +693,9 @@ fn judge_domains(limits: &Limits, b: &BoardReadings, w: Option<&Window>) -> Outc
     if w.domains == 0 {
         return Outcome::skip(Check::Domains, Note::NoDomains);
     }
-    let share = w.expected_chip_ghs / f32::from(w.domains);
     let mut worst = (f32::INFINITY, 0u8, 0u8, Note::None);
     for i in 0..usize::from(w.chips()) {
+        let share = w.share(i);
         for d in 0..usize::from(w.domains) {
             let (ghs, n) = w.domain_ghs(i, d);
             let (ratio, note) = if n == 0 {
@@ -1044,6 +1060,70 @@ mod tests {
         assert_eq!(r.get(Check::Fan).value, Some(4800.0));
         assert_eq!(r.get(Check::Temperature).value2, Some(57.0));
         assert_eq!(r.get(Check::InputVoltage).value, Some(5.23));
+    }
+
+    /// A chip with a clock of its own (an offset from the chain's) is
+    /// judged against what it hashes at that clock: 450 of the chain's
+    /// 600 MHz is 75 % of the others' rate and would fail the 80 % line
+    /// and, by a hair less, pass the domains' 67 % against the chain's
+    /// figure; against its own it is at 100 %.
+    #[test]
+    fn a_chip_with_a_clock_of_its_own_is_judged_against_that_clock() {
+        let expected = 1224.0; // 2040 small cores at 600 MHz
+        let own = expected * 0.75;
+        let fill = |w: &mut Window| {
+            for _ in 0..60 {
+                for c in 0..4 {
+                    let ghs = if c == 1 { own } else { expected };
+                    w.sample(c, ghs, 0.0, &[ghs / 4.0; 4], true);
+                }
+            }
+        };
+        let b = BoardReadings {
+            chips_found: 4,
+            chips_expected: 4,
+            ..gamma()
+        };
+        // Against the chain's figure: chip 1 fails.
+        let mut w = Window::new(4, 4, expected, &Limits::DEFAULT);
+        fill(&mut w);
+        let r = judge(
+            Asic::Bm1370,
+            &Limits::DEFAULT,
+            &b,
+            Some(&w),
+            Some(&fan_ok()),
+        );
+        let h = r.get(Check::Hashrate);
+        assert_eq!((h.status, h.chip), (Status::Fail, Some(1)));
+        // Against its own: every check passes, at 100 %.
+        let mut w = Window::new(4, 4, expected, &Limits::DEFAULT);
+        w.set_chip_expected(1, own);
+        w.set_chip_expected(99, 1.0); // no such chip: ignored
+        fill(&mut w);
+        assert_eq!(w.expected_chip_ghs(0), expected);
+        assert_eq!(w.expected_chip_ghs(1), own);
+        let r = judge(
+            Asic::Bm1370,
+            &Limits::DEFAULT,
+            &b,
+            Some(&w),
+            Some(&fan_ok()),
+        );
+        assert!(r.passed(), "{r:?}");
+        let h = r.get(Check::Hashrate);
+        assert!((h.value.unwrap() - 100.0).abs() < 0.01, "{h:?}");
+        let d = r.get(Check::Domains);
+        assert!((d.value.unwrap() - 100.0).abs() < 0.01, "{d:?}");
+        // The drop line of a domain sample follows the chip's own share:
+        // 3× the slow chip's share is dropped, on a fast chip it counts.
+        let mut w = Window::new(2, 4, expected, &Limits::DEFAULT);
+        w.set_chip_expected(1, own);
+        let spike = own / 4.0 * 3.5;
+        w.sample(0, expected, 0.0, &[spike; 4], true);
+        w.sample(1, own, 0.0, &[spike; 4], true);
+        assert_eq!(w.domain_ghs(0, 0).1, 1);
+        assert_eq!(w.domain_ghs(1, 0).1, 0);
     }
 
     #[test]
