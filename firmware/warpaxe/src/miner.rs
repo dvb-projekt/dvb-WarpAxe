@@ -739,6 +739,9 @@ fn run(mut uart: ChipUart) {
                     }
                     Event::Enumerated { count } => {
                         log::info!("miner: {count} chip(s) answered");
+                        // A second chip's diode reads from about here
+                        // on: its settle window counts from the answer.
+                        board::chips_started();
                         if board::choice_pending() {
                             // Against the profile's own count, never the
                             // configured asicCount: that is the one tell

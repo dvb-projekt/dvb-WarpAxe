@@ -23,6 +23,34 @@
 //!   ([`ChipTemps::never_read_s`]) while another sensor reads: a reboot
 //!   must not take a chip's protection away with a failed diode. When
 //!   it reads after all, everything is as normal.
+//! - Right after the chips start, a second diode's reading over the
+//!   stop line is held back for [`SETTLE_SAMPLES`] samples
+//!   ([`ChipTemps::chips_started`]): it is left out of the temperature
+//!   and does not stop the chips; the caller runs the fans at full
+//!   meanwhile ([`ChipTemps::held`]). The EMC2103 gives the running
+//!   average of a diode's last four conversions (datasheet 5.11.4), and
+//!   a second chip's diode reads the top of the scale while its chip is
+//!   unpowered or in reset: a Gamma Turbo's cold second chip read
+//!   108.375 °C (three conversions at 127.875 °C and one real one), then
+//!   80.6 °C, in the first second after its start, and was stopped for
+//!   overheating on every start. A reading still over the line when the
+//!   window is over stops as ever. The first sensor (the chip's own
+//!   diode, the only one on a single-chip board) keeps its rule: the
+//!   scale's top was seen on the second diode only, and the first is
+//!   the stop line that holds during the window.
+
+/// For how many samples (seconds) after the chips' start a second
+/// diode's reading over the stop line is held back. The EMC2103 converts
+/// four times a second by default (datasheet table 6.18, configuration 2
+/// = 0x0E) and averages four conversions, so the last reading from
+/// before the start has left the average 1 s after the diode's first
+/// real conversion, 1.25 s with the conversion's phase. The samples are
+/// a second apart and the first falls up to a second after the start,
+/// so three of them cover between two and three seconds: the average
+/// has turned over twice. The chips' start is slower than that to heat
+/// a chip from under the line to damage, the first chip's diode watches
+/// throughout, and the fans run at full.
+pub const SETTLE_SAMPLES: u8 = 3;
 
 /// The sensors' memory: which have read since boot.
 #[derive(Debug, Clone, Copy)]
@@ -31,6 +59,10 @@ pub struct ChipTemps<const N: usize> {
     /// Samples (seconds) each sensor has gone without ever reading
     /// while another one read.
     never_s: [u32; N],
+    /// Samples left of the settle window after the chips' start.
+    settle: u8,
+    /// Sensors whose reading the last sample held back.
+    held: [bool; N],
 }
 
 impl<const N: usize> Default for ChipTemps<N> {
@@ -45,7 +77,26 @@ impl<const N: usize> ChipTemps<N> {
         Self {
             seen: [false; N],
             never_s: [0; N],
+            settle: 0,
+            held: [false; N],
         }
+    }
+
+    /// The chips have just been powered or released from reset: the
+    /// settle window starts (over), [`SETTLE_SAMPLES`] samples from here.
+    pub fn chips_started(&mut self) {
+        self.settle = SETTLE_SAMPLES;
+    }
+
+    /// The last sample held sensor `i`'s reading back: over the stop
+    /// line inside the settle window. The caller runs the fans at full.
+    pub fn held(&self, i: usize) -> bool {
+        self.held.get(i).copied().unwrap_or(false)
+    }
+
+    /// Samples left of the settle window, 0 outside it.
+    pub fn settle_left(&self) -> u8 {
+        self.settle
     }
 
     /// For how many samples sensor `i` has not read, never having read
@@ -66,13 +117,23 @@ impl<const N: usize> ChipTemps<N> {
     pub fn sample(&mut self, readings: [Option<f32>; N], stop_c: f32) -> Option<f32> {
         let mut hottest: Option<f32> = None;
         let mut missing = false;
-        for (seen, r) in self.seen.iter_mut().zip(readings) {
+        let settling = self.settle > 0;
+        self.settle = self.settle.saturating_sub(1);
+        for (i, r) in readings.into_iter().enumerate() {
+            self.held[i] = false;
             match r {
                 Some(c) => {
-                    *seen = true;
-                    hottest = Some(hottest.map_or(c, |h| h.max(c)));
+                    self.seen[i] = true;
+                    // A second diode over the line right after the
+                    // start: the average still holds readings from
+                    // before. Left out, as a diode that never read.
+                    if settling && i > 0 && c > stop_c {
+                        self.held[i] = true;
+                    } else {
+                        hottest = Some(hottest.map_or(c, |h| h.max(c)));
+                    }
                 }
-                None => missing |= *seen,
+                None => missing |= self.seen[i],
             }
         }
         for (i, never) in self.never_s.iter_mut().enumerate() {
@@ -201,6 +262,123 @@ mod tests {
         let mut t = ChipTemps::<1>::new();
         t.sample([None], STOP);
         assert_eq!((t.never_read_s(0), t.never_read_s(7)), (0, 0));
+    }
+
+    #[test]
+    fn a_second_diode_s_stale_average_after_the_start_does_not_stop() {
+        // The Gamma Turbo of 2026-11-12, limit 70 °C: chip 2's diode at
+        // the scale's top while off (no reading), then the average
+        // running out of it.
+        const LIMIT: f32 = 70.0;
+        let mut t = ChipTemps::<2>::new();
+        assert_eq!(t.sample([Some(31.0), None], LIMIT), Some(31.0));
+        t.chips_started();
+        assert_eq!(t.settle_left(), SETTLE_SAMPLES);
+        let acting = t.sample([Some(54.0), Some(108.375)], LIMIT);
+        assert_eq!(acting, Some(54.0));
+        assert!(!acting.is_some_and(|c| c > LIMIT));
+        assert!(t.held(1) && !t.held(0));
+        assert!(t.seen(1));
+        assert_eq!(t.sample([Some(56.0), Some(80.625)], LIMIT), Some(56.0));
+        assert!(t.held(1));
+        // The real temperature: nothing held, the hotter chip again.
+        assert_eq!(t.sample([Some(57.0), Some(50.5)], LIMIT), Some(57.0));
+        assert!(!t.held(1));
+        assert_eq!(t.settle_left(), 0);
+        assert_eq!(t.sample([Some(55.0), Some(58.0)], LIMIT), Some(58.0));
+        assert!(!t.held(0) && !t.held(1) && !t.held(2));
+    }
+
+    #[test]
+    fn a_second_diode_still_hot_after_the_window_stops() {
+        let mut t = ChipTemps::<2>::new();
+        t.chips_started();
+        for _ in 0..SETTLE_SAMPLES {
+            assert_eq!(t.sample([Some(55.0), Some(96.0)], STOP), Some(55.0));
+            assert!(t.held(1));
+        }
+        // The window is over and the reading is not: over the line.
+        let acting = t.sample([Some(55.0), Some(96.0)], STOP);
+        assert_eq!(acting, Some(96.0));
+        assert!(acting.is_some_and(|c| c > STOP));
+        assert!(!t.held(1));
+        // A reading that crosses the line later, with no start before
+        // it, stops at once as ever.
+        let mut t = ChipTemps::<2>::new();
+        t.chips_started();
+        for _ in 0..10 {
+            assert_eq!(t.sample([Some(55.0), Some(60.0)], STOP), Some(60.0));
+        }
+        assert_eq!(t.sample([Some(55.0), Some(76.0)], STOP), Some(76.0));
+        assert!(!t.held(1));
+        // And without a start there is no window at all.
+        let mut t = ChipTemps::<2>::new();
+        assert_eq!(t.sample([Some(55.0), Some(108.375)], STOP), Some(108.375));
+    }
+
+    #[test]
+    fn the_window_starts_over_with_each_start() {
+        let mut t = ChipTemps::<2>::new();
+        t.chips_started();
+        assert_eq!(t.sample([Some(50.0), Some(108.0)], STOP), Some(50.0));
+        assert_eq!(t.sample([Some(50.0), Some(45.0)], STOP), Some(50.0));
+        // The reset released, then the chips answered: counted from the
+        // later one.
+        t.chips_started();
+        t.sample([Some(50.0), Some(45.0)], STOP);
+        t.chips_started();
+        assert_eq!(t.settle_left(), SETTLE_SAMPLES);
+        // Long after: an overheat stop, the chips off (no reading from
+        // chip 2 with the rail down), then on again.
+        for _ in 0..30 {
+            t.sample([Some(50.0), Some(45.0)], STOP);
+        }
+        assert_eq!(t.sample([Some(40.0), None], STOP), None);
+        t.chips_started();
+        assert_eq!(t.sample([Some(52.0), Some(104.25)], STOP), Some(52.0));
+        assert!(t.held(1));
+        assert_eq!(t.sample([Some(53.0), Some(78.375)], STOP), Some(53.0));
+        assert_eq!(t.sample([Some(53.0), Some(48.0)], STOP), Some(53.0));
+        assert_eq!(t.sample([Some(53.0), Some(77.0)], STOP), Some(77.0));
+    }
+
+    #[test]
+    fn the_first_chip_and_the_lost_sensor_rules_hold_inside_the_window() {
+        // The chip's own diode over the line stops at once, window or
+        // not, on two sensors and on one.
+        let mut t = ChipTemps::<2>::new();
+        t.chips_started();
+        assert_eq!(t.sample([Some(79.0), Some(50.0)], STOP), Some(79.0));
+        assert!(!t.held(0));
+        // Both over: the first chip's reading is the one that stops.
+        assert_eq!(t.sample([Some(79.0), Some(108.0)], STOP), Some(79.0));
+        assert!(t.held(1) && !t.held(0));
+        let mut t = ChipTemps::<1>::new();
+        t.chips_started();
+        assert_eq!(t.sample([Some(90.0)], STOP), Some(90.0));
+        assert!(!t.held(0));
+        // A sensor that read before and gives nothing is unknown inside
+        // the window too, whichever it is; a held reading does not make
+        // up for a silent first chip.
+        let mut t = ChipTemps::<2>::new();
+        t.sample([Some(60.0), Some(62.0)], STOP);
+        t.chips_started();
+        assert_eq!(t.sample([Some(60.0), None], STOP), None);
+        t.chips_started();
+        assert_eq!(t.sample([None, Some(108.0)], STOP), None);
+        assert!(t.held(1));
+        // A diode that never read is counted as ever, and a held
+        // reading is a reading: the count is over with it.
+        let mut t = ChipTemps::<2>::new();
+        t.chips_started();
+        for s in 1..=5 {
+            assert_eq!(t.sample([Some(60.0), None], STOP), Some(60.0));
+            assert_eq!(t.never_read_s(1), s);
+        }
+        t.chips_started();
+        assert_eq!(t.sample([Some(60.0), Some(108.0)], STOP), Some(60.0));
+        assert_eq!(t.never_read_s(1), 0);
+        assert!(t.seen(1));
     }
 
     #[test]

@@ -10,7 +10,7 @@
 //! carriers everything behind an FXL6408 expander). The Nerd power-up
 //! follows NerdOS `NerdQaxePlus::initAsics`.
 
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -142,6 +142,10 @@ static GUARD: Mutex<Guard> = Mutex::new(Guard::new());
 static SHUTDOWN: AtomicBool = AtomicBool::new(false);
 /// The core rail is up; the miner starts the chain only then.
 static POWERED: AtomicBool = AtomicBool::new(true);
+/// Counts the chips' starts: the rail back on, the reset pulse's two
+/// edges and the chain's answer ([`chips_started`]). The board loop
+/// starts the second diode's settle window over at each (`chip_temps`).
+static CHIP_STARTS: AtomicU32 = AtomicU32::new(0);
 /// Set by an overheat reset: the board loop forgets its sensor-loss count.
 static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 /// Set by [`prepare_reset`]: the fans at full until the reset.
@@ -735,6 +739,13 @@ pub fn chain_ready() {
     }
 }
 
+/// The chips have just come out of reset or answered on the chain: a
+/// second chip's diode reading settles from here (`chip_temps`: the
+/// sensor's average still holds what it read while the chip was off).
+pub fn chips_started() {
+    CHIP_STARTS.fetch_add(1, Ordering::Relaxed);
+}
+
 /// Pull the chain's reset low, then release it, with the given timing.
 /// Nothing happens on a board without a reset line. On a board with a
 /// `stock_reset_pulse` line (the NerdNOS's GPIO12) that line goes high
@@ -742,10 +753,14 @@ pub fn chain_ready() {
 /// firmware does it (WantClue: PEN high, then `_reset`: RST high 100 ms,
 /// low 100 ms, then the init).
 pub fn reset_chain(low_ms: u32, release_ms: u32) {
+    // Before the pulse and at its release: a sample that falls inside
+    // the pulse is in the window too.
+    chips_started();
     if let Some(pin) = RESET.lock().unwrap().as_ref() {
         pin.set(false);
         std::thread::sleep(Duration::from_millis(u64::from(low_ms)));
         pin.set(true);
+        chips_started();
         if let Some(p) = profile().stock_reset_pulse {
             let aux = Pin::Esp(p);
             aux.output(true);
@@ -1956,6 +1971,12 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut sensor = SensorWatch::new();
     // Two chip diodes: which have read since boot (`chip_temps`).
     let mut two_chips = ChipTemps::<2>::new();
+    // The chips' starts seen so far (`CHIP_STARTS`); the second diode's
+    // reading is held back in the settle window, and that was said for
+    // this start.
+    let mut chip_starts_seen = 0u32;
+    let mut settle_held = false;
+    let mut settle_logged = false;
     // A chip diode that has never read since boot while the other one
     // reads: whether that was said, and that the fans run at full for
     // it (the chip has no stop line of its own).
@@ -2094,7 +2115,31 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     Some(second) => {
                         let chips = [first.as_ref().ok().copied(), second.as_ref().ok().copied()];
                         update(|s| s.chip_temps = chips.to_vec());
+                        // The chips started since the last sample (the
+                        // rail back on, the reset pulse, the chain's
+                        // answer): the second diode's settle window
+                        // starts over. Its reading over the stop line is
+                        // left out for those samples and the fans run
+                        // at full; after them it stops as ever.
+                        let starts = CHIP_STARTS.load(Ordering::Relaxed);
+                        if starts != chip_starts_seen {
+                            chip_starts_seen = starts;
+                            two_chips.chips_started();
+                            settle_logged = false;
+                        }
                         let acting = two_chips.sample(chips, chip_limit);
+                        settle_held = two_chips.held(1);
+                        if settle_held && !settle_logged {
+                            settle_logged = true;
+                            log::warn!(
+                                "board: chip 2 reads {:?} °C right after the chips' start (limit {chip_limit}): the sensor's average still holds readings from before, settling for {} s more, fans at full, no stop",
+                                chips[1],
+                                two_chips.settle_left()
+                            );
+                        } else if !settle_held && settle_logged && two_chips.settle_left() == 0 {
+                            settle_logged = false;
+                            log::info!("board: chip 2's reading has settled, chip temperatures {chips:?}");
+                        }
                         // A diode that has never read while the other
                         // does: left out of the temperature, and after
                         // the time a lost sensor is given the fans go to
@@ -2428,6 +2473,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     POWERED.store(true, Ordering::Relaxed);
                     // The lost-sensor count starts anew with the rail.
                     sensor.clear();
+                    // And the second diode's settle window (the miner's
+                    // reset pulse starts it over).
+                    chips_started();
                     // Start the fans from full again, as at boot: the PID
                     // ran down to its minimum over cold chips while the
                     // core was off, and a Gaia restarted at 420 MHz then
@@ -2612,7 +2660,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // A chip whose diode has never read runs unwatched: full
             // fan while the rail is on.
             let unwatched = diode_never_read && POWERED.load(Ordering::Relaxed);
-            let want = if overheat() || FANS_FULL.load(Ordering::Relaxed) || unwatched {
+            // A second diode's reading over the line, held back while
+            // it settles after the chips' start: full fan meanwhile.
+            let full = overheat() || FANS_FULL.load(Ordering::Relaxed) || unwatched || settle_held;
+            let want = if full {
                 (100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {
