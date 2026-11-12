@@ -1538,7 +1538,8 @@ fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
 /// Oliver's case runs flipped under both, and the Bitaxe Gamma's OLED
 /// reads right with it on. AxeOS 2.15 turns the board's own orientation
 /// by `rotation` (0 = as the board comes, which on the Gamma is WarpAxe's
-/// flipped; 180 = the other way). Screen-off: AxeOS `displayTimeout` (-1
+/// flipped and on the Color boards its own way up; 180 = the other way;
+/// `detect::flip_for_axeos_rotation`). Screen-off: AxeOS `displayTimeout` (-1
 /// always on, 0 off, else minutes), NerdOS `autoscreenoff` (0 = never).
 /// WarpAxe's 0 means never off.
 fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
@@ -1547,7 +1548,8 @@ fn import_display(stock: &Stock, cfg: &mut Config) -> bool {
         cfg.flipscreen = f != 0.0;
         took = true;
     } else if let Some(r) = stock.num("rotation") {
-        cfg.flipscreen = r != 180.0;
+        let board = stock.str("boardversion");
+        cfg.flipscreen = warpaxe_board::detect::flip_for_axeos_rotation(board.as_deref(), r);
         took = true;
     }
     if let Some(i) = stock.num("invertscreen") {

@@ -109,6 +109,21 @@ pub fn from_stock_choice(boardversion: Option<&str>) -> Option<&'static Profile>
     }
 }
 
+/// WarpAxe's `flipscreen` for AxeOS 2.15's `rotation` (0 = the board as
+/// it comes, 180 = turned). On the OLED Bitaxes WarpAxe draws the other
+/// way up from AxeOS, so its switch is on at rotation 0. On the Color
+/// boards (Naja Duo 1201, Gamma Hex 1300) AxeOS draws the ST7789 the way
+/// the profile's `display_flip` already does, so the switch is off at 0.
+/// Seen 2026-11-12: a Naja Duo imported rotation 0 as flipped and showed
+/// its screen upside down.
+pub fn flip_for_axeos_rotation(boardversion: Option<&str>, rotation: f64) -> bool {
+    let turned = rotation == 180.0;
+    match from_stock_choice(boardversion).map(|p| p.display) {
+        Some(crate::profile::Display::St7789I80) => turned,
+        _ => !turned,
+    }
+}
+
 /// From the chips that answered on the Bitaxe pair (47/48) and on the
 /// Nerd pair (44/43), and the input voltage the TPS546 reads (READ_VIN,
 /// read-only), which tells a 5 V carrier from a 12 V one.
@@ -278,6 +293,18 @@ pub fn detect(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn axeos_rotation_maps_per_display() {
+        // OLED Bitaxe: rotation 0 is WarpAxe's flipped.
+        assert!(flip_for_axeos_rotation(Some("801"), 0.0));
+        assert!(!flip_for_axeos_rotation(Some("801"), 180.0));
+        assert!(flip_for_axeos_rotation(None, 0.0));
+        // Color boards: rotation 0 is the profile's own orientation.
+        assert!(!flip_for_axeos_rotation(Some("1201"), 0.0));
+        assert!(flip_for_axeos_rotation(Some("1201"), 180.0));
+        assert!(!flip_for_axeos_rotation(Some("1300"), 0.0));
+    }
+
     #[test]
     fn the_nerdnos_is_taken_with_thermistor_and_rail_only() {
         use super::*;
