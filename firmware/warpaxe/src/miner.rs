@@ -587,11 +587,55 @@ fn silent_event(index: u8) {
     crate::events::record("chain", warpaxe_diag::events::detail::chip_silent(index));
 }
 
+/// The mining loop's stack, bytes. Its own frame is 13 KB: the chain
+/// driver with its counters for [`warpaxe_chain::MAX_CHIPS`] chips
+/// (7.8 KB) and the two policies (2.1 KB) live in it. What is left is
+/// for everything the loop calls: a flash write for a new best
+/// difficulty or a block, the log, an interrupt's frame on top.
+///
+/// 16 KB left 3.5 KB and ran for months (frame 12,720 bytes at main
+/// c24b901), then 3.2 KB once the chain kept a clock per chip (13,072
+/// bytes), and that was not enough: on a Naja Duo
+/// (2026-11-12, main c372ac4) the loop overflowed every one to four
+/// minutes, in `format!("{:.3}")` of a nonce's difficulty, whose rare
+/// exact path (grisu gives up, dragon takes over) needs 2.7 KB with an
+/// interrupt landing on top. A Gaia and a Gamma ran the same image for
+/// 13 minutes: half the nonces, and luck. That formatting is gone from
+/// the loop, and the stack has 4 KB more: about 7 KB to spare. The
+/// least that was ever free is in `minerStackFree` ([`stack_free`]);
+/// `crates/chain/tests/stack.rs` holds the size of what lives in the
+/// frame.
+const STACK_BYTES: usize = 20 * 1024;
+/// Below this much stack never touched, the loop says so in the log.
+const STACK_WARN_BYTES: u32 = 3072;
+
+/// The least stack the mining loop has had to spare since boot, bytes
+/// (FreeRTOS's high-water mark, looked at once a second); 0 until the
+/// loop has run a second.
+static STACK_FREE: AtomicU32 = AtomicU32::new(0);
+
+/// The least stack the mining loop has had to spare since boot, bytes.
+pub fn stack_free() -> u32 {
+    STACK_FREE.load(Ordering::Relaxed)
+}
+
 pub fn start(uart: ChipUart) {
-    std::thread::Builder::new()
-        .stack_size(16 * 1024)
-        .spawn(move || run(uart))
-        .expect("miner thread");
+    use esp_idf_svc::sys;
+    // The task carries a name of its own, so a panic of this loop says
+    // "task miner" rather than the "pthread" every unnamed thread has.
+    unsafe {
+        let mut cfg = sys::esp_pthread_get_default_config();
+        cfg.thread_name = c"miner".as_ptr();
+        sys::esp_pthread_set_cfg(&cfg);
+    }
+    let spawned = std::thread::Builder::new()
+        .stack_size(STACK_BYTES)
+        .spawn(move || run(uart));
+    unsafe {
+        let d = sys::esp_pthread_get_default_config();
+        sys::esp_pthread_set_cfg(&d);
+    }
+    spawned.expect("miner thread");
 }
 
 fn run(mut uart: ChipUart) {
@@ -809,10 +853,15 @@ fn run(mut uart: ChipUart) {
                         let hash = sha256d(&header);
                         let diff = hash_difficulty(&hash);
                         let hex: String = header.iter().map(|b| format!("{b:02x}")).collect();
+                        // Three decimals by whole numbers: `{:.3}` of a
+                        // float takes up to 2.7 KB of stack on its exact
+                        // path, which this loop does not have to give
+                        // for every nonce (see STACK_BYTES).
+                        let milli = (diff * 1000.0).round() as u64;
                         update(|s| {
                             s.last_found = format!(
-                                "serial={} chip={} core={} version={:08x} job_version={:08x} nonce={:08x} ntime={:08x} diff={:.3} chip_diff={} header={hex}",
-                                f.work.serial, f.chip, f.core, f.version, job.version, f.nonce, f.ntime, diff, chain.difficulty()
+                                "serial={} chip={} core={} version={:08x} job_version={:08x} nonce={:08x} ntime={:08x} diff={}.{:03} chip_diff={} header={hex}",
+                                f.work.serial, f.chip, f.core, f.version, job.version, f.nonce, f.ntime, milli / 1000, milli % 1000, chain.difficulty()
                             )
                         });
                         // Each nonce is worth the ticket mask in hashes; right
@@ -1338,6 +1387,13 @@ fn run(mut uart: ChipUart) {
             // enough, and spares the config copy on every 2 ms pass.
             if lone_at.elapsed() >= Duration::from_secs(1) {
                 lone_at = Instant::now();
+                // The stack's low mark, and a word when it gets thin.
+                let free = diag::stack_unused();
+                if free < STACK_WARN_BYTES && STACK_FREE.load(Ordering::Relaxed) >= STACK_WARN_BYTES
+                {
+                    log::warn!("miner: only {free} bytes of stack were never used");
+                }
+                STACK_FREE.store(free, Ordering::Relaxed);
                 watch_block();
                 let mut flags = [false; warpaxe_chain::MAX_CHIPS];
                 for (f, c) in flags.iter_mut().zip(chain.chips()) {

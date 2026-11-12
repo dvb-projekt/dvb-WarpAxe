@@ -285,6 +285,10 @@ pub fn system_info() -> serde_json::Value {
     // waits for the firmware on these and acts itself on the rest
     // (concept 2026-11-04, Block 5). Fixed per firmware version.
     v["selfHeals"] = json!(SELF_HEALS);
+    // The least stack the mining loop has had to spare since boot,
+    // bytes (0 in its first second): the margin behind
+    // `miner::STACK_BYTES`, to be read after an hour of mining.
+    v["minerStackFree"] = json!(miner::stack_free());
     // WarpTune's heartbeat (`POST /api/v1/regulator`): active while its
     // time to live runs. Always present.
     v["externalRegulator"] = crate::regulator::json();
