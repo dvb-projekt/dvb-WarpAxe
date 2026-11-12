@@ -160,6 +160,16 @@ impl<const N: usize> HashrateMonitor<N> {
         }
     }
 
+    /// This monitor as [`HashrateMonitor::new`] would make it, in the
+    /// place it has: nothing of its size passes over the stack.
+    pub fn renew(&mut self, domains: u8, domain_scale: u8, rate_register: Option<u8>) {
+        self.reset();
+        self.count = 0;
+        self.domains = usize::from(domains).min(MAX_DOMAINS);
+        self.domain_scale = f32::from(domain_scale.max(1));
+        self.rate_register = rate_register;
+    }
+
     /// The chain was enumerated: `count` chips answer.
     pub fn set_chip_count(&mut self, count: u8) {
         self.count = usize::from(count).min(N);

@@ -587,25 +587,30 @@ fn silent_event(index: u8) {
     crate::events::record("chain", warpaxe_diag::events::detail::chip_silent(index));
 }
 
-/// The mining loop's stack, bytes. Its own frame is 13 KB: the chain
-/// driver with its counters for [`warpaxe_chain::MAX_CHIPS`] chips
-/// (7.8 KB) and the two policies (2.1 KB) live in it. What is left is
-/// for everything the loop calls: a flash write for a new best
-/// difficulty or a block, the log, an interrupt's frame on top.
+/// The mining loop's stack, bytes: internal RAM, since the loop writes
+/// flash (a new best difficulty, a block, a verified board).
 ///
-/// 16 KB left 3.5 KB and ran for months (frame 12,720 bytes at main
-/// c24b901), then 3.2 KB once the chain kept a clock per chip (13,072
-/// bytes), and that was not enough: on a Naja Duo
-/// (2026-11-12, main c372ac4) the loop overflowed every one to four
-/// minutes, in `format!("{:.3}")` of a nonce's difficulty, whose rare
-/// exact path (grisu gives up, dragon takes over) needs 2.7 KB with an
-/// interrupt landing on top. A Gaia and a Gamma ran the same image for
-/// 13 minutes: half the nonces, and luck. That formatting is gone from
-/// the loop, and the stack has 4 KB more: about 7 KB to spare. The
-/// least that was ever free is in `minerStackFree` ([`stack_free`]);
-/// `crates/chain/tests/stack.rs` holds the size of what lives in the
-/// frame.
-const STACK_BYTES: usize = 20 * 1024;
+/// The chain driver with its counters for [`warpaxe_chain::MAX_CHIPS`]
+/// chips (7.8 KB) and the two policies (2.1 KB) used to be locals of
+/// the loop: a frame of 12,720 bytes at main c24b901, which left 3.5 KB
+/// and ran for months, and of 13,072 bytes once the chain kept a clock
+/// per chip. That was not enough: on a Naja Duo (2026-11-12, main
+/// c372ac4) the loop overflowed every one to four minutes, in
+/// `format!("{:.3}")` of a nonce's difficulty, whose rare exact path
+/// (grisu gives up, dragon takes over) needs 2.7 KB, with an interrupt
+/// landing on top. A larger stack (20 KB, 9f3a31a) cured that and took
+/// 4 KB of internal RAM, which a board with a TLS pool does not have to
+/// give (a Gaia: web API at a crawl, an update that timed out).
+///
+/// So the three live in PSRAM now ([`Held`]) and that formatting is
+/// gone from the loop. The loop's frame is 3.3 KB, and of a 12 KB
+/// stack 8.9 KB are left for what it calls, against the 3.5 KB that
+/// were enough before; the 4 KB less than v0.1.43 took go back to the
+/// internal heap (main has grown 1.3 KB of static data since that
+/// release, so the heap ends about 2.7 KB above it). The least that
+/// was ever free is in `minerStackFree` ([`stack_free`]): 16 KB again
+/// is this one number, should a board show less than it ought to.
+const STACK_BYTES: usize = 12 * 1024;
 /// Below this much stack never touched, the loop says so in the log.
 const STACK_WARN_BYTES: u32 = 3072;
 
@@ -617,6 +622,77 @@ static STACK_FREE: AtomicU32 = AtomicU32::new(0);
 /// The least stack the mining loop has had to spare since boot, bytes.
 pub fn stack_free() -> u32 {
     STACK_FREE.load(Ordering::Relaxed)
+}
+
+/// What the mining loop keeps for as long as the firmware runs and
+/// that is too large for its stack: the chain driver (made anew at
+/// every chain start, in the same place: `Chain::renew`) and the two
+/// policies, which outlive the chains. 10 KB.
+struct Held {
+    chain: Chain,
+    lone: LoneSilence,
+    latch: DomainLatch,
+}
+
+/// The place for [`Held`], taken once and never given back: PSRAM,
+/// asked for by name (a plain allocation of this size would come from
+/// internal RAM, `CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL`). The loop's
+/// stack stays internal; data in PSRAM is no trouble for its flash
+/// writes, which touch none of it while the cache is off. Without
+/// PSRAM (no board is built that way) internal RAM has to do, said in
+/// the log.
+///
+/// A first driver has to be built by value (7.8 KB on the stack of
+/// whoever calls this), so the mining loop does not call it itself
+/// ([`held`]).
+fn hold() -> *mut Held {
+    use esp_idf_svc::sys;
+    let (size, align) = (core::mem::size_of::<Held>(), core::mem::align_of::<Held>());
+    let mut p = unsafe {
+        sys::heap_caps_aligned_alloc(align, size, sys::MALLOC_CAP_SPIRAM | sys::MALLOC_CAP_8BIT)
+    };
+    if p.is_null() {
+        log::warn!("miner: no PSRAM for the chain's state: {size} bytes of internal RAM");
+        p = unsafe { sys::heap_caps_aligned_alloc(align, size, sys::MALLOC_CAP_8BIT) };
+    }
+    assert!(!p.is_null(), "miner: no memory for the chain's state");
+    let p = p.cast::<Held>();
+    // Field by field: every one a whole value before anyone looks.
+    unsafe {
+        let chip = board::chip();
+        core::ptr::addr_of_mut!((*p).chain).write(Chain::new(chip, ChainConfig::for_profile(chip)));
+        core::ptr::addr_of_mut!((*p).lone).write(LoneSilence::new());
+        core::ptr::addr_of_mut!((*p).latch).write(DomainLatch::new());
+    }
+    p
+}
+
+/// [`Held`] for the mining loop, made on a stack that is not the
+/// loop's: a thread that lives for this one call, its stack in PSRAM
+/// (it writes no flash). The loop's own stack never carries a driver by
+/// value, so `minerStackFree` shows what the loop itself needs.
+fn held() -> &'static mut Held {
+    static PLACE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    // hold() and the driver it builds take 9.4 KB of this stack.
+    const STACK: usize = 16 * 1024;
+    let make = || PLACE.store(hold() as usize, Ordering::SeqCst);
+    // Without PSRAM for that stack, one from internal RAM, as short-lived.
+    let thread = diag::spawn_psram("held", STACK, make)
+        .or_else(|_| std::thread::Builder::new().stack_size(STACK).spawn(make));
+    match thread {
+        Ok(thread) => {
+            let _ = thread.join();
+        }
+        Err(e) => log::warn!("miner: no thread for the chain's state: {e}"),
+    }
+    let mut p = PLACE.load(Ordering::SeqCst) as *mut Held;
+    if p.is_null() {
+        // No thread at all: here after all, with more stack than the
+        // loop has by rights. Nothing else is left to try.
+        p = hold();
+    }
+    // Made once, for this thread alone.
+    unsafe { &mut *p }
 }
 
 pub fn start(uart: ChipUart) {
@@ -655,15 +731,14 @@ fn run(mut uart: ChipUart) {
     // share the hour between two interventions. A board whose nonce-to-
     // chip attribution is not confirmed on a device (the Naja Duo) only
     // reports the silence (`Profile::silent_chip_restart`).
-    let mut lone = if board::profile().silent_chip_restart {
-        LoneSilence::new()
-    } else {
+    // In PSRAM with the chain driver, not on this stack (`Held`).
+    let Held { chain, lone, latch } = held();
+    if !board::profile().silent_chip_restart {
         log::warn!(
             "miner: the silent-chip watchdog on this board reports only, no restart for one silent chip (profile)"
         );
-        LoneSilence::report_only()
-    };
-    let mut latch = DomainLatch::new();
+        *lone = LoneSilence::report_only();
+    }
     loop {
         // No chain runs from here until the next one's first PLL write:
         // nothing is coming down, a voltage drop need not wait.
@@ -769,7 +844,7 @@ fn run(mut uart: ChipUart) {
             difficulty: pool_diff,
             ..ChainConfig::for_profile(board::chip())
         };
-        let mut chain = Chain::new(board::chip(), chain_cfg);
+        chain.renew(board::chip(), chain_cfg);
         // Each chip's own clock is part of the bring-up ramp: no chip
         // passes its clock on the way up.
         // (What each chip then runs at is in `asicFrequencies`.)

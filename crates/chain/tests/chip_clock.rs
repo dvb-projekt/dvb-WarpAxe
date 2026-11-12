@@ -599,3 +599,72 @@ fn the_nonce_space_is_sized_for_the_fastest_chip() {
         assert_eq!(c.register(reg::HASH_COUNTING_NUMBER), hcn(650 * MHZ));
     }
 }
+
+/// `Chain::renew` is `Chain::new` in the place the driver has (the
+/// firmware keeps it where a second one cannot be built beside it):
+/// whatever a driver has been through, renewed it is, field for field,
+/// the driver `new` makes, and it brings a chain up the same.
+#[test]
+fn a_renewed_driver_is_a_new_driver() {
+    let cases: [(&ChipProfile, u8, &ChipProfile); 4] = [
+        (&BM1370, 8, &BM1370),
+        (&BM1373_ESP, 2, &BM1373),
+        (&BM1397, 1, &BM1370),
+        (&BM1370, 4, &BM1373_ESP_1M),
+    ];
+    for (profile, chips, next) in cases {
+        // A driver with a past: offsets, a ramp under way, work out,
+        // counters read, nonces in.
+        let mut b = Bench::with_offsets(profile, chips, 600, &[-25, 10]);
+        b.run_until_settled(30_000);
+        b.run_ms(4_000);
+        b.drv.set_frequency(500 * MHZ);
+        b.run_ms(350);
+        assert!(!b.drv.clock_settled());
+
+        let config = Config {
+            frequency_hz: 525 * MHZ,
+            expected_chips: 3,
+            difficulty: 64,
+            ..Config::for_profile(next)
+        };
+        b.drv.renew(next, config);
+        let fresh = Chain::new(next, config);
+        assert_eq!(
+            format!("{:?}", b.drv),
+            format!("{fresh:?}"),
+            "{} -> {}",
+            profile.init_source,
+            next.init_source
+        );
+    }
+    // And it runs: the same bytes at the same moments as a new one.
+    let run = |renewed: bool| {
+        let mut b = Bench::new(&BM1370, 4, 600);
+        if renewed {
+            b.run_until_settled(30_000);
+            b.run_ms(2_000);
+            let config = Config {
+                frequency_hz: 600 * MHZ,
+                ..Config::for_profile(&BM1370)
+            };
+            b = Bench {
+                drv: {
+                    let mut d = b.drv;
+                    d.renew(&BM1370, config);
+                    d.start(0);
+                    d
+                },
+                uart: SimUart::new(&BM1370, 4),
+                now: 0,
+                events: Vec::new(),
+                works: 0,
+                top: vec![0; 4],
+            };
+        }
+        b.run_until_settled(30_000);
+        b.run_ms(3_000);
+        (b.uart.digest, b.uart.frames)
+    };
+    assert_eq!(run(true), run(false));
+}

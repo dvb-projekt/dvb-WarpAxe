@@ -432,6 +432,46 @@ impl Chain {
         }
     }
 
+    /// This driver as [`Chain::new`] would make it for `profile` and
+    /// `config`, in the place it has. For a caller that keeps the driver
+    /// somewhere it cannot afford to build a second one beside it: a
+    /// driver is 7.8 KB, and `*chain = Chain::new(..)` puts that on the
+    /// stack first (the firmware's mining loop holds it in PSRAM and has
+    /// a 16 KB stack). `tests/chip_clock.rs` holds the two to the same
+    /// result.
+    pub fn renew(&mut self, profile: &'static ChipProfile, config: Config) {
+        self.profile = profile;
+        self.config = config;
+        self.mode = Mode::Idle;
+        self.render = None;
+        self.init_done = false;
+        self.baud_switched = false;
+        self.chip_count = 0;
+        self.found = 0;
+        self.chips = [ChipStatus::default(); MAX_CHIPS];
+        self.monitor.renew(
+            profile.domains,
+            profile.domain_hashrate_scale,
+            profile.rate_register,
+        );
+        self.recent = [[NO_KEY; RECENT]; MAX_CHIPS];
+        self.recent_at = [0; MAX_CHIPS];
+        self.slots = [Slot::default(); SLOTS];
+        self.ids = JobIds::with_step(profile.job_id_step);
+        self.serial = 0;
+        self.decoder = RxDecoder::new();
+        self.stats = Stats::default();
+        self.frequency_hz = 0;
+        self.target_hz = config.frequency_hz;
+        self.offsets_hz = [0; MAX_CHIPS];
+        self.chip_step_hz = [0; MAX_CHIPS];
+        self.chip_hz = [0; MAX_CHIPS];
+        self.difficulty = config.difficulty;
+        self.first_job_us = None;
+        self.last_job_us = None;
+        self.counter_cursor = None;
+    }
+
     /// Begin bring-up. Call after pulsing the chips' reset line; the
     /// host UART must be at the profile's initial rate.
     pub fn start(&mut self, now_us: u64) {
