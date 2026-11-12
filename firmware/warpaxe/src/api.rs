@@ -531,6 +531,10 @@ fn chip_offsets_refuse(
         offsets.list(),
         board::MIN_FREQUENCY_MHZ,
         p.abs_max_frequency_mhz,
+        // Chips in series (Naja Duo, Gamma Hex, NerdQAxe++ Rev 7) may
+        // lie only a little apart: the slower chip takes voltage from
+        // the faster one.
+        board::profile().voltage_domains > 1,
     )
     .err()
     .map(|why| why.to_string())

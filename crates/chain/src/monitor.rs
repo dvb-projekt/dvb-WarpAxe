@@ -55,22 +55,25 @@ pub struct Measurement {
 }
 
 impl Measurement {
-    /// A new reading (ESP-Miner `update_hash_counter`).
-    fn update(&mut self, value: u32, now_us: u64) {
+    /// A new reading (ESP-Miner `update_hash_counter`). `true` when
+    /// the counter went back: a value below the last one that no wrap
+    /// at 32 bits explains.
+    fn update(&mut self, value: u32, now_us: u64) -> bool {
         if self.time_us != 0 {
             let dt = now_us.saturating_sub(self.time_us);
             if dt < MIN_INTERVAL_US {
-                return;
+                return false;
             }
             let steps = value.wrapping_sub(self.value);
             if !plausible(steps, dt) {
                 // Counter restarted or garbage: start over from here,
                 // keep the last rates.
+                let back = value < self.value;
                 self.value = value;
                 self.time_us = now_us;
                 self.win_value = value;
                 self.win_time_us = now_us;
-                return;
+                return back;
             }
             self.ghs = rate_ghs(steps, dt);
             let wdt = now_us.saturating_sub(self.win_time_us);
@@ -88,6 +91,7 @@ impl Measurement {
         }
         self.value = value;
         self.time_us = now_us;
+        false
     }
 }
 
@@ -133,6 +137,12 @@ pub struct ChipMonitor {
     pub domains: [Measurement; MAX_DOMAINS],
     /// Hash errors.
     pub error: Measurement,
+    /// Times this chip's total counter went back between two readings
+    /// since the chain started: the chip began to count anew while the
+    /// chain ran on, which is a chip that reset itself (a Naja Duo's
+    /// chip 1, 2026-11-12, left with too little of the voltage it
+    /// shares in series). Nothing else in the firmware sees that.
+    pub restarts: u32,
 }
 
 /// The chain's counters, one entry per chip.
@@ -246,8 +256,14 @@ impl<const N: usize> HashrateMonitor<N> {
             return true;
         }
         match register {
-            reg::TOTAL_COUNT => m.total.update(value, now_us),
-            reg::ERROR_COUNT => m.error.update(value, now_us),
+            reg::TOTAL_COUNT => {
+                if m.total.update(value, now_us) {
+                    m.restarts = m.restarts.saturating_add(1);
+                }
+            }
+            reg::ERROR_COUNT => {
+                m.error.update(value, now_us);
+            }
             reg::DOMAIN_0_COUNT..=reg::DOMAIN_3_COUNT
             | reg::DOMAIN_4_COUNT..=reg::DOMAIN_7_COUNT => {
                 let d = usize::from(reg::domain_of(register).unwrap_or(u8::MAX));
@@ -323,6 +339,44 @@ impl<const N: usize> HashrateMonitor<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A chip that starts its counters over while the chain runs on (a
+    /// reset of its own) is counted; a wrap at 32 bits, a burst and a
+    /// fresh chain are not.
+    #[test]
+    fn a_total_counter_that_goes_back_is_a_chip_that_restarted() {
+        let mut m: HashrateMonitor<4> = HashrateMonitor::new(4, 1, None);
+        m.set_chip_count(2);
+        let s = 1_000_000u64;
+        // 500 steps a second on both chips.
+        for t in 1..=5u64 {
+            m.on_register(0, reg::TOTAL_COUNT, (t * 500) as u32, t * s);
+            m.on_register(1, reg::TOTAL_COUNT, (t * 500) as u32, t * s);
+        }
+        assert_eq!((m.chips()[0].restarts, m.chips()[1].restarts), (0, 0));
+        // Chip 1 starts over.
+        m.on_register(0, reg::TOTAL_COUNT, 3000, 6 * s);
+        m.on_register(1, reg::TOTAL_COUNT, 12, 6 * s);
+        assert_eq!((m.chips()[0].restarts, m.chips()[1].restarts), (0, 1));
+        // It counts on from there: a rate again, no second restart.
+        m.on_register(1, reg::TOTAL_COUNT, 512, 7 * s);
+        assert_eq!(m.chips()[1].restarts, 1);
+        assert!((m.chips()[1].total.ghs - 2147.48).abs() < 0.1);
+        // The error counter going back is not counted on its own.
+        m.on_register(0, reg::ERROR_COUNT, 900, 7 * s);
+        m.on_register(0, reg::ERROR_COUNT, 3, 8 * s);
+        assert_eq!(m.chips()[0].restarts, 0);
+        // A wrap at 32 bits is a plausible step, not a restart.
+        let mut w: HashrateMonitor<4> = HashrateMonitor::new(4, 1, None);
+        w.set_chip_count(1);
+        w.on_register(0, reg::TOTAL_COUNT, u32::MAX - 100, s);
+        w.on_register(0, reg::TOTAL_COUNT, 400, 2 * s);
+        assert_eq!(w.chips()[0].restarts, 0);
+        assert!(w.chips()[0].total.ghs > 2000.0);
+        // A new chain forgets them.
+        m.reset();
+        assert_eq!(m.chips()[1].restarts, 0);
+    }
 
     #[test]
     fn a_second_reading_gives_the_rate_and_a_burst_is_ignored() {

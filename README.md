@@ -265,7 +265,10 @@ back at any time with `GET /api/v1/display/frame`.
   boards with more than one chip (a BM1373 at its own address: both
   reference drivers shift it by two bits for a single-chip command,
   which reached no second chip on a Naja Duo, so its chip 1 also went
-  without the domain-end IO strength of ESP-Miner's init)
+  without the domain-end IO strength of ESP-Miner's init; where the
+  chips sit in series, as on that board, their clocks may lie 25 MHz
+  apart at most, since a slowed chip takes voltage from the other, and a
+  chip that resets itself for want of it is counted, `counterRestarts`)
   (`chipFreqOffsets`, MHz added to the frequency per chip, after v0.1.43):
   each chip is stepped to its clock by writes to that chip alone, without
   a chain restart, and no chip passes its own clock on the way; the

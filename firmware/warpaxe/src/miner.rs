@@ -49,6 +49,13 @@ pub struct AsicMonitor {
     /// without counters (the BM1397). Not part of AxeOS's shape.
     #[serde(rename = "hashCount")]
     pub hash_count: Option<u32>,
+    /// Times this chip's hash counter went back since the chain
+    /// started: the chip began to count anew while the chain ran on, a
+    /// chip that reset itself (left with too little voltage, on a board
+    /// with chips in series). `hashCount` and `errorCount` start over
+    /// with it. Not part of AxeOS's shape.
+    #[serde(rename = "counterRestarts")]
+    pub counter_restarts: u32,
     /// GH/s per domain, scaled as AxeOS reports them.
     pub domains: Vec<f32>,
     /// GH/s of the error counter (NerdOS `errorHashRate`, served by
@@ -295,6 +302,7 @@ fn offsets_for(chips: u8) -> config::ChipOffsets {
         stored.list(),
         board::MIN_FREQUENCY_MHZ,
         max,
+        board::profile().voltage_domains > 1,
     ) {
         log::warn!("miner: clock offsets not applied at {base} MHz: {why}");
         return config::ChipOffsets::NONE;
@@ -897,6 +905,8 @@ fn run(mut uart: ChipUart) {
         let mut nonces_since_start: u64 = 0;
         let mut last_work: Option<Instant> = None;
         let mut last_counters: Option<Instant> = None;
+        // Counter restarts already said, per chip (`ChipMonitor::restarts`).
+        let mut restarts_seen = [0u32; warpaxe_chain::MAX_CHIPS];
         let mut all_silent_since: Option<Instant> = None;
         let mut lone_at = Instant::now();
         let chain_started = Instant::now();
@@ -1280,12 +1290,28 @@ fn run(mut uart: ChipUart) {
                             total: c.total.ghs,
                             error_count: mon.has_error_counter().then_some(c.error.value),
                             hash_count: mon.has_error_counter().then_some(c.total.value),
+                            counter_restarts: c.restarts,
                             domains: (0..mon.domains()).map(|d| mon.domain_ghs(i, d)).collect(),
                             error_ghs: c.error.ghs,
                             total_1m: c.total.ghs_1m,
                             fresh: counters_fresh(c, now_read),
                         })
                         .collect();
+                    // A chip whose counter went back: it reset itself and
+                    // nothing else here would say so.
+                    for (i, (seen, c)) in restarts_seen.iter_mut().zip(mon.chips()).enumerate() {
+                        if c.restarts > *seen {
+                            *seen = c.restarts;
+                            log::warn!(
+                                "miner: chip {i}: its hash counter went back, the chip has reset itself ({} since the chain start)",
+                                c.restarts
+                            );
+                            update(|s| {
+                                s.last_error =
+                                    format!("chip {i} reset itself (its hash counter went back)")
+                            });
+                        }
+                    }
                     // Queued events to flash from this internal stack.
                     crate::events::flush();
                     let pct = mon.has_error_counter().then(|| mon.error_percent());

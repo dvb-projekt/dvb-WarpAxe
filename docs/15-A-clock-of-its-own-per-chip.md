@@ -80,7 +80,12 @@ when any chip's own clock (`frequency` + its offset)
 
 - is above the board's highest clock (`absMaxFrequency`),
 - is below half of `frequency` (rounded up) or below 50 MHz,
-- has no PLL setting.
+- has no PLL setting,
+
+or when, on a board whose chips are in series (Naja Duo, Gamma Hex,
+NerdQAxe++ Rev 7), the largest and the smallest offset lie more than
+25 MHz apart (8 % of `frequency` where that is less): there a slowed
+chip takes voltage from the others, see *What the devices said*.
 
 The same check runs when `frequency` alone is changed, against the offsets
 that stay. Half the chain's clock is far below anything a search needs
@@ -97,6 +102,7 @@ slip of the hand from parking a chip at next to nothing.
 | `chipFreqOffsets` | the stored list, MHz; `[]` = none |
 | `asicFrequencies` | the clock each chip runs at now, MHz on the PLL's grid, in the order of `hashrateMonitor.asics` |
 | `expectedHashrate` | the sum over the chips, each at its own clock |
+| `hashrateMonitor.asics[i].counterRestarts` | times the chip's hash counter went back since the chain started: a chip that reset itself; `hashCount` and `errorCount` start over with it |
 | `hashrateMonitor.asics[i].hashCount` | the chip's total hash counter as read, one step per 2^32 hashes like `errorCount` (wraps at 32 bits, starts over with the chain): two readings give the chip's rate without the noise of `total` |
 | `frequency`, `frequencyActual` | the chain's clock, as before |
 
@@ -179,7 +185,7 @@ the status line are in all eight languages.
 
 ## Tests
 
-`cargo test --workspace`: 677 tests (655 before).
+`cargo test --workspace`: 679 tests (655 before).
 
 - `crates/chain/tests/chip_clock.rs`, against the simulator:
   - **nothing changes without offsets**: for eight chains (one, two, four
@@ -212,8 +218,8 @@ the status line are in all eight languages.
   a chip at its own clock.
 
 Flash: the image grew by 9,296 bytes with the feature (2,999,840 →
-3,009,136, built from the same path length), and stands at 3,010,672
-bytes after the changes above (69,520 bytes left below the import
+3,009,136, built from the same path length), and stands at 3,010,384
+bytes after the changes above (69,808 bytes left below the import
 window).
 
 ## What the devices said (2026-11-12, runs by dvb-WarpAxe #2)
@@ -269,33 +275,41 @@ family, and a single BM1373 can be given a clock of its own. Chip 0
 never showed the error: 0 shifted is 0.
 
 That explains the third row of the table (the offset for chip 1 went to
-address 4 and did nothing) but **not the second**. The offset for chip 0
-was set while the chain ran; the driver then writes to chip 0 alone, at
-address 0, which is its address either way. Why chip 1 slowed with it
-is open. Two candidates, neither confirmed:
+address 4 and did nothing), not the second: the offset for chip 0 was
+set while the chain ran, where the driver writes to chip 0 alone, at
+address 0, its address either way. The second row is the board.
 
-- *The supply.* The two chips of a Naja Duo are in series across the
-  regulator's output, the midpoint not regulated, so the same current
-  runs through both. A chip that is slowed takes less current and a
-  larger share of the voltage, and the other is left with less: with
-  chip 0 at 267 and chip 1 at 327 MHz about 0.90 of its share, where a
-  chip no longer hashes at its clock. With 25 MHz between them (the
-  test build's runs) the split is 0.96 to 1.04, and the faster chip
-  held its rate. If this is it, the table is what the board does, the
-  firmware apart, and a large offset on this board also means **more**
-  voltage on the slowed chip.
-- *A chain start in between* (the firmware restarting the chain for a
-  silent chip or a stuck domain; the uptime shows no reboot, the log of
-  that run is gone). At a chain start with the offset in force the chips
-  come up together, by writes to all, as far as the lowest clock asked
-  for, and chip 1's way on from there went to address 4: chip 1 stays
-  down with chip 0. The simulator shows this with a driver that shifts.
-  It does not explain how chip 1 was back at full rate in the third
-  row.
+**Chips in series share one current.** The two chips of a Naja Duo sit
+in series across the regulator's output, the midpoint not regulated. A
+chip that is slowed takes less current and a larger share of the
+voltage, and the other is left with less. With the address put right
+(main 5d50c13, 327 MHz, offsets set while the chain ran, each PLL word
+read back, no chain restart counted):
 
-What tells them apart, at the next run: with the offset set while the
-chain runs, chip 1's PLL word read back (unchanged if it is the
-supply), its error counter, and the core voltage of each chip.
+| Offsets | PLL changed on | Hash counters | Errors chip 0 / chip 1 |
+|---|---|---|---|
+| none | – | 2266 / 2267 GH/s | 0.02 % / 0.2 % |
+| chip 0 −25 MHz | chip 0 | 2104 / 2269 | 0.02 % / **1.36 %** |
+| chip 1 −25 MHz | chip 1 | 2250 / 2082 | 0.04 % / 0.07 % |
+| chip 0 −60 MHz | chip 0 | 1845 / counters started over | – |
+
+25 MHz apart, the faster chip pays in errors and the slower one gains;
+60 MHz apart, the faster chip's counters went back within two minutes:
+a chip that reset itself for want of voltage, its PLL never written,
+and nothing in the firmware took note. That is the "both slower" of the
+first run. It is also what makes balancing such a pair possible:
+slowing the chip with fewer errors a little helps the other.
+
+Two things follow in the firmware:
+
+- On a board with chips in series (`voltage_domains` above 1: Naja Duo,
+  Gamma Hex, NerdQAxe++ Rev 7) the offsets may lie at most 25 MHz
+  apart, or 8 % of the chain's clock where that is less
+  (`offsets::series_spread_mhz`); the API refuses more, and a stored
+  list that is further apart is not applied.
+- A chip whose total counter goes back while the chain runs on is
+  counted (`hashrateMonitor.asics[i].counterRestarts`), with a line in
+  the log and `lastError`.
 
 Since then (`ChipProfile::command_address_shift` 0 on the BM1373):
 every single-chip write to a BM1373 goes to the chip's own address. That
@@ -336,9 +350,9 @@ the driver are not yet. To be run with Oliver's OK, through dvb-WarpAxe
 6. **Self-test** with offsets: passes, each chip near 100 % of its own
    rate.
 7. **NerdQAxe++** (four BM1370): chip 3 at −25 MHz, as in 1.
-8. **Naja Duo** (two BM1373), with the address put right: after a start
-   register 0x58 reads `0x0001F111` on **both** chips; `[-60, 0]` slows
-   chip 0 alone and `[0, -60]` chip 1 alone (hash counters and the PLL
-   word read back from both, set while running and again after chips
-   off and on); chip 1's error rate against chip 0's over an hour; then,
-   with the midpoint measured, what an offset does to it.
+8. **Naja Duo** (two BM1373): `[-25, 0]` and `[0, -25]` are taken and
+   slow the one chip (done on 5d50c13, table above); `[-60, 0]` is
+   refused with 400 and names the 25 MHz; with `[0, -25]` stored, chips
+   off and on: chip 1 comes up at its own clock, chip 0 at the chain's;
+   `counterRestarts` stays 0 on both over an hour; then, with the
+   midpoint measured, what a small offset does to it.

@@ -14,7 +14,20 @@
 //!   setting,
 //! - none is above the board's highest clock,
 //! - none is below [`floor_mhz`]: half the chain's clock, and never
-//!   under the lowest clock the firmware sets at all.
+//!   under the lowest clock the firmware sets at all,
+//! - and on a board whose chips sit in series across the regulator's
+//!   output, the clocks of the chips lie no further apart than
+//!   [`series_spread_mhz`].
+//!
+//! Chips in series share one current. A chip that is slowed takes less
+//! of it and a larger share of the voltage, and the others are left
+//! with less. On a Naja Duo (two BM1373 in series, the midpoint not
+//! regulated, 327 MHz, 2026-11-12): 25 MHz apart, the faster chip's
+//! error rate rose from 0.2 % to 1.36 % (the slower one's fell); 60 MHz
+//! apart, the faster chip's counters started over within two minutes: a
+//! chip that reset itself for want of voltage, its PLL never written.
+//! The same effect is what a tuner can use to balance such a pair, in
+//! small steps.
 //!
 //! The list goes by chain index. One that is longer than the chain is
 //! cut, a shorter one filled with zeros, and a list of zeros is no list
@@ -56,14 +69,29 @@ pub enum Refusal {
         /// Its clock with the offset, MHz.
         mhz: i64,
     },
+    /// The chips are in series and their clocks would lie further apart
+    /// than [`series_spread_mhz`].
+    Apart {
+        /// The distance between the fastest and the slowest chip, MHz.
+        mhz: i64,
+        /// The most this board allows, MHz.
+        max: u32,
+    },
 }
 
 impl fmt::Display for Refusal {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Refusal::Apart { mhz, max } = *self {
+            return write!(
+                f,
+                "chipFreqOffsets: {mhz} MHz between the chips, this board's chips are in series: at most {max} MHz"
+            );
+        }
         let (chip, mhz, why, limit) = match *self {
             Refusal::Above { chip, mhz, max } => (chip, mhz, "above the board's", max),
             Refusal::Below { chip, mhz, min } => (chip, mhz, "below", min),
             Refusal::NoPll { chip, mhz } => (chip, mhz, "has no PLL setting", 0),
+            Refusal::Apart { .. } => return Ok(()),
         };
         write!(f, "chipFreqOffsets: chip {chip} at {mhz} MHz {why}")?;
         if limit > 0 {
@@ -87,18 +115,44 @@ pub const fn floor_mhz(base_mhz: u32, min_mhz: u32) -> u32 {
     }
 }
 
-/// Check `offsets` (MHz per chip, chain order) against the chain's clock
-/// `base_mhz`: every chip's own clock between [`floor_mhz`] and
-/// `max_mhz` (0 = the board names no highest clock) and with a PLL
-/// setting. Zeros are not looked at: the chain's clock has its own
-/// check.
+/// How far apart the clocks of chips in series may lie, MHz: 25 MHz, or
+/// 8 % of the chain's clock where that is less. At that distance a Naja
+/// Duo's faster chip showed errors (1.36 %) and kept hashing; see the
+/// module's head.
+pub const fn series_spread_mhz(base_mhz: u32) -> u32 {
+    let share = base_mhz / 100 * 8 + base_mhz % 100 * 8 / 100;
+    if share < 25 {
+        share
+    } else {
+        25
+    }
+}
+
+/// Check `offsets` (MHz per chip, chain order, in the stored form: one
+/// entry per chip, or none) against the chain's clock `base_mhz`: every
+/// chip's own clock between [`floor_mhz`] and `max_mhz` (0 = the board
+/// names no highest clock) and with a PLL setting; and, where the
+/// board's chips are `in_series`, the offsets no further apart than
+/// [`series_spread_mhz`]. Zeros are not looked at for the first three:
+/// the chain's clock has its own check.
 pub fn check(
     spec: &PllSpec,
     base_mhz: u32,
     offsets: &[i16],
     min_mhz: u32,
     max_mhz: u32,
+    in_series: bool,
 ) -> Result<(), Refusal> {
+    if in_series {
+        let list = &offsets[..offsets.len().min(MAX_CHIPS)];
+        let lo = list.iter().copied().min().unwrap_or(0);
+        let hi = list.iter().copied().max().unwrap_or(0);
+        let apart = i64::from(hi) - i64::from(lo);
+        let max = series_spread_mhz(base_mhz);
+        if apart > i64::from(max) {
+            return Err(Refusal::Apart { mhz: apart, max });
+        }
+    }
     let min = floor_mhz(base_mhz, min_mhz);
     for (i, &offset) in offsets.iter().enumerate().take(MAX_CHIPS) {
         if offset == 0 {
@@ -152,8 +206,8 @@ mod tests {
     #[test]
     fn an_empty_list_and_a_list_of_zeros_pass_whatever_the_clock() {
         for base in [0, 50, 625, 5000] {
-            assert_eq!(check(&BM1370.pll, base, &[], 50, 700), Ok(()));
-            assert_eq!(check(&BM1370.pll, base, &[0; 8], 50, 700), Ok(()));
+            assert_eq!(check(&BM1370.pll, base, &[], 50, 700, false), Ok(()));
+            assert_eq!(check(&BM1370.pll, base, &[0; 8], 50, 700, true), Ok(()));
         }
     }
 
@@ -161,24 +215,30 @@ mod tests {
     fn the_octaxe_case_passes() {
         // Chips 2 and 4 down, the rest at the chain's 625 MHz.
         let offsets = [0, 0, -25, 0, -50, 0, 0, 0];
-        assert_eq!(check(&BM1370.pll, 625, &offsets, 50, 700), Ok(()));
+        assert_eq!(check(&BM1370.pll, 625, &offsets, 50, 700, false), Ok(()));
         // Two BM1373 in series, the second one down.
-        assert_eq!(check(&BM1373.pll, 600, &[0, -20], 50, 690), Ok(()));
+        assert_eq!(check(&BM1373.pll, 600, &[0, -20], 50, 690, false), Ok(()));
     }
 
     #[test]
     fn every_chips_own_clock_is_held_to_the_boards_highest() {
         assert_eq!(
-            check(&BM1370.pll, 690, &[0, 0, 15, 0], 50, 700),
+            check(&BM1370.pll, 690, &[0, 0, 15, 0], 50, 700, false),
             Err(Refusal::Above {
                 chip: 2,
                 mhz: 705,
                 max: 700
             })
         );
-        assert_eq!(check(&BM1370.pll, 690, &[0, 0, 10, 0], 50, 700), Ok(()));
+        assert_eq!(
+            check(&BM1370.pll, 690, &[0, 0, 10, 0], 50, 700, false),
+            Ok(())
+        );
         // A board that names no highest clock: the PLL decides.
-        assert_eq!(check(&BM1370.pll, 690, &[0, 0, 15, 0], 50, 0), Ok(()));
+        assert_eq!(
+            check(&BM1370.pll, 690, &[0, 0, 15, 0], 50, 0, false),
+            Ok(())
+        );
     }
 
     #[test]
@@ -186,9 +246,9 @@ mod tests {
         assert_eq!(floor_mhz(625, 50), 313);
         assert_eq!(floor_mhz(600, 50), 300);
         assert_eq!(floor_mhz(80, 50), 50);
-        assert_eq!(check(&BM1370.pll, 600, &[-300, 0], 50, 0), Ok(()));
+        assert_eq!(check(&BM1370.pll, 600, &[-300, 0], 50, 0, false), Ok(()));
         assert_eq!(
-            check(&BM1370.pll, 600, &[-301, 0], 50, 0),
+            check(&BM1370.pll, 600, &[-301, 0], 50, 0, false),
             Err(Refusal::Below {
                 chip: 0,
                 mhz: 299,
@@ -197,7 +257,7 @@ mod tests {
         );
         // Far below zero: refused as too low, not wrapped into a clock.
         assert_eq!(
-            check(&BM1370.pll, 600, &[0, i16::MIN], 50, 0),
+            check(&BM1370.pll, 600, &[0, i16::MIN], 50, 0, false),
             Err(Refusal::Below {
                 chip: 1,
                 mhz: 600 - 32768,
@@ -205,7 +265,7 @@ mod tests {
             })
         );
         assert_eq!(
-            check(&BM1370.pll, 80, &[-31], 50, 0),
+            check(&BM1370.pll, 80, &[-31], 50, 0, false),
             Err(Refusal::Below {
                 chip: 0,
                 mhz: 49,
@@ -218,7 +278,7 @@ mod tests {
     fn a_clock_without_a_pll_setting_is_refused_by_chip() {
         // Above every PLL setting of the BM1370, on a board that names
         // no highest clock.
-        let r = check(&BM1370.pll, 3000, &[0, 0, 0, 30000], 50, 0);
+        let r = check(&BM1370.pll, 3000, &[0, 0, 0, 30000], 50, 0, false);
         assert_eq!(
             r,
             Err(Refusal::NoPll {
@@ -229,6 +289,42 @@ mod tests {
         assert_eq!(
             r.unwrap_err().to_string(),
             "chipFreqOffsets: chip 3 at 33000 MHz has no PLL setting"
+        );
+    }
+
+    /// Chips in series: what a Naja Duo showed (327 MHz) is the line.
+    #[test]
+    fn chips_in_series_stay_within_25_mhz_or_8_percent_of_each_other() {
+        assert_eq!(series_spread_mhz(327), 25);
+        assert_eq!(series_spread_mhz(600), 25);
+        assert_eq!(series_spread_mhz(313), 25);
+        assert_eq!(series_spread_mhz(312), 24);
+        assert_eq!(series_spread_mhz(250), 20);
+        assert_eq!(series_spread_mhz(0), 0);
+        let naja = |o: &[i16]| check(&BM1373.pll, 327, o, 50, 690, true);
+        assert_eq!(naja(&[]), Ok(()));
+        assert_eq!(naja(&[-25, 0]), Ok(()));
+        assert_eq!(naja(&[0, -25]), Ok(()));
+        assert_eq!(naja(&[-10, 15]), Ok(()));
+        // The run that reset chip 1.
+        assert_eq!(naja(&[-60, 0]), Err(Refusal::Apart { mhz: 60, max: 25 }));
+        assert_eq!(naja(&[0, -26]), Err(Refusal::Apart { mhz: 26, max: 25 }));
+        assert_eq!(naja(&[-13, 13]), Err(Refusal::Apart { mhz: 26, max: 25 }));
+        // Six chips in two domains (a Gamma Hex): the whole list counts.
+        let hex = |o: &[i16]| check(&BM1370.pll, 500, o, 50, 0, true);
+        assert_eq!(hex(&[0, 0, -25, 0, 0, 0]), Ok(()));
+        assert_eq!(
+            hex(&[5, 0, -25, 0, 0, 0]),
+            Err(Refusal::Apart { mhz: 30, max: 25 })
+        );
+        // Chips in parallel keep the wide limits.
+        assert_eq!(
+            check(&BM1370.pll, 625, &[0, 0, -60, 0], 50, 700, false),
+            Ok(())
+        );
+        assert_eq!(
+            naja(&[-60, 0]).unwrap_err().to_string(),
+            "chipFreqOffsets: 60 MHz between the chips, this board's chips are in series: at most 25 MHz"
         );
     }
 
