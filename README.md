@@ -155,6 +155,12 @@ draw:
   {"ttl_s": 600}`, RAM only: no flash write, no display wake) says it
   is regulating the miner; the firmware's own base regulation, a later
   block, will stand back while `externalRegulator.active` holds.
+- **A clock of its own per chip** (`chipFreqOffsets`, `asicFrequencies`,
+  after v0.1.43): the chips of a board differ, and the weakest one sets the
+  voltage for all. WarpTune can give the one or two chips that hold the
+  voltage up a lower clock and take the board's voltage down; the firmware
+  carries the offsets out and reports each chip's clock, the search is
+  WarpTune's ([`docs/15`](docs/15-A-clock-of-its-own-per-chip.md)).
 - **A running self-test** (`selfTest.state`): WarpTune (from v1.42.1)
   holds its writes while one runs, and a clock or voltage change during the test ends it
   rather than spoiling it.
@@ -254,7 +260,16 @@ back at any time with `GET /api/v1/display/frame`.
   a nonce below the new mask counts at the old one, so a pool ramping up
   from difficulty 0.001 no longer inflates the hashrate), stale and duplicate
   filtering, per-chip
-  silence watchdog. All chips silent for a minute with work going out:
+  silence watchdog. A clock of its own per chip where one is set
+  (`chipFreqOffsets`, MHz added to the frequency per chip, after v0.1.43):
+  each chip is stepped to its clock by writes to that chip alone, without
+  a chain restart, and no chip passes its own clock on the way; the
+  expected hashrate, the self-test and the two policies below follow each
+  chip's clock, a lower voltage that comes with new offsets waits for the
+  chips' ramps, and without offsets the chain puts the same bytes on the
+  wire as before
+  ([`docs/15`](docs/15-A-clock-of-its-own-per-chip.md)).
+  All chips silent for a minute with work going out:
   the chain is started over. Since v0.1.40 also one chip silent for ten
   minutes while the others hash (seen once on a NerdOctaxe after five
   days at a steady clock; until then it stayed dark until the next boot):
@@ -1115,7 +1130,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md`](docs/12-Panic-without-a-core-dump-in-the-restart-after-an-update.md)
   — the crash in the restart after an update that left no dump, the
   restart marker and last words, the 256 KB core dump partition, and the
-  way into download mode that crashed up to v0.1.37.
+  way into download mode that crashed up to v0.1.37;
+- [`docs/15-A-clock-of-its-own-per-chip.md`](docs/15-A-clock-of-its-own-per-chip.md)
+  — why the weakest chip sets a board's voltage, the offset per chip and
+  its limits, the ramp that never takes a chip above its own clock, what
+  follows a chip's clock, and the device tests still to run.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;

@@ -14,7 +14,7 @@ on the firmware.
 | `main.rs` | Boot order: diagnostics, config, board, network, API, then pool and miner threads |
 | `config.rs` | One JSON document in NVS with the AxeOS field names; first-start import of the stock AxeOS/NerdOS settings |
 | `board.rs` | Board profile, I²C, regulator (TPS546, TPS53647/53667), sensors and fans (EMC2101, EMC2302, TMP1075), overheat stop, plausibility checks; first-start board detection (`warpaxe-board::detect`) |
-| `uart.rs`, `miner.rs` | Chain on UART1 (GPIO17 TX, GPIO18 RX): bring-up, work, nonces, shares, hashrate; frequency changes without a restart |
+| `uart.rs`, `miner.rs` | Chain on UART1 (GPIO17 TX, GPIO18 RX): bring-up, work, nonces, shares, hashrate; frequency changes without a restart, also for single chips (`chipFreqOffsets`, [`docs/15`](../../docs/15-A-clock-of-its-own-per-chip.md)) |
 | `stratum.rs`, `link.rs` | Pool client with main and fallback pool: Stratum V1 (optionally TLS) or Stratum V2 (`warpaxe-sv2`, Noise, extended channel) |
 | `net/` | USB-C as CDC-NCM network adapter (192.168.7.1), the Wi-Fi station and the WPA2 setup hotspot on 192.168.4.1 with its captive-portal DNS (`warpaxe-board::setup` decides when it opens and closes) |
 | `api.rs`, `ui/` | AxeOS-compatible API plus `/api/v1/*`; the web UI (one HTML file, eight languages) |
