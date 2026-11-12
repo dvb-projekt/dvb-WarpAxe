@@ -182,6 +182,8 @@ pub struct DomainLatch {
     chips: usize,
     /// Clock (MHz) and core voltage (mV) the tries belong to.
     point: Option<(u32, u16)>,
+    /// Each chip's clock offset (MHz) its tries belong to.
+    offsets: [i16; MAX_CHIPS],
     /// A chain has come up since the last look: its windows start as
     /// first windows.
     ready: bool,
@@ -204,6 +206,7 @@ impl DomainLatch {
             last_reset: None,
             chips: 0,
             point: None,
+            offsets: [0; MAX_CHIPS],
             ready: false,
         }
     }
@@ -238,6 +241,23 @@ impl DomainLatch {
             self.given_up = [[false; MAX_DOMAINS]; MAX_CHIPS];
         }
         self.point = Some((mhz, mv));
+    }
+
+    /// Each chip's own clock offset now, MHz (chain order; a chip the
+    /// list does not reach has none). A chip whose offset changed is at
+    /// a new point of its own: its domains get their fresh chance, the
+    /// other chips' keep their counts. The windows stay, as for a new
+    /// point of the chain.
+    pub fn set_chip_offsets(&mut self, offsets_mhz: &[i16]) {
+        for i in 0..MAX_CHIPS {
+            let offset = offsets_mhz.get(i).copied().unwrap_or(0);
+            if self.offsets[i] != offset {
+                self.offsets[i] = offset;
+                self.tries[i] = [0; MAX_DOMAINS];
+                self.clean_s[i] = [0; MAX_DOMAINS];
+                self.given_up[i] = [false; MAX_DOMAINS];
+            }
+        }
     }
 
     /// Another intervention on the chain happened now (the single-chip
@@ -697,6 +717,32 @@ mod tests {
         p.set_point(700, 1210);
         assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
         p.set_point(650, 1210);
+        assert_eq!(p.given_up().count(), 0);
+        let v = run(&mut p, t + 1, t + SPACING_S + 1200, &stuck(5, 1, 0.1));
+        assert!(v.iter().any(|(_, v)| matches!(
+            v,
+            Verdict::Reset {
+                chip: 5,
+                domain: 1,
+                ..
+            }
+        )));
+    }
+
+    #[test]
+    fn a_new_clock_offset_gives_that_chips_domains_alone_another_chance() {
+        let mut p = DomainLatch::new();
+        p.set_point(625, 1130);
+        p.set_chip_offsets(&[0, 0, -25]);
+        let (t, _) = drive_to_give_up(&mut p);
+        assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
+        // The same offsets again, and another chip's: nothing changes
+        // for chip 5.
+        p.set_chip_offsets(&[0, 0, -25]);
+        p.set_chip_offsets(&[0, 0, -50]);
+        assert_eq!(p.given_up().collect::<Vec<_>>(), vec![(5, 1)]);
+        // Its own: a fresh chance, as after a new point.
+        p.set_chip_offsets(&[0, 0, -50, 0, 0, -25]);
         assert_eq!(p.given_up().count(), 0);
         let v = run(&mut p, t + 1, t + SPACING_S + 1200, &stuck(5, 1, 0.1));
         assert!(v.iter().any(|(_, v)| matches!(

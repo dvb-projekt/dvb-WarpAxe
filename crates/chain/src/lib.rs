@@ -3,7 +3,8 @@
 //! [`Chain`] owns the state machine — bring-up from the chip profile's
 //! init list, chip enumeration, baud switch, frequency ramp, work
 //! dispatch, nonce attribution to work and chip, duplicate and stale
-//! filtering, and a per-chip silence watchdog. It talks to the chips
+//! filtering, a clock of its own per chip where one is asked for, and
+//! a per-chip silence watchdog. It talks to the chips
 //! through the [`Uart`] trait only and takes time as a parameter, so
 //! the same code runs against `warpaxe-sim` under `cargo test` and
 //! against the ESP32-S3's UART on the board. No allocation, no
@@ -19,6 +20,7 @@ pub mod driver;
 pub mod latch;
 pub mod lone;
 pub mod monitor;
+pub mod offsets;
 pub mod uart;
 pub mod worth;
 

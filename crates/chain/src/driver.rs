@@ -18,6 +18,12 @@
 //! many submissions. The caller keeps its own map from
 //! [`WorkRef::serial`] to whatever the pool gave it.
 //!
+//! A clock of its own per chip: [`Chain::set_chip_offsets`] adds an
+//! offset to the chain's clock for single chips. The ramp then keeps a
+//! step per chip and writes to each chip alone once the chips part
+//! ways (`ramp_step`); without offsets every step is the one
+//! write to all it has always been.
+//!
 //! The BM1397 path: no version rolling in the chip, so [`Chain::submit`]
 //! sends the profile's number of midstates per job, one per version the
 //! driver rolled with the BIP 320 mask, and a nonce's version is the
@@ -333,8 +339,9 @@ enum Mode {
     Counting {
         until: u64,
     },
+    /// Every chip one step towards its clock per `next_at`
+    /// ([`Chain::ramp_step`]).
     Ramp {
-        current_hz: u32,
         next_at: u64,
     },
     /// The chips were told the fast rate; the host follows at `until`.
@@ -370,10 +377,16 @@ pub struct Chain {
     stats: Stats,
     frequency_hz: u32,
     target_hz: u32,
-    /// The clock the last finished ramp was asked for; 0 before the
-    /// first. A request that arrives while the driver waits for the
-    /// baud switch moves `target_hz` away from it.
-    ramped_to_hz: u32,
+    /// Each chip's clock offset from the chain's, Hz; 0 = none
+    /// ([`Chain::set_chip_offsets`]).
+    offsets_hz: [i32; MAX_CHIPS],
+    /// The clock each chip was told last, as it was asked for (the
+    /// ramp's step, not the PLL's solved clock), Hz. Where the ramp
+    /// goes on from; equal to the chip's goal once a ramp is over.
+    chip_step_hz: [u32; MAX_CHIPS],
+    /// The clock each chip runs at (solved), Hz; 0 before its first
+    /// PLL write.
+    chip_hz: [u32; MAX_CHIPS],
     difficulty: u32,
     first_job_us: Option<u64>,
     last_job_us: Option<u64>,
@@ -409,7 +422,9 @@ impl Chain {
             stats: Stats::default(),
             frequency_hz: 0,
             target_hz: config.frequency_hz,
-            ramped_to_hz: 0,
+            offsets_hz: [0; MAX_CHIPS],
+            chip_step_hz: [0; MAX_CHIPS],
+            chip_hz: [0; MAX_CHIPS],
             difficulty: config.difficulty,
             first_job_us: None,
             last_job_us: None,
@@ -436,7 +451,8 @@ impl Chain {
         self.decoder.set_frame_len(self.profile.response_len);
         self.frequency_hz = 0;
         self.target_hz = self.config.frequency_hz;
-        self.ramped_to_hz = 0;
+        self.chip_step_hz = [0; MAX_CHIPS];
+        self.chip_hz = [0; MAX_CHIPS];
         self.difficulty = self.config.difficulty;
         self.first_job_us = None;
         self.last_job_us = None;
@@ -475,9 +491,76 @@ impl Chain {
         &self.stats
     }
 
-    /// The clock the chips run at now (solved), 0 before the first PLL write.
+    /// The clock the chips run at now (solved), 0 before the first PLL
+    /// write. With clock offsets set ([`Chain::set_chip_offsets`]) the
+    /// chain's own clock, which a chip without an offset runs at; every
+    /// chip's own is in [`Chain::chip_frequencies_hz`].
     pub fn frequency_hz(&self) -> u32 {
         self.frequency_hz
+    }
+
+    /// The clock each chip runs at now (solved), Hz, in chain order: the
+    /// chain's clock plus the chip's offset, on the PLL's grid. 0 before
+    /// a chip's first PLL write.
+    pub fn chip_frequencies_hz(&self) -> &[u32] {
+        &self.chip_hz[..usize::from(self.chip_count)]
+    }
+
+    /// The fastest chip's clock, Hz: what the nonce space has to last
+    /// for. The chain's clock while no chip has one of its own.
+    fn fastest_hz(&self) -> u32 {
+        self.chip_frequencies_hz()
+            .iter()
+            .copied()
+            .max()
+            .unwrap_or(self.frequency_hz)
+    }
+
+    /// The clock chip `chip` is to run at, Hz: the chain's plus the
+    /// chip's offset. An offset that leads to a clock without a PLL
+    /// setting does not count (the API refuses one; this is the stored
+    /// offset that meets a chain started at its stock clock).
+    fn goal_hz(&self, chip: usize) -> u32 {
+        let offset = self.offsets_hz[chip];
+        if offset == 0 {
+            return self.target_hz;
+        }
+        match u32::try_from(i64::from(self.target_hz) + i64::from(offset)) {
+            Ok(hz) if hz > 0 && pll::solve(&self.profile.pll, hz).is_some() => hz,
+            _ => self.target_hz,
+        }
+    }
+
+    /// Chips the ramp moves: the chain's, or one before it is counted.
+    fn ramp_chips(&self) -> usize {
+        usize::from(self.chip_count).max(1)
+    }
+
+    /// Give chips a clock of their own: `offsets_mhz[i]` is added to the
+    /// chain's clock for chip `i` (chain order); a chip the list does
+    /// not reach, or an offset of 0, runs at the chain's clock. An empty
+    /// list ends every offset. Applied by `poll` like a clock request:
+    /// each chip whose clock changes is stepped there by writes to that
+    /// chip alone, the others are not written to; the end is reported
+    /// as [`Event::FrequencyApplied`]. Before or during the bring-up the
+    /// offsets become part of its ramp, and no chip is taken above its
+    /// own clock on the way.
+    ///
+    /// The search for the offsets is not the driver's: it executes.
+    pub fn set_chip_offsets(&mut self, offsets_mhz: &[i16]) {
+        let mut offsets = [0i32; MAX_CHIPS];
+        for (o, &mhz) in offsets.iter_mut().zip(offsets_mhz) {
+            *o = i32::from(mhz) * 1_000_000;
+        }
+        if offsets == self.offsets_hz {
+            return;
+        }
+        self.offsets_hz = offsets;
+        // Each chip goes on from the clock it was asked for last, so
+        // only a chip whose clock changes is written to.
+        if self.mode == Mode::Ready {
+            self.mode = Mode::Ramp { next_at: 0 };
+        }
     }
 
     /// The chain is up and no ramp is under way: the clock asked for
@@ -495,7 +578,7 @@ impl Chain {
     /// scanned through, µs. Submit work at least this often.
     pub fn work_timeout_us(&self) -> u64 {
         let ms = regs::job_timeout_ms(
-            self.frequency_hz,
+            self.fastest_hz(),
             u16::from(self.chip_count),
             self.profile.small_cores,
             self.profile.cores,
@@ -525,10 +608,10 @@ impl Chain {
         let word = pll::solve(&self.profile.pll, hz)?;
         self.target_hz = hz;
         if self.mode == Mode::Ready {
-            self.mode = Mode::Ramp {
-                current_hz: self.frequency_hz,
-                next_at: 0,
-            };
+            // From the clock each chip runs at (on the PLL's grid).
+            let n = self.ramp_chips();
+            self.chip_step_hz[..n].copy_from_slice(&self.chip_hz[..n]);
+            self.mode = Mode::Ramp { next_at: 0 };
         }
         Some(
             word.frequency_hz(self.profile.pll.xtal_hz)
@@ -832,41 +915,28 @@ impl Chain {
                     }
                     uart.set_baud(self.profile.fast_uart.1)
                         .map_err(Error::Uart)?;
-                    // A clock asked for during the settle time: the
-                    // bring-up ramp is over, so it gets one of its own
-                    // (Ready alone would leave the chips at the old one).
-                    self.mode = if self.target_hz != self.ramped_to_hz {
-                        Mode::Ramp {
-                            current_hz: self.ramped_to_hz,
-                            next_at: now_us,
-                        }
-                    } else {
+                    // A clock (or a chip's offset) asked for during the
+                    // settle time: the bring-up ramp is over, so it gets
+                    // one of its own (Ready alone would leave the chips
+                    // at the old one).
+                    self.mode = if self.at_goals() {
                         Mode::Ready
+                    } else {
+                        Mode::Ramp { next_at: now_us }
                     };
                     self.init_done = true;
                     on_event(Event::Ready);
                 }
-                Mode::Ramp {
-                    current_hz,
-                    next_at,
-                } => {
+                Mode::Ramp { next_at } => {
                     if now_us < next_at {
                         break;
                     }
-                    if current_hz == self.target_hz {
-                        self.finish_ramp(uart, now_us, on_event)?;
-                    } else {
-                        let step = self.config.ramp_step_hz.max(1);
-                        let next = if self.target_hz > current_hz {
-                            current_hz.saturating_add(step).min(self.target_hz)
-                        } else {
-                            current_hz.saturating_sub(step).max(self.target_hz)
-                        };
-                        self.write_pll(uart, next, on_event)?;
+                    if self.ramp_step(uart, on_event)? {
                         self.mode = Mode::Ramp {
-                            current_hz: next,
                             next_at: now_us + self.config.ramp_delay_us,
                         };
+                    } else {
+                        self.finish_ramp(uart, now_us, on_event)?;
                     }
                 }
             }
@@ -933,13 +1003,71 @@ impl Chain {
             on_event(Event::FrequencyUnreachable { hz: self.target_hz });
             self.target_hz = self.profile.stock.0;
         }
-        let start = self.config.ramp_start_hz.min(self.target_hz);
-        self.write_pll(uart, start, on_event)?;
+        // Never above the lowest clock a chip is to have.
+        let lowest = (0..self.ramp_chips())
+            .map(|i| self.goal_hz(i))
+            .min()
+            .unwrap_or(self.target_hz);
+        let start = self.config.ramp_start_hz.min(lowest);
+        self.write_pll(uart, None, start, on_event)?;
         self.mode = Mode::Ramp {
-            current_hz: start,
             next_at: now_us + self.config.ramp_delay_us,
         };
         Ok(())
+    }
+
+    /// Every chip is at the clock asked for it.
+    fn at_goals(&self) -> bool {
+        (0..self.ramp_chips()).all(|i| self.chip_step_hz[i] == self.goal_hz(i))
+    }
+
+    /// One step of the ramp: every chip that is not at its clock yet
+    /// moves one step towards it. `false`, and nothing written, when all
+    /// have arrived.
+    ///
+    /// While the chips move together (the same clock now, the same one
+    /// next: always, without offsets) the step is one write to all, as
+    /// it has always been. Chips that part ways are written to one by
+    /// one, each only when its own clock changes. A chip therefore never
+    /// runs above the higher of the clock it had and the clock it is to
+    /// have: a write to all up to the chain's clock, followed by the
+    /// chip's way back down, would run a chip with a negative offset
+    /// above its clock for the length of that way (a chip that is given
+    /// a lower clock because it latches a domain above it would latch).
+    fn ramp_step<U: Uart>(
+        &mut self,
+        uart: &mut U,
+        on_event: &mut dyn FnMut(Event),
+    ) -> Result<bool, Error<U::Error>> {
+        let n = self.ramp_chips();
+        let step = self.config.ramp_step_hz.max(1);
+        let mut next = [0u32; MAX_CHIPS];
+        let mut moving = false;
+        let mut together = true;
+        for i in 0..n {
+            let goal = self.goal_hz(i);
+            let current = self.chip_step_hz[i];
+            next[i] = if goal > current {
+                current.saturating_add(step).min(goal)
+            } else {
+                current.saturating_sub(step).max(goal)
+            };
+            moving |= next[i] != current;
+            together &= current == self.chip_step_hz[0] && next[i] == next[0];
+        }
+        if !moving {
+            return Ok(false);
+        }
+        if together {
+            self.write_pll(uart, None, next[0], on_event)?;
+        } else {
+            for (i, &hz) in next.iter().enumerate().take(n) {
+                if hz != self.chip_step_hz[i] {
+                    self.write_pll(uart, Some(i), hz, on_event)?;
+                }
+            }
+        }
+        Ok(true)
     }
 
     fn finish_ramp<U: Uart>(
@@ -948,10 +1076,20 @@ impl Chain {
         now_us: u64,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
-        self.ramped_to_hz = self.target_hz;
+        // The chain's clock, also where every chip has one of its own
+        // and none was written at it. (Without offsets the last write
+        // was this clock: nothing changes.)
+        if let Some(word) = pll::solve(&self.profile.pll, self.target_hz) {
+            self.frequency_hz = word
+                .frequency_hz(self.profile.pll.xtal_hz)
+                .min(u64::from(u32::MAX)) as u32;
+        }
+        // For the fastest chip: a slower one scans less than its nonce
+        // space per job, a faster one than the number allows for would
+        // return nonces twice.
         let hcn = match self.profile.hcn {
             Hcn::Computed { errata } => Some(regs::hash_counting_number(
-                self.frequency_hz,
+                self.fastest_hz(),
                 self.profile.cores,
                 u16::from(self.chip_count),
                 errata,
@@ -1006,32 +1144,76 @@ impl Chain {
         Ok(())
     }
 
+    /// Write the PLL for `hz`: to every chip (`chip` `None`), or to one
+    /// chip alone, at its address (BM1370) or its command address
+    /// (BM1373), as the reference drivers write a single chip's
+    /// registers in their init.
     fn write_pll<U: Uart>(
         &mut self,
         uart: &mut U,
+        chip: Option<usize>,
         hz: u32,
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
         match pll::solve(&self.profile.pll, hz) {
             Some(word) => {
                 let bytes = word.register_bytes(&self.profile.pll);
+                let to = chip.map(|i| self.profile.command_address(self.chips[i].address));
                 // The BM1397's PLL0 divider first, twice, then the word
                 // twice (cgminer `calc_gsf_freq`, WantClue and ESP-Miner
                 // `BM1397_send_hash_frequency`, 10 ms apart there; a
                 // frame takes about a millisecond at 115200).
                 if let Some((pre_reg, pre_val)) = self.profile.pll_prewrite {
-                    self.write_all(uart, pre_reg, pre_val)?;
-                    self.write_all(uart, pre_reg, pre_val)?;
-                    self.write_all(uart, reg::PLL0_PARAMETER, bytes)?;
+                    self.write_reg(uart, to, pre_reg, pre_val)?;
+                    self.write_reg(uart, to, pre_reg, pre_val)?;
+                    self.write_reg(uart, to, reg::PLL0_PARAMETER, bytes)?;
                 }
-                self.write_all(uart, reg::PLL0_PARAMETER, bytes)?;
-                self.frequency_hz = word
+                self.write_reg(uart, to, reg::PLL0_PARAMETER, bytes)?;
+                let solved = word
                     .frequency_hz(self.profile.pll.xtal_hz)
                     .min(u64::from(u32::MAX)) as u32;
+                match chip {
+                    None => {
+                        self.frequency_hz = solved;
+                        self.chip_hz = [solved; MAX_CHIPS];
+                    }
+                    Some(i) => {
+                        self.chip_hz[i] = solved;
+                        // A chip on the chain's own way: the chain's clock.
+                        if self.goal_hz(i) == self.target_hz {
+                            self.frequency_hz = solved;
+                        }
+                    }
+                }
             }
             None => on_event(Event::FrequencyUnreachable { hz }),
         }
+        // The ramp goes on from the step asked for, written or not.
+        match chip {
+            None => self.chip_step_hz = [hz; MAX_CHIPS],
+            Some(i) => self.chip_step_hz[i] = hz,
+        }
         Ok(())
+    }
+
+    /// One register write: to every chip, or to the one at command
+    /// address `to`.
+    fn write_reg<U: Uart>(
+        &mut self,
+        uart: &mut U,
+        to: Option<u8>,
+        register: u8,
+        value: [u8; 4],
+    ) -> Result<(), Error<U::Error>> {
+        match to {
+            None => self.write_all(uart, register, value),
+            Some(addr) => self.send_cmd(
+                uart,
+                Group::Single,
+                Op::Write,
+                &write_payload(addr, register, value),
+            ),
+        }
     }
 
     fn write_all<U: Uart>(
@@ -1187,9 +1369,9 @@ impl Chain {
         }));
     }
 
-    /// Expected time between nonces on one chip, µs.
-    fn nonce_interval_us(&self) -> u64 {
-        let f = u128::from(self.frequency_hz) * u128::from(self.profile.small_cores);
+    /// Expected time between nonces on chip `chip` at its clock, µs.
+    fn nonce_interval_us(&self, chip: usize) -> u64 {
+        let f = u128::from(self.chip_hz[chip]) * u128::from(self.profile.small_cores);
         if f == 0 {
             return u64::MAX;
         }
@@ -1205,10 +1387,10 @@ impl Chain {
         if now_us.saturating_sub(last) >= self.work_timeout_us() {
             return;
         }
-        let window = self
-            .nonce_interval_us()
-            .saturating_mul(u64::from(self.config.silence_factor));
         for i in 0..usize::from(self.chip_count) {
+            let window = self
+                .nonce_interval_us(i)
+                .saturating_mul(u64::from(self.config.silence_factor));
             let c = &mut self.chips[i];
             let since = c.last_nonce_us.unwrap_or(first);
             if !c.silent && now_us.saturating_sub(since) > window {

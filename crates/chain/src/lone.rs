@@ -72,6 +72,8 @@ pub struct LoneSilence {
     chips: usize,
     /// Clock (MHz) and core voltage (mV) the counts belong to.
     point: Option<(u32, u16)>,
+    /// Each chip's clock offset (MHz) its counts belong to.
+    offsets: [i16; MAX_CHIPS],
     /// Report silences, never restart for them.
     report_only: bool,
 }
@@ -93,6 +95,7 @@ impl LoneSilence {
             last_restart: None,
             chips: 0,
             point: None,
+            offsets: [0; MAX_CHIPS],
             report_only: false,
         }
     }
@@ -126,6 +129,22 @@ impl LoneSilence {
             self.given_up = [false; MAX_CHIPS];
         }
         self.point = Some((mhz, mv));
+    }
+
+    /// Each chip's own clock offset now, MHz (chain order; a chip the
+    /// list does not reach has none). A chip whose offset changed is at
+    /// a new point of its own and gets its fresh chance; the others
+    /// keep their counts.
+    pub fn set_chip_offsets(&mut self, offsets_mhz: &[i16]) {
+        for i in 0..MAX_CHIPS {
+            let offset = offsets_mhz.get(i).copied().unwrap_or(0);
+            if self.offsets[i] != offset {
+                self.offsets[i] = offset;
+                self.tries[i] = 0;
+                self.back_since[i] = None;
+                self.given_up[i] = false;
+            }
+        }
     }
 
     /// Another intervention on the chain happened now (the domain-latch
@@ -414,6 +433,33 @@ mod tests {
         assert_eq!(p.given_up().count(), 0);
         let v = run(&mut p, t, t + SPACING_S + SILENT_S, &one(5));
         assert!(v.iter().any(|(_, v)| *v == Verdict::Restart { chip: 5 }));
+    }
+
+    #[test]
+    fn a_new_clock_offset_gives_that_chip_alone_another_chance() {
+        let mut p = LoneSilence::new();
+        p.set_point(625, 1130);
+        p.set_chip_offsets(&[0, 0, -25]);
+        let mut t = 0;
+        while p.given_up().count() == 0 {
+            p.observe(t, true, &one(5));
+            t += 1;
+        }
+        // The same offsets again, and another chip's: chip 5 stays
+        // given up.
+        p.set_chip_offsets(&[0, 0, -25]);
+        p.set_chip_offsets(&[0, 0, -50]);
+        assert_eq!(p.given_up().collect::<Vec<_>>(), vec![5]);
+        // Its own: a fresh chance, as after a new point.
+        p.set_chip_offsets(&[0, 0, -50, 0, 0, -25]);
+        assert_eq!(p.given_up().count(), 0);
+        assert_eq!(p.tries[5], 0);
+        let v = run(&mut p, t, t + SPACING_S + SILENT_S, &one(5));
+        assert!(v.iter().any(|(_, v)| *v == Verdict::Restart { chip: 5 }));
+        // An offset taken away is a change too.
+        p.tries[2] = 2;
+        p.set_chip_offsets(&[]);
+        assert_eq!(p.tries[2], 0);
     }
 
     /// Report-only: the same ten minutes yield a report, repeated every
