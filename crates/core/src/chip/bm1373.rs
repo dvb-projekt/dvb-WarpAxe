@@ -142,6 +142,7 @@ pub const BM1373: ChipProfile = ChipProfile {
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
     broadcast_reads: true,
+    single_chip_clock: false,
     init_source: "NerdOS",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,

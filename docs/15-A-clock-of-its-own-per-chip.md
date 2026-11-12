@@ -2,8 +2,11 @@
 
 Written 2026-11-12 (branch `claude/warpaxe-per-chip-takt-c5dd77`, after
 v0.1.43), on a handover from dvb-WarpAxe #2 for Oliver. Built and tested
-on the host and against the simulator; **not run on a device yet** (the
-test list is at the end).
+on the host and against the simulator. The first device runs the same
+evening (by dvb-WarpAxe #2) changed three things, told in *What the
+devices said*: the mining loop's stack, where its state lives, and
+**the BM1373 takes no offsets**. The BM1370 run on the NerdOctaxe is
+still to come (the test list is at the end).
 
 ## Why
 
@@ -27,8 +30,8 @@ chips 1, 3 and 7 have room to spare. With chips 2 and 4 at about
 1150 mV: an estimated 5 % less power for 1 % less hashrate. A NerdQAxe++
 shows the same picture (chip 3 at 0.99 % against 0.08–0.22 %). On a Naja
 Duo (two BM1373 in series, the midpoint not regulated) a lower clock on
-one chip also shifts the voltage towards it, which is a use of its own
-once the midpoint has been measured.
+one chip would also shift the voltage towards it; that use has to wait,
+since a BM1373 cannot be given a clock of its own (below).
 
 An earlier look (2026-10-02, at 650 and 700 MHz) found no gain at the
 points measured then; the figures above, at 625 MHz and lower voltages,
@@ -53,6 +56,10 @@ PATCH /api/system   {"chipFreqOffsets": [0, 0, -25, 0, -50, 0, 0, 0]}
 PATCH /api/system   {"chipFreqOffsets": []}          no chip has an offset
 ```
 
+- Only on boards with more than one chip, of a kind that can be written
+  to alone: the BM1370 boards (`chipFreqOffsetsSupported` in
+  `/api/system/info`). On a one-chip board and on a BM1373 board (Naja
+  Duo) a list with an offset in it is refused with 400.
 - A list longer than the board's chain is cut, a shorter one is filled
   with zeros, a list of zeros is no list. Stored is either nothing or one
   entry per chip.
@@ -85,6 +92,7 @@ slip of the hand from parking a chip at next to nothing.
 
 | Field | Meaning |
 |---|---|
+| `chipFreqOffsetsSupported` | whether this board takes offsets at all |
 | `chipFreqOffsets` | the stored list, MHz; `[]` = none |
 | `asicFrequencies` | the clock each chip runs at now, MHz on the PLL's grid, in the order of `hashrateMonitor.asics` |
 | `expectedHashrate` | the sum over the chips, each at its own clock |
@@ -104,9 +112,11 @@ is to have. Every 100 ms each chip that is not there yet moves one step of
 - While all chips move together (always, without offsets) the step is one
   write to all chips, byte for byte what it was.
 - Chips that part ways are written to one by one, at the chip's address
-  (BM1370) or its command address (BM1373), the way both reference drivers
-  write single-chip registers in their init. A chip whose clock does not
-  change is not written to.
+  (BM1370). A chip whose clock does not change is not written to.
+- A chip profile says whether a write to one chip reaches that chip
+  alone (`ChipProfile::single_chip_clock`). Where it does not (the
+  BM1373), the driver acts on no offset: every chip stays on the write
+  to all.
 
 **No chip is ever taken above the higher of the clock it had and the clock
 it is to have.** A write to all up to the chain's clock, followed by the
@@ -166,7 +176,7 @@ the status line are in all eight languages.
 
 ## Tests
 
-`cargo test --workspace`: 674 tests (655 before).
+`cargo test --workspace`: 677 tests (655 before).
 
 - `crates/chain/tests/chip_clock.rs`, against the simulator:
   - **nothing changes without offsets**: for eight chains (one, two, four
@@ -175,7 +185,12 @@ the status line are in all eight languages.
     of a ramp and one without a PLL setting put the same bytes on the wire
     at the same moments as the driver of main `c24b901` did (digest and
     frame count recorded there);
-  - four and eight BM1370 and two BM1373 under both inits: an offset moves
+  - a BM1373 chain takes no offsets (set before the start or while it
+    runs, a list changes not one byte on the wire), and what the Naja Duo
+    did with a driver that believed otherwise;
+  - `Chain::renew` is `Chain::new`, field for field and on the wire;
+  - four and eight BM1370, and two BM1373 as they would be if the chip
+    could be written to alone: an offset moves
     that chip alone in four steps of 6.25 MHz, the others are not written
     to; offsets set before the start are part of the bring-up, and the
     highest clock each chip ever has is its own; a new chain clock carries
@@ -189,17 +204,67 @@ the status line are in all eight languages.
 - `crates/board`: the voltage hold for a chip's ramp; the self-test judges
   a chip at its own clock.
 
-Flash: the image grows by 9,296 bytes (2,999,840 → 3,009,136, built from
-the same path length; 71,056 bytes left below the import window).
+Flash: the image grew by 9,296 bytes with the feature (2,999,840 →
+3,009,136, built from the same path length), and stands at 3,010,672
+bytes after the changes above (69,520 bytes left below the import
+window).
 
-## Not tested: the device
+## What the devices said (2026-11-12, runs by dvb-WarpAxe #2)
 
-Nothing here has run on a chip. What the simulator cannot show is whether
-a real BM1370 or BM1373 takes a PLL write addressed to it alone while it
-hashes, the way it takes the same register written to all. The short test
-of 2026-10-02 on a NerdQAxe++ (one chip ±25 MHz, its counter rate followed
-1:1, no duplicates) suggests the BM1370 does. To be run with Oliver's OK,
-through dvb-WarpAxe #2:
+**The mining loop's stack.** The loop kept the chain driver and the two
+policies as locals: a frame of 12,720 bytes in a 16 KB stack, 13,072
+bytes with a clock per chip. A Naja Duo then overflowed that stack every
+one to four minutes, with or without offsets: `format!("{:.3}")` of a
+nonce's difficulty takes 2.7 KB on its rare exact path, and an interrupt
+on top was one frame too many. A 20 KB stack cured it and took 4 KB of
+internal RAM, which a NerdAxe Gaia with a TLS pool did not have (web API
+at a crawl, an update upload that timed out). Now the driver and the
+policies live in PSRAM, the driver is renewed in place at every chain
+start (`Chain::renew`), the loop's frame is 3,328 bytes in a 12 KB
+stack, that formatting is done with whole numbers, and `minerStackFree`
+in `/api/system/info` shows the least stack the loop has had to spare.
+Measured on main 6c68bea: Gaia with TLS 29,787 bytes of internal heap
+free (25,443 on v0.1.43), largest piece 18,432 (17,408); `minerStackFree`
+6,320 on the Gaia, 6,108 on a Gamma, 6,384 on the Naja Duo.
+
+**The BM1373 cannot be given a clock of its own.** On the Naja Duo (two
+BM1373, ESP-Miner's init, chips at 0x00 and 0x10, 327 MHz), the mean of
+each chip's hash counter over four minutes:
+
+| Offsets | Chip 0 | Chip 1 |
+|---|---|---|
+| none | 2271 GH/s | 2245 GH/s |
+| chip 0 −60 MHz | 1841 | 1857 |
+| chip 1 −60 MHz | 2246 | 2256 |
+| none again | 2272 | 2241 |
+
+The PLL write for chip 0 (command address 0) slowed **both** chips, the
+one for chip 1 (command address 4: its address 0x10 shifted right by
+two, as ESP-Miner derives a BM1373's command address) slowed
+**neither**, and `asicFrequencies` reported clocks no chip ran at.
+ESP-Miner uses that address for one write only, the domain-end IO
+strength in its init, and nothing in it shows that the write for the
+second chip arrives; by the above, the first chip's reaches both. A
+single-chip *read* at that address had already brought nothing back on
+the same board. Which address, if any, reaches one BM1373 alone is not
+known. So: `single_chip_clock` is false for the BM1373, the driver acts
+on no offset there, the API refuses one, the web UI does not offer the
+fold-out, and the simulator's BM1373 takes a single-chip write to
+address 0 with every chip and any other with none, as the board did
+(`what_the_naja_duo_did_with_an_offset_for_one_bm1373`).
+
+To find the addressing one day: after a single-chip write, read the
+register back from every chip (`GET /api/v1/chip/regs?chip=N&from=0x08&
+to=0x08` reads the PLL word of chip N by broadcast) and see which chips
+took it.
+
+## Still to run: the BM1370
+
+Whether a real BM1370 takes a PLL write addressed to it alone while it
+hashes, the way it takes the same register written to all, the simulator
+cannot show. The short test of 2026-10-02 on a NerdQAxe++ (one chip
+±25 MHz, its counter rate followed 1:1, no duplicates) suggests it does.
+To be run with Oliver's OK, through dvb-WarpAxe #2:
 
 1. **NerdOctaxe, chip 2 at −25 MHz** (625 MHz, the voltage it runs at):
    `asicFrequencies[2]` 600, the others 625; chip 2's `total` falls by
@@ -219,7 +284,6 @@ through dvb-WarpAxe #2:
 6. **Self-test** with offsets: passes, each chip near 100 % of its own
    rate.
 7. **NerdQAxe++** (four BM1370): chip 3 at −25 MHz, as in 1.
-8. **Naja Duo** (two BM1373): chip 1 at −20 MHz; this is the first
-   single-chip PLL write to a BM1373 at address 0x10 while it hashes.
-   Both chips' counters keep arriving, chip 1's `total` falls by about
-   3 %; then with the midpoint measured, what the offset does to it.
+8. **Naja Duo** (two BM1373): a PATCH with an offset is refused with 400
+   and names the chip type; `chipFreqOffsetsSupported` is false, the
+   fold-out is not in the web UI, both chips run at `frequency`.

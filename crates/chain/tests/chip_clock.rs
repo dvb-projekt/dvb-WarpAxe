@@ -16,6 +16,21 @@ use warpaxe_sim::chain::SimChain;
 
 const MHZ: u32 = 1_000_000;
 
+/// A BM1373 that could be written to alone. No such chip is known: on
+/// the Naja Duo a write for one chip reached both or neither
+/// (`ChipProfile::single_chip_clock`), so the real profiles take no
+/// offsets. These two keep the driver's way for a chip with a shifted
+/// command address under test for the day its addressing is found; the
+/// simulator answers them as it would a chip that can.
+static BM1373_ALONE: ChipProfile = ChipProfile {
+    single_chip_clock: true,
+    ..BM1373
+};
+static BM1373_ESP_ALONE: ChipProfile = ChipProfile {
+    single_chip_clock: true,
+    ..BM1373_ESP
+};
+
 /// The simulated chain behind the `Uart` trait, as in `tests/sim.rs`,
 /// with a running digest of everything the driver sends and when.
 struct SimUart {
@@ -137,6 +152,19 @@ impl Bench {
         config: Config,
         offsets_mhz: &[i16],
     ) -> Self {
+        Self::on(profile, profile, chips, config, offsets_mhz)
+    }
+
+    /// A driver for `profile` on a chain of `silicon` chips: the two
+    /// differ only where a test asks what a driver's belief about a
+    /// chip does on the chip as it is.
+    fn on(
+        profile: &'static ChipProfile,
+        silicon: &'static ChipProfile,
+        chips: u8,
+        config: Config,
+        offsets_mhz: &[i16],
+    ) -> Self {
         let mut drv = Chain::new(profile, config);
         if !offsets_mhz.is_empty() {
             drv.set_chip_offsets(offsets_mhz);
@@ -144,7 +172,7 @@ impl Bench {
         drv.start(0);
         Bench {
             drv,
-            uart: SimUart::new(profile, chips),
+            uart: SimUart::new(silicon, chips),
             now: 0,
             events: Vec::new(),
             works: 0,
@@ -330,12 +358,13 @@ fn pll_writes(b: &Bench) -> Vec<u32> {
 }
 
 /// The chains the offsets are for: four and eight BM1370 (NerdQAxe++,
-/// NerdOctaxe), two BM1373 under both inits (Naja Duo).
+/// NerdOctaxe), and two BM1373 under both inits as they would be if the
+/// chip could be written to alone ([`BM1373_ALONE`]).
 const CHAINS: [(&ChipProfile, u8, u32); 4] = [
     (&BM1370, 4, 600),
     (&BM1370, 8, 625),
-    (&BM1373_ESP, 2, 600),
-    (&BM1373, 2, 600),
+    (&BM1373_ESP_ALONE, 2, 600),
+    (&BM1373_ALONE, 2, 600),
 ];
 
 #[test]
@@ -414,8 +443,8 @@ fn offsets_set_before_the_start_are_part_of_the_bring_up_and_no_chip_passes_its_
     let cases: [(&ChipProfile, u8, u32, &[i16]); 4] = [
         (&BM1370, 4, 590, &[0, 0, 0, -30]),
         (&BM1370, 8, 625, &[0, 0, -25, 0, -50, 0, 0, 25]),
-        (&BM1373_ESP, 2, 600, &[0, -40]),
-        (&BM1373, 2, 600, &[-15, 0]),
+        (&BM1373_ESP_ALONE, 2, 600, &[0, -40]),
+        (&BM1373_ALONE, 2, 600, &[-15, 0]),
     ];
     for (profile, chips, base, offsets) in cases {
         let name = format!("{} x{chips} ({})", profile.name, profile.init_source);
@@ -495,7 +524,7 @@ fn an_offset_asked_for_in_the_middle_of_a_ramp_or_of_the_bring_up_arrives() {
     // During the bring-up, before the chips are counted, and in the
     // settle time after the ramp (the BM1373 under NerdOS's init).
     for at_ms in [5, 400] {
-        let mut b = Bench::new(&BM1373, 2, 600);
+        let mut b = Bench::new(&BM1373_ALONE, 2, 600);
         b.run_ms(at_ms);
         assert!(!b.drv.accepting_work());
         b.drv.set_chip_offsets(&[0, -30]);
@@ -503,7 +532,7 @@ fn an_offset_asked_for_in_the_middle_of_a_ramp_or_of_the_bring_up_arrives() {
         assert_eq!(b.chip_mhz(), [600.0, 570.0], "at {at_ms} ms");
         assert_eq!(b.top, [600 * u64::from(MHZ), 570 * u64::from(MHZ)]);
     }
-    let mut b = Bench::new(&BM1373, 2, 600);
+    let mut b = Bench::new(&BM1373_ALONE, 2, 600);
     while !b
         .events
         .iter()
@@ -667,4 +696,69 @@ fn a_renewed_driver_is_a_new_driver() {
         (b.uart.digest, b.uart.frames)
     };
     assert_eq!(run(true), run(false));
+}
+
+/// The BM1373 as it is: a chain of them takes no offsets. Set before
+/// the start or while it runs, the list changes nothing: every chip at
+/// the chain's clock, and not one byte on the wire that a chain without
+/// offsets would not have sent at the same moment.
+#[test]
+fn a_bm1373_chain_takes_no_offsets() {
+    for profile in [&BM1373_ESP, &BM1373, &BM1373_ESP_1M] {
+        let run = |before: &[i16], during: &[i16]| {
+            let mut b = Bench::with_offsets(profile, 2, 600, before);
+            b.run_until_settled(30_000);
+            b.run_ms(2_000);
+            b.drv.set_chip_offsets(during);
+            b.run_ms(2_000);
+            assert!(b.drv.clock_settled(), "{}", profile.init_source);
+            assert_eq!(b.chip_mhz(), [600.0, 600.0], "{}", profile.init_source);
+            assert_eq!(
+                b.drv.chip_frequencies_hz(),
+                [600 * MHZ, 600 * MHZ],
+                "{}",
+                profile.init_source
+            );
+            b.drv.set_frequency(550 * MHZ);
+            b.run_ms(3_000);
+            assert_eq!(b.chip_mhz(), [550.0, 550.0], "{}", profile.init_source);
+            (b.uart.digest, b.uart.frames)
+        };
+        let plain = run(&[], &[]);
+        assert_eq!(run(&[-60, 0], &[0, -60]), plain, "{}", profile.init_source);
+        assert_eq!(run(&[0, -60], &[]), plain, "{}", profile.init_source);
+    }
+}
+
+/// Why it takes none: what a Naja Duo did with a driver that believed a
+/// BM1373 could be written to alone (2026-11-12, main 6c68bea, chips at
+/// 0x00 and 0x10, 327 MHz, hash counters over four minutes each). The
+/// offset for chip 0 slowed both chips, the one for chip 1 slowed
+/// neither, and the driver reported clocks no chip ran at. The
+/// simulator's BM1373 does the same with a single-chip write.
+#[test]
+fn what_the_naja_duo_did_with_an_offset_for_one_bm1373() {
+    let config = Config {
+        frequency_hz: 600 * MHZ,
+        ..Config::for_profile(&BM1373_ESP)
+    };
+    // The driver believes; the chips are the real ones.
+    let mut b = Bench::on(&BM1373_ESP_ALONE, &BM1373_ESP, 2, config, &[]);
+    b.run_until_settled(30_000);
+    assert_eq!(b.chip_mhz(), [600.0, 600.0]);
+
+    // [-60, 0]: meant for chip 0, taken by both.
+    b.drv.set_chip_offsets(&[-60, 0]);
+    b.run_until_settled(30_000);
+    assert_eq!(b.chip_mhz(), [540.0, 540.0]);
+    assert_eq!(b.drv.chip_frequencies_hz(), [540 * MHZ, 600 * MHZ]);
+
+    // Back, then [0, -60]: meant for chip 1, taken by neither.
+    b.drv.set_chip_offsets(&[]);
+    b.run_until_settled(30_000);
+    assert_eq!(b.chip_mhz(), [600.0, 600.0]);
+    b.drv.set_chip_offsets(&[0, -60]);
+    b.run_until_settled(30_000);
+    assert_eq!(b.chip_mhz(), [600.0, 600.0]);
+    assert_eq!(b.drv.chip_frequencies_hz(), [600 * MHZ, 540 * MHZ]);
 }

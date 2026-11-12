@@ -200,6 +200,19 @@ pub struct ChipProfile {
     /// reads that chip directly either way, as the Gaia has since
     /// 2026-10-01.
     pub broadcast_reads: bool,
+    /// A register write addressed to one chip reaches that chip, and no
+    /// other: what a clock of its own per chip needs
+    /// (`warpaxe_chain::Chain::set_chip_offsets`). True on the BM1370
+    /// (a NerdQAxe++, 2026-10-02: one chip ±25 MHz, its hash counter
+    /// followed, the others' did not). False on the BM1373: on a Naja
+    /// Duo (2026-11-12, chips at 0x00 and 0x10) a PLL write to command
+    /// address 0 slowed **both** chips by what was meant for chip 0,
+    /// and one to chip 1's command address (0x10 >> 2 = 4, as
+    /// ESP-Miner derives it) slowed **neither**. Which address, if any,
+    /// reaches a BM1373 alone is not known. False on the BM1397, which
+    /// no board has more than one of. A chain whose chip says false
+    /// takes no offsets: every chip runs at the chain's clock.
+    pub single_chip_clock: bool,
     /// Whose init sequence the three lists below transcribe: the
     /// reference firmware of the boards the profile is chosen for
     /// ("ESP-Miner", "NerdOS", …). Logged at chain start.

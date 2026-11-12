@@ -257,6 +257,10 @@ pub fn system_info() -> serde_json::Value {
     // `hashrateMonitor.asics`: the chain's clock on every chip while a
     // list that does not fit the chips that answered is not in force.
     // `expectedHashrate` is the sum over the chips at these clocks.
+    // Whether this board takes offsets at all: more than one chip, of a
+    // kind that can be written to alone (not the BM1373).
+    v["chipFreqOffsetsSupported"] =
+        json!(board::chips_expected() > 1 && board::chip().single_chip_clock);
     v["chipFreqOffsets"] = config::chip_offsets()
         .list()
         .iter()
@@ -511,6 +515,14 @@ fn chip_offsets_refuse(
         // One chip has no other to differ from: its clock is `frequency`.
         Some(Ok(list)) if list.len > 0 && board::chips_expected() < 2 => {
             return Some("chipFreqOffsets: this board has one chip; set frequency instead".into())
+        }
+        // A chip that cannot be written to alone (the BM1373: on a Naja
+        // Duo the write for one chip slowed both, or neither).
+        Some(Ok(list)) if list.len > 0 && !board::chip().single_chip_clock => {
+            return Some(format!(
+                "chipFreqOffsets: not on the {}, a write to one chip does not reach that chip alone",
+                board::chip().name
+            ))
         }
         Some(Ok(list)) => list,
         Some(Err(())) => return Some("chipFreqOffsets: a list of whole MHz per chip".into()),

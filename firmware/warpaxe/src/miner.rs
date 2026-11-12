@@ -268,6 +268,18 @@ fn offsets_for(chips: u8) -> config::ChipOffsets {
     if stored.len == 0 {
         return stored;
     }
+    // A list stored before the firmware knew this chip takes none (the
+    // BM1373, `single_chip_clock`): the driver would not act on it
+    // either; said once per chain start, when the chips are counted.
+    if !board::chip().single_chip_clock {
+        if chips != 0 {
+            log::warn!(
+                "miner: clock offsets stored, but a {} takes none: every chip at the chain's clock",
+                board::chip().name
+            );
+        }
+        return config::ChipOffsets::NONE;
+    }
     if chips != 0 && stored.len != usize::from(chips) {
         log::warn!(
             "miner: {chips} chip(s) answered, the clock offsets are for {}: every chip at the chain's clock",

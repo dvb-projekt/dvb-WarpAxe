@@ -260,6 +260,7 @@ pub const BM1370: ChipProfile = ChipProfile {
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
     broadcast_reads: false,
+    single_chip_clock: true,
     init_source: "ESP-Miner",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,

@@ -257,6 +257,17 @@ impl SimChip {
                 if header.op() == Op::Read && self.profile.broadcast_reads && self.address != 0 {
                     return false;
                 }
+                // And a single-chip write to such a chip goes by what the
+                // same Naja Duo did with a PLL write (2026-11-12): one to
+                // command address 0 slowed both chips, one to chip 1's
+                // command address (4) slowed neither. So address 0 is
+                // taken by every chip and any other by none. (What the
+                // references' own single-chip writes do there is the
+                // same: the domain-end strength reaches both chips by
+                // the write for chip 0.)
+                if header.op() == Op::Write && !self.profile.single_chip_clock {
+                    return chip_addr == 0;
+                }
                 header.op() == Op::SetAddress
                     || chip_addr == self.profile.command_address(self.address)
             }

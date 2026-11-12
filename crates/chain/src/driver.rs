@@ -559,10 +559,13 @@ impl Chain {
     /// The clock chip `chip` is to run at, Hz: the chain's plus the
     /// chip's offset. An offset that leads to a clock without a PLL
     /// setting does not count (the API refuses one; this is the stored
-    /// offset that meets a chain started at its stock clock).
+    /// offset that meets a chain started at its stock clock). None
+    /// counts on a chip that cannot be written to alone
+    /// ([`ChipProfile::single_chip_clock`], the BM1373): the write
+    /// meant for one chip would move others, or none.
     fn goal_hz(&self, chip: usize) -> u32 {
         let offset = self.offsets_hz[chip];
-        if offset == 0 {
+        if offset == 0 || !self.profile.single_chip_clock {
             return self.target_hz;
         }
         match u32::try_from(i64::from(self.target_hz) + i64::from(offset)) {
@@ -579,7 +582,9 @@ impl Chain {
     /// Give chips a clock of their own: `offsets_mhz[i]` is added to the
     /// chain's clock for chip `i` (chain order); a chip the list does
     /// not reach, or an offset of 0, runs at the chain's clock. An empty
-    /// list ends every offset. Applied by `poll` like a clock request:
+    /// list ends every offset. Only where a chip can be written to alone
+    /// ([`ChipProfile::single_chip_clock`]): elsewhere the list is kept
+    /// and never acted on. Applied by `poll` like a clock request:
     /// each chip whose clock changes is stepped there by writes to that
     /// chip alone, the others are not written to; the end is reported
     /// as [`Event::FrequencyApplied`]. Before or during the bring-up the
@@ -597,8 +602,10 @@ impl Chain {
         }
         self.offsets_hz = offsets;
         // Each chip goes on from the clock it was asked for last, so
-        // only a chip whose clock changes is written to.
-        if self.mode == Mode::Ready {
+        // only a chip whose clock changes is written to; a list that
+        // changes no chip's clock (one this chip takes none of, or one
+        // past the chain) starts nothing and sends nothing.
+        if self.mode == Mode::Ready && !self.at_goals() {
             self.mode = Mode::Ramp { next_at: 0 };
         }
     }

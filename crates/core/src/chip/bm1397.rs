@@ -131,6 +131,7 @@ pub const BM1397: ChipProfile = ChipProfile {
     // cgminer `prefreq`: `00 70 0F 0F 0F 00`, twice, before the PLL word.
     pll_prewrite: Some((reg::PLL0_DIVIDER, [0x0F, 0x0F, 0x0F, 0x00])),
     broadcast_reads: false,
+    single_chip_clock: false,
     init_source: "ESP-Miner",
     init_chain: INIT_CHAIN,
     init_per_chip: &[],
