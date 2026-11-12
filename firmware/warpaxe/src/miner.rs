@@ -259,20 +259,35 @@ pub fn clock() -> warpaxe_board::core_hold::Clock {
 /// another chip count are from another board, or the places in the
 /// chain are not the ones they were found for.
 ///
-/// The board's limits are the API's to keep, for a new list and for a
-/// new clock alike. A clock replaced at boot or stepped down after an
-/// overheat stop only ever lowers every chip's own clock, and one that
-/// ends without a PLL setting is left at the chain's by the driver.
+/// The board's limits are the API's to keep for a PATCH; a clock that
+/// changes without one (replaced at boot, stepped down after an overheat
+/// stop) is checked here against the same limits, and the list is not
+/// applied when a chip's own clock would leave them.
 fn offsets_for(chips: u8) -> config::ChipOffsets {
     let stored = config::chip_offsets();
-    if stored.len == 0 || chips == 0 || stored.len == usize::from(chips) {
+    if stored.len == 0 {
         return stored;
     }
-    log::warn!(
-        "miner: {chips} chip(s) answered, the clock offsets are for {}: every chip at the chain's clock",
-        stored.len
-    );
-    config::ChipOffsets::NONE
+    if chips != 0 && stored.len != usize::from(chips) {
+        log::warn!(
+            "miner: {chips} chip(s) answered, the clock offsets are for {}: every chip at the chain's clock",
+            stored.len
+        );
+        return config::ChipOffsets::NONE;
+    }
+    let base = capped_mhz(config::get().frequency);
+    let max = board::profile().abs_max_frequency_mhz;
+    if let Err(why) = warpaxe_chain::offsets::check(
+        &board::chip().pll,
+        base,
+        stored.list(),
+        board::MIN_FREQUENCY_MHZ,
+        max,
+    ) {
+        log::warn!("miner: clock offsets not applied at {base} MHz: {why}");
+        return config::ChipOffsets::NONE;
+    }
+    stored
 }
 
 /// The configured clock under the overheat step, if one is in force.
@@ -936,10 +951,17 @@ fn run(mut uart: ChipUart) {
                             d.crc_failures
                         );
                         board::chain_ready();
-                        if let Some((from, to)) = board::chip_init_fall_back() {
-                            log::warn!(
-                                "miner: {from} init: the chain did not come up, {to} init from the next start until reboot"
-                            );
+                        // No chip answered the id read: that read comes
+                        // before anything of the init, so another init
+                        // would not change it (a regulator still coming
+                        // up, a loose contact). Only a chain that
+                        // answered and then failed steps down the ladder.
+                        if !matches!(why, warpaxe_chain::InitError::NoChips) {
+                            if let Some((from, to)) = board::chip_init_fall_back() {
+                                log::warn!(
+                                    "miner: {from} init: the chain did not come up, {to} init from the next start until reboot"
+                                );
+                            }
                         }
                         update(|s| {
                             s.init_failures += 1;

@@ -54,8 +54,9 @@ pub struct Reading {
     /// it read while the rail was on: a diode inside the chip that only
     /// answers with the chip powered (a Bitaxe Gamma's, 2026-11-10). A
     /// reading will not come while the rail stays off, so after a hot
-    /// stop the chip is taken as cooled with the regulator and the time
-    /// off, as AxeOS resumes; if it is not, it stops again and counts
+    /// stop or a regulator fault the chip is taken as cooled with the
+    /// regulator and the time off, as AxeOS resumes; if it is not, it
+    /// stops again and counts
     /// towards the latch. A sensor lost while the chips ran
     /// ([`Cause::Blind`]) still needs a real reading.
     pub chip_dark_off: bool,
@@ -195,10 +196,15 @@ impl Guard {
         if self.latched || now.saturating_sub(since) < MIN_OFF_S {
             return false;
         }
-        let hot_stop = matches!(self.stopped, Some((_, Cause::Hot)));
+        // A diode that cannot be read with the rail off: after a hot stop
+        // or a regulator fault the regulator and the minute off decide,
+        // as on AxeOS (still wrong once running, it stops again and counts
+        // towards the latch). A sensor lost while the chips ran (`Blind`)
+        // still needs a real reading.
+        let blind_stop = matches!(self.stopped, Some((_, Cause::Blind)));
         let chip_cool = match r.chip_c {
             Some(c) => c <= r.chip_limit_c - HYSTERESIS_C,
-            None => !r.chip_expected || (r.chip_dark_off && hot_stop),
+            None => !r.chip_expected || (r.chip_dark_off && !blind_stop),
         };
         let vr_cool = match r.vr_c {
             Some(c) => c <= r.vr_limit_c - HYSTERESIS_C,
@@ -355,6 +361,19 @@ mod tests {
         // Without the flag (a sensor that reads with the rail off, and
         // gives nothing now) the reading is waited for, as before.
         assert!(!g.may_resume(MIN_OFF_S, &reading(None, Some(60.0))));
+        // A regulator fault on a board whose diode is dark with the rail
+        // off (Gamma, two-chip boards): back on after the minute with the
+        // regulator cool, and the third stop within the window latches.
+        let mut g = Guard::new();
+        g.trip(0, Cause::PowerFault);
+        assert!(!g.may_resume(MIN_OFF_S - 1, &dark(60.0)));
+        assert!(g.may_resume(MIN_OFF_S, &dark(60.0)));
+        let mut g = Guard::new();
+        for t in [0, 100, 200] {
+            g.trip(t, Cause::PowerFault);
+        }
+        assert!(g.latched());
+        assert!(!g.may_resume(10_000, &dark(60.0)));
         // A sensor lost while the chips ran still needs a real reading.
         let mut g = Guard::new();
         g.trip(0, Cause::Blind);

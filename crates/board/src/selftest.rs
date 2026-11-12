@@ -323,6 +323,10 @@ pub struct Limits {
     pub fan_rise_ratio: f32,
     /// Every phase of a stacked regulator carries at least this, A.
     pub phase_min_a: f32,
+    /// All phases together below this, A: the chips were not loading
+    /// the regulator when it was read (a chain restart, a pause without
+    /// pool work), so the phases are not judged.
+    pub phase_load_min_a: f32,
 }
 
 impl Limits {
@@ -339,6 +343,7 @@ impl Limits {
         fan_reaction_below_pct: 90,
         fan_rise_ratio: 1.10,
         phase_min_a: 1.0,
+        phase_load_min_a: 5.0,
     };
 
     /// The error-rate limit for a chip type, percent; `None` for a chip
@@ -799,6 +804,15 @@ fn judge_phases(limits: &Limits, b: &BoardReadings) -> Outcome {
         }
         PhaseReadings::Read(c) => c,
     };
+    // No load in the sum: a dead slave phase leaves the master carrying
+    // everything, so the sum stays high; a sum near zero is a read taken
+    // while the chips did not draw (a chain restart, no pool work in the
+    // last seconds), nothing to judge a phase by.
+    if currents.total() < limits.phase_load_min_a {
+        let mut o = Outcome::skip(Check::Phases, Note::NoWork);
+        o.value2 = Some(currents.total());
+        return o;
+    }
     let mut o = Outcome::with(Check::Phases, Status::Fail);
     o.limit = Some(limits.phase_min_a);
     o.value2 = Some(currents.total());
@@ -1020,8 +1034,16 @@ mod tests {
             (p.status, p.note, p.value),
             (Status::Fail, Note::NoReading, None)
         );
+        // No load in the sum (a chain restart, no pool work): skipped, not
+        // failed, so the chips are not switched off.
+        let idle = BoardReadings {
+            phases: two_phases(0.3, 0.2),
+            ..gamma()
+        };
+        let p = *judge(Asic::Bm1373, &Limits::DEFAULT, &idle, None, None).get(Check::Phases);
+        assert_eq!((p.status, p.note), (Status::Skip, Note::NoWork));
         // Exactly at the floor passes; the Hex's four phases are judged alike.
-        let mut amps = [1.0; crate::tps546::MAX_PHASES];
+        let mut amps = [1.5; crate::tps546::MAX_PHASES];
         amps[2] = 0.99;
         let hex = BoardReadings {
             phases: PhaseReadings::Read(PhaseCurrents { count: 4, amps }),
@@ -1035,7 +1057,7 @@ mod tests {
             ..gamma()
         };
         let p = *judge(Asic::Bm1370, &Limits::DEFAULT, &hex, None, None).get(Check::Phases);
-        assert_eq!((p.status, p.value2), (Status::Pass, Some(4.0)));
+        assert_eq!((p.status, p.value2), (Status::Pass, Some(5.5)));
     }
 
     #[test]

@@ -504,6 +504,10 @@ fn chip_offsets_refuse(
 ) -> Option<String> {
     let clock = v.get("frequency").and_then(|f| f.as_u64());
     let offsets = match patched_offsets(v) {
+        // One chip has no other to differ from: its clock is `frequency`.
+        Some(Ok(list)) if list.len > 0 && board::chips_expected() < 2 => {
+            return Some("chipFreqOffsets: this board has one chip; set frequency instead".into())
+        }
         Some(Ok(list)) => list,
         Some(Err(())) => return Some("chipFreqOffsets: a list of whole MHz per chip".into()),
         // Dropped with the change of board (`store_chip_offsets`).

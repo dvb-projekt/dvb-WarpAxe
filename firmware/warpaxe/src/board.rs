@@ -2326,7 +2326,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     // The chips not running yet (rail off, in reset, the
                     // chain not answered): neither diode reads its chip.
                     // No reading, and none of a lost sensor's either.
-                    Some(_) if !CHIPS_ANSWERED.load(Ordering::Relaxed) => {
+                    Some(_) if !rail_on || !CHIPS_ANSWERED.load(Ordering::Relaxed) => {
                         diodes_idle = true;
                         update(|s| s.chip_temps = vec![None, None]);
                         Err("the chips are not running".to_string())
