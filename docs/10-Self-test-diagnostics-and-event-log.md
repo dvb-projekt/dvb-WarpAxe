@@ -81,7 +81,21 @@ no restart, no mock job; about 80 s:
    work for more than 5 of its 60 s is discarded (a reconnect that
    needs a second attempt is enough for that): the three hash checks
    are then skipped, see below;
-3. the fan step: both outputs held at least at 100 % for 10 s, through
+3. on a stacked regulator whose config asks for it
+   (`tps546::Config::phase_check`: Naja Duo, Gamma Hex; not the Gamma
+   Turbo and the Rev 7, whose self-test is proven as it is), each
+   phase's current on its own, read by the board task under the load
+   the window just measured (no window, no phase read: idle chips draw
+   too little to judge a phase by): PHASE paged to the phase,
+   READ_IOUT, for every phase, then PHASE back to 0xFF whatever
+   happened (`Tps546::phase_currents`, ESP-Miner
+   `TPS546_check_phase_currents`). The summed telemetry cannot tell a
+   dead slave phase from a healthy stack; a phase under the floor fails
+   the `phases` check and switches the chips off (the maintenance
+   switch; the owner turns them back on), since the master phase then
+   carries the whole current. A read that fails on the bus is reported
+   as `noReading`, not acted on;
+4. the fan step: both outputs held at least at 100 % for 10 s, through
    the board task's own loop (`board::fan_boost`), the speed read before
    and at the end.
 
@@ -95,6 +109,7 @@ no restart, no mock job; about 80 s:
 | errors | every chip's error rate over the window ≤ 5 % (BM1370), ≤ 8 % (BM1373) | no error counter (BM1397); no work from a pool | ESP-Miner has none; the fleet runs 0–1.3 % (BM1370 at stock and max points), 2.6 % at WarpTune's eco point (the Nano), 3–6 % (BM1373, docs/05). The rate rises as the voltage drops, so it is a tuning figure as much as a hardware one: the line sits well above any tuned point, and the measured value is always in the report, so a 2.6 % reads as what it is |
 | coreVoltage | the regulator's output within ± 5 % of the set value | no regulator (NerdNOS, devkit) | ESP-Miner ± 10 % of the default; the fleet reads back within 0.5 % |
 | regulator | no fault condition (AxeOS `power_fault` as a fault, or a stop with cause `power`; a temperature warning is not a fault) | no regulator | ESP-Miner `test_vreg_faults` |
+| phases | every phase of a stacked regulator ≥ 1 A, read one phase at a time (`value` the weakest phase's current, `phase` which, `value2` the sum) | one phase, or a board whose phases the firmware does not page (`singlePhase`) | ESP-Miner `MULTIPHASE_BUCK_MIN_CURRENT_A` 1.0 |
 | fan | ≥ 500 rpm at 100 %, and at least 10 % faster than before when the duty before was under 90 %; a second output is judged only when something spins on it, an empty header is a note | no fan the firmware drives (NerdNOS, devkit) | ESP-Miner's lowest floor (500); the reaction is new |
 | temperature | chip and regulator read, both under their stop lines (docs/08) | no sensor | ESP-Miner fails at a missing reading and above 70 °C |
 | inputVoltage | within ± 10 % of the board's nominal input | no reading (NerdNOS) | ESP-Miner `INPUT_VOLTAGE_MARGIN` |
@@ -132,7 +147,7 @@ per chip, and a `note` (`notHashing`, `noWork`, `noReading`, `noRegulator`,
 `noFan`, `noSensor`, `noCounter`, `noDomains`, `noReply`, `noSamples`,
 `noReaction`, `regulatorFault`, `overheat`, `secondFanMissing`). The web
 UI lists every check with its figure, the device display shows the
-running test (progress, step) and then PASS/FAIL with the nine marks for
+running test (progress, step) and then PASS/FAIL with the ten marks for
 five minutes or until a key is pressed (LCD: two columns; OLED: the
 verdict and the first failed check, or "9/9 OK").
 

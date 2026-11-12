@@ -913,6 +913,7 @@ mod selftest_window {
             vr_limit_c: 105.0,
             vin_v: Some(5.1),
             nominal_v: 5.0,
+            phases: warpaxe_board::selftest::PhaseReadings::NotStacked,
         }
     }
 

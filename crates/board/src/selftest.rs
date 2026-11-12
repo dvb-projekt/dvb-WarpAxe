@@ -20,6 +20,7 @@
 //! | error rate | BM1370 ≤ 5 %, BM1373 ≤ 8 %, none on the BM1397 | ESP-Miner has no error-rate check; the fleet runs BM1370 chips at 0–1.3 % at stock and max points and 2.6 % at WarpTune's eco point (the Nano, 2026-10-21), the BM1373 at 3–6 % (docs/05). The rate is a tuning figure as much as a hardware one (it rises as the voltage drops), so the line sits well above any tuned point and the measured value is always reported |
 //! | core voltage | measured within ±5 % of the set value | ESP-Miner ±10 % of the default voltage (`SELF_TEST_CORE_VOLTAGE_TOLERANCE`, 38, 405–419); the fleet's regulators read back within 0.5 % |
 //! | regulator | no fault condition | ESP-Miner `test_vreg_faults` (442–451) |
+//! | phases | every phase of a stacked regulator ≥ 1 A, read one phase at a time with PHASE paged and restored | ESP-Miner `TPS546_check_phase_currents`, `MULTIPHASE_BUCK_MIN_CURRENT_A` 1.0 (`self_test.c` 44–49, 377–384): a dead slave phase shows nothing in the summed telemetry; on the stacked boards that have not run yet (Naja Duo, Gamma Hex) |
 //! | fan | ≥ 500 rpm at 100 % duty, and faster than before when the duty was below 90 % | ESP-Miner `test_fan_sense` wants more than `self_test_fan_target_rpm` (1000 by default, 500 on the Turbo, Naja Duo and Hex; 353–369) at whatever duty its PID holds |
 //! | temperatures | chip and regulator read, below their stop lines | ESP-Miner fails at a missing reading (`TEMP:FAIL`, 214–223) and above `selftest_max` 70 °C (620–625); the stop lines are the board's (docs/08) |
 //! | input voltage | within ±10 % of the board's nominal input | ESP-Miner `INPUT_VOLTAGE_MARGIN` 0.10 (45, 421–440), INA260 boards only |
@@ -29,6 +30,7 @@
 //! and the regulator's own over-current limit guards the board.
 
 use crate::profile::Asic;
+use crate::tps546::PhaseCurrents;
 
 /// Chips a report can hold (the chain driver's limit).
 pub const MAX_CHIPS: usize = 16;
@@ -50,6 +52,8 @@ pub enum Check {
     CoreVoltage,
     /// The regulator's status word.
     Regulator,
+    /// Each phase of a stacked regulator carries current.
+    Phases,
     /// The fan's response to full duty.
     Fan,
     /// Chip and regulator temperature, read and under their stop lines.
@@ -59,13 +63,14 @@ pub enum Check {
 }
 
 /// Every check, in report order.
-pub const CHECKS: [Check; 9] = [
+pub const CHECKS: [Check; 10] = [
     Check::Chips,
     Check::Hashrate,
     Check::Domains,
     Check::Errors,
     Check::CoreVoltage,
     Check::Regulator,
+    Check::Phases,
     Check::Fan,
     Check::Temperature,
     Check::InputVoltage,
@@ -81,6 +86,7 @@ impl Check {
             Check::Errors => "errors",
             Check::CoreVoltage => "coreVoltage",
             Check::Regulator => "regulator",
+            Check::Phases => "phases",
             Check::Fan => "fan",
             Check::Temperature => "temperature",
             Check::InputVoltage => "inputVoltage",
@@ -147,6 +153,9 @@ pub enum Note {
     /// The second fan output reads no speed at full duty: nothing is
     /// connected there (not a failure on a one-fan board).
     SecondFanMissing,
+    /// The regulator has one phase, or the firmware does not page its
+    /// phases on this board: no phase check.
+    SinglePhase,
 }
 
 impl Note {
@@ -168,6 +177,7 @@ impl Note {
             Note::RegulatorFault => "regulatorFault",
             Note::Overheat => "overheat",
             Note::SecondFanMissing => "secondFanMissing",
+            Note::SinglePhase => "singlePhase",
         }
     }
 }
@@ -183,6 +193,7 @@ impl Note {
 /// | errors | the worst chip's error % | maximum % | | |
 /// | coreVoltage | measured mV | set mV | allowed deviation mV | |
 /// | regulator | | | | |
+/// | phases | the weakest phase's A (`phase` names it) | minimum A | all phases together, A | |
 /// | fan | rpm at full duty | minimum rpm | rpm before | second fan's rpm at full duty |
 /// | temperature | chip °C | chip stop °C | regulator °C | regulator stop °C |
 /// | inputVoltage | measured V | nominal V | allowed deviation V | |
@@ -204,6 +215,8 @@ pub struct Outcome {
     pub chip: Option<u8>,
     /// The domain of that chip, where per domain.
     pub domain: Option<u8>,
+    /// The regulator phase the figure belongs to (the weakest one).
+    pub phase: Option<u8>,
     /// What the verdict rests on beyond the figures.
     pub note: Note,
 }
@@ -219,6 +232,7 @@ impl Outcome {
             limit2: None,
             chip: None,
             domain: None,
+            phase: None,
             note,
         }
     }
@@ -233,6 +247,7 @@ impl Outcome {
             limit2: None,
             chip: None,
             domain: None,
+            phase: None,
             note: Note::None,
         }
     }
@@ -306,6 +321,8 @@ pub struct Limits {
     pub fan_reaction_below_pct: u8,
     /// … by at least this factor.
     pub fan_rise_ratio: f32,
+    /// Every phase of a stacked regulator carries at least this, A.
+    pub phase_min_a: f32,
 }
 
 impl Limits {
@@ -321,6 +338,7 @@ impl Limits {
         fan_min_rpm: 500,
         fan_reaction_below_pct: 90,
         fan_rise_ratio: 1.10,
+        phase_min_a: 1.0,
     };
 
     /// The error-rate limit for a chip type, percent; `None` for a chip
@@ -510,6 +528,21 @@ pub struct BoardReadings {
     pub vin_v: Option<f32>,
     /// The board's nominal input, V.
     pub nominal_v: f32,
+    /// The regulator's phases, each read on its own.
+    pub phases: PhaseReadings,
+}
+
+/// What the test read from a stacked regulator's phases
+/// (`Tps546::phase_currents`), taken under load after the hash window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PhaseReadings {
+    /// One phase, or a board whose phases the firmware does not page
+    /// (`tps546::Config::phase_check`): nothing to check.
+    NotStacked,
+    /// The read failed on the bus (the page was restored).
+    NoReading,
+    /// One current per phase.
+    Read(PhaseCurrents),
 }
 
 /// The fan test's readings: the speeds before, and at full duty.
@@ -553,6 +586,7 @@ pub fn judge(
             judge_errors(asic, limits, board, window),
             judge_core_voltage(limits, board),
             judge_regulator(board),
+            judge_phases(limits, board),
             judge_fan(limits, fan),
             judge_temperature(board),
             judge_input_voltage(limits, board),
@@ -735,6 +769,35 @@ fn judge_regulator(b: &BoardReadings) -> Outcome {
     o
 }
 
+/// Every phase of a stacked regulator above the floor: the weakest one
+/// is the figure, with the phase it is; the sum is `value2`, so a
+/// reading taken at a light load reads as what it is.
+fn judge_phases(limits: &Limits, b: &BoardReadings) -> Outcome {
+    let currents = match b.phases {
+        PhaseReadings::NotStacked => return Outcome::skip(Check::Phases, Note::SinglePhase),
+        PhaseReadings::NoReading => {
+            let mut o = Outcome::with(Check::Phases, Status::Fail);
+            o.limit = Some(limits.phase_min_a);
+            o.note = Note::NoReading;
+            return o;
+        }
+        PhaseReadings::Read(c) => c,
+    };
+    let mut o = Outcome::with(Check::Phases, Status::Fail);
+    o.limit = Some(limits.phase_min_a);
+    o.value2 = Some(currents.total());
+    let Some((phase, amps)) = currents.weakest() else {
+        o.note = Note::NoReading;
+        return o;
+    };
+    o.value = Some(amps);
+    o.phase = Some(phase);
+    if amps >= limits.phase_min_a {
+        o.status = Status::Pass;
+    }
+    o
+}
+
 fn judge_fan(limits: &Limits, fan: Option<&FanReadings>) -> Outcome {
     let Some(f) = fan else {
         return Outcome::skip(Check::Fan, Note::NoFan);
@@ -843,7 +906,16 @@ mod tests {
             vr_limit_c: 105.0,
             vin_v: Some(5.23),
             nominal_v: 5.0,
+            phases: PhaseReadings::NotStacked,
         }
+    }
+
+    /// Two phases as a Naja Duo at 327 MHz / 1000 mV shares its 24 A.
+    fn two_phases(a0: f32, a1: f32) -> PhaseReadings {
+        let mut amps = [0.0; crate::tps546::MAX_PHASES];
+        amps[0] = a0;
+        amps[1] = a1;
+        PhaseReadings::Read(PhaseCurrents { count: 2, amps })
     }
 
     fn fan_ok() -> FanReadings {
@@ -869,6 +941,85 @@ mod tests {
             }
         }
         w
+    }
+
+    /// A one-phase board skips the phase check; a Naja Duo with both
+    /// phases carrying current passes it; a dead slave phase (U7 off
+    /// the stack) fails it naming the phase, with the sum beside it; a
+    /// bus failure fails it as no reading.
+    #[test]
+    fn the_phase_check_wants_every_phase_of_a_stack_above_an_amp() {
+        let r = judge(Asic::Bm1370, &Limits::DEFAULT, &gamma(), None, None);
+        let p = r.get(Check::Phases);
+        assert_eq!((p.status, p.note), (Status::Skip, Note::SinglePhase));
+
+        let naja = BoardReadings {
+            phases: two_phases(12.25, 12.0),
+            ..gamma()
+        };
+        let r = judge(
+            Asic::Bm1373,
+            &Limits::DEFAULT,
+            &naja,
+            Some(&window(2, 0.98, 1.0)),
+            Some(&fan_ok()),
+        );
+        let p = r.get(Check::Phases);
+        assert_eq!(p.status, Status::Pass);
+        assert_eq!(
+            (p.value, p.limit, p.phase),
+            (Some(12.0), Some(1.0), Some(1))
+        );
+        assert_eq!(p.value2, Some(24.25));
+        assert!(r.passed(), "{r:?}");
+        assert_eq!(r.judged(), 10);
+
+        let dead = BoardReadings {
+            phases: two_phases(23.9, 0.3),
+            ..gamma()
+        };
+        let r = judge(
+            Asic::Bm1373,
+            &Limits::DEFAULT,
+            &dead,
+            Some(&window(2, 0.98, 1.0)),
+            Some(&fan_ok()),
+        );
+        let p = r.get(Check::Phases);
+        assert_eq!(
+            (p.status, p.phase, p.value),
+            (Status::Fail, Some(1), Some(0.3))
+        );
+        assert_eq!(p.value2.map(|v| (v * 10.0).round() / 10.0), Some(24.2));
+        assert_eq!(r.failed(), 1);
+        assert_eq!(r.first_failure().map(|o| o.check), Some(Check::Phases));
+
+        let lost = BoardReadings {
+            phases: PhaseReadings::NoReading,
+            ..gamma()
+        };
+        let r = judge(Asic::Bm1373, &Limits::DEFAULT, &lost, None, None);
+        let p = r.get(Check::Phases);
+        assert_eq!(
+            (p.status, p.note, p.value),
+            (Status::Fail, Note::NoReading, None)
+        );
+        // Exactly at the floor passes; the Hex's four phases are judged alike.
+        let mut amps = [1.0; crate::tps546::MAX_PHASES];
+        amps[2] = 0.99;
+        let hex = BoardReadings {
+            phases: PhaseReadings::Read(PhaseCurrents { count: 4, amps }),
+            ..gamma()
+        };
+        let p = *judge(Asic::Bm1370, &Limits::DEFAULT, &hex, None, None).get(Check::Phases);
+        assert_eq!((p.status, p.phase), (Status::Fail, Some(2)));
+        amps[2] = 1.0;
+        let hex = BoardReadings {
+            phases: PhaseReadings::Read(PhaseCurrents { count: 4, amps }),
+            ..gamma()
+        };
+        let p = *judge(Asic::Bm1370, &Limits::DEFAULT, &hex, None, None).get(Check::Phases);
+        assert_eq!((p.status, p.value2), (Status::Pass, Some(4.0)));
     }
 
     #[test]
@@ -1401,6 +1552,7 @@ mod tests {
                 "errors",
                 "coreVoltage",
                 "regulator",
+                "phases",
                 "fan",
                 "temperature",
                 "inputVoltage"
@@ -1408,5 +1560,6 @@ mod tests {
         );
         assert_eq!(Status::Skip.id(), "skip");
         assert_eq!(Note::SecondFanMissing.id(), "secondFanMissing");
+        assert_eq!(Note::SinglePhase.id(), "singlePhase");
     }
 }

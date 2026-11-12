@@ -541,6 +541,7 @@ pub mod detail {
                 // left out; the value to the precision the text shows.
                 let value = match (o.check, o.value) {
                     (Check::InputVoltage, Some(v)) => fig(v, 2),
+                    (Check::Phases, Some(v)) => fig(v, 1),
                     (_, Some(v)) => fig(v, 0),
                     _ => Value::Null,
                 };
@@ -604,6 +605,7 @@ fn english_fail(a: &[Value]) -> String {
             Check::InputVoltage,
             Check::Temperature,
             Check::Chips,
+            Check::Phases,
         ]
         .into_iter()
         .find(|c| c.id() == id);
@@ -616,6 +618,7 @@ fn english_fail(a: &[Value]) -> String {
             Some(Check::InputVoltage) => s.push_str(&format!(" {} V", num(2))),
             Some(Check::Temperature) => s.push_str(&format!(" {} °C", num(0))),
             Some(Check::Chips) => s.push_str(&format!(" {} found", num(0))),
+            Some(Check::Phases) => s.push_str(&format!(" {} A", num(1))),
             _ => {}
         }
     }
@@ -1010,6 +1013,7 @@ mod tests {
             limit2: None,
             chip: None,
             domain: None,
+            phase: None,
             note: warpaxe_board::selftest::Note::None,
         }
     }
@@ -1164,7 +1168,7 @@ mod tests {
                 detail::power(&["vout_ov", "temp"]),
                 "regulator fault: An output overvoltage fault has occurred; Overtemperature fault",
             ),
-            (detail::selftest(&report(&[])), "PASS, 8 checks"),
+            (detail::selftest(&report(&[])), "PASS, 9 checks"),
             (
                 detail::selftest(&report(&[
                     (Check::Hashrate, Some(62.4), Some(3), None, Note::None),

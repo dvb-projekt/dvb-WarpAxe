@@ -92,6 +92,7 @@ static ES: &[(&str, &str)] = &[
     ("POOL DIFF", "DIF. POOL"),
     ("POWER", "POTENCIA"),
     ("Password · 10 digits", "Contraseña · 10 dígitos"),
+    ("Phases", "Fases"),
     ("Pool difficulty", "Dificultad del pool"),
     ("Power", "Potencia"),
     (
@@ -228,6 +229,7 @@ static FR: &[(&str, &str)] = &[
     ("POOL DIFF", "DIFF. POOL"),
     ("POWER", "PUISSANCE"),
     ("Password · 10 digits", "Mot de passe · 10 chiffres"),
+    ("Phases", "Phases"),
     ("Pool difficulty", "Difficulté du pool"),
     ("Power", "Puissance"),
     (
@@ -358,6 +360,7 @@ static IT: &[(&str, &str)] = &[
     ("POOL DIFF", "DIFF. POOL"),
     ("POWER", "POTENZA"),
     ("Password · 10 digits", "Password · 10 cifre"),
+    ("Phases", "Fasi"),
     ("Pool difficulty", "Difficoltà del pool"),
     ("Power", "Potenza"),
     (
@@ -491,6 +494,7 @@ static PT: &[(&str, &str)] = &[
     ("POOL DIFF", "DIF. DO POOL"),
     ("POWER", "POTÊNCIA"),
     ("Password · 10 digits", "Senha · 10 dígitos"),
+    ("Phases", "Fases"),
     ("Pool difficulty", "Dificuldade do pool"),
     ("Power", "Potência"),
     (

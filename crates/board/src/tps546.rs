@@ -60,6 +60,14 @@ pub struct Config {
     /// Write STACK_CONFIG, SYNC_CONFIG and PHASE at init (ESP-Miner
     /// does; the BitMaker NerdAxe driver leaves the part's own values).
     pub write_phase_config: bool,
+    /// The self-test reads every phase's current on its own
+    /// ([`Tps546::phase_currents`]) and wants each above a floor: a
+    /// stacked part whose slave phase is dead shows nothing in the
+    /// summed telemetry. ESP-Miner does this on every stacked part
+    /// (`TPS546_check_phase_currents`, 1 A); here on the boards that have
+    /// not run yet (Naja Duo, Gamma Hex), not on the Gamma Turbo and the
+    /// Rev 7, whose self-test is proven as it is.
+    pub phase_check: bool,
 }
 
 impl Config {
@@ -83,6 +91,7 @@ impl Config {
         compensation: None,
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: false,
     };
 
     /// NerdOS `drivers/nerdaxe/TPS546` as the NerdAxe Gaia sets it up
@@ -127,6 +136,7 @@ impl Config {
         compensation: None,
         pin_detect_override: Some(0x0000),
         write_phase_config: false,
+        phase_check: false,
     };
 
     /// BitForge Nano: one TPS546D24A on the 12 V rail feeding two BM1370
@@ -165,6 +175,7 @@ impl Config {
         compensation: None,
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: false,
     };
 
     /// ESP-Miner `TPS546_CONFIG_GAMMA_TURBO` (Bitaxe Gamma Turbo, 801):
@@ -187,6 +198,7 @@ impl Config {
         compensation: Some([0x12, 0x34, 0x42, 0x21, 0x04]),
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: false,
     };
 
     /// ESP-Miner `TPS546_CONFIG_NAJA_DUO` (Bitaxe Naja Duo, 1201): two
@@ -209,6 +221,7 @@ impl Config {
         compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: true,
     };
 
     /// ESP-Miner `TPS546_CONFIG_GAMMA_HEX` (Bitaxe Gamma Hex, 1300): four
@@ -231,6 +244,7 @@ impl Config {
         compensation: Some([0x02, 0x64, 0x82, 0x11, 0x06]),
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: true,
     };
 
     /// NerdOS `drivers/rev7/TPS546` for the NerdQAxe++ Rev 7: its
@@ -256,6 +270,7 @@ impl Config {
         compensation: Some([0x12, 0x34, 0x42, 0x25, 0x04]),
         pin_detect_override: Some(0xFFFF),
         write_phase_config: true,
+        phase_check: false,
     };
 }
 
@@ -652,6 +667,88 @@ impl<I: I2c> Tps546<I> {
     pub fn clear_faults(&mut self) -> Result<(), Error<I::Error>> {
         Ok(self.bus.write(ADDR, &[pm::CLEAR_FAULTS])?)
     }
+
+    /// Phases the part drives: STACK_CONFIG's low three bits plus one,
+    /// as ESP-Miner counts them (`TPS546_get_phase_count`); 1 for a part
+    /// alone or one whose phase registers this driver does not write.
+    pub fn phases(&self) -> u8 {
+        if self.cfg.write_phase_config {
+            (self.cfg.stack_config & 0x07) as u8 + 1
+        } else {
+            1
+        }
+    }
+
+    /// The self-test's phase check is wanted on this board
+    /// ([`Config::phase_check`]) and the part has more than one phase.
+    pub fn checks_phases(&self) -> bool {
+        self.cfg.phase_check && self.phases() > 1
+    }
+
+    /// Each phase's output current on its own, A: PHASE set to the
+    /// phase, READ_IOUT, for every phase in turn, then PHASE back to the
+    /// configured page (0xFF, the sum) whatever happened, as ESP-Miner's
+    /// `TPS546_check_phase_currents` does. The telemetry page is all
+    /// this moves; conversion is untouched. An error names the command
+    /// that failed ([`last_command`](Self::last_command)); the page is
+    /// restored before it is returned, and a failed restore wins over
+    /// the read's error.
+    pub fn phase_currents(&mut self) -> Result<PhaseCurrents, Error<I::Error>> {
+        let count = self.phases().min(MAX_PHASES as u8);
+        let mut out = PhaseCurrents {
+            count,
+            amps: [0.0; MAX_PHASES],
+        };
+        let mut result = Ok(());
+        for phase in 0..count {
+            match self
+                .write_byte(pm::PHASE, phase)
+                .and_then(|()| self.read_word(pm::READ_IOUT))
+            {
+                Ok(raw) => out.amps[usize::from(phase)] = pm::linear11_to_f32(raw),
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
+            }
+        }
+        self.write_byte(pm::PHASE, self.cfg.phase)?;
+        result.map(|()| out)
+    }
+}
+
+/// Phases a stacked TPS546 can report (STACK_CONFIG's three bits).
+pub const MAX_PHASES: usize = 8;
+
+/// One current per phase of a stacked regulator
+/// ([`Tps546::phase_currents`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PhaseCurrents {
+    /// Phases read.
+    pub count: u8,
+    /// Each phase's output current, A; only the first `count` are set.
+    pub amps: [f32; MAX_PHASES],
+}
+
+impl PhaseCurrents {
+    /// The currents, one per phase.
+    pub fn amps(&self) -> &[f32] {
+        &self.amps[..usize::from(self.count).min(MAX_PHASES)]
+    }
+
+    /// The weakest phase: its index and current.
+    pub fn weakest(&self) -> Option<(u8, f32)> {
+        self.amps()
+            .iter()
+            .enumerate()
+            .map(|(i, a)| (i as u8, *a))
+            .reduce(|w, c| if c.1 < w.1 { c } else { w })
+    }
+
+    /// All phases together, A.
+    pub fn total(&self) -> f32 {
+        self.amps().iter().sum()
+    }
 }
 
 #[cfg(test)]
@@ -996,5 +1093,74 @@ mod tests {
         assert!((vr.vout().unwrap() - 1.2).abs() < 0.01);
         assert_eq!(vr.iout().unwrap(), 0.0);
         assert_eq!(vr.temperature_c().unwrap(), 62);
+    }
+
+    /// LINEAR11 words for the phase test: 12.25 A and 12.0 A, as a Naja
+    /// Duo at 24 A would page them (exponent −2 = 0b11110 in the top
+    /// five bits, mantissa 49 and 48 × 0.25; little-endian on the bus).
+    const PHASE0_12_25A: [u8; 2] = [0x31, 0xF0];
+    const PHASE1_12A: [u8; 2] = [0x30, 0xF0];
+
+    #[test]
+    fn phase_currents_page_each_phase_and_restore_the_sum_page() {
+        let bus = Bus::new(vec![
+            Tx::Write(ADDR, vec![pm::PHASE, 0x00]),
+            Tx::WriteRead(ADDR, vec![pm::READ_IOUT], PHASE0_12_25A.to_vec()),
+            Tx::Write(ADDR, vec![pm::PHASE, 0x01]),
+            Tx::WriteRead(ADDR, vec![pm::READ_IOUT], PHASE1_12A.to_vec()),
+            Tx::Write(ADDR, vec![pm::PHASE, 0xFF]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NAJA_DUO);
+        assert_eq!(vr.phases(), 2);
+        assert!(vr.checks_phases());
+        let got = vr.phase_currents().unwrap();
+        assert_eq!(got.count, 2);
+        assert_eq!(got.amps(), &[12.25, 12.0]);
+        assert_eq!(got.weakest(), Some((1, 12.0)));
+        assert_eq!(got.total(), 24.25);
+        let log = vr.release().log;
+        assert_eq!(log.len(), 5, "two pages, two reads, the restore");
+        assert_eq!(log[4], Tx::Write(ADDR, vec![pm::PHASE, 0xFF]));
+    }
+
+    #[test]
+    fn a_failed_phase_read_still_restores_the_page_and_reports_the_command() {
+        let bus = Bus::new(vec![
+            Tx::Write(ADDR, vec![pm::PHASE, 0x00]),
+            Tx::Nack(ADDR, vec![pm::READ_IOUT]),
+            Tx::Write(ADDR, vec![pm::PHASE, 0xFF]),
+        ]);
+        let mut vr = Tps546::new(bus, Config::NAJA_DUO);
+        assert!(vr.phase_currents().is_err());
+        let log = vr.release().log;
+        // Phase 1 was never paged: the restore follows the failure at once.
+        assert_eq!(log.len(), 3);
+        assert_eq!(log[2], Tx::Write(ADDR, vec![pm::PHASE, 0xFF]));
+    }
+
+    /// The Hex pages four phases; a 5 V Bitaxe, the Gaia (phase registers
+    /// left to the part) and the proven stacked boards are not checked.
+    #[test]
+    fn only_the_unrun_stacked_boards_check_their_phases() {
+        let phases = |c: Config| Tps546::new(Bus::sink(), c).phases();
+        let checks = |c: Config| Tps546::new(Bus::sink(), c).checks_phases();
+        assert_eq!(phases(Config::NAJA_DUO), 2);
+        assert_eq!(phases(Config::GAMMA_HEX), 4);
+        assert_eq!(phases(Config::GAMMA_TURBO), 2);
+        assert_eq!(phases(Config::NERDQAXE_PLUSPLUS_REV7), 2);
+        assert_eq!(phases(Config::BITAXE_5V), 1);
+        assert_eq!(phases(Config::NERDAXE_GAIA), 1);
+        assert!(checks(Config::NAJA_DUO));
+        assert!(checks(Config::GAMMA_HEX));
+        assert!(!checks(Config::GAMMA_TURBO));
+        assert!(!checks(Config::NERDQAXE_PLUSPLUS_REV7));
+        assert!(!checks(Config::BITAXE_5V));
+        assert!(!checks(Config::NERDAXE_GAIA));
+        let got = Tps546::new(Bus::sink(), Config::GAMMA_HEX)
+            .phase_currents()
+            .unwrap();
+        assert_eq!(got.count, 4);
+        assert_eq!(got.amps(), &[0.0; 4]);
+        assert_eq!(got.weakest(), Some((0, 0.0)));
     }
 }

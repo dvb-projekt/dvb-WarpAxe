@@ -19,7 +19,14 @@
 //!    hashing nothing. Without work, or with the pool gone for more
 //!    than [`WORK_LOST_S`] seconds of it, there is no window and the
 //!    hash checks are skipped (`Note::NoWork`);
-//! 3. the fan step: both fan outputs held at least at 100 % for
+//! 3. on a stacked regulator that asks for it (`tps546::Config::
+//!    phase_check`: Naja Duo, Gamma Hex), each phase's current on its
+//!    own, read by the board task under the load the window left
+//!    ([`board::phase_currents`], ESP-Miner's `TPS546_check_phase_
+//!    currents`); a phase under the floor fails the `phases` check and
+//!    switches the chips off, as a dead slave phase leaves the master
+//!    alone with the whole current;
+//! 4. the fan step: both fan outputs held at least at 100 % for
 //!    [`FAN_HOLD_S`] seconds through the board task's own loop
 //!    (`board::fan_boost`), speed read before and at the end, then the
 //!    hold released and the PID back in charge. The boost only raises
@@ -38,7 +45,8 @@ use std::time::{Duration, Instant};
 
 use serde_json::json;
 use warpaxe_board::selftest::{
-    judge, BoardReadings, FanReadings, Limits, Note, Report, Window, CHECKS,
+    judge, BoardReadings, Check, FanReadings, Limits, Note, PhaseReadings, Report, Status, Window,
+    CHECKS,
 };
 
 use crate::{board, config, diag, events, miner};
@@ -58,7 +66,7 @@ const STACK: usize = 16 * 1024;
 pub enum State {
     /// Running: which step, how far (0–100).
     Running {
-        /// `board`, `hashrate`, `fan`, `judge`.
+        /// `board`, `hashrate`, `phases`, `fan`, `judge`.
         step: &'static str,
         /// Percent done.
         progress: u8,
@@ -210,8 +218,12 @@ fn readings(cfg: &config::Config) -> BoardReadings {
         vr_limit_c: profile.vr_stop_c,
         vin_v: b.vin_mv.map(|v| v / 1000.0),
         nominal_v: f32::from(profile.nominal_voltage_v),
+        phases: PhaseReadings::NotStacked,
     }
 }
+
+/// How long the phase read waits for the board task.
+const PHASE_READ_WAIT: Duration = Duration::from_secs(5);
 
 /// The point the test started at still holds.
 fn point_unchanged(cfg: &config::Config) -> bool {
@@ -335,6 +347,35 @@ fn perform(cfg: &config::Config) -> Outcome {
             window = Some(w);
         }
     }
+    // The phases, under the load the window just measured: a phase that
+    // carries nothing while the chips draw their current is the finding.
+    // Without work the chips idle and a phase may well read under the
+    // floor, and with the chips off every phase reads nothing; neither
+    // says anything about the stack, so no window means no phase read
+    // (the check is skipped, as the hash checks are).
+    let mut phases = PhaseReadings::NotStacked;
+    if board::checks_phases() && window.is_some() && !board::chain_stopped() {
+        update(|r| {
+            r.state = State::Running {
+                step: "phases",
+                progress: 85,
+            }
+        });
+        phases = match board::phase_currents(PHASE_READ_WAIT) {
+            Some(Ok(c)) => PhaseReadings::Read(c),
+            Some(Err(e)) => {
+                log::warn!("selftest: phase currents: {e}");
+                PhaseReadings::NoReading
+            }
+            None => {
+                log::warn!("selftest: phase currents: the board task did not answer in time");
+                PhaseReadings::NoReading
+            }
+        };
+        if ABORT.load(Ordering::Relaxed) {
+            return Err("cancelled");
+        }
+    }
     // The fan step.
     let mut fan = None;
     let b = board::state();
@@ -372,6 +413,7 @@ fn perform(cfg: &config::Config) -> Outcome {
     // Whether there was work is the window's matter, not the last
     // second's.
     last.has_work = has_work;
+    last.phases = phases;
     Ok((last, window, fan))
 }
 
@@ -415,6 +457,21 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
             let summary = warpaxe_diag::events::detail::selftest(&report);
             log::info!("selftest: run {id} {}", summary.text());
             events::record("selftest", summary);
+            // A phase read below the floor: the stack is not sharing the
+            // current, the master phase carries it all. Chips off, as
+            // the maintenance switch does; the owner turns them back on
+            // once the regulator has been looked at. A failed read is
+            // reported, not acted on.
+            let p = report.get(Check::Phases);
+            if p.status == Status::Fail && p.note == Note::None {
+                log::error!(
+                    "selftest: regulator phase {} carries {:.1} A (floor {:.1} A): chips off",
+                    p.phase.unwrap_or(0),
+                    p.value.unwrap_or(0.0),
+                    p.limit.unwrap_or(0.0)
+                );
+                board::set_shutdown(true);
+            }
             (State::Done, Some(report), chips, Some(b), fan)
         }
     };
@@ -457,7 +514,7 @@ pub fn status_json() -> serde_json::Value {
                     json!({
                         "id": o.check.id(), "status": o.status.id(),
                         "value": f(o.value), "limit": f(o.limit), "value2": f(o.value2), "limit2": f(o.limit2),
-                        "chip": o.chip, "domain": o.domain,
+                        "chip": o.chip, "domain": o.domain, "phase": o.phase,
                         "note": if o.note == Note::None { serde_json::Value::Null } else { json!(o.note.id()) },
                     })
                 })

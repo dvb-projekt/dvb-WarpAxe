@@ -1719,6 +1719,7 @@ fn check_name(ch: warpaxe_board::selftest::Check) -> &'static str {
         Check::Errors => l("Errors", "Fehler"),
         Check::CoreVoltage => l("Core voltage", "Kernspannung"),
         Check::Regulator => l("Regulator", "Regler"),
+        Check::Phases => l("Phases", "Phasen"),
         Check::Fan => l("Fan", "Lüfter"),
         Check::Temperature => l("Temperature", "Temperatur"),
         Check::InputVoltage => l("Input", "Eingang"),
@@ -1910,6 +1911,9 @@ fn selftest_screen(c: &mut Canvas, t: f32) {
             }
             if let Some(d) = o.domain {
                 name.push_str(&format!("D{d}"));
+            }
+            if let Some(p) = o.phase {
+                name.push_str(&format!(" P{p}"));
             }
         }
         let f: &gfx::font::Font = if LABEL11.width(&name) <= 118 {

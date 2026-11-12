@@ -36,7 +36,7 @@ use warpaxe_board::pmbus;
 use warpaxe_board::power_fault::{self, Condition, Monitor, Verdict};
 use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
-use warpaxe_board::tps546::Tps546;
+use warpaxe_board::tps546::{PhaseCurrents, Tps546};
 use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
@@ -159,6 +159,16 @@ static NAJA_DUO_INITS: [ChipProfile; 3] = [
 static CHIP_INIT_START: AtomicU8 = AtomicU8::new(u8::MAX);
 /// The rung the fallbacks have reached this boot; 0 = none.
 static CHIP_INIT_FALLEN: AtomicU8 = AtomicU8::new(0);
+/// The self-test's phase read ([`phase_currents`]): asked for by the
+/// self-test thread, done by the board task, whose regulator it is.
+static PHASE_READ: Mutex<PhaseRead> = Mutex::new(PhaseRead::Idle);
+
+/// Where a phase read stands.
+enum PhaseRead {
+    Idle,
+    Wanted,
+    Done(Result<PhaseCurrents, String>),
+}
 /// When the chips may run again after an overheat stop.
 static GUARD: Mutex<Guard> = Mutex::new(Guard::new());
 /// Chips switched off by hand (web UI / API), not by a limit.
@@ -375,6 +385,43 @@ pub fn chip_init_fall_back() -> Option<(&'static str, &'static str)> {
         ladder[usize::from(now)].init_source,
         ladder[usize::from(now + 1)].init_source,
     ))
+}
+
+/// The self-test's phase check applies to this board: a TPS546 run as
+/// a stack whose config asks for it (`tps546::Config::phase_check`,
+/// Naja Duo and Gamma Hex).
+pub fn checks_phases() -> bool {
+    match profile().vr {
+        Vr::Tps546(cfg) => {
+            cfg.phase_check && cfg.write_phase_config && (cfg.stack_config & 0x07) > 0
+        }
+        _ => false,
+    }
+}
+
+/// Each phase's current from the board task's regulator
+/// (`Tps546::phase_currents`): asked for here, read on the board task's
+/// next pass, waited for up to `timeout`. `None` when the board task did
+/// not get to it in time; `Some(Err(_))` with the bus error and the
+/// PMBus command that failed.
+pub fn phase_currents(timeout: Duration) -> Option<Result<PhaseCurrents, String>> {
+    *PHASE_READ.lock().unwrap() = PhaseRead::Wanted;
+    let end = Instant::now() + timeout;
+    while Instant::now() < end {
+        std::thread::sleep(Duration::from_millis(100));
+        let mut g = PHASE_READ.lock().unwrap();
+        if let PhaseRead::Done(_) = &*g {
+            if let PhaseRead::Done(r) = std::mem::replace(&mut *g, PhaseRead::Idle) {
+                return Some(r);
+            }
+        }
+    }
+    *PHASE_READ.lock().unwrap() = PhaseRead::Idle;
+    None
+}
+
+fn phase_read_wanted() -> bool {
+    matches!(*PHASE_READ.lock().unwrap(), PhaseRead::Wanted)
 }
 
 /// True once a temperature limit was crossed, until the board has cooled
@@ -2199,6 +2246,21 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     "power",
                 );
                 status = vr.status();
+            }
+            // The self-test's phase read, on this thread because the
+            // regulator is this thread's: PHASE paged per phase and back.
+            if phase_read_wanted() {
+                let r = match vr.as_mut() {
+                    Some(Regulator::Tps546(vr, _)) => vr.phase_currents().map_err(|e| {
+                        format!("{e:?} at PMBus command 0x{:02X}", vr.last_command())
+                    }),
+                    _ => Err("no TPS546 on this board".to_string()),
+                };
+                match &r {
+                    Ok(c) => log::info!("board: phase currents {:?} A", c.amps()),
+                    Err(e) => log::warn!("board: phase currents: {e}"),
+                }
+                *PHASE_READ.lock().unwrap() = PhaseRead::Done(r);
             }
             // A board that measures no power: the profile's estimate from
             // the chip clock, flagged as such for the API and the display.
