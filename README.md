@@ -4,16 +4,16 @@
 
 <p align="center">
   <strong>Open-source Rust firmware for BM1370, BM1373 and BM1397 Bitcoin miners</strong><br>
-  Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano · NerdNOS<br>
-  <a href="#supported-boards">profiles for 7 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano · NerdNOS · Bitaxe Naja Duo<br>
+  <a href="#supported-boards">profiles for 6 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-637%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-679%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.43-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.44-7B5CFF"></a>
 </p>
 
 ---
@@ -47,11 +47,12 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.43).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.44).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
-> 8 October also a NerdNOS (BM1397), its clock set by hand. Seven
+> 8 October also a NerdNOS (BM1397), its clock set by hand, and since 12
+> November a Bitaxe Naja Duo. Six
 > more boards have a profile; of these the Bitaxe Gamma Duo and Gamma
 > Turbo have run it at a user's; so has a NerdOCTAXE-γ v2.2 with the
 > 4-phase regulator — see [Supported boards](#supported-boards) before you
@@ -105,7 +106,7 @@ move fast; corrections welcome.
 | Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | English | 8 |
 | Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 6 run, 7 more with a profile (see below) |
+| Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 7 run, 6 more with a profile (see below) |
 
 What the stock firmware offers in addition: AxeOS and NerdOS support far more
 boards and have years of use by a large community; AxeOS has a scoreboard, themes,
@@ -156,8 +157,8 @@ draw:
   is regulating the miner; the firmware's own base regulation, a later
   block, will stand back while `externalRegulator.active` holds.
 - **A clock of its own per chip** (`chipFreqOffsets`, `asicFrequencies`,
-  `chipFreqOffsetsSupported`: the boards with more than one chip;
-  after v0.1.43): the chips of a board differ, and the weakest one sets the
+  `chipFreqOffsetsSupported`, `voltageDomains`, `chipFreqOffsetSpread`:
+  the boards with more than one chip; since v0.1.44): the chips of a board differ, and the weakest one sets the
   voltage for all. WarpTune can give the one or two chips that hold the
   voltage up a lower clock and take the board's voltage down; the firmware
   carries the offsets out and reports each chip's clock, the search is
@@ -267,15 +268,20 @@ back at any time with `GET /api/v1/display/frame`.
   which reached no second chip on a Naja Duo, so its chip 1 also went
   without the domain-end IO strength of ESP-Miner's init; where the
   chips sit in series, as on that board, their clocks may lie 25 MHz
-  apart at most, since a slowed chip takes voltage from the other, and a
-  chip that resets itself for want of it is counted, `counterRestarts`)
-  (`chipFreqOffsets`, MHz added to the frequency per chip, after v0.1.43):
-  each chip is stepped to its clock by writes to that chip alone, without
+  apart at most, or 8 % of the chain's clock where that is less
+  (`voltageDomains`, `chipFreqOffsetSpread`), since a slowed chip takes
+  voltage from the other, and a chip that resets itself for want of it
+  is counted, `counterRestarts`) (`chipFreqOffsets`, MHz added to the
+  frequency per chip, since v0.1.44; no chip below half the chain's
+  clock or above the board's highest, else the API refuses the list,
+  and stored offsets that no longer fit the clock in force at a chain
+  start are not applied): each chip is stepped to its clock by writes to that chip alone, without
   a chain restart, and no chip passes its own clock on the way; the
   expected hashrate, the self-test and the two policies below follow each
   chip's clock, a lower voltage that comes with new offsets waits for the
   chips' ramps, and without offsets the chain puts the same bytes on the
-  wire as before
+  wire as before; in the web UI under *Clock per chip*, below frequency
+  and voltage
   ([`docs/15`](docs/15-A-clock-of-its-own-per-chip.md)).
   All chips silent for a minute with work going out:
   the chain is started over. Since v0.1.40 also one chip silent for ten
@@ -286,7 +292,7 @@ back at any time with `GET /api/v1/display/frame`.
   left alone until the next boot or a new clock or voltage. Both clocks
   stop while no work goes out, so a pool outage counts for nothing. On
   a board whose nonce-to-chip attribution has not been seen on a device
-  (the Naja Duo until its first run) the ten minutes are reported in the
+  (the Naja Duo, also after its first run in v0.1.44) the ten minutes are reported in the
   log and `lastError`, not acted on (`Profile::silent_chip_restart`).
   Since v0.1.41 also one hash domain stuck while its chip hashes (the
   NerdOctaxe's latch, until then seen only after a warm reboot and in
@@ -411,7 +417,8 @@ back at any time with `GET /api/v1/display/frame`.
   are off (a Bitaxe Gamma's diode needs the chip's power) is no lost
   sensor: the lost-sensor stop counts only with the core rail on, for
   every way the rail goes down, and after a hot stop on such a board
-  the regulator and a minute off decide the restart, as on AxeOS. Not during the first start of a newly chosen board, whose
+  the regulator and a minute off decide the restart, as on AxeOS (since
+  v0.1.44 also after a regulator fault). Not during the first start of a newly chosen board, whose
   chips have to answer once for the choice to be confirmed, and not
   while a self-test runs: the chips stay on for it, and come on for one
   started while they were off. Without work from a pool the self-test
@@ -470,7 +477,11 @@ back at any time with `GET /api/v1/display/frame`.
   (its chip has no stop line of its own, and a reboot must not take the
   protection away), with a line in the log and the board's notice
   (`boardError`), and the chips keep running. When the diode reads
-  after all, everything is as normal. Since v0.1.43 a diode stuck at the
+  after all, everything is as normal. Since v0.1.44 neither diode counts
+  until the chain has answered since the last reset or rail-on (with the
+  chips off or in reset the EMC2103 reads both as nonsense: a user's
+  Gamma Turbo stopped its start on chip 1 at 72.75 °C, 33.6 °C once the
+  chip ran); until then they are no reading, not a lost sensor. Since v0.1.43 a diode stuck at the
   sensor's ceiling (127.875 °C, the EMC2103's highest raw value) counts as
   no reading, and in the first three readings after the chips start (rail
   on, reset, chain init) a second diode over the line is held with the
@@ -518,7 +529,10 @@ back at any time with `GET /api/v1/display/frame`.
   chip sensor never answers runs like NerdOS, on the regulator limit with
   the fans at full, and says so in the log). The chips start again on their own once chip and
   regulator are 10 °C below their limits (at least 60 s off; after a lost
-  sensor only with real readings back); the third stop within an hour stays
+  sensor only with real readings back; a chip diode that reads only with
+  the rail on, as on the Gamma and the two-chip Bitaxes, is taken as
+  cooled with the regulator after a hot stop and, since v0.1.44, after a
+  regulator fault); the third stop within an hour stays
   off until it is cleared by hand.
 - **Board-choice guard**: a board is checked against the I²C bus before
   any of its pins is driven, by the parts its profile needs and the ones
@@ -689,7 +703,9 @@ back at any time with `GET /api/v1/display/frame`.
   v0.1.42; the chips are off for it, `chainStopped`, except on a board
   without chips, during a first start and while a self-test runs), and AxeOS's `hashrateMonitor` (per chip the
   hashrate from the chip's own counters, its domains — four, eight on the
-  BM1373 — and the error counter, read once a second) with
+  BM1373 — and the error counter, read once a second; since v0.1.44 also
+  `hashCount`, the chip's raw total counter, and `counterRestarts`, the
+  times it started over while the chain ran) with
   `errorPercentage` (AxeOS's per-second
   value) and `errorPercentage1m` (over the last full minute, for tuners).
   Also `resetReason` with `resetCause` (the raw RTC reset cause, since
@@ -697,7 +713,9 @@ back at any time with `GET /api/v1/display/frame`.
   `aborted` after a rollback), `dieTempC` (the ESP32-S3's own sensor),
   `yieldPercent` (the nonce-weighted 10-minute rate against small cores ×
   clock, on chips without an error counter such as the BM1397),
-  `clockStep` (a step down after an overheat on a board without a fan to
+  `minerStackFree` (since v0.1.44: the least stack the mining loop has
+  had to spare since boot, of its 12 KB; its driver and policies live in
+  PSRAM), `clockStep` (a step down after an overheat on a board without a fan to
   drive), `hasFan`, `hasVr` and `powerEstimated` (what the board has
   to measure and drive), and `ntpLastSync` (when SNTP last set the
   clock; the Network tab shows it, and how far the miner's clock is from
@@ -729,7 +747,9 @@ back at any time with `GET /api/v1/display/frame`.
 - Boot screen: the WarpAxe logo, and on the colour-display boards the
   maker's wordmark under it (NerdQAxe++, NerdOctaxe, NerdAxe Gamma, NerdQX,
   NerdAxe Gaia, NerdNOS, Bitaxe Naja Duo and Gamma Hex), shown with the makers'
-  consent; the small-OLED Bitaxes show the model name instead.
+  consent (the Naja Duo, since v0.1.44, the Bitaxe logo as printed on
+  its board, with "1201"); the small-OLED Bitaxes show the model name
+  instead.
 - Special screens for block found, overheat, ASICs off (also "no pool") and firmware update;
   display language, time zone, screen timeout.
 - **What the display shows is yours to choose** (Settings → Display, with
@@ -760,7 +780,9 @@ back at any time with `GET /api/v1/display/frame`.
   for it (Naja Duo, Gamma Hex) each phase's current on its own, under
   load, as ESP-Miner's factory test does: a phase under 1 A fails the
   check and switches the ASICs off, since the other phase then carries
-  the whole current. Without work from a pool (since
+  the whole current; since v0.1.44 a reading whose phases carry under
+  5 A in all (a chain restart, a pause in the pool's work) is skipped,
+  not failed. Without work from a pool (since
   v0.1.42) the hash checks are marked skipped, "no work from the pool",
   not failed, and the rest is checked; the test switches the ASICs on
   while no pool answers, so a bench test works before a pool is set up.
@@ -890,8 +912,8 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV: 2.53 TH/s at 37–38 A, just below ForgeOS v1.7's Power preset of 636 MHz / 1160 mV (610 MHz / 1200 mV since v1.8)); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
-| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers; both chips' diodes read since v0.1.42, the start without a false overheat stop since v0.1.43); free clock values with `?oc` as on the Gamma |
-| Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; the chips come up with ESP-Miner's BM1373 init (3 MBaud, the IO strength for the end of each voltage domain), the same init at 1 MBaud and NerdOS's behind it as fallbacks (`chipInit`), the maker's 6725 small cores and 50 °C fan target; one silent chip is reported, not restarted, until the nonce-to-chip attribution has been seen on a device; the self-test reads both regulator phases; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
+| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers; both chips' diodes read since v0.1.42, the start without a false overheat stop since v0.1.43, the diodes counted only once the chips run since v0.1.44); free clock values with `?oc` as on the Gamma |
+| Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | **runs** since 2026-11-12 (v0.1.44, on our bench; the web UI marks it untested until it has run for some days); the chips come up with ESP-Miner's BM1373 init (3 MBaud, the IO strength for the end of each voltage domain), the same init at 1 MBaud and NerdOS's behind it as fallbacks (`chipInit`), the maker's 6725 small cores and 50 °C fan target; one silent chip is reported, not restarted, until the nonce-to-chip attribution has been seen on a device; the self-test reads both regulator phases; AxeOS's display rotation taken over the right way up since v0.1.44; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet; only the EMC2103's diode 2 is read as the chip temperature (ESP-Miner also acts on diode 1: to be settled before its first run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102% of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V); taken on the first start since v0.1.35 (TPS546 and EMC2101 on the Nerd pins with 12 V at the regulator; the same parts at 5 V are a NerdAxe Gamma) |
@@ -1142,7 +1164,8 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/15-A-clock-of-its-own-per-chip.md`](docs/15-A-clock-of-its-own-per-chip.md)
   — why the weakest chip sets a board's voltage, the offset per chip and
   its limits, the ramp that never takes a chip above its own clock, what
-  follows a chip's clock, and the device tests still to run.
+  follows a chip's clock, what the devices said on 2026-11-12, and the
+  device tests still to run.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
@@ -1169,7 +1192,8 @@ warppool.org, next to the installer) is Satoshi Nakamoto's `bitcoin.pdf`
 The makers' wordmarks on the boot screen come from the makers' own
 firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
 firmware themes, the NerdNOS lettering from WantClue's NerdNOS firmware,
-the Bitaxe wordmark is ESP-Miner's, unchanged. They are shown with the
+the Bitaxe wordmark is ESP-Miner's, unchanged, and the Naja Duo's is the
+logo and revision text of its board's silkscreen (bitaxeorg/naja-duo). They are shown with the
 consent of solomining.de (trade mark holder for the Nerd names), shufps,
 Bitronics (BitMaker, maker of the Gaia), WantClue (NerdNOS) and skot
 (Bitaxe). Sources and each consent are

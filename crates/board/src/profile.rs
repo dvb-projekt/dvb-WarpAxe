@@ -565,8 +565,8 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// Bitaxe Naja Duo (1201): two BM1373 in two series voltage domains on
 /// 12 V, two stacked TPS546 (ESP-Miner `TPS546_CONFIG_NAJA_DUO`, VOUT =
 /// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
-/// Color pins. Stock 327 MHz / 1000 mV, 60 W. Profile only: never run
-/// under WarpAxe; the BM1373 chain path has run on the Gaia (one chip).
+/// Color pins. Stock 327 MHz / 1000 mV, 60 W. Runs on our bench since
+/// 2026-11-12 (v0.1.44).
 /// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
 /// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 50 A warning).
