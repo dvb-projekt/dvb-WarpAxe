@@ -175,6 +175,15 @@ pub struct Config {
     /// A diagnostic knob: 1 makes the chips report every nonce.
     #[serde(rename = "asicDifficulty")]
     pub asic_difficulty: u32,
+    /// Which init brings up a BM1373: `nerdos` (the Gaia's stock
+    /// sequence, the default) or `espminer` (ESP-Miner's Naja Duo
+    /// sequence: other core trims, 3 MBaud before the ramp). An A/B
+    /// knob for the Gaia's error rate (`docs/05`); read at every chain
+    /// start, so a change takes effect after chips off/on or a restart.
+    /// A chain that does not come up with ESP-Miner's init falls back
+    /// to NerdOS's until the next boot. Ignored on every other chip.
+    #[serde(rename = "chipInit")]
+    pub chip_init: String,
     /// The USB network: the device is 192.168.<usbSubnet>.1. Default 7, as
     /// the docs and the web flasher say; a second WarpAxe on the same
     /// computer gets another number by hand (two links on one subnet
@@ -274,6 +283,7 @@ impl Default for Config {
             job_interval_ms: 0,
             asic_count: 0,
             asic_difficulty: 0,
+            chip_init: "nerdos".into(),
             usb_subnet: 7,
             psu_watts: 0,
             // The screens of v0.1.30, spelt out: a device updated from

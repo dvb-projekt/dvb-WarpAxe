@@ -353,6 +353,10 @@ pub struct Chain {
     mode: Mode,
     render: Option<Render<'static>>,
     init_done: bool,
+    /// The profile's lists moved the UART themselves
+    /// (`InitStep::SwitchBaud`): no second switch after the lists, the
+    /// enabled version mask after the ramp.
+    baud_switched: bool,
     chip_count: u8,
     found: u8,
     chips: [ChipStatus; MAX_CHIPS],
@@ -387,6 +391,7 @@ impl Chain {
             mode: Mode::Idle,
             render: None,
             init_done: false,
+            baud_switched: false,
             chip_count: 0,
             found: 0,
             chips: [ChipStatus::default(); MAX_CHIPS],
@@ -418,6 +423,7 @@ impl Chain {
         self.mode = Mode::Steps { wait_until: now_us };
         self.render = Some(render(self.profile, 0));
         self.init_done = false;
+        self.baud_switched = false;
         self.chip_count = 0;
         self.found = 0;
         self.chips = [ChipStatus::default(); MAX_CHIPS];
@@ -757,6 +763,16 @@ impl Chain {
                                 wait_until: now_us + u64::from(ms) * 1000,
                             };
                         }
+                        Some(Rendered::HostBaud(baud)) => {
+                            // The chips were told the fast rate by the write
+                            // before this item; the host follows (the UART
+                            // lets that frame leave at the old rate first).
+                            // Anything half-received was at the old rate:
+                            // ESP-Miner clears its buffer here too.
+                            uart.set_baud(baud).map_err(Error::Uart)?;
+                            self.decoder.reset();
+                            self.baud_switched = true;
+                        }
                         Some(Rendered::CountChips) => {
                             self.found = 0;
                             self.decoder.set_frame_len(self.profile.chip_id_reply_len);
@@ -878,7 +894,7 @@ impl Chain {
         on_event: &mut dyn FnMut(Event),
     ) -> Result<(), Error<U::Error>> {
         self.render = None;
-        if self.profile.baud_switch_after_ramp_ms.is_none() {
+        if self.profile.baud_switch_after_ramp_ms.is_none() && !self.baud_switched {
             let (word, baud) = self.profile.fast_uart;
             self.write_all(uart, self.profile.fast_uart_reg, word)?;
             uart.set_baud(baud).map_err(Error::Uart)?;
@@ -943,6 +959,17 @@ impl Chain {
             _ => {
                 self.mode = Mode::Ready;
                 if !self.init_done {
+                    // ESP-Miner's BM1373 tail: the list moved the UART
+                    // itself; after the ramp and 0x10 the enabled mask,
+                    // then work. (The BM1370 lists enable rolling before
+                    // the ramp; nothing to do here for them.)
+                    if self.baud_switched && self.profile.host_midstates == 0 {
+                        self.write_all(
+                            uart,
+                            reg::VERSION_ROLLING,
+                            regs::version_mask(regs::BIP320_VERSION_MASK),
+                        )?;
+                    }
                     self.init_done = true;
                     on_event(Event::Ready);
                 }

@@ -60,7 +60,7 @@ mod tests {
                     chain.feed(&buf[..k]);
                 }
                 Rendered::Delay(ms) => chain.advance(u64::from(ms) * 1000),
-                Rendered::CountChips => {}
+                Rendered::CountChips | Rendered::HostBaud(_) => {}
             }
         }
     }

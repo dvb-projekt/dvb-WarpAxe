@@ -41,6 +41,9 @@ pub mod reg {
     pub const TICKET_MASK: u8 = 0x14;
     /// Misc control.
     pub const MISC_CONTROL: u8 = 0x18;
+    /// "Misc Control Add" (`bm1373.c`): ESP-Miner writes 0 to it
+    /// ("CRR disable") in its BM1373 init; NerdOS never touches it.
+    pub const MISC_CONTROL_ADD: u8 = 0x19;
     /// UART baud-rate configuration.
     pub const FAST_UART_CONFIGURATION: u8 = 0x28;
     /// Core register access (indirect: core id and value in the payload).
@@ -102,6 +105,9 @@ pub mod reg {
     pub const SOFT_RESET_CONTROL: u8 = 0xA8;
     /// Written twice in init with `00 00 44 80`; purpose unknown.
     pub const REG_B9: u8 = 0xB9;
+    /// "Auto Work Configuration" (`bm1373.c`): ESP-Miner writes 0 to it
+    /// right before the BM1373's UART switch; NerdOS never touches it.
+    pub const AUTO_WORK_CONFIGURATION: u8 = 0xC4;
 }
 
 /// Payload of a register write: `chip_addr | register | value`.
@@ -196,6 +202,12 @@ pub const fn ticket_mask_to_difficulty(value: [u8; 4]) -> u32 {
 pub const FAST_UART_1M: [u8; 4] = [0x11, 0x30, 0x02, 0x00];
 /// The host baud rate to switch to after writing [`FAST_UART_1M`].
 pub const FAST_UART_1M_BAUD: u32 = 1_000_000;
+/// Value for [`reg::FAST_UART_CONFIGURATION`] that ESP-Miner's
+/// `bm1373.c` writes (`BM1372_FAST_UART_3M`) before it moves the host
+/// to 3 MBaud, in the middle of its init.
+pub const FAST_UART_3M: [u8; 4] = [0x80, 0x00, 0x00, 0x00];
+/// The host baud rate to switch to after writing [`FAST_UART_3M`].
+pub const FAST_UART_3M_BAUD: u32 = 3_000_000;
 
 /// Value for the BM1397's [`reg::MISC_CONTROL`] that sets its UART
 /// divider: `baud = 25 MHz / ((divider + 1) · 8)`, the divider in the
