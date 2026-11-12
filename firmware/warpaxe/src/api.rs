@@ -41,7 +41,11 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
 /// redirects all end at `/`.
 const UI_GZ: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/index.html.gz"));
 
-pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"));
+/// DIAGNOSTIC BRANCH (`diag/bm1373-single-write`): the build says what
+/// it is wherever it says its version. Never on main, never released.
+pub const VERSION: &str = concat!("warpaxe ", env!("CARGO_PKG_VERSION"), "-diag");
+/// What this diagnostic build is for (`diagBuild` in `/api/system/info`).
+pub const DIAG_BUILD: &str = "bm1373-single-write";
 
 /// The cases this firmware heals on its own (`selfHeals` in
 /// `/api/system/info`): the chain restart after a silent minute of every
@@ -288,6 +292,7 @@ pub fn system_info() -> serde_json::Value {
     // What this firmware heals on its own: a tuner that reads the list
     // waits for the firmware on these and acts itself on the rest
     // (concept 2026-11-04, Block 5). Fixed per firmware version.
+    v["diagBuild"] = json!(DIAG_BUILD);
     v["selfHeals"] = json!(SELF_HEALS);
     // The least stack the mining loop has had to spare since boot,
     // bytes (0 in its first second): the margin behind
@@ -917,6 +922,81 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     server.fn_handler("/api/v1/state", Method::Get, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         reply_json(req, 200, &v1_state())
+    })?;
+
+    // DIAGNOSTIC BRANCH ONLY (never on main, never in a release): exactly
+    // one GROUP_SINGLE register write with exactly the address given, to
+    // find out which address a single BM1373 answers to (Naja Duo).
+    //   POST /api/v1/chip/write?addr=0x10&reg=0x58&value=0x0001F111
+    //   POST /api/v1/chip/write?addr=0x10&khz=320312   (register 0x08, the
+    //        PLL word for that clock; one step, no ramp: step by 6250 kHz)
+    // Only on a BM1373 board and while the chain runs. The answer has
+    // the frame as it went out. Read back with /api/v1/chip/regs. The
+    // driver's own figures (asicFrequencies, expectedHashrate) know
+    // nothing of a write made here; chips off and on restores the init.
+    server.fn_handler("/api/v1/chip/write", Method::Post, |req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        let uri = req.uri().to_string();
+        let chip = board::chip();
+        if chip.name != "BM1373" {
+            return reply_json(req, 400, &json!({"error": "only on a BM1373 board"}));
+        }
+        let addr = query_num(&uri, "addr").filter(|a| *a <= 255);
+        let khz = query_num(&uri, "khz");
+        let (reg, value, hz) = match khz {
+            Some(khz) => {
+                let word = khz
+                    .checked_mul(1000)
+                    .and_then(|hz| warpaxe_core::pll::solve(&chip.pll, hz));
+                let Some(word) = word else {
+                    return reply_json(req, 400, &json!({"error": "khz: no PLL setting"}));
+                };
+                (
+                    Some(u32::from(warpaxe_core::regs::reg::PLL0_PARAMETER)),
+                    Some(u32::from_be_bytes(word.register_bytes(&chip.pll))),
+                    Some(word.frequency_hz(chip.pll.xtal_hz)),
+                )
+            }
+            None => (
+                query_num(&uri, "reg").filter(|r| *r <= 255),
+                query_num(&uri, "value"),
+                None,
+            ),
+        };
+        let (Some(addr), Some(reg), Some(value)) = (addr, reg, value) else {
+            return reply_json(
+                req,
+                400,
+                &json!({"error": "addr and reg (0..=255) with value, or addr with khz"}),
+            );
+        };
+        if miner::state().phase != "READY" {
+            return reply_json(req, 409, &json!({"error": "the chain is not running"}));
+        }
+        if !miner::request_raw_write(addr as u8, reg as u8, value) {
+            return reply_json(req, 409, &json!({"error": "a write is still waiting"}));
+        }
+        let mut sent = None;
+        for _ in 0..50 {
+            std::thread::sleep(Duration::from_millis(20));
+            sent = miner::raw_write_sent();
+            if sent.is_some() {
+                break;
+            }
+        }
+        let Some(sent) = sent else {
+            miner::cancel_raw_write();
+            return reply_json(req, 409, &json!({"error": "not sent: the chain stopped"}));
+        };
+        reply_json(
+            req,
+            200,
+            &json!({
+                "sent": sent,
+                "addr": format!("0x{addr:02x}"), "reg": format!("0x{reg:02x}"),
+                "value": format!("0x{value:08x}"), "hz": hz,
+            }),
+        )
     })?;
 
     // Diagnostics, not in the UI: the raw registers of one chip, read

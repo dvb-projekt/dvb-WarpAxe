@@ -368,6 +368,47 @@ const SCAN_WINDOW: Duration = Duration::from_secs(2);
 /// forgotten.
 const SCAN_STALE_S: u64 = 10;
 
+/// DIAGNOSTIC BRANCH ONLY: one single-chip register write the API asked
+/// for (`POST /api/v1/chip/write`), sent by the mining loop between the
+/// work. `sent` is the frame as it went out, hex, once it has.
+pub struct RawWrite {
+    pub addr: u8,
+    pub reg: u8,
+    pub value: u32,
+    pub sent: Option<String>,
+}
+static RAW_WRITE: Mutex<Option<RawWrite>> = Mutex::new(None);
+
+/// Queue one single-chip write; `false` while another is waiting.
+pub fn request_raw_write(addr: u8, reg: u8, value: u32) -> bool {
+    let mut g = RAW_WRITE.lock().unwrap();
+    if g.as_ref().is_some_and(|w| w.sent.is_none()) {
+        return false;
+    }
+    *g = Some(RawWrite {
+        addr,
+        reg,
+        value,
+        sent: None,
+    });
+    true
+}
+
+/// The frame of the queued write once it has gone out (and the slot is
+/// free again); `None` while it waits.
+pub fn raw_write_sent() -> Option<String> {
+    let mut g = RAW_WRITE.lock().unwrap();
+    if g.as_ref().is_some_and(|w| w.sent.is_some()) {
+        return g.take().and_then(|w| w.sent);
+    }
+    None
+}
+
+/// Forget a queued write that never went out (the chain stopped).
+pub fn cancel_raw_write() {
+    *RAW_WRITE.lock().unwrap() = None;
+}
+
 /// Ask the mining loop for a register scan; `false` while one is
 /// still running.
 pub fn request_reg_scan(chip: u8, from: u8, to: u8) -> bool {
@@ -1244,6 +1285,30 @@ fn run(mut uart: ChipUart) {
                 // A register scan from the API: one read per pass (a burst
                 // loses replies, see Chain::request_counters), the replies
                 // collected for SCAN_WINDOW after the last, then it is done.
+                // DIAGNOSTIC BRANCH ONLY: one single-chip write from the API.
+                if let Some(w) = RAW_WRITE
+                    .lock()
+                    .unwrap()
+                    .as_mut()
+                    .filter(|w| w.sent.is_none())
+                {
+                    w.sent = Some(
+                        match chain.write_single_raw(&mut uart, w.addr, w.reg, w.value.to_be_bytes())
+                        {
+                            Ok((frame, n)) => {
+                                frame[..n].iter().map(|b| format!("{b:02x}")).collect()
+                            }
+                            Err(e) => format!("error: {e}"),
+                        },
+                    );
+                    log::warn!(
+                        "miner: DIAG single write to address {:#04x}, register {:#04x}, value {:#010x}: {}",
+                        w.addr,
+                        w.reg,
+                        w.value,
+                        w.sent.as_deref().unwrap_or("")
+                    );
+                }
                 let pending = REG_SCAN
                     .lock()
                     .unwrap()

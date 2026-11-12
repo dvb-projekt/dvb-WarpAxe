@@ -762,3 +762,60 @@ fn an_offset_at_esp_miners_command_address_reaches_no_second_bm1373() {
     b.run_until_settled(30_000);
     assert_eq!(b.chip_mhz(), [540.0, 600.0]);
 }
+
+/// DIAGNOSTIC BRANCH ONLY: `write_single_raw` sends one single-chip
+/// write with exactly the address given and returns the frame. On the
+/// simulator's BM1373 (which takes a single-chip write at its own
+/// address, as the Naja Duo's read-back suggests) the domain-end
+/// strength at 0x10 lands on chip 1 and nowhere else.
+#[test]
+fn the_diagnostic_single_write_carries_exactly_the_address_given() {
+    use warpaxe_core::regs::reg;
+    let mut b = Bench::new(&BM1373_ESP, 2, 600);
+    b.run_until_settled(30_000);
+    let before: Vec<u32> = b
+        .uart
+        .sim
+        .chips()
+        .iter()
+        .map(|c| c.register(reg::IO_DRIVER_STRENGTH))
+        .collect();
+    assert_eq!(before, [0x0001_F111, 0x0001_1111]);
+
+    let frames = b.uart.frames;
+    let (frame, n) = b
+        .drv
+        .write_single_raw(
+            &mut b.uart,
+            0x10,
+            reg::IO_DRIVER_STRENGTH,
+            [0x00, 0x01, 0xF1, 0x11],
+        )
+        .unwrap();
+    assert_eq!(b.uart.frames, frames + 1, "exactly one frame");
+    // Preamble, header 0x41 (command, single chip, write), length 9,
+    // address, register, value, CRC5.
+    assert_eq!(
+        frame[..n - 1],
+        [0x55, 0xAA, 0x41, 0x09, 0x10, 0x58, 0x00, 0x01, 0xF1, 0x11]
+    );
+    assert_eq!(n, 11);
+    b.run_ms(5);
+    let after: Vec<u32> = b
+        .uart
+        .sim
+        .chips()
+        .iter()
+        .map(|c| c.register(reg::IO_DRIVER_STRENGTH))
+        .collect();
+    assert_eq!(after, [0x0001_F111, 0x0001_F111]);
+
+    // ESP-Miner's shifted address reaches no chip.
+    b.drv
+        .write_single_raw(&mut b.uart, 0x04, reg::PLL3_PARAMETER, [1, 2, 3, 4])
+        .unwrap();
+    b.run_ms(5);
+    for c in b.uart.sim.chips() {
+        assert_ne!(c.register(reg::PLL3_PARAMETER), 0x0102_0304);
+    }
+}

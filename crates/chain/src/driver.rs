@@ -790,6 +790,32 @@ impl Chain {
         self.send_cmd(uart, Group::Single, Op::Read, &read_payload(addr, register))
     }
 
+    /// DIAGNOSTIC BRANCH ONLY (`diag/bm1373-single-write`, never on main,
+    /// never in a release): one `GROUP_SINGLE` register write with
+    /// exactly `address` in the frame, whatever the chain's own idea of
+    /// its chips' addresses. To find out, on a Naja Duo, which address a
+    /// single BM1373 answers to. Returns the frame as it went out. The
+    /// driver's own state (the clock it believes each chip has) knows
+    /// nothing of what is written here.
+    pub fn write_single_raw<U: Uart>(
+        &mut self,
+        uart: &mut U,
+        address: u8,
+        register: u8,
+        value: [u8; 4],
+    ) -> Result<([u8; MAX_FRAME_LEN], usize), Error<U::Error>> {
+        let mut buf = [0u8; MAX_FRAME_LEN];
+        let n = encode_cmd(
+            &mut buf,
+            Group::Single,
+            Op::Write,
+            &write_payload(address, register, value),
+        )
+        .map_err(Error::Frame)?;
+        uart.write(&buf[..n]).map_err(Error::Uart)?;
+        Ok((buf, n))
+    }
+
     /// Chain index of the chip that answers a register read with
     /// `address`, if the chain has it.
     pub fn chip_index(&self, address: u8) -> Option<usize> {
