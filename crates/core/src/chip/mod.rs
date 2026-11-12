@@ -186,6 +186,20 @@ pub struct ChipProfile {
     /// `prefreq`, WantClue `prefreq1`, ESP-Miner `prefreq1`). `None` on
     /// the chips whose drivers write PLL0 alone.
     pub pll_prewrite: Option<(u8, [u8; 4])>,
+    /// Register reads (the hash counters, a diagnostic read) go out as a
+    /// broadcast on a chain of more than one chip, and every chip
+    /// answers with its own address. Both reference drivers read the
+    /// BM1373 this way and no other (ESP-Miner `BM1373_read_registers`:
+    /// `GROUP_ALL`; NerdOS `Asic::readCounter`: `CMD_READ_ALL`), and a
+    /// single-chip read to a BM1373 at a non-zero address brought no
+    /// counter reading on a Naja Duo (2026-11-12: chip 1 at address
+    /// 0x10, read at command address 4, while its nonces arrived and
+    /// the pool counted two chips). `false`: one single-chip read per chip,
+    /// as the BM1370 boards have run with up to eight chips (a broadcast
+    /// there would be eight replies back to back). A chain of one chip
+    /// reads that chip directly either way, as the Gaia has since
+    /// 2026-10-01.
+    pub broadcast_reads: bool,
     /// Whose init sequence the three lists below transcribe: the
     /// reference firmware of the boards the profile is chosen for
     /// ("ESP-Miner", "NerdOS", …). Logged at chain start.

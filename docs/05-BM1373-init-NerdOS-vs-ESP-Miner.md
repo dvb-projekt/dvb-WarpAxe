@@ -368,3 +368,48 @@ chip 1, each about half, with `hashrateMonitor` showing both chips'
 counters). Until then the silent-chip watchdog on the Naja Duo only
 reports (`Profile::silent_chip_restart` false).
 
+## The Naja Duo's first run (2026-11-12): register reads by broadcast
+
+Flashed by dvb-WarpAxe #2 with main 82df367. Both chips answered the
+id read, ESP-Miner's init ran at 3 MBaud, the chain was ready after
+9 s, both chips hashed (in the first minutes nonces credited 16 / 17,
+address bits low / high 15 / 18: consistent with bit 24 being the
+chip, as ESP-Miner reads it; the longer run decides), the pool
+counted 4.3–4.5 TH/s, both regulator phases carried about 11 A. One
+thing was wrong: the self-test failed with "hashrate chip 1 0 %
+(noReply)" and all eight of chip 1's domains without a sample, while
+chip 0's read 98.8–103 %.
+
+The cause was ours, not the board's. The hash counters were read chip
+by chip (`GROUP_SINGLE` `CMD_READ` to the chip's command address,
+address ÷ 4: 0 for chip 0, 4 for chip 1), as the BM1370 boards are read
+and as the Gaia's one chip (address 0) always was. Neither reference
+driver reads a BM1373 that way: ESP-Miner's `BM1373_read_registers`
+sends `GROUP_ALL` reads and sorts the replies by `asic_address / 0x10`,
+NerdOS's `Asic::readCounter` sends `CMD_READ_ALL`. The single-chip
+*writes* at the shifted address are ESP-Miner's (the domain-end IO
+strength) and stay; a single-chip *read* of a BM1373 at a non-zero
+address is nobody's, and chip 1's brought back nothing that could be
+credited to it (no reply, or one under an address the stride does not
+map; the counters alone cannot tell which). A loss on the wire is the
+unlikely reading: chip 1's nonces, frames of the same length, came
+through the same level shifters at the same rate.
+
+Fixed in the driver: a chip profile says how it is read
+(`ChipProfile::broadcast_reads`, true on every BM1373 profile), and a
+chain of more than one such chip gets one broadcast read per register,
+every chip answering with its own address (0x00, 0x10, …), which
+`chip_index` already maps by the stride of 16. A round is the register
+list once instead of once per chip; still one read per poll. One chip
+is read directly as before, so the Gaia's traffic is byte for byte what
+it was. The diagnostic register scan goes out the same way and keeps
+the reply of the chip it asked for. The simulator's BM1373 now ignores
+a single-chip read at a non-zero address, as the device did, so the
+test fails without the broadcast.
+
+None of the heals acted on chip 1 meanwhile, by design: the domain
+latch only judges chips with fresh counter reads, the silent-chip
+watchdog goes by nonces (which chip 1 delivered) and only reports on
+this board, and a failed self-test switches nothing off except for a
+regulator phase under its floor.
+

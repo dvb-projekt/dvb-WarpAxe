@@ -599,6 +599,115 @@ fn two_bm1373_under_esp_init_at_1_mbaud_switch_after_the_ramp_and_hash() {
     }
 }
 
+/// The Naja Duo's first run (2026-11-12): chip 1 hashed and its nonces
+/// arrived, but its hash counters never did, and the self-test called
+/// it dead. The counters were read chip by chip at the command address;
+/// a BM1373 at a non-zero address does not answer that (the simulator
+/// models it), and both reference drivers read by broadcast. So do we
+/// on a BM1373 chain of more than one chip: one read per register,
+/// every chip answers with its own address, both chips' counters fill.
+#[test]
+fn two_bm1373_have_their_counters_read_by_broadcast_and_both_answer() {
+    let config = Config {
+        expected_chips: 2,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373_ESP)
+    };
+    let mut b = Bench::with(&BM1373_ESP, 2, config);
+    b.run_until_ready(20_000);
+    b.mine_ms(300);
+    let reads_before = b.uart.sim.totals().reads;
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    let m = b.drv.monitor();
+    assert_eq!(m.chips().len(), 2);
+    let expected = b.drv.frequency_hz() as f64 * f64::from(BM1373_ESP.small_cores) / 1e9;
+    for (i, c) in m.chips().iter().enumerate() {
+        assert!(c.total.time_us != 0, "chip {i} answered its counter reads");
+        let ghs = f64::from(c.total.ghs);
+        assert!(
+            (ghs - expected).abs() / expected < 0.15,
+            "chip {i}: {ghs} GH/s against {expected}"
+        );
+        let live = c.domains.iter().take(8).filter(|d| d.ghs > 0.0).count();
+        assert_eq!(live, 8, "chip {i}: all eight domain counters read");
+    }
+    // Two rounds of the register list, each read answered by both
+    // chips: a round is the registers once, not once per chip.
+    let regs = m.registers().len() as u32;
+    let replies = b.uart.sim.totals().reads - reads_before;
+    assert_eq!(replies, 2 * 2 * regs, "every chip answered every read");
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+    assert_eq!(b.uart.sim.totals().violations, 0);
+
+    // The diagnostic read of one chip goes out the same way: both
+    // answer, the caller keeps the address it asked for.
+    let before = b.count(|e| matches!(e, Event::Register { .. }));
+    b.drv
+        .read_chip_register(&mut b.uart, 1, reg::TOTAL_COUNT)
+        .unwrap();
+    b.mine_ms(200);
+    let replies: Vec<Option<usize>> = b
+        .events
+        .iter()
+        .skip_while({
+            let mut seen = 0;
+            move |e| {
+                if matches!(e, Event::Register { .. }) {
+                    seen += 1;
+                }
+                seen <= before
+            }
+        })
+        .filter_map(|e| match e {
+            Event::Register { address, .. } => Some(b.drv.chip_index(*address)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(replies, vec![Some(0), Some(1)]);
+}
+
+/// Four BM1373 under NerdOS's init (the Q1373's chain): read the same
+/// way, all four answer. One BM1373 (the Gaia) is read directly, as it
+/// has been since its first run: one reply per read, nothing changed.
+#[test]
+fn a_bm1373_chain_reads_by_broadcast_and_a_single_chip_directly() {
+    let config = Config {
+        expected_chips: 4,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373)
+    };
+    let mut b = Bench::with(&BM1373, 4, config);
+    b.run_until_ready(20_000);
+    b.mine_ms(300);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    for (i, c) in b.drv.monitor().chips().iter().enumerate() {
+        assert!(c.total.ghs > 0.0, "chip {i}");
+    }
+
+    let config = Config {
+        expected_chips: 1,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373)
+    };
+    let mut b = Bench::with(&BM1373, 1, config);
+    b.run_until_ready(20_000);
+    b.mine_ms(300);
+    let reads_before = b.uart.sim.totals().reads;
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(1500);
+    let regs = b.drv.monitor().registers().len() as u32;
+    assert_eq!(b.uart.sim.totals().reads - reads_before, regs);
+    b.drv.request_counters(&mut b.uart).unwrap();
+    b.mine_ms(100);
+    assert!(b.drv.monitor().chips()[0].total.ghs > 0.0);
+}
+
 /// The BM1397 path end to end against the simulator: the chip answers
 /// the id read with nine bytes, the init is WantClue's register list,
 /// the clock is written with the PLL0 divider first and the gekko word,

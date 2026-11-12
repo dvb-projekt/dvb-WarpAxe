@@ -248,6 +248,15 @@ impl SimChip {
         match header.group() {
             Group::All => true,
             Group::Single => {
+                // A chip type that both reference drivers only ever read
+                // by broadcast does not answer a single-chip read at a
+                // non-zero address: seen on a Naja Duo (2026-11-12), two
+                // BM1373, chip 1 silent to reads at its command address
+                // while chip 0 (address 0) answered and both hashed.
+                // Single-chip writes are the references' and stay.
+                if header.op() == Op::Read && self.profile.broadcast_reads && self.address != 0 {
+                    return false;
+                }
                 header.op() == Op::SetAddress
                     || chip_addr == self.profile.command_address(self.address)
             }

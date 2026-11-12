@@ -588,24 +588,43 @@ impl Chain {
             self.counter_cursor = None;
             return Ok(());
         }
-        let addr = self
-            .profile
-            .command_address(self.chips[usize::from(chip)].address);
-        self.send_cmd(
-            uart,
-            Group::Single,
-            Op::Read,
-            &read_payload(addr, regs[usize::from(i)]),
-        )?;
+        let broadcast = self.reads_by_broadcast();
+        if broadcast {
+            // One read, every chip answers with its own address: a round
+            // is the registers once, not once per chip.
+            self.send_cmd(
+                uart,
+                Group::All,
+                Op::Read,
+                &read_payload(0, regs[usize::from(i)]),
+            )?;
+        } else {
+            let addr = self
+                .profile
+                .command_address(self.chips[usize::from(chip)].address);
+            self.send_cmd(
+                uart,
+                Group::Single,
+                Op::Read,
+                &read_payload(addr, regs[usize::from(i)]),
+            )?;
+        }
         let next_i = i + 1;
         self.counter_cursor = if usize::from(next_i) < regs.len() {
             Some((chip, next_i))
-        } else if chip + 1 < self.chip_count {
+        } else if !broadcast && chip + 1 < self.chip_count {
             Some((chip + 1, 0))
         } else {
             None
         };
         Ok(())
+    }
+
+    /// Register reads go to the whole chain at once and every chip
+    /// answers ([`ChipProfile::broadcast_reads`]): the BM1373 with more
+    /// than one chip. One chip is read directly, as ever.
+    fn reads_by_broadcast(&self) -> bool {
+        self.profile.broadcast_reads && self.chip_count > 1
     }
 
     /// A counter round is still being sent.
@@ -621,7 +640,10 @@ impl Chain {
     /// Read one register of one chip (chain index); the reply arrives as
     /// [`Event::Register`] with the chip's address ([`Chain::chip_index`]
     /// maps it back). Diagnostics: the API's register scan. Nothing is
-    /// sent for an index the chain does not have.
+    /// sent for an index the chain does not have. On a chain that is
+    /// read by broadcast ([`ChipProfile::broadcast_reads`]) the read
+    /// goes to every chip and each one answers: the caller keeps the
+    /// reply whose address is the chip it asked for.
     pub fn read_chip_register<U: Uart>(
         &mut self,
         uart: &mut U,
@@ -630,6 +652,9 @@ impl Chain {
     ) -> Result<(), Error<U::Error>> {
         if chip >= usize::from(self.chip_count) {
             return Ok(());
+        }
+        if self.reads_by_broadcast() {
+            return self.send_cmd(uart, Group::All, Op::Read, &read_payload(0, register));
         }
         let addr = self.profile.command_address(self.chips[chip].address);
         self.send_cmd(uart, Group::Single, Op::Read, &read_payload(addr, register))

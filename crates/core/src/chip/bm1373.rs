@@ -141,6 +141,7 @@ pub const BM1373: ChipProfile = ChipProfile {
     fast_uart_reg: reg::FAST_UART_CONFIGURATION,
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
+    broadcast_reads: true,
     init_source: "NerdOS",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,
@@ -440,6 +441,23 @@ mod tests {
         assert_eq!(slow, fast);
         assert!(slow.iter().all(|r| !matches!(r, Rendered::HostBaud(_))));
         assert!(render(&BM1373_ESP, 2).any(|r| r == Rendered::HostBaud(3_000_000)));
+    }
+
+    /// Every BM1373 profile reads its registers by broadcast, as both
+    /// reference drivers do; the BM1370 and BM1397 chip by chip.
+    #[test]
+    fn the_bm1373_is_read_by_broadcast_under_every_init() {
+        for p in [&BM1373, &BM1373_ESP, &BM1373_ESP_1M] {
+            assert!(p.broadcast_reads, "{}", p.init_source);
+        }
+        let others = [
+            &crate::chip::bm1370::BM1370,
+            &crate::chip::bm1370::BM1370_NERD,
+            &crate::chip::bm1397::BM1397,
+        ];
+        for p in others {
+            assert!(!p.broadcast_reads, "{}", p.name);
+        }
     }
 
     /// A board's own small-core count rides on the chip profile; 0 keeps
