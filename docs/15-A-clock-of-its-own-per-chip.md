@@ -266,14 +266,36 @@ registers back took it apart:
 
 So a BM1373 answers to its full address, like every other chip of the
 family, and a single BM1373 can be given a clock of its own. Chip 0
-never showed the error: 0 shifted is 0. The table above is what the
-driver's own ramp makes of the wrong address at a chain start with the
-offset in force (the simulator shows the same with a driver that
-shifts): the chips come up together, by writes to all, as far as the
-lowest clock asked for, chip 1's way on from there went to address 4,
-and chip 1 stayed down with chip 0. An offset for chip 1 went to
-address 4 and did nothing. (Set while the chain ran, the offset for
-chip 0 would have slowed chip 0 alone.)
+never showed the error: 0 shifted is 0.
+
+That explains the third row of the table (the offset for chip 1 went to
+address 4 and did nothing) but **not the second**. The offset for chip 0
+was set while the chain ran; the driver then writes to chip 0 alone, at
+address 0, which is its address either way. Why chip 1 slowed with it
+is open. Two candidates, neither confirmed:
+
+- *The supply.* The two chips of a Naja Duo are in series across the
+  regulator's output, the midpoint not regulated, so the same current
+  runs through both. A chip that is slowed takes less current and a
+  larger share of the voltage, and the other is left with less: with
+  chip 0 at 267 and chip 1 at 327 MHz about 0.90 of its share, where a
+  chip no longer hashes at its clock. With 25 MHz between them (the
+  test build's runs) the split is 0.96 to 1.04, and the faster chip
+  held its rate. If this is it, the table is what the board does, the
+  firmware apart, and a large offset on this board also means **more**
+  voltage on the slowed chip.
+- *A chain start in between* (the firmware restarting the chain for a
+  silent chip or a stuck domain; the uptime shows no reboot, the log of
+  that run is gone). At a chain start with the offset in force the chips
+  come up together, by writes to all, as far as the lowest clock asked
+  for, and chip 1's way on from there went to address 4: chip 1 stays
+  down with chip 0. The simulator shows this with a driver that shifts.
+  It does not explain how chip 1 was back at full rate in the third
+  row.
+
+What tells them apart, at the next run: with the offset set while the
+chain runs, chip 1's PLL word read back (unchanged if it is the
+supply), its error counter, and the core voltage of each chip.
 
 Since then (`ChipProfile::command_address_shift` 0 on the BM1373):
 every single-chip write to a BM1373 goes to the chip's own address. That

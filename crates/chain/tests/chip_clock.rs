@@ -736,13 +736,16 @@ fn a_chain_of_chips_that_cannot_be_written_to_alone_takes_no_offsets() {
 /// right by two, as both reference drivers do, and what it does now.
 ///
 /// Shifted, chip 1's command address is 4, which is no chip's. An
-/// offset for chip 1 changed nothing. An offset for chip 0 that was in
-/// force at a chain start slowed **both**: the chips come up together,
+/// offset for chip 1 changed nothing (on the board: hash counters
+/// 2246/2256 GH/s against 2271/2245 without). An offset for chip 0 in
+/// force at a chain start slows **both**: the chips come up together,
 /// by writes to all, as far as the lowest clock asked for, and chip 1's
-/// own way on from there went to address 4. (Hash counters over four
-/// minutes: 2271/2245 GH/s without, 1841/1857 with chip 0 at −60 MHz,
-/// 2246/2256 with chip 1 at −60 MHz.) A test build then wrote to 0x10
-/// and read back: chip 1, alone.
+/// own way on from there goes to address 4. A test build then wrote to
+/// 0x10 and read back: chip 1, alone.
+///
+/// (The board also showed both chips slower, 1841/1857 GH/s, with an
+/// offset for chip 0 set while the chain ran, where the driver writes
+/// to chip 0 alone. That is not this, and is open: docs/15.)
 #[test]
 fn the_shifted_command_address_reached_no_second_bm1373_and_the_full_one_does() {
     let config = Config {
