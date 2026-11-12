@@ -6,7 +6,7 @@ use std::convert::Infallible;
 
 use warpaxe_chain::{Chain, Config, Error, Event, InitError, Phase, Uart, Work};
 use warpaxe_core::chip::bm1370::BM1370;
-use warpaxe_core::chip::bm1373::{BM1373, BM1373_ESP};
+use warpaxe_core::chip::bm1373::{BM1373, BM1373_ESP, BM1373_ESP_1M};
 use warpaxe_core::chip::bm1397::BM1397;
 use warpaxe_core::chip::ChipProfile;
 use warpaxe_core::regs::reg;
@@ -516,6 +516,87 @@ fn bm1373_esp_init_moves_to_3_mbaud_in_the_list_and_hashes() {
     let yielded = b.count(|e| matches!(e, Event::Nonce(_))) as u64;
     assert_eq!(yielded, sim_nonces);
     assert_eq!(b.uart.lost_to_baud, 0);
+}
+
+/// The Naja Duo's chain under ESP-Miner's init: two BM1373 at addresses
+/// 0 and 16, both told the domain-end IO strength, the UART at 3 MBaud
+/// from the middle of the list with nothing lost, the fixed hash counting
+/// number and the enabled mask on both after the ramp, then nonces from
+/// each chip, attributed to it (the simulator stamps ESP-Miner's address
+/// bits, `index × 256 / chips`: bit 24 for chip 1, the open question the
+/// device answers). Driver and simulator read the same reference.
+#[test]
+fn two_bm1373_under_esp_init_enumerate_at_3_mbaud_and_both_hash() {
+    let config = Config {
+        expected_chips: 2,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373_ESP)
+    };
+    let mut b = Bench::with(&BM1373_ESP, 2, config);
+    b.run_until_ready(20_000);
+    assert_eq!(b.drv.chip_count(), 2);
+    let addrs: Vec<u8> = b.drv.chips().iter().map(|c| c.address).collect();
+    assert_eq!(addrs, vec![0, 16]);
+    assert_eq!(b.uart.host_baud, 3_000_000);
+    assert_eq!(b.uart.lost_to_baud, 0, "no byte lost to a rate mismatch");
+    assert_eq!(b.uart.sim.totals().violations, 0);
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+    for chip in b.uart.sim.chips() {
+        assert_eq!(chip.baud(), 3_000_000);
+        assert_eq!(chip.register(reg::FAST_UART_CONFIGURATION), 0x8000_0000);
+        assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0x0000_1EB5);
+        assert_eq!(chip.register(reg::VERSION_ROLLING), 0x9000_FFFF);
+        assert_eq!(chip.register(reg::IO_DRIVER_STRENGTH), 0x0001_F111);
+        assert_eq!(chip.register(reg::SOFT_RESET_CONTROL), 0xF007_01F0);
+        assert_eq!(chip.register(reg::MISC_CONTROL), 0xFF00_C100);
+    }
+
+    b.mine_ms(10_000);
+    let sim_nonces = u64::from(b.uart.sim.totals().nonces);
+    assert!(sim_nonces > 100, "the simulated chain hashed: {sim_nonces}");
+    let yielded = b.count(|e| matches!(e, Event::Nonce(_))) as u64;
+    assert_eq!(yielded, sim_nonces);
+    assert_eq!(b.drv.stats().unknown_chip, 0);
+    for i in 0..2u8 {
+        let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
+        assert!(n > 30, "chip {i} yielded only {n} nonces in 10 s");
+    }
+    assert_eq!(b.count(|e| matches!(e, Event::ChipSilent { .. })), 0);
+}
+
+/// The fallback for a Naja Duo whose level shifters do not carry 3 MBaud:
+/// ESP-Miner's registers, NerdOS's pace. The lists leave the UART at
+/// 115200, the chips move to 1 MBaud after the ramp with the host 500 ms
+/// behind them, the same registers land, both chips hash.
+#[test]
+fn two_bm1373_under_esp_init_at_1_mbaud_switch_after_the_ramp_and_hash() {
+    let config = Config {
+        expected_chips: 2,
+        difficulty: 32,
+        ..Config::for_profile(&BM1373_ESP_1M)
+    };
+    let mut b = Bench::with(&BM1373_ESP_1M, 2, config);
+    b.run_until_ready(20_000);
+    assert_eq!(b.drv.chip_count(), 2);
+    assert_eq!(b.uart.host_baud, 1_000_000, "host followed after the ramp");
+    assert_eq!(b.uart.lost_to_baud, 0);
+    assert_eq!(b.uart.sim.totals().violations, 0);
+    assert_eq!(b.drv.stats().decoder.crc_failures, 0);
+    for chip in b.uart.sim.chips() {
+        assert_eq!(chip.baud(), 1_000_000);
+        assert_eq!(chip.register(reg::HASH_COUNTING_NUMBER), 0x0000_1EB5);
+        assert_eq!(chip.register(reg::VERSION_ROLLING), 0x9000_FFFF);
+        assert_eq!(chip.register(reg::IO_DRIVER_STRENGTH), 0x0001_F111);
+        assert_eq!(chip.register(reg::SOFT_RESET_CONTROL), 0xF007_01F0);
+    }
+    b.mine_ms(10_000);
+    let sim_nonces = u64::from(b.uart.sim.totals().nonces);
+    assert!(sim_nonces > 100, "{sim_nonces}");
+    assert_eq!(b.count(|e| matches!(e, Event::Nonce(_))) as u64, sim_nonces);
+    for i in 0..2u8 {
+        let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
+        assert!(n > 30, "chip {i}: {n}");
+    }
 }
 
 /// The BM1397 path end to end against the simulator: the chip answers

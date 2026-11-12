@@ -1,22 +1,28 @@
-//! The BM1373 — NerdAxe Gaia (Q1373), four chips on 12 V.
+//! The BM1373 — NerdAxe Gaia (Q1373, one chip on 12 V) and Bitaxe Naja
+//! Duo (two chips in two voltage domains on 12 V).
 //!
-//! The init is NerdOS's `BM1373::init()` (`components/bm1397/bm1373.cpp`,
-//! branch `develop`, read 2026-09-24), the firmware that runs on the
-//! Gaia today: the BM1370 sequence with the version-rolling mask written
-//! *without* the enable bit until the end, a fixed address stride of 16,
-//! Misc Control `FF 00 C1 00`, and no extra register writes beyond the
-//! per-chip block. Chip counts and option tables are NerdOS's Q1373
-//! board class. ESP-Miner's `bm1373.c` agrees on the chip id (0x1372,
-//! alias 0x1373), the 9-byte chip-id reply, the stride, the command
-//! address shift and the fixed hash counting number, but drives a
-//! longer init of its own (3 Mbaud, soft reset, core registers, a
-//! domain-end IO strength); that list is the fallback if this one does
-//! not bring a chain up.
+//! Two inits, one chip. [`BM1373`] is NerdOS's `BM1373::init()`
+//! (`components/bm1397/bm1373.cpp`, branch `develop`, read 2026-09-24),
+//! the firmware that runs on the Gaia: the BM1370 sequence with the
+//! version-rolling mask written *without* the enable bit until the end,
+//! a fixed address stride of 16, Misc Control `FF 00 C1 00`, and no
+//! extra register writes beyond the per-chip block. Chip counts and
+//! option tables are NerdOS's Q1373 board class. It runs on the Gaia
+//! since 2026-09-29.
 //!
-//! Nothing here has been near a chip. The first things to check on a
-//! Gaia: the chip-id reply (`AA 55 13 72 …`, nine bytes), that chips
-//! answer single-chip commands at address ÷ 4, and that the chain
-//! hashes after this sequence.
+//! [`BM1373_ESP`] is ESP-Miner's `BM1373_init()`, the firmware of the
+//! Naja Duo: it agrees on the chip id (0x1372, alias 0x1373), the
+//! 9-byte chip-id reply, the stride, the command address shift and the
+//! fixed hash counting number, and drives a longer init (3 MBaud before
+//! the ramp, soft reset, core registers, an IO strength for the last
+//! chip of each voltage domain, which on the Naja Duo is both chips:
+//! chip 0 reaches chip 1 through a discrete level shifter). An A/B on
+//! the Gaia (2026-10-10, docs/05) found the same rate and the same
+//! error count under both. The Naja Duo gets ESP-Miner's by default,
+//! the Gaia keeps NerdOS's; [`BM1373_ESP_1M`] is ESP-Miner's list with
+//! NerdOS's late 1 MBaud switch, the fallback should 3 MBaud not hold
+//! across the Naja Duo's level shifters. Which board gets which is the
+//! firmware's `board::chip()`.
 
 use super::{ChipProfile, Hcn, InitStep};
 use crate::pll::PllSpec;
@@ -148,9 +154,10 @@ pub const BM1373: ChipProfile = ChipProfile {
 /// against NerdOS's is `docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`.
 /// ESP-Miner waits `BM1372_INIT_STEP_DELAY_MS` (10 ms) between its
 /// steps and 20 ms after the soft reset. The ticket mask is the
-/// profile's, as in the NerdOS list (256 on the Naja Duo; the Gaia's
-/// 4096 here). Never run on a chip under WarpAxe: the A/B candidate for
-/// the Gaia's error rate ([`BM1373_ESP`]).
+/// profile's, as in the NerdOS list (256 on the Naja Duo under ESP-Miner
+/// v2.15.4; 4096 here, as on the Gaia). Ran on the Gaia in the A/B of
+/// 2026-10-10 (same rate and error count as NerdOS's); the Naja Duo's
+/// default ([`BM1373_ESP`]).
 const D: InitStep = InitStep::Delay { ms: 10 };
 
 /// `BM1373_init()` up to the chain-wide IO driver strength.
@@ -258,7 +265,8 @@ const INIT_POST_ESP: &[InitStep] = &[
 /// is [`BM1373`]. The list switches the UART itself
 /// ([`InitStep::SwitchBaud`], 3 MBaud); after the lists the driver only
 /// ramps, writes the hash counting number and enables version rolling.
-/// Chosen on the Gaia by the `chipInit` setting, never by default.
+/// The Bitaxe Naja Duo's default; on the Gaia only by the `chipInit`
+/// setting.
 pub const BM1373_ESP: ChipProfile = ChipProfile {
     baud_switch_after_ramp_ms: None,
     fast_uart: (FAST_UART_3M, FAST_UART_3M_BAUD),
@@ -267,6 +275,44 @@ pub const BM1373_ESP: ChipProfile = ChipProfile {
     init_per_chip: INIT_PER_CHIP_ESP,
     init_post: INIT_POST_ESP,
     ..BM1373
+};
+
+/// [`INIT_POST_ESP`] without its [`InitStep::SwitchBaud`]: the same
+/// writes in the same order, the UART left at 115200 for the driver to
+/// switch after the ramp, as NerdOS does. Derived, so the two lists
+/// cannot drift apart.
+const INIT_POST_ESP_1M: [InitStep; INIT_POST_ESP.len() - 1] = without_switch(INIT_POST_ESP);
+
+/// `list` with its one `SwitchBaud` step left out.
+const fn without_switch<const N: usize>(list: &[InitStep]) -> [InitStep; N] {
+    let mut out = [InitStep::Delay { ms: 0 }; N];
+    let (mut i, mut o) = (0, 0);
+    while i < list.len() {
+        if !matches!(list[i], InitStep::SwitchBaud) {
+            assert!(o < N, "more than one SwitchBaud in the list");
+            out[o] = list[i];
+            o += 1;
+        }
+        i += 1;
+    }
+    assert!(o == N, "no SwitchBaud in the list");
+    out
+}
+
+/// ESP-Miner's init at NerdOS's UART pace: the same register writes as
+/// [`BM1373_ESP`], but the chips stay at 115200 through the lists and
+/// the ramp and move to 1 MBaud 500 ms after it, as [`BM1373`] does.
+/// The fallback for the Naja Duo should 3 MBaud not hold across its two
+/// level shifters (TLV3544 between the domains, SN74AXC4T774 to the
+/// ESP): the firmware steps down to it when the 3 MBaud init does not
+/// bring the chain up, and the `chipInit` setting `espminer-1m` picks it
+/// outright. Never the default anywhere.
+pub const BM1373_ESP_1M: ChipProfile = ChipProfile {
+    baud_switch_after_ramp_ms: Some(500),
+    fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
+    init_source: "ESP-Miner 1 MBaud",
+    init_post: &INIT_POST_ESP_1M,
+    ..BM1373_ESP
 };
 
 #[cfg(test)]
@@ -364,6 +410,52 @@ mod tests {
         assert_eq!(BM1373_ESP.job_interval_ms, BM1373.job_interval_ms);
         assert_eq!(BM1373_ESP.default_difficulty, BM1373.default_difficulty);
         assert_eq!(BM1373_ESP.fast_uart_reg, BM1373.fast_uart_reg);
+    }
+
+    /// The 1 MBaud variant: ESP-Miner's writes minus the UART switch,
+    /// nothing else, and NerdOS's late switch instead.
+    #[test]
+    fn esp_1m_profile_is_the_esp_list_without_the_switch() {
+        assert_eq!(BM1373_ESP_1M.init_source, "ESP-Miner 1 MBaud");
+        assert_eq!(BM1373_ESP_1M.baud_switch_after_ramp_ms, Some(500));
+        assert_eq!(BM1373_ESP_1M.fast_uart, BM1373.fast_uart);
+        assert_eq!(BM1373_ESP_1M.init_chain, BM1373_ESP.init_chain);
+        assert_eq!(BM1373_ESP_1M.init_per_chip, BM1373_ESP.init_per_chip);
+        let kept: Vec<InitStep> = INIT_POST_ESP
+            .iter()
+            .copied()
+            .filter(|s| !matches!(s, InitStep::SwitchBaud))
+            .collect();
+        assert_eq!(BM1373_ESP_1M.init_post, kept.as_slice());
+        assert_eq!(BM1373_ESP_1M.init_post.len(), INIT_POST_ESP.len() - 1);
+        // Rendered for two chips: the 0x28 write and the host move are
+        // gone, every other item is the 3 MBaud list's.
+        let fast: Vec<Rendered> = render(&BM1373_ESP, 2)
+            .filter(|r| {
+                !matches!(r, Rendered::HostBaud(_))
+                    && r.payload().get(1) != Some(&reg::FAST_UART_CONFIGURATION)
+            })
+            .collect();
+        let slow: Vec<Rendered> = render(&BM1373_ESP_1M, 2).collect();
+        assert_eq!(slow, fast);
+        assert!(slow.iter().all(|r| !matches!(r, Rendered::HostBaud(_))));
+        assert!(render(&BM1373_ESP, 2).any(|r| r == Rendered::HostBaud(3_000_000)));
+    }
+
+    /// A board's own small-core count rides on the chip profile; 0 keeps
+    /// the chip's.
+    #[test]
+    fn with_small_cores_changes_nothing_else() {
+        let naja = BM1373_ESP.with_small_cores(6725);
+        assert_eq!(naja.small_cores, 6725);
+        assert_eq!(
+            ChipProfile {
+                small_cores: BM1373_ESP.small_cores,
+                ..naja.clone()
+            },
+            BM1373_ESP
+        );
+        assert_eq!(BM1373.clone().with_small_cores(0), BM1373);
     }
 
     #[test]

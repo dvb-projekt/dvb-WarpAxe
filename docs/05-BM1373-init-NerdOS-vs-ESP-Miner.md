@@ -321,3 +321,50 @@ fallback is enough. Order:
 The Gaia's default stays NerdOS's init until the numbers say otherwise;
 that is Oliver's call after the A/B. The result goes to Bitronics and
 shufps (drafts in `Mail-Gaia-Fehlerrate.md`).
+
+## The Naja Duo: ESP-Miner's init by board (2026-11-12, not yet on a device)
+
+The Bitaxe Naja Duo is the board ESP-Miner's BM1373 init was written
+for: two BM1373 in two voltage domains, chip 0 reaching chip 1 through
+a discrete level shifter (TLV3544), which is what the IO strength
+`00 01 F1 11` for the last chip of each domain is there for. So the
+code path of step 2 came back from `keep/bm1373-espminer-init`
+(cd58c79) onto main, and the choice moved from the setting to the
+board:
+
+- `board::chip()` picks the init **by board**: the Naja Duo starts with
+  `BM1373_ESP` (3 MBaud in the middle of the list, as ESP-Miner), every
+  other BM1373 board (the Gaia) with `BM1373` (NerdOS's, as before and
+  as its stock firmware; the Gaia's path is unchanged).
+- A **ladder** behind it: ESP-Miner 3 MBaud → ESP-Miner 1 MBaud →
+  NerdOS. `BM1373_ESP_1M` is ESP-Miner's register writes with NerdOS's
+  pace (the lists leave the UART at 115200, the chips move to 1 MBaud
+  500 ms after the ramp), derived from the 3 MBaud list so the two
+  cannot drift; it is the fallback should 3 MBaud not hold across the
+  Naja Duo's two level shifters. A chain that does not come up (no chip
+  answers, or no nonce before the 60 s all-silent restart) moves one
+  rung down until the next boot; the log says which init left and
+  which comes, `/api/system/info` `chipInit` reads e.g.
+  `ESP-Miner 1 MBaud (fallback from ESP-Miner)`.
+- The `chipInit` setting now defaults to the board's init (empty) and
+  takes `espminer`, `espminer-1m` or `nerdos` to start at a rung by
+  hand (for the bench: the 1 MBaud variant without a reflash). Read at
+  every chain start; a changed setting forgets the fallbacks.
+- The Naja Duo's copies of the three profiles carry its maker's
+  **6725 small cores** (`Profile::small_cores`, ESP-Miner's figure, the
+  reseller's 4.4 TH/s at 327 MHz); the Gaia keeps NerdOS's 6860.
+- Simulator: two BM1373 under `BM1373_ESP` enumerate at addresses 0
+  and 16, both land the domain-end strength, the chain moves to 3 MBaud
+  with nothing lost, both chips hash and their nonces are attributed to
+  them (the simulator stamps ESP-Miner's address bits, `index × 128`);
+  the same for `BM1373_ESP_1M` with the switch after the ramp.
+
+What the device has to answer (the first run): whether both chips come
+up under the 3 MBaud init, and how the nonces' address bits fall
+(`GET /api/v1/chip/cores`: `addressBits` lists every value of
+`(nonce >> 17) & 0xFF` seen and the chip it was credited to; on a
+two-chip board they should fall into 0–127 for chip 0 and 128–255 for
+chip 1, each about half, with `hashrateMonitor` showing both chips'
+counters). Until then the silent-chip watchdog on the Naja Duo only
+reports (`Profile::silent_chip_restart` false).
+

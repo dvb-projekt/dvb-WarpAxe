@@ -261,7 +261,10 @@ back at any time with `GET /api/v1/display/frame`.
   at most one such restart an hour over all chips, and a chip that is
   silent again before it has run an hour after each of three restarts is
   left alone until the next boot or a new clock or voltage. Both clocks
-  stop while no work goes out, so a pool outage counts for nothing.
+  stop while no work goes out, so a pool outage counts for nothing. On
+  a board whose nonce-to-chip attribution has not been seen on a device
+  (the Naja Duo until its first run) the ten minutes are reported in the
+  log and `lastError`, not acted on (`Profile::silent_chip_restart`).
   Since v0.1.41 also one hash domain stuck while its chip hashes (the
   NerdOctaxe's latch, until then seen only after a warm reboot and in
   the self-test): a domain under 25 % of the mean of the chip's other
@@ -861,7 +864,7 @@ back at any time with `GET /api/v1/display/frame`.
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV: 2.53 TH/s at 37–38 A, just below ForgeOS v1.7's Power preset of 636 MHz / 1160 mV (610 MHz / 1200 mV since v1.8)); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
 | Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers; both chips' diodes read since v0.1.42, the start without a false overheat stop since v0.1.43); free clock values with `?oc` as on the Gamma |
-| Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
+| Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; the chips come up with ESP-Miner's BM1373 init (3 MBaud, the IO strength for the end of each voltage domain), the same init at 1 MBaud and NerdOS's behind it as fallbacks (`chipInit`), the maker's 6725 small cores and 50 °C fan target; one silent chip is reported, not restarted, until the nonce-to-chip attribution has been seen on a device; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet; only the EMC2103's diode 2 is read as the chip temperature (ESP-Miner also acts on diode 1: to be settled before its first run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
 | NerdAxe Gaia | 1× BM1373 | TPS546 (12 V) | **runs** since 2026-09-29; at 420 MHz / 960 mV the pool counts 102% of the expected rate, as with its stock firmware, but the core then draws 31–33 A against the regulator's 33 A limit, so ours runs at 380 MHz / 960 mV (31 A); clock and voltage capped at 420 MHz / 970 mV; since v0.1.16 its regulator runs in the range the board is strapped for (0.5–1.5 V); taken on the first start since v0.1.35 (TPS546 and EMC2101 on the Nerd pins with 12 V at the regulator; the same parts at 5 V are a NerdAxe Gamma) |
@@ -1076,7 +1079,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md`](docs/05-BM1373-init-NerdOS-vs-ESP-Miner.md)
   — the BM1373's init on the wire, NerdOS (the Gaia's stock firmware and
   ours) against ESP-Miner's, and an A/B on the NerdAxe Gaia: the same
-  rate and the same error count, so the Gaia keeps NerdOS's init;
+  rate and the same error count, so the Gaia keeps NerdOS's init; the
+  Bitaxe Naja Duo, ESP-Miner's own board, gets ESP-Miner's by default,
+  with the `chipInit` setting (`espminer`, `espminer-1m`, `nerdos`) to
+  pick one by hand and a fallback down that list when a chain does not
+  come up;
 - [`docs/06-Devkit-S3-SHA-Peripheral.md`](docs/06-Devkit-S3-SHA-Peripheral.md)
   — the T-Display-S3's SHA peripheral measured cycle by cycle, and how
   writing the next block while the engine runs took the devkit from

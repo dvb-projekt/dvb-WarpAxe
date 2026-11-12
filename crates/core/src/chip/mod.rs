@@ -203,6 +203,18 @@ pub struct ChipProfile {
 }
 
 impl ChipProfile {
+    /// The same chip with another small-core count: a board whose maker
+    /// counts the chip's cores differently (ESP-Miner's 6725 on the Naja
+    /// Duo against NerdOS's 6860 on the Gaia, both BM1373). `0` keeps the
+    /// chip's own count. Everything else, the init above all, is this
+    /// profile's.
+    pub const fn with_small_cores(mut self, small_cores: u16) -> Self {
+        if small_cores != 0 {
+            self.small_cores = small_cores;
+        }
+        self
+    }
+
     /// Chain address interval for `chip_count` chips: the profile's
     /// fixed stride, else `256 / n`.
     pub const fn address_interval(&self, chip_count: u8) -> u8 {

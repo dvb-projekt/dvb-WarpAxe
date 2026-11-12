@@ -247,6 +247,24 @@ pub struct Profile {
     /// A power estimate for a board without any power reading
     /// ([`PowerEstimate`]); `None` where the regulator reports power.
     pub power_estimate: Option<PowerEstimate>,
+    /// Small cores per chip as this board's maker counts them, where
+    /// that differs from the chip profile's: ESP-Miner's 6725 on the
+    /// Naja Duo against NerdOS's 6860 on the Gaia (both BM1373; the
+    /// reseller's 4.4 TH/s at 327 MHz is 6725 × 2). 0 = the chip's own
+    /// count. The nominal rate, the efficiency, the self-test's target
+    /// and the silence watchdog's window all multiply by it; the
+    /// firmware's `board::chip()` carries it into the chip profile.
+    pub small_cores: u16,
+    /// Whether one chip silent for ten minutes while the others hash has
+    /// the chain started over for it (`warpaxe_chain::lone`). `false`
+    /// only reports: the silence is logged and shown, nothing restarts.
+    /// For a board whose nonce-to-chip attribution has not been seen on
+    /// a device yet (the Naja Duo: ESP-Miner reads bit 24 of the nonce,
+    /// NerdOS bits 24–25, nobody has run two BM1373 under either), where
+    /// a wrong attribution would call a hashing chip silent and restart
+    /// a healthy chain every hour. Flip to `true` once the per-chip
+    /// nonce counts on the device agree with the hash counters.
+    pub silent_chip_restart: bool,
 }
 
 /// A power figure for a board that measures none: `base_w` for the
@@ -487,6 +505,8 @@ pub const BITAXE_GAMMA: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -573,7 +593,16 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     abs_max_frequency_mhz: 600,
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1250,
+    // The factory NVS of a delivered board (config-1201.csv, read
+    // 2026-11-12): `temptarget 50`; ESP-Miner's own default is 60.
+    fan_target_c: 50.0,
     asic_enable: COLOR_ENABLE,
+    // ESP-Miner's BM1373 small-core count (`device_config.h`), the
+    // reseller's 4.4 TH/s at 327 MHz; NerdOS's 6860 stays on the Gaia.
+    small_cores: 6725,
+    // Report only until the nonce-to-chip attribution has been seen on a
+    // device: see the field. One line to arm it after the first run.
+    silent_chip_restart: false,
     ..BITAXE_GAMMA
 };
 
@@ -688,6 +717,8 @@ pub const BITFORGE_NANO: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -740,6 +771,8 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     display_flip: false,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -804,6 +837,8 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -873,6 +908,8 @@ pub const NERDAXE_GAIA: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -929,6 +966,8 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     display_flip: true,
     asic_enable: None,
     stock_reset_pulse: None,
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: None,
 };
 
@@ -1156,6 +1195,8 @@ pub const NERDNOS: Profile = Profile {
     // The OSMU wiki's "about 8 W at stock" (300 MHz) less about 1.5 W for
     // the T-Display-S3, its LCD and the LDOs: 21.7 W per GHz of clock.
     // Nothing on the board measures power.
+    small_cores: 0,
+    silent_chip_restart: true,
     power_estimate: Some(PowerEstimate {
         base_w: 1.5,
         per_ghz_w: 21.7,
@@ -1291,6 +1332,32 @@ mod tests {
             assert!(p.chip_stop_max_c() >= p.chip_stop_c, "{}", p.name);
             assert!(p.chip_stop_max_c() <= 90.0, "{}", p.name);
         }
+    }
+
+    /// The Naja Duo's own figures from its maker's firmware and factory
+    /// NVS; nothing else carries a board small-core count, and every
+    /// other board restarts its chain for a silent chip.
+    #[test]
+    fn naja_duo_carries_esp_miners_small_cores_and_only_reports_silence() {
+        use super::*;
+        let naja = Profile::by_name("bitaxe-naja-duo").unwrap();
+        assert_eq!(naja.small_cores, 6725);
+        assert_eq!(naja.fan_target_c, 50.0);
+        assert!(!naja.silent_chip_restart);
+        assert_eq!(
+            migrated_fan_target(&BITAXE_NAJA_DUO, 60),
+            None,
+            "the Nano's one-time move never touches the Naja's stored target"
+        );
+        for p in ALL {
+            if p.name == BITAXE_NAJA_DUO.name {
+                continue;
+            }
+            assert_eq!(p.small_cores, 0, "{}", p.name);
+            assert!(p.silent_chip_restart, "{}", p.name);
+        }
+        assert_eq!(NERDAXE_GAIA.small_cores, 0);
+        assert_eq!(NERDAXE_GAIA.fan_target_c, 65.0);
     }
 
     #[test]

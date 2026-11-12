@@ -384,6 +384,32 @@ pub fn core_hist() -> Vec<CoreHist> {
     CORES.lock().unwrap().clone()
 }
 
+/// How often each value of the nonce's eight address bits (bits 17–24,
+/// `(nonce >> 17) & 0xFF`) was seen since the chain started: what the
+/// chip attribution divides by `256 / chips` (ESP-Miner; NerdOS reads
+/// bits 24–25 instead). On a two-chip board the values should fall into
+/// two halves, 0–127 for chip 0 and 128–255 for chip 1, each about half
+/// of all nonces; anything else is the attribution question answered.
+static NONCE_ADDRESS_BITS: Mutex<[u32; 256]> = Mutex::new([0; 256]);
+
+fn address_seen(nonce: u32) {
+    let bits = ((nonce >> 17) & 0xFF) as usize;
+    let mut g = NONCE_ADDRESS_BITS.lock().unwrap();
+    g[bits] = g[bits].saturating_add(1);
+}
+
+/// The address-bit values seen and how often, ascending (diagnostics).
+pub fn address_bits() -> Vec<(u8, u32)> {
+    NONCE_ADDRESS_BITS
+        .lock()
+        .unwrap()
+        .iter()
+        .enumerate()
+        .filter(|(_, n)| **n > 0)
+        .map(|(b, n)| (b as u8, *n))
+        .collect()
+}
+
 fn core_seen(chip: u8, core: u8, small: u8) {
     let mut g = CORES.lock().unwrap();
     let i = usize::from(chip);
@@ -475,8 +501,17 @@ fn run(mut uart: ChipUart) {
     let mut selftest_due: Option<Instant> = None;
     // One chip silent while the others hash, and one hash domain stuck
     // while its chip hashes: both kept across chain restarts, and both
-    // share the hour between two interventions.
-    let mut lone = LoneSilence::new();
+    // share the hour between two interventions. A board whose nonce-to-
+    // chip attribution is not confirmed on a device (the Naja Duo) only
+    // reports the silence (`Profile::silent_chip_restart`).
+    let mut lone = if board::profile().silent_chip_restart {
+        LoneSilence::new()
+    } else {
+        log::warn!(
+            "miner: the silent-chip watchdog on this board reports only, no restart for one silent chip (profile)"
+        );
+        LoneSilence::report_only()
+    };
     let mut latch = DomainLatch::new();
     loop {
         // No chain runs from here until the next one's first PLL write:
@@ -571,6 +606,8 @@ fn run(mut uart: ChipUart) {
         if let Err(e) = Uart::set_baud(&mut uart, 115_200) {
             log::warn!("miner: uart back to 115200: {e:?}");
         }
+        // Which BM1373 init this start uses: the setting, else the board's.
+        board::select_chip_init(&cfg.chip_init);
         let chain_cfg = ChainConfig {
             expected_chips: cfg.asic_count,
             frequency_hz: start_mhz.saturating_mul(1_000_000),
@@ -647,6 +684,7 @@ fn run(mut uart: ChipUart) {
                     Event::Nonce(f) => {
                         nonces_since_start += 1;
                         core_seen(f.chip, f.core, f.small_core);
+                        address_seen(f.nonce);
                         let Some((job, job_seq, job_t)) = jobs.get(&f.work.serial) else {
                             update(|s| s.unknown_job += 1);
                             continue;
@@ -717,6 +755,7 @@ fn run(mut uart: ChipUart) {
                     Event::Ready => {
                         log::info!("miner: chain ready, {} chip(s)", chain.chip_count());
                         CORES.lock().unwrap().clear();
+                        *NONCE_ADDRESS_BITS.lock().unwrap() = [0; 256];
                         board::chain_ready();
                         // The chain's first window gets the early look
                         // for a domain dead from the start.
@@ -794,9 +833,9 @@ fn run(mut uart: ChipUart) {
                             d.crc_failures
                         );
                         board::chain_ready();
-                        if board::chip().init_source == "ESP-Miner" && board::chip_init_fall_back() {
+                        if let Some((from, to)) = board::chip_init_fall_back() {
                             log::warn!(
-                                "miner: ESP-Miner init: the chain did not come up, NerdOS init from the next start until reboot"
+                                "miner: {from} init: the chain did not come up, {to} init from the next start until reboot"
                             );
                         }
                         update(|s| {
@@ -1137,15 +1176,15 @@ fn run(mut uart: ChipUart) {
                         "chain",
                         warpaxe_diag::events::detail::chain_restart(n, mv),
                     );
-                    // Under ESP-Miner's BM1373 init a chain that answered
-                    // the id read but never hashed is the init, not a hang.
-                    if nonces_since_start == 0
-                        && board::chip().init_source == "ESP-Miner"
-                        && board::chip_init_fall_back()
-                    {
-                        log::warn!(
-                            "miner: ESP-Miner init: no nonce since the chain start, NerdOS init from the next start until reboot"
-                        );
+                    // A chain that answered the id read but never hashed
+                    // is the init, not a hang: one rung down the BM1373
+                    // ladder (ESP-Miner 3 MBaud → 1 MBaud → NerdOS).
+                    if nonces_since_start == 0 {
+                        if let Some((from, to)) = board::chip_init_fall_back() {
+                            log::warn!(
+                                "miner: {from} init: no nonce since the chain start, {to} init from the next start until reboot"
+                            );
+                        }
                     }
                     break;
                 }
@@ -1208,6 +1247,22 @@ fn run(mut uart: ChipUart) {
                             "chain",
                             warpaxe_diag::events::detail::chip_given_up(chip),
                         );
+                    }
+                    // Report-only board: said every ten minutes with
+                    // what would tell a wrong attribution from a dead
+                    // chip (the nonces each chip was credited with, the
+                    // address bits they carried), nothing restarted.
+                    Some(LoneVerdict::Report { chip }) => {
+                        let credited: Vec<u32> = core_hist().iter().map(|h| h.nonces).collect();
+                        let bits = address_bits();
+                        log::warn!(
+                            "miner: chip {chip} silent for 10 min at {mv} mV; this board only reports (no restart): nonces per chip {credited:?}, nonce address bits {bits:?}, hash counters in hashrateMonitor"
+                        );
+                        update(|s| {
+                            s.last_error = format!(
+                                "chip {chip} silent for 10 min at {mv} mV (report only on this board)"
+                            );
+                        });
                     }
                     None => {}
                 }

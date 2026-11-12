@@ -870,7 +870,19 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                 Some(h) => json!({"chip": c, "uptime": diag::uptime_s(), "nonces": h.nonces, "cores": h.cores, "smallCores": h.small_cores}),
                 None => return reply_json(req, 404, &json!({"error": "no such chip"})),
             },
-            None => json!({"uptime": diag::uptime_s(), "chips": all}),
+            // The whole chain, with the nonces' address bits for the
+            // two-chip attribution question (bit 24: ESP-Miner; 24–25:
+            // NerdOS): each value seen and its count, the chip the
+            // firmware credited it to (`256 / chips` per chip).
+            None => {
+                let chips = miner::state().chips.max(1);
+                let interval = (256 / u32::from(chips)).max(1);
+                let bits: Vec<serde_json::Value> = miner::address_bits()
+                    .into_iter()
+                    .map(|(b, n)| json!({"bits": b, "count": n, "chip": u32::from(b) / interval}))
+                    .collect();
+                json!({"uptime": diag::uptime_s(), "chips": all, "addressBits": bits, "addressInterval": interval})
+            }
         };
         reply_json(req, 200, &body)
     })?;

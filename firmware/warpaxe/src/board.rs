@@ -41,7 +41,7 @@ use warpaxe_board::warm_boot;
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
     bm1370::{BM1370, BM1370_NERD},
-    bm1373::{BM1373, BM1373_ESP},
+    bm1373::{BM1373, BM1373_ESP, BM1373_ESP_1M},
     bm1397::BM1397,
     ChipProfile,
 };
@@ -136,10 +136,29 @@ pub struct BoardState {
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
 static OVERHEAT: AtomicBool = AtomicBool::new(false);
-/// ESP-Miner's BM1373 init was asked for and the chain did not come up
-/// with it: NerdOS's init until the next boot (or until the setting
-/// goes back to `nerdos`, which clears this).
-static CHIP_INIT_FALLBACK: AtomicBool = AtomicBool::new(false);
+/// The BM1373's inits as a ladder, best first: ESP-Miner's at 3 MBaud
+/// (rung 0, the Naja Duo's maker), the same registers at NerdOS's late
+/// 1 MBaud switch (rung 1, for a Naja Duo whose level shifters do not
+/// carry 3 MBaud), NerdOS's (rung 2, the Gaia's maker). A board starts
+/// at its own rung ([`select_chip_init`]: the Naja Duo at 0, every
+/// other BM1373 board at 2) unless the `chipInit` setting names one; a
+/// chain that does not come up moves one rung down until the next boot
+/// ([`chip_init_fall_back`]). The Naja Duo's copies carry its maker's
+/// small-core count (`Profile::small_cores`).
+const RUNG_ESP: u8 = 0;
+const RUNG_ESP_1M: u8 = 1;
+const RUNG_NERDOS: u8 = 2;
+static BM1373_INITS: [ChipProfile; 3] = [BM1373_ESP, BM1373_ESP_1M, BM1373];
+static NAJA_DUO_INITS: [ChipProfile; 3] = [
+    BM1373_ESP.with_small_cores(warpaxe_board::profile::BITAXE_NAJA_DUO.small_cores),
+    BM1373_ESP_1M.with_small_cores(warpaxe_board::profile::BITAXE_NAJA_DUO.small_cores),
+    BM1373.with_small_cores(warpaxe_board::profile::BITAXE_NAJA_DUO.small_cores),
+];
+/// The rung the setting or the board starts at; `u8::MAX` until the
+/// first chain start read the setting (the board's rung meanwhile).
+static CHIP_INIT_START: AtomicU8 = AtomicU8::new(u8::MAX);
+/// The rung the fallbacks have reached this boot; 0 = none.
+static CHIP_INIT_FALLEN: AtomicU8 = AtomicU8::new(0);
 /// When the chips may run again after an overheat stop.
 static GUARD: Mutex<Guard> = Mutex::new(Guard::new());
 /// Chips switched off by hand (web UI / API), not by a limit.
@@ -245,37 +264,117 @@ pub fn chip() -> &'static ChipProfile {
             Vr::Tps5364x { .. } | Vr::Tps546Nerd { .. } => &BM1370_NERD,
             _ => &BM1370,
         },
-        // NerdOS's init (the Gaia's stock) unless the `chipInit` setting
-        // asks for ESP-Miner's and that one has not failed since boot.
-        Asic::Bm1373 => {
-            if config::get().chip_init != "espminer" {
-                CHIP_INIT_FALLBACK.store(false, Ordering::Relaxed);
-                &BM1373
-            } else if CHIP_INIT_FALLBACK.load(Ordering::Relaxed) {
-                &BM1373
-            } else {
-                &BM1373_ESP
-            }
-        }
+        // The rung of the BM1373 ladder the board, the setting and the
+        // fallbacks have arrived at (`BM1373_INITS`).
+        Asic::Bm1373 => &bm1373_ladder()[usize::from(chip_init_rung())],
         Asic::Bm1397 => &BM1397,
     }
 }
 
-/// The init the next chain start will use, for the API and the log:
-/// `NerdOS`, `ESP-Miner`, or `NerdOS (fallback from ESP-Miner)`.
-pub fn chip_init_name() -> &'static str {
-    let c = chip();
-    if c.init_source == "NerdOS" && CHIP_INIT_FALLBACK.load(Ordering::Relaxed) {
-        "NerdOS (fallback from ESP-Miner)"
+/// The BM1373 inits this board may start with, best first.
+fn bm1373_ladder() -> &'static [ChipProfile; 3] {
+    if is_naja_duo() {
+        &NAJA_DUO_INITS
     } else {
-        c.init_source
+        &BM1373_INITS
     }
 }
 
-/// ESP-Miner's init did not bring the chain up: NerdOS's from the next
-/// start on, until the next boot. True if this call made the change.
-pub fn chip_init_fall_back() -> bool {
-    !CHIP_INIT_FALLBACK.swap(true, Ordering::Relaxed)
+fn is_naja_duo() -> bool {
+    profile().name == warpaxe_board::profile::BITAXE_NAJA_DUO.name
+}
+
+/// The rung this board starts at with no setting: its maker's init.
+fn board_init_rung() -> u8 {
+    if is_naja_duo() {
+        RUNG_ESP
+    } else {
+        RUNG_NERDOS
+    }
+}
+
+/// The rung the setting (else the board) starts at.
+fn chip_init_start() -> u8 {
+    match CHIP_INIT_START.load(Ordering::Relaxed) {
+        u8::MAX => board_init_rung(),
+        r => r,
+    }
+}
+
+/// The rung in force: the start, or lower where a fallback moved it.
+fn chip_init_rung() -> u8 {
+    chip_init_start()
+        .max(CHIP_INIT_FALLEN.load(Ordering::Relaxed))
+        .min(RUNG_NERDOS)
+}
+
+/// Read the `chipInit` setting at a chain start: `espminer` (3 MBaud),
+/// `espminer-1m`, `nerdos`, or anything else (the default, empty) for
+/// the board's own init. A setting that names another rung than before
+/// forgets the fallbacks (as a changed setting is a fresh try); the
+/// same one keeps them until the next boot. BM1373 only.
+pub fn select_chip_init(setting: &str) {
+    if profile().asic != Asic::Bm1373 {
+        return;
+    }
+    let rung = match setting {
+        "espminer" => RUNG_ESP,
+        "espminer-1m" => RUNG_ESP_1M,
+        "nerdos" => RUNG_NERDOS,
+        "" | "auto" | "board" => board_init_rung(),
+        other => {
+            log::warn!("board: chipInit {other:?} is not a known init, using the board's");
+            board_init_rung()
+        }
+    };
+    let before = CHIP_INIT_START.swap(rung, Ordering::Relaxed);
+    if before != u8::MAX && before != rung {
+        CHIP_INIT_FALLEN.store(0, Ordering::Relaxed);
+    }
+    if is_naja_duo() && chip().small_cores != profile().small_cores {
+        log::warn!(
+            "board: the chip profile counts {} small cores, the board {}: the board's copy is missing",
+            chip().small_cores,
+            profile().small_cores
+        );
+    }
+}
+
+/// The init the next chain start will use, for the API and the log:
+/// `NerdOS`, `ESP-Miner`, `ESP-Miner 1 MBaud`, with `(fallback from …)`
+/// where a failed start moved it down the ladder.
+pub fn chip_init_name() -> String {
+    let c = chip();
+    if profile().asic != Asic::Bm1373 {
+        return c.init_source.to_string();
+    }
+    let start = chip_init_start();
+    if chip_init_rung() > start {
+        let from = &bm1373_ladder()[usize::from(start)];
+        format!("{} (fallback from {})", c.init_source, from.init_source)
+    } else {
+        c.init_source.to_string()
+    }
+}
+
+/// The chain did not come up with the init in force: one rung down the
+/// ladder from the next start on, until the next boot. The init left
+/// and the one coming, or `None` when there is no rung below (NerdOS's
+/// init, or a chip without a ladder).
+pub fn chip_init_fall_back() -> Option<(&'static str, &'static str)> {
+    if profile().asic != Asic::Bm1373 {
+        return None;
+    }
+    let now = chip_init_rung();
+    if now >= RUNG_NERDOS {
+        return None;
+    }
+    CHIP_INIT_FALLEN.store(now + 1, Ordering::Relaxed);
+    let ladder = bm1373_ladder();
+    Some((
+        ladder[usize::from(now)].init_source,
+        ladder[usize::from(now + 1)].init_source,
+    ))
 }
 
 /// True once a temperature limit was crossed, until the board has cooled

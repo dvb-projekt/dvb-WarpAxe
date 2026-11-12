@@ -13,6 +13,14 @@
 //!   it silent again before it had run [`SPACING_S`]: that chip is given
 //!   up until the next boot.
 //!
+//! A board whose nonce-to-chip attribution has not been seen on a device
+//! (`Profile::silent_chip_restart` false: the Naja Duo until its first
+//! run) gets the policy in report-only mode ([`LoneSilence::report_only`]):
+//! the same ten minutes of silence yield a [`Verdict::Report`] instead of
+//! a restart, once per ten minutes for as long as the chip stays silent,
+//! and nothing is counted against the chip. A wrong attribution would
+//! otherwise call a hashing chip silent and restart a healthy chain.
+//!
 //! Time is uptime in seconds, passed in, so the policy runs under
 //! `cargo test`.
 
@@ -40,6 +48,13 @@ pub enum Verdict {
         /// The chip given up (from 0).
         chip: u8,
     },
+    /// Report-only mode: this chip has been silent for [`SILENT_S`]
+    /// (again); nothing is restarted. Repeated every [`SILENT_S`] while
+    /// the silence lasts.
+    Report {
+        /// The silent chip (from 0).
+        chip: u8,
+    },
 }
 
 /// The policy's memory; lives across chain restarts, not across boots.
@@ -57,6 +72,8 @@ pub struct LoneSilence {
     chips: usize,
     /// Clock (MHz) and core voltage (mV) the counts belong to.
     point: Option<(u32, u16)>,
+    /// Report silences, never restart for them.
+    report_only: bool,
 }
 
 impl Default for LoneSilence {
@@ -76,7 +93,22 @@ impl LoneSilence {
             last_restart: None,
             chips: 0,
             point: None,
+            report_only: false,
         }
+    }
+
+    /// The policy that only reports ([`Verdict::Report`]): for a board
+    /// whose per-chip nonce attribution is not confirmed yet.
+    pub const fn report_only() -> Self {
+        Self {
+            report_only: true,
+            ..Self::new()
+        }
+    }
+
+    /// Whether this policy only reports.
+    pub const fn is_report_only(&self) -> bool {
+        self.report_only
     }
 
     /// Chips given up until the next boot.
@@ -144,6 +176,11 @@ impl LoneSilence {
             };
             if self.given_up[i] || now_s.saturating_sub(since) < SILENT_S {
                 continue;
+            }
+            if self.report_only {
+                // Said once per ten minutes of silence; nothing else moves.
+                self.silent_since[i] = Some(now_s);
+                return Some(Verdict::Report { chip: i as u8 });
             }
             if self.tries[i] >= MAX_TRIES {
                 self.given_up[i] = true;
@@ -377,6 +414,39 @@ mod tests {
         assert_eq!(p.given_up().count(), 0);
         let v = run(&mut p, t, t + SPACING_S + SILENT_S, &one(5));
         assert!(v.iter().any(|(_, v)| *v == Verdict::Restart { chip: 5 }));
+    }
+
+    /// Report-only: the same ten minutes yield a report, repeated every
+    /// ten minutes while the chip stays silent; no restart, no try
+    /// counted, nothing given up, however long it goes on. The hour
+    /// between restarts is not touched either, so a domain-latch reset
+    /// is still free to happen.
+    #[test]
+    fn report_only_says_so_every_ten_minutes_and_never_restarts() {
+        let mut p = LoneSilence::report_only();
+        assert!(p.is_report_only());
+        assert!(!LoneSilence::new().is_report_only());
+        let v = run(&mut p, 0, 4 * SPACING_S, &one(1));
+        assert!(!v.is_empty());
+        assert!(v.iter().all(|(_, v)| *v == Verdict::Report { chip: 1 }));
+        let times: Vec<u64> = v.iter().map(|(t, _)| *t).collect();
+        assert_eq!(times[0], SILENT_S);
+        assert!(times.windows(2).all(|w| w[1] - w[0] == SILENT_S));
+        assert_eq!(times.len(), (4 * SPACING_S / SILENT_S) as usize);
+        assert_eq!(p.tries[1], 0);
+        assert_eq!(p.given_up().count(), 0);
+        assert_eq!(p.last_restart, None);
+        // Back, then silent again: the clock starts over.
+        assert!(run(&mut p, 4 * SPACING_S + 1, 4 * SPACING_S + 100, &EIGHT_OK).is_empty());
+        let t0 = 4 * SPACING_S + 101;
+        let v = run(&mut p, t0, t0 + SILENT_S, &one(1));
+        assert_eq!(v, vec![(t0 + SILENT_S, Verdict::Report { chip: 1 })]);
+        // All chips silent and no work are not this policy's, as before.
+        assert!(run(&mut p, t0 + SILENT_S + 1, t0 + 3 * SILENT_S, &[true; 8]).is_empty());
+        let mut q = LoneSilence::report_only();
+        for t in 0..=2 * SILENT_S {
+            assert_eq!(q.observe(t, false, &one(2)), None);
+        }
     }
 
     #[test]
