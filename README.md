@@ -11,9 +11,9 @@
 <p align="center">
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue"></a>
   <img alt="Rust" src="https://img.shields.io/badge/rust-stable%20%2B%20esp-orange">
-  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-631%20passed-brightgreen">
+  <img alt="Tests" src="https://img.shields.io/badge/host%20tests-637%20passed-brightgreen">
   <img alt="Chip" src="https://img.shields.io/badge/chip-ESP32--S3-lightgrey">
-  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.42-7B5CFF"></a>
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.43-7B5CFF"></a>
 </p>
 
 ---
@@ -47,7 +47,7 @@ crates that run under `cargo test` against a simulated chain and a scripted
 I²C bus, so most of the firmware is tested on a laptop before it touches a
 miner.
 
-> **Status: early (v0.1.42).** It mines 24/7 under WarpTune on five
+> **Status: early (v0.1.43).** It mines 24/7 under WarpTune on five
 > boards, one of each: Bitaxe Gamma (since 25 September), NerdQAxe++ (Rev
 > 6.1, on Stratum V2), NerdOCTAXE-γ (Rev 3.1, 6-phase regulator, since 28
 > September), NerdAxe Gaia and BitForge Nano (since 29 September); since
@@ -87,7 +87,7 @@ move fast; corrections welcome.
 | Chips that stop returning nonces | reported per chip (`hashrateMonitor`), no reaction, also not when all stop | reported per chip; with no share answer from the pool for an hour, a watchdog restarts the miner | not found | all chips silent for a minute: the chain is restarted; **one chip silent for ten minutes** while the others hash: the chain is restarted too (at most once an hour, the chip left alone after three restarts that do not hold; since v0.1.40) |
 | One hash domain of a chip stuck while the chip hashes | reported per domain (`hashrateMonitor`), judged in the self-test only | reported per domain, no reaction | not found | **a domain under 25 % of the chip's other domains for ten minutes**, or since v0.1.42 under 5 % three minutes after the chain came up: the chips are switched off and on (at most one intervention an hour, shared with the silent-chip restart; the domain left alone after three that do not hold, until a new clock or voltage or the next boot; since v0.1.41) |
 | Self-test | yes, instead of mining: after a factory flash (NVS flag) or with the boot key held; a mock job, 30 s hashrate and per-domain counters, core and input voltage, power, fan, temperature; stops at the first failure; PASS/FAIL on the display only | factory flash only (NVS flag), at boot before Wi-Fi: chips found vs expected; input power and core voltage as warnings; hashrate not checked; result on the display only | factory flash only (NVS flag), instead of mining: PSRAM, input, regulator, reference voltages, chips found vs expected, 5 s hashrate (at least 40 % of expected), core voltage, power; result on the two LEDs only | yes, while mining, on a click (without work from a pool the hash checks are skipped, not failed): nine checks with their figures (chips, hash counters per chip and domain, error rate, core voltage, regulator, fan, temperatures, input) in the web UI, on the display and in the API ([`docs/10`](docs/10-Self-test-diagnostics-and-event-log.md)) |
-| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38) |
+| Diagnostics file for support | no (log download, up to 512 KB kept on the device) | no (log download of what the open log view received) | no (log download of what the open log view received) | yes: one JSON with state, settings (no passwords, addresses masked), self-test, events and the last log lines; the core dump as a second download (passwords, Wi-Fi name and worker names masked since v0.1.38, MAC addresses down to the maker's prefix since v0.1.43) |
 | Event log across restarts | no (last reset reason; the log survives a soft restart, not a power cycle) | no (last reset reason; optional Discord alert after a no-share reboot) | no | yes: the last 32 events with time (restarts with reason, overheat and regulator stops, pool switches, updates, rollbacks, silent chips, self-tests, board checks, found blocks) in NVS, shown in the web UI's language |
 | Notice after a crash | no (reset reason on the System page) | no (reset reason on the System page) | no | yes: a banner after a panic or watchdog, with the reason, the time, the diagnostics file and the core dump if this crash wrote one, until dismissed |
 | Overheat stop lines | chip 75 °C, regulator 105 °C, fixed | chip 70 °C (a setting, 50–90), regulator 70 °C on the two-fan boards, none on the one-fan NerdAxe boards | chip 75 °C (either of the two chips), regulator 105 °C, fixed | the stock firmware's lines per board (`docs/08`); the chip line a setting (50 °C up to the board's line; on the NerdOS boards up to 90), the regulator's fixed per board (105 °C on the Bitaxe boards, the BitForge Nano and the one-fan NerdAxe boards, 70 °C on the two-fan Nerd boards as NerdOS); the Nano's chips read on ForgeOS's diode scale since v0.1.36 |
@@ -360,6 +360,11 @@ back at any time with `GET /api/v1/display/frame`.
   every five minutes brings it back as soon as the main pool answers.
   Since v0.1.42 a fallback that fails twice in a row no longer keeps the
   miner to itself: both pools are tried in turn until one sends work.
+  Since v0.1.43 an attempt made while Wi-Fi is not connected yet does not
+  count towards the switch (a cold boot with a slow access point stays on
+  the main pool), and shares on the fallback name the fallback's worker;
+  before, they carried the main pool's, and a pool that checks the name
+  (ckpool: "Worker mismatch") rejected them when the two differed.
 - **No pool, no hashing** (since v0.1.42): when neither the main pool nor
   (where one is set) the fallback pool answers — at least two failed
   attempts on each and a minute since the first, so a Wi-Fi or pool
@@ -439,7 +444,17 @@ back at any time with `GET /api/v1/display/frame`.
   (its chip has no stop line of its own, and a reboot must not take the
   protection away), with a line in the log and the board's notice
   (`boardError`), and the chips keep running. When the diode reads
-  after all, everything is as normal. `temp` is the hotter chip, `temp2` the
+  after all, everything is as normal. Since v0.1.43 a diode stuck at the
+  sensor's ceiling (127.875 °C, the EMC2103's highest raw value) counts as
+  no reading, and in the first three readings after the chips start (rail
+  on, reset, chain init) a second diode over the line is held with the
+  fans at full instead of stopping the chips: while the chips are off,
+  diode 1 reads the ceiling, and the EMC2103's own averaging over four
+  conversions still carries those values for about a second after the
+  start (a user's Gamma Turbo stopped on every boot until then; AxeOS
+  never switches the rail off at boot, so it does not see them). A second
+  diode still over the line after that stops as before; the first chip's
+  diode keeps its stop on the first reading. `temp` is the hotter chip, `temp2` the
   second chip's own (AxeOS's field, -1 without a reading) and
   `asicTemps` both. On the Gamma Hex the other diode (diode 1) is not
   taken for a chip.
@@ -845,7 +860,7 @@ back at any time with `GET /api/v1/display/frame`.
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV: 2.53 TH/s at 37–38 A, just below ForgeOS v1.7's Power preset of 636 MHz / 1160 mV (610 MHz / 1200 mV since v1.8)); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
-| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers); free clock values with `?oc` as on the Gamma |
+| Bitaxe Gamma Turbo (801) | 2× BM1370 | 2× TPS546 | profile; runs at a user's since 2026-10-01 (v0.1.11), not on our bench (a pair at 850 MHz / 1250 mV under AXP90 coolers; both chips' diodes read since v0.1.42, the start without a false overheat stop since v0.1.43); free clock values with `?oc` as on the Gamma |
 | Bitaxe Naja Duo (1201) | 2× BM1373 | 2× TPS546 (two domains) | profile only, not run yet; free values up to 600 MHz, the maker's documented overclock (600 MHz / 1120 mV, untested by us) |
 | Bitaxe Gamma Hex (1300) | 6× BM1370 | 4× TPS546 (two domains) | profile only, not run yet; only the EMC2103's diode 2 is read as the chip temperature (ESP-Miner also acts on diode 1: to be settled before its first run) |
 | NerdAxe Gamma | 1× BM1370 | TPS546 | profile only, not run yet |
