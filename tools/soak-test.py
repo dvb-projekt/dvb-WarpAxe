@@ -125,7 +125,8 @@ def soak(host, minutes, expect):
     say(f"watching {i.get('version')} for {minutes} min "
         f"(uptime {boot_uptime} s, reset reason {i.get('resetReason')})")
     last_up, misses, checked = boot_uptime, 0, False
-    end = time.time() + minutes * 60
+    start = time.time()
+    end = start + minutes * 60
     while time.time() < end:
         time.sleep(10)
         try:
@@ -145,6 +146,15 @@ def soak(host, minutes, expect):
             checked = True
             say(f"update watcher checked at uptime {u['checked_uptime_s']} s: "
                 f"latest {(u.get('latest') or {}).get('tag')}, error {u.get('error')!r}")
+    # A restart between two polls can hide behind an uptime that grew
+    # past the last one seen (a Naja Duo panicked 37 s after its boot on
+    # 2026-11-12 and still passed): the uptime at the end must cover the
+    # whole watch.
+    watched = time.time() - start
+    if i["uptimeSeconds"] < boot_uptime + watched - 30:
+        fail(f"restarted during the watch (uptime {i['uptimeSeconds']} s after "
+             f"{watched:.0f} s of watching from uptime {boot_uptime} s, "
+             f"reset reason {i.get('resetReason')})")
     if not checked:
         fail("the update watcher never ran a check")
     if i["hashRate_10m"] <= 0:
