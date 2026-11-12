@@ -215,6 +215,11 @@ static NOTIFY: Mutex<Option<(Feed, u64, u64)>> = Mutex::new(None);
 static EXTRANONCE2: Mutex<u32> = Mutex::new(0);
 static SUBMIT: Mutex<Option<Sender<Outgoing>>> = Mutex::new(None);
 static NEXT_ID: Mutex<u64> = Mutex::new(100);
+/// The worker the running V1 session authorized as: `mining.submit`
+/// names it. On the fallback that is the fallback's worker, not the main
+/// pool's (ckpool rejected every share with "Worker mismatch" when the
+/// two differ).
+static SESSION_USER: Mutex<String> = Mutex::new(String::new());
 
 /// Keep a job's payout; a job that does not parse clears it rather than
 /// leaving the previous pool's split on show.
@@ -317,7 +322,10 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
             version: job.version ^ version_bits,
         }
     } else {
-        let user = config::get().stratum_user;
+        let user = {
+            let u = SESSION_USER.lock().unwrap();
+            if u.is_empty() { config::get().stratum_user } else { u.clone() }
+        };
         let id = {
             let mut g = NEXT_ID.lock().unwrap();
             *g += 1;
@@ -492,6 +500,11 @@ fn run() {
         };
         let pool = format!("{host}:{port}");
         let sv2 = v2.is_some();
+        *SESSION_USER.lock().unwrap() = user.clone();
+        // Without a network a pool cannot answer: such an attempt says
+        // nothing about the pool and does not count towards the
+        // fallback (a cold boot whose Wi-Fi took a minute switched to it).
+        let net_up = crate::net::state().wifi_connected;
         update(|s| {
             s.pool = pool.clone();
             s.using_fallback = on_fallback;
@@ -550,8 +563,10 @@ fn run() {
             if CLOCK_UNSURE.swap(false, Ordering::Relaxed) {
                 log::warn!("stratum: the pool certificate failed against a clock NTP has not set yet: not counted towards the fallback");
             } else {
-                if !on_fallback {
+                if !on_fallback && net_up {
                     fails += 1;
+                } else if !net_up {
+                    log::info!("stratum: no Wi-Fi yet: not counted towards the fallback");
                 }
                 pools(|w, now| w.failed(now, on_fallback, fallback_ok));
             }
