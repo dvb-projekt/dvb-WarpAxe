@@ -1428,10 +1428,7 @@ fn device(c: &mut Canvas, pos: usize, total: usize) {
     );
     if novr {
         // Delivered against small cores × clock, as the API's yieldPercent.
-        let exp = f64::from(board::chip().small_cores)
-            * f64::from(m.frequency_hz)
-            * f64::from(m.chips.max(1))
-            / 1e9;
+        let exp = m.expected_hs(board::chip().small_cores) / 1e9;
         let eff = if exp > 0.0 && m.hashrate_ghs > 0.0 {
             format!("{} %", num((m.hashrate_ghs / exp * 100.0).min(999.0), 0))
         } else {

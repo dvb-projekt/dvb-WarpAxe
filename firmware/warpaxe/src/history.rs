@@ -115,10 +115,7 @@ pub fn recent_power_w(n: usize) -> Vec<f32> {
 /// zero rate would be a spike that flattens the rest of the hour.
 pub fn recent_eff_jth(n: usize) -> Vec<f32> {
     let m = miner::state();
-    let expected = f64::from(board::chip().small_cores)
-        * f64::from(m.frequency_hz)
-        * f64::from(m.chips.max(1))
-        / 1e9;
+    let expected = m.expected_hs(board::chip().small_cores) / 1e9;
     let floor = (expected as f32 * 0.1).max(1.0);
     let v: Vec<f32> = recent(n, |s| {
         if s.hashrate_10m_ghs > 1.0 {

@@ -306,6 +306,13 @@ fn perform(cfg: &config::Config) -> Outcome {
             expected,
             &Limits::DEFAULT,
         ));
+        // A chip with a clock of its own (`chipFreqOffsets`) is judged
+        // at that clock; without offsets these are the figure above.
+        for (c, &hz) in m.chip_clocks().iter().enumerate() {
+            w.set_chip_expected(c, f32::from(chip.small_cores) * hz as f32 / 1e9);
+        }
+        // Another clock for one chip in the window is a changed point.
+        let offsets = miner::chip_offsets_request();
         update(|r| {
             r.state = State::Running {
                 step: "hashrate",
@@ -317,7 +324,7 @@ fn perform(cfg: &config::Config) -> Outcome {
             if !wait(Duration::from_secs(1)) {
                 return Err("cancelled");
             }
-            if !point_unchanged(cfg) {
+            if !point_unchanged(cfg) || miner::chip_offsets_request() != offsets {
                 return Err("pointChanged");
             }
             if board::chain_stopped() {
@@ -429,9 +436,9 @@ fn finish(id: u32, outcome: Outcome, took: Duration) {
             let chips = window
                 .as_ref()
                 .map(|w| {
-                    let expected = w.expected_chip_ghs();
                     (0..usize::from(w.chips()))
                         .map(|c| {
+                            let expected = w.expected_chip_ghs(c);
                             let ghs = w.chip_ghs(c);
                             let doms: Vec<f32> = (0..usize::from(w.domains()))
                                 .map(|d| {

@@ -359,6 +359,11 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
         .map(f64::from_bits)
         .filter(|v| v.is_finite() && *v >= 0.0)
         .unwrap_or(0.0);
+    // The clock offsets per chip.
+    let mut buf = [0u8; CHIP_OFFSETS_BYTES];
+    if let Ok(Some(bytes)) = nvs.get_raw(CHIP_OFFSETS_KEY, &mut buf) {
+        *CHIP_OFFSETS.lock().unwrap() = ChipOffsets::from_bytes(bytes);
+    }
     // Read once here, on the main task: a thread whose stack is in PSRAM must
     // not touch flash (the cache is off while it reads), and the update
     // watcher is such a thread (0.1.5 rebooted every minute once the record
@@ -623,6 +628,87 @@ fn slow_write(what: &str, t0: std::time::Instant) {
     if ms >= 100 {
         log::warn!("config: storing {what} took {ms} ms (a page erase; the interrupt watchdog allows 1000)");
     }
+}
+
+const CHIP_OFFSETS_KEY: &str = "chipoffs";
+const CHIP_OFFSETS_BYTES: usize = 1 + 2 * warpaxe_chain::MAX_CHIPS;
+/// The stored offsets, read once at boot (`init`): the mining loop
+/// must not read flash on a PSRAM stack.
+static CHIP_OFFSETS: Mutex<ChipOffsets> = Mutex::new(ChipOffsets::NONE);
+
+/// Clock offsets per chip, MHz: `mhz[..len]` count, the rest is 0.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct ChipOffsets {
+    pub mhz: [i16; warpaxe_chain::MAX_CHIPS],
+    pub len: usize,
+}
+
+impl ChipOffsets {
+    /// No chip has an offset.
+    pub const NONE: Self = Self {
+        mhz: [0; warpaxe_chain::MAX_CHIPS],
+        len: 0,
+    };
+
+    /// The entries that count.
+    pub fn list(&self) -> &[i16] {
+        &self.mhz[..self.len.min(self.mhz.len())]
+    }
+
+    /// As stored: the count, then every entry in two bytes.
+    fn bytes(&self) -> [u8; CHIP_OFFSETS_BYTES] {
+        let mut out = [0u8; CHIP_OFFSETS_BYTES];
+        out[0] = self.len as u8;
+        for i in 0..warpaxe_chain::MAX_CHIPS {
+            let [lo, hi] = self.mhz[i].to_le_bytes();
+            out[1 + 2 * i] = lo;
+            out[2 + 2 * i] = hi;
+        }
+        out
+    }
+
+    /// From the stored bytes; none for a record of another length.
+    fn from_bytes(b: &[u8]) -> Self {
+        let mut out = Self::NONE;
+        if b.len() == CHIP_OFFSETS_BYTES && usize::from(b[0]) <= warpaxe_chain::MAX_CHIPS {
+            out.len = usize::from(b[0]);
+            for i in 0..warpaxe_chain::MAX_CHIPS {
+                out.mhz[i] = i16::from_le_bytes([b[1 + 2 * i], b[2 + 2 * i]]);
+            }
+        }
+        out
+    }
+}
+
+/// A clock of its own per chip (`chipFreqOffsets` in the API): MHz
+/// added to `frequency` for the chip at that place in the chain (from
+/// 0), negative for a slower chip. Empty (the default) = every chip at
+/// `frequency`; otherwise one entry per chip
+/// (`warpaxe_chain::offsets::normalise`), so a list from a board with
+/// another chip count is told apart and dropped. Carried out by the
+/// chain driver without a restart; the search for the values is a
+/// tuner's, not the firmware's. Its own NVS key (the count, then two
+/// bytes per chip): a tuner changes it often and the config document
+/// stays as it is.
+pub fn chip_offsets() -> ChipOffsets {
+    *CHIP_OFFSETS.lock().unwrap()
+}
+
+/// Store the offsets (already in their stored form); `false` and no
+/// flash write when they are the ones in force. A flash write otherwise:
+/// internal-stack callers only (the API).
+pub fn set_chip_offsets(new: ChipOffsets) -> bool {
+    let mut g = CHIP_OFFSETS.lock().unwrap();
+    if *g == new {
+        return false;
+    }
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if nvs.set_raw(CHIP_OFFSETS_KEY, &new.bytes()).is_err() {
+            log::warn!("config: storing the clock offsets failed");
+        }
+    }
+    *g = new;
+    true
 }
 
 const SWARM_KEY: &str = "swarm";

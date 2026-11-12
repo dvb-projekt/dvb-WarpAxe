@@ -70,6 +70,11 @@ pub struct MinerState {
     pub phase: String,
     pub chips: u8,
     pub frequency_hz: u32,
+    /// The clock each chip runs at, Hz, chain order: `frequency_hz`
+    /// plus the chip's own offset; `[..chips]` count. All 0 without a
+    /// chain (the CPU miner). `asicFrequencies` in the API.
+    #[serde(skip)]
+    pub chip_hz: [u32; warpaxe_chain::MAX_CHIPS],
     pub difficulty: u32,
     pub nonces: u64,
     pub low_diff: u64,
@@ -152,6 +157,28 @@ pub struct MinerState {
     pub last_block: Option<(u64, u64)>,
 }
 
+impl MinerState {
+    /// What the chips are expected to hash, H/s: small cores × clock,
+    /// chip by chip at its own clock. Without per-chip clocks to go by
+    /// (no chain yet, the CPU miner) the chain's clock times the chips,
+    /// which is the same figure whenever no chip has an offset.
+    #[inline(never)]
+    pub fn expected_hs(&self, small_cores: u16) -> f64 {
+        let own: f64 = self.chip_clocks().iter().map(|&hz| f64::from(hz)).sum();
+        let hz = if own > 0.0 {
+            own
+        } else {
+            f64::from(self.frequency_hz) * f64::from(self.chips.max(1))
+        };
+        f64::from(small_cores) * hz
+    }
+
+    /// The clock of each chip on the chain, Hz.
+    pub fn chip_clocks(&self) -> &[u32] {
+        &self.chip_hz[..usize::from(self.chips).min(self.chip_hz.len())]
+    }
+}
+
 static STATE: Mutex<Option<MinerState>> = Mutex::new(None);
 /// Clock the API asked for (MHz); the loop applies it as a ramp without
 /// restarting the chain. 0 until the chain has started.
@@ -184,15 +211,68 @@ static CLOCK_NOW_HZ: AtomicU32 = AtomicU32::new(0);
 /// the chain and its ramp over. 0 when none has.
 static SETTLED_MHZ: AtomicU32 = AtomicU32::new(0);
 
+/// Counts the requests for per-chip clock offsets (`chipFreqOffsets`,
+/// kept by `config::chip_offsets`, which is where the loop reads them):
+/// the loop hands the list to the chain when this moves.
+static OFFSETS_GEN: AtomicU32 = AtomicU32::new(0);
+/// The [`OFFSETS_GEN`] request every chip's clock has arrived at.
+static OFFSETS_SETTLED_GEN: AtomicU32 = AtomicU32::new(0);
+
+/// The [`OFFSETS_GEN`] of this moment: another one later says the
+/// offsets were asked for anew in between.
+pub fn chip_offsets_request() -> u32 {
+    OFFSETS_GEN.load(Ordering::SeqCst)
+}
+
+/// New clock offsets per chip are stored: the loop ramps the chips
+/// concerned there without restarting the chain. Before the
+/// voltage that may come with them is released, like a clock
+/// ([`request_frequency`]): from this store on the board task sees a
+/// chip's ramp under way and holds a voltage drop until it is over.
+pub fn request_chip_offsets() {
+    OFFSETS_GEN.fetch_add(1, Ordering::SeqCst);
+}
+
 /// The clock as the board task needs it to time a voltage drop: what is
 /// asked for, what the chips have arrived at, what they run at now.
 pub fn clock() -> warpaxe_board::core_hold::Clock {
+    // A request for per-chip offsets that the chips have not arrived at
+    // yet: nothing has settled, whatever the chain's own clock says.
+    let chip_ramp =
+        OFFSETS_GEN.load(Ordering::SeqCst) != OFFSETS_SETTLED_GEN.load(Ordering::Relaxed);
     warpaxe_board::core_hold::Clock {
         wanted_mhz: WANTED_MHZ.load(Ordering::SeqCst),
-        settled_mhz: SETTLED_MHZ.load(Ordering::Relaxed),
+        settled_mhz: if chip_ramp {
+            0
+        } else {
+            SETTLED_MHZ.load(Ordering::Relaxed)
+        },
         now_hz: CLOCK_NOW_HZ.load(Ordering::Relaxed),
         unreachable: CLOCK_UNREACHABLE.load(Ordering::Relaxed),
+        chip_ramp,
     }
+}
+
+/// The stored clock offsets as the chain gets them: the list as it is
+/// when it has one entry per chip that answered (`chips` 0: not counted
+/// yet); none, with a word in the log, when it does not. Offsets for
+/// another chip count are from another board, or the places in the
+/// chain are not the ones they were found for.
+///
+/// The board's limits are the API's to keep, for a new list and for a
+/// new clock alike. A clock replaced at boot or stepped down after an
+/// overheat stop only ever lowers every chip's own clock, and one that
+/// ends without a PLL setting is left at the chain's by the driver.
+fn offsets_for(chips: u8) -> config::ChipOffsets {
+    let stored = config::chip_offsets();
+    if stored.len == 0 || chips == 0 || stored.len == usize::from(chips) {
+        return stored;
+    }
+    log::warn!(
+        "miner: {chips} chip(s) answered, the clock offsets are for {}: every chip at the chain's clock",
+        stored.len
+    );
+    config::ChipOffsets::NONE
 }
 
 /// The configured clock under the overheat step, if one is in force.
@@ -451,7 +531,15 @@ pub fn state() -> MinerState {
 
 fn update(f: impl FnOnce(&mut MinerState)) {
     let mut g = STATE.lock().unwrap();
-    f(g.get_or_insert_with(MinerState::default));
+    f(state_mut(&mut g));
+}
+
+/// The state, made on first use. One copy of that in the image: inlined
+/// into every `update` it cost 20 KB of flash once the state had grown
+/// by two lists (measured 2026-11-12).
+#[inline(never)]
+fn state_mut(state: &mut Option<MinerState>) -> &mut MinerState {
+    state.get_or_insert_with(MinerState::default)
 }
 
 /// The CPU miner (a T-Display-S3 without chips) reports into the same
@@ -556,6 +644,10 @@ fn run(mut uart: ChipUart) {
         // store would be overwritten by it, so the config is read again
         // afterwards: the request has changed it (the PATCH saves, then
         // asks), and the store is done over with the new clock.
+        // The offsets request the chain starts with, read before the
+        // config: one that lands in between is seen as new by the loop
+        // and handed over again (the same list: nothing happens).
+        let mut applied_offsets_gen = OFFSETS_GEN.load(Ordering::SeqCst);
         let (cfg, start_mhz) = loop {
             let cfg = config::get();
             let start_mhz = capped_mhz(cfg.frequency);
@@ -615,6 +707,11 @@ fn run(mut uart: ChipUart) {
             ..ChainConfig::for_profile(board::chip())
         };
         let mut chain = Chain::new(board::chip(), chain_cfg);
+        // Each chip's own clock is part of the bring-up ramp: no chip
+        // passes its clock on the way up.
+        // (What each chip then runs at is in `asicFrequencies`.)
+        let mut chip_offsets = offsets_for(0);
+        chain.set_chip_offsets(chip_offsets.list());
         if start_mhz != cfg.frequency {
             log::warn!(
                 "miner: chain starts at {start_mhz} MHz under the overheat step, not the configured {} MHz",
@@ -782,6 +879,10 @@ fn run(mut uart: ChipUart) {
                     }
                     Event::Enumerated { count } => {
                         log::info!("miner: {count} chip(s) answered");
+                        // Before the ramp: offsets for another chip
+                        // count are no chip's here. Looked at again
+                        // below, now that the chips are counted.
+                        applied_offsets_gen = applied_offsets_gen.wrapping_sub(1);
                         // A second chip's diode reads from about here
                         // on: its settle window counts from the answer.
                         board::chips_started();
@@ -947,6 +1048,15 @@ fn run(mut uart: ChipUart) {
                 };
                 applied_mhz = want_mhz;
             }
+            // New clock offsets per chip, in every phase like the clock:
+            // the chain ramps each chip concerned to its own.
+            let offsets_gen = OFFSETS_GEN.load(Ordering::SeqCst);
+            if offsets_gen != applied_offsets_gen {
+                applied_offsets_gen = offsets_gen;
+                chip_offsets = offsets_for(chain.chip_count());
+                // Nothing happens for the list the chain already has.
+                chain.set_chip_offsets(chip_offsets.list());
+            }
             // The request is with the chain and its ramp is over: from
             // here a lower voltage that came with it may go. A clock the
             // PLL cannot make never settles, and the board keeps such a
@@ -955,6 +1065,8 @@ fn run(mut uart: ChipUart) {
             CLOCK_UNREACHABLE.store(!clock_reachable, Ordering::Relaxed);
             if clock_reachable && applied_mhz == want_mhz && chain.clock_settled() {
                 SETTLED_MHZ.store(want_mhz, Ordering::Relaxed);
+                // Every chip is at its own clock too.
+                OFFSETS_SETTLED_GEN.store(applied_offsets_gen, Ordering::Relaxed);
             }
             if chain.accepting_work() {
                 // A register scan from the API: one read per pass (a burst
@@ -1135,6 +1247,9 @@ fn run(mut uart: ChipUart) {
             update(|s| {
                 s.chips = chain.chip_count();
                 s.frequency_hz = chain.frequency_hz();
+                for (own, &hz) in s.chip_hz.iter_mut().zip(chain.chip_frequencies_hz()) {
+                    *own = hz;
+                }
                 let st = chain.stats();
                 s.chain_stats = format!("{st:?}");
                 s.stale = st.stale_local;
@@ -1212,6 +1327,10 @@ fn run(mut uart: ChipUart) {
                 let now_s = diag::uptime_s();
                 lone.set_point(cfg.frequency, mv);
                 latch.set_point(cfg.frequency, mv);
+                // A chip given another clock of its own is at a new
+                // point too, that chip alone.
+                lone.set_chip_offsets(chip_offsets.list());
+                latch.set_chip_offsets(chip_offsets.list());
                 let verdict = lone.observe(now_s, working, flags);
                 let shown = state();
                 // Also after a new point gave given-up chips another chance.

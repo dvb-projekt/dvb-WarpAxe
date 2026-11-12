@@ -106,11 +106,9 @@ pub fn system_info() -> serde_json::Value {
     let tls_pending_main = stratum::tls_pending(false);
     let tls_pending_fb = stratum::tls_pending(true);
     #[allow(unused_mut)]
-    // Delivered against small cores × clock (see yieldPercent below).
-    let expected_ghs = f64::from(board::chip().small_cores)
-        * f64::from(m.frequency_hz)
-        * f64::from(m.chips.max(1))
-        / 1e9;
+    // Delivered against small cores × clock (see yieldPercent below),
+    // each chip at its own clock.
+    let expected_ghs = m.expected_hs(board::chip().small_cores) / 1e9;
     let yield_percent = (expected_ghs > 0.0 && m.hashrate_ghs > 0.0)
         .then(|| (f64::from(m.hashrate_ghs) / expected_ghs * 100.0).min(999.0));
     let mut v = json!({
@@ -139,7 +137,7 @@ pub fn system_info() -> serde_json::Value {
         "overheat_temp": profile.chip_limit_c(cfg.overheat_temp).round() as u32, "overheatTempMax": profile.chip_stop_max_c().round() as u32,
         "hashRate": m.hashrate_ghs, "hashRate_10m": m.hashrate_ghs, "hashRate_now": m.hashrate_now_ghs,
         "hashrateMonitor": { "asics": m.hashrate_monitor }, "errorPercentage": m.error_percent, "errorPercentage1m": m.error_percent_1m,
-        "expectedHashrate": f64::from(board::chip().small_cores) * f64::from(m.frequency_hz) * f64::from(m.chips.max(1)) / 1e9,
+        "expectedHashrate": expected_ghs,
         // What the chips deliver against small cores × clock, from the
         // nonce-weighted ten-minute figure: a chip without an error counter
         // (the BM1397) shows a failing core only as missing nonces, so this
@@ -253,6 +251,22 @@ pub fn system_info() -> serde_json::Value {
     // ten minutes), and the domains left alone after three resets that
     // did not hold (until a new clock or voltage, or the next boot).
     // Chips and domains from 0.
+    // A clock of its own per chip: the offsets as set (MHz added to
+    // `frequency` per chip from 0; empty = none) and the clock every
+    // chip runs at now, MHz on the PLL's grid, in the order of
+    // `hashrateMonitor.asics`: the chain's clock on every chip while a
+    // list that does not fit the chips that answered is not in force.
+    // `expectedHashrate` is the sum over the chips at these clocks.
+    v["chipFreqOffsets"] = config::chip_offsets()
+        .list()
+        .iter()
+        .map(|&mhz| serde_json::Value::from(mhz))
+        .collect();
+    v["asicFrequencies"] = m
+        .chip_clocks()
+        .iter()
+        .map(|&hz| serde_json::Value::from(f64::from(hz) / 1e6))
+        .collect();
     v["domainLatchResets"] = json!(m.domain_latch_resets);
     v["lastDomainLatchReset"] = m.last_domain_latch_reset.map_or(serde_json::Value::Null, |(chip, domain, percent, at)| json!({"chip": chip, "domain": domain, "percent": percent, "uptime_s": at}));
     v["domainsGivenUp"] = m.domains_given_up.iter().map(|(c, d)| json!({"chip": c, "domain": d})).collect();
@@ -428,6 +442,9 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
             return Some(why);
         }
     }
+    if let Some(why) = chip_offsets_refuse(v, &p) {
+        return Some(why);
+    }
     if let Some(mv) = v.get("coreVoltage").and_then(|m| m.as_u64()) {
         // Never a core voltage below the regulator's clean range,
         // whatever the board's own choices say (`regulatorMinMv`).
@@ -446,6 +463,79 @@ fn limits_refuse(v: &serde_json::Value) -> Option<String> {
         }
     }
     expert_refuse(v).or_else(|| display_refuse(v))
+}
+
+/// The clock offsets per chip a PATCH carries (`chipFreqOffsets`, whole
+/// MHz), in their stored form: one entry per chip of this board or
+/// none. `Err` for anything that is not a list of them.
+fn patched_offsets(v: &serde_json::Value) -> Option<Result<config::ChipOffsets, ()>> {
+    let list = v.get("chipFreqOffsets")?;
+    let mut mhz = [0i16; warpaxe_chain::MAX_CHIPS];
+    for (k, x) in list.as_array().map_or(&[][..], |a| a).iter().enumerate() {
+        let Some(n) = x.as_i64().and_then(|m| i16::try_from(m).ok()) else {
+            return Some(Err(()));
+        };
+        // Past the longest chain: no chip's, as past this board's.
+        if let Some(o) = mhz.get_mut(k) {
+            *o = n;
+        }
+    }
+    if !list.is_array() {
+        return Some(Err(()));
+    }
+    let (mhz, len) = warpaxe_chain::offsets::normalise(&mhz, usize::from(board::chips_expected()));
+    Some(Ok(config::ChipOffsets { mhz, len }))
+}
+
+/// The PATCH names another board than the one running: its chips are
+/// not the ones the stored offsets are for.
+fn other_board(v: &serde_json::Value) -> bool {
+    v.get("boardModel")
+        .is_some_and(|b| b != board::profile().name)
+}
+
+/// Every chip's own clock, the chain's plus its offset, within the
+/// board's limits and with a PLL setting (`warpaxe_chain::offsets`):
+/// for new offsets against the clock that comes with them or the one
+/// set, and for a new clock against the offsets that stay.
+fn chip_offsets_refuse(
+    v: &serde_json::Value,
+    p: &warpaxe_board::profile::Choices,
+) -> Option<String> {
+    let clock = v.get("frequency").and_then(|f| f.as_u64());
+    let offsets = match patched_offsets(v) {
+        Some(Ok(list)) => list,
+        Some(Err(())) => return Some("chipFreqOffsets: a list of whole MHz per chip".into()),
+        // Dropped with the change of board (`store_chip_offsets`).
+        None if clock.is_none() || other_board(v) => return None,
+        None => config::chip_offsets(),
+    };
+    let base = clock
+        .and_then(|f| u32::try_from(f).ok())
+        .unwrap_or_else(|| config::get().frequency);
+    warpaxe_chain::offsets::check(
+        &board::chip().pll,
+        base,
+        offsets.list(),
+        board::MIN_FREQUENCY_MHZ,
+        p.abs_max_frequency_mhz,
+    )
+    .err()
+    .map(|why| why.to_string())
+}
+
+/// After a PATCH went through: its clock offsets per chip stored and
+/// handed to the mining loop; the stored ones dropped when the PATCH
+/// names another board.
+fn store_chip_offsets(v: &serde_json::Value) {
+    let new = match patched_offsets(v) {
+        _ if other_board(v) => config::ChipOffsets::NONE,
+        Some(Ok(list)) => list,
+        _ => return,
+    };
+    if config::set_chip_offsets(new) {
+        miner::request_chip_offsets();
+    }
 }
 
 /// A clock below [`board::MIN_FREQUENCY_MHZ`], or one the chip's PLL
@@ -946,6 +1036,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     if v.get("frequency").is_some() {
                         miner::request_frequency(cfg.frequency);
                     }
+                    // Before the voltage below, like the clock.
+                    store_chip_offsets(&v);
                     // Any pool field (main or fallback, the fallback
                     // switch, the suggested difficulty): the session is
                     // rebuilt from the new config at once.
