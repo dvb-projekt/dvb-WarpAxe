@@ -609,5 +609,7 @@
   "blk_st_confirmed": "Confirmé : le job suivant du pool s’appuie dessus",
   "blk_st_orphaned": "Orphelin : le réseau a continué avec un autre bloc",
   "blk_st_unknown": "Inconnu : le mineur a été hors ligne entre-temps, la vérification n’est plus possible ici",
-  "evd_block_unknown": "bloc {h} : état inconnu, le mineur a été hors ligne entre-temps et la vérification n’est plus possible"
+  "evd_block_unknown": "bloc {h} : état inconnu, le mineur a été hors ligne entre-temps et la vérification n’est plus possible",
+  "cfo": "Fréquence par puce",
+  "cfo_live": "{f} MHz · {e} d'erreurs"
 }

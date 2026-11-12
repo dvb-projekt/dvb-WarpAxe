@@ -609,5 +609,7 @@
   "blk_st_confirmed": "已确认：矿池的下一个任务基于此区块",
   "blk_st_orphaned": "孤块：网络在另一个区块上继续延伸",
   "blk_st_unknown": "未知：矿机中途曾离线，此处已无法核实",
-  "evd_block_unknown": "区块 {h}：状态未知，矿机中途曾离线，已无法核实"
+  "evd_block_unknown": "区块 {h}：状态未知，矿机中途曾离线，已无法核实",
+  "cfo": "单芯片频率",
+  "cfo_live": "{f} MHz · 错误率 {e}"
 }

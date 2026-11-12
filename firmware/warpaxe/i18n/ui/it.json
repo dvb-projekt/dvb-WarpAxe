@@ -609,5 +609,7 @@
   "blk_st_confirmed": "Confermato: il lavoro successivo del pool si basa su di esso",
   "blk_st_orphaned": "Orfano: la rete ha proseguito con un altro blocco",
   "blk_st_unknown": "Sconosciuto: il miner è stato offline nel frattempo e qui non si può più verificare",
-  "evd_block_unknown": "blocco {h}: stato sconosciuto, il miner è stato offline nel frattempo e non si può più verificare"
+  "evd_block_unknown": "blocco {h}: stato sconosciuto, il miner è stato offline nel frattempo e non si può più verificare",
+  "cfo": "Frequenza per chip",
+  "cfo_live": "{f} MHz · {e} di errori"
 }
