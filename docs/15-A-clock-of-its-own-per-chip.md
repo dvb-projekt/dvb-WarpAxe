@@ -99,6 +99,8 @@ slip of the hand from parking a chip at next to nothing.
 | Field | Meaning |
 |---|---|
 | `chipFreqOffsetsSupported` | whether this board takes offsets at all |
+| `voltageDomains` | voltage domains in series behind the regulator: 1 = every chip on the full core voltage, more = chips in series |
+| `chipFreqOffsetSpread` | how far apart the chips' clocks may lie on a board with chips in series, MHz at the current clock (25, or 8 % of it where that is less); 0 = no such limit |
 | `chipFreqOffsets` | the stored list, MHz; `[]` = none |
 | `asicFrequencies` | the clock each chip runs at now, MHz on the PLL's grid, in the order of `hashrateMonitor.asics` |
 | `expectedHashrate` | the sum over the chips, each at its own clock |
@@ -298,7 +300,8 @@ read back, no chain restart counted):
 a chip that reset itself for want of voltage, its PLL never written,
 and nothing in the firmware took note. That is the "both slower" of the
 first run. It is also what makes balancing such a pair possible:
-slowing the chip with fewer errors a little helps the other.
+slowing a chip a little gives it a larger share of the voltage at the
+other's cost, so the chip with more errors is the one to slow.
 
 Two things follow in the firmware:
 

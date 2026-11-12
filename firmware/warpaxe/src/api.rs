@@ -261,6 +261,18 @@ pub fn system_info() -> serde_json::Value {
     // kind that can be written to alone (the BM1370 and the BM1373).
     v["chipFreqOffsetsSupported"] =
         json!(board::chips_expected() > 1 && board::chip().single_chip_clock);
+    // Voltage domains in series behind the regulator: 1 = every chip on
+    // the full core voltage (offsets only change a chip's own clock);
+    // more = chips in series, an offset shifts the voltage between them,
+    // and `chipFreqOffsetSpread` is how far apart their clocks may lie
+    // (MHz at the current clock; 0 = no such limit).
+    let domains = board::profile().voltage_domains.max(1);
+    v["voltageDomains"] = json!(domains);
+    v["chipFreqOffsetSpread"] = json!(if domains > 1 {
+        warpaxe_chain::offsets::series_spread_mhz(config::get().frequency)
+    } else {
+        0
+    });
     v["chipFreqOffsets"] = config::chip_offsets()
         .list()
         .iter()
