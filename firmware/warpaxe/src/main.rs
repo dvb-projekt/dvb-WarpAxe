@@ -85,9 +85,9 @@ static MARK_BITAXE: (i32, i32, &[u8]) =
 /// The Naja Duo's front silkscreen: the Bitaxe logo with "1201" (the
 /// board's KiCad layout, docs/brand/bitaxe).
 static MARK_NAJA: (i32, i32, &[u8]) = (
-    97,
-    42,
-    include_bytes!("splash/mark_bitaxe-naja-duo_97x42.rgb565a"),
+    124,
+    54,
+    include_bytes!("splash/mark_bitaxe-naja-duo_124x54.rgb565a"),
 );
 static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
@@ -131,16 +131,22 @@ fn draw_splash(d: &mut display::Display) {
                 "bitaxe-gamma-hex" => Some(MARK_BITAXE),
                 _ => None,
             };
+            // The Naja Duo shows its board's logo, larger and without the
+            // firmware line under it (Oliver, 2026-11-12).
+            let board_logo = profile.name == "bitaxe-naja-duo";
             if let Some((w, h, data)) = mark {
                 // Centred where the model name would stand.
+                let cy = if board_logo { 134 } else { 125 };
                 l.canvas()
-                    .sprite((WIDTH as i32 - w) / 2, 125 - h / 2, w, h, data);
+                    .sprite((WIDTH as i32 - w) / 2, cy - h / 2, w, h, data);
             } else {
                 let model = profile.model.to_ascii_uppercase();
                 l.text((WIDTH - text_width(&model, 2)) / 2, 122, 2, col, &model);
             }
-            let line = format!("FIRMWARE {version}");
-            l.text((WIDTH - text_width(&line, 1)) / 2, 148, 1, GREY, &line);
+            if !board_logo {
+                let line = format!("FIRMWARE {version}");
+                l.text((WIDTH - text_width(&line, 1)) / 2, 148, 1, GREY, &line);
+            }
         }
         display::Display::Oled(o) => {
             o.orient(
