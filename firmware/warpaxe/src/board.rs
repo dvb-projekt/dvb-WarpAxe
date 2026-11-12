@@ -179,6 +179,10 @@ static POWERED: AtomicBool = AtomicBool::new(true);
 /// edges and the chain's answer ([`chips_started`]). The board loop
 /// starts the second diode's settle window over at each (`chip_temps`).
 static CHIP_STARTS: AtomicU32 = AtomicU32::new(0);
+/// The chain has answered since the chips last came out of reset or
+/// the rail last came on. Until then a two-chip board's diodes are no
+/// reading (`chips_answered`).
+static CHIPS_ANSWERED: AtomicBool = AtomicBool::new(false);
 /// Set by an overheat reset: the board loop forgets its sensor-loss count.
 static CLEAR_LOST: AtomicBool = AtomicBool::new(false);
 /// Set by [`prepare_reset`]: the fans at full until the reset.
@@ -924,6 +928,16 @@ pub fn chips_started() {
     CHIP_STARTS.fetch_add(1, Ordering::Relaxed);
 }
 
+/// The chain answered (enumerated): from here a two-chip board's diodes
+/// read their chips. Before it, with the rail off or the chips in reset,
+/// the EMC2103 reads them as nonsense: a Gamma Turbo's first diode read
+/// 72.75 °C eleven seconds after a power-on and stopped the start over
+/// a 70 °C line, then 33.6 °C once its chip ran (John11, 2026-11-12);
+/// the second reads the top of the scale (`chip_temps`).
+pub fn chips_answered() {
+    CHIPS_ANSWERED.store(true, Ordering::Relaxed);
+}
+
 /// Pull the chain's reset low, then release it, with the given timing.
 /// Nothing happens on a board without a reset line. On a board with a
 /// `stock_reset_pulse` line (the NerdNOS's GPIO12) that line goes high
@@ -933,6 +947,7 @@ pub fn chips_started() {
 pub fn reset_chain(low_ms: u32, release_ms: u32) {
     // Before the pulse and at its release: a sample that falls inside
     // the pulse is in the window too.
+    CHIPS_ANSWERED.store(false, Ordering::Relaxed);
     chips_started();
     if let Some(pin) = RESET.lock().unwrap().as_ref() {
         pin.set(false);
@@ -2290,6 +2305,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // the rail off is not a lost sensor (a Gamma's chip diode
             // gives nothing without the chip's power).
             let rail_on = POWERED.load(Ordering::Relaxed);
+            // A two-chip board whose chips are not running yet: its
+            // diodes give no reading, which counts as with the rail off.
+            let mut diodes_idle = false;
             if let Some(t) = thermal.as_mut() {
                 let checked = |r: Result<f32, String>| {
                     r.and_then(|c| {
@@ -2305,6 +2323,14 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 // 75 °C and runs the fan on the hotter).
                 let acting = match t.second_chip_temp_c().map(checked) {
                     None => first,
+                    // The chips not running yet (rail off, in reset, the
+                    // chain not answered): neither diode reads its chip.
+                    // No reading, and none of a lost sensor's either.
+                    Some(_) if !CHIPS_ANSWERED.load(Ordering::Relaxed) => {
+                        diodes_idle = true;
+                        update(|s| s.chip_temps = vec![None, None]);
+                        Err("the chips are not running".to_string())
+                    }
                     Some(second) => {
                         let chips = [first.as_ref().ok().copied(), second.as_ref().ok().copied()];
                         update(|s| s.chip_temps = chips.to_vec());
@@ -2399,11 +2425,13 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     }
                     Err(e) => {
                         temp = None;
-                        sensor.sample(false, rail_on);
-                        // With the rail off this is no fault to report:
-                        // no notice, and one from before goes.
+                        let counted = rail_on && !diodes_idle;
+                        sensor.sample(false, counted);
+                        // With the rail off (or the chips not running)
+                        // this is no fault to report: no notice, and one
+                        // from before goes.
                         update(|s| {
-                            if rail_on {
+                            if counted {
                                 s.last_error = format!("temp: {e}");
                             } else if s.last_error.starts_with("temp:") {
                                 s.last_error.clear();
@@ -2523,6 +2551,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 hold_reset_without_regulator(profile, vr.is_none());
                 pf.disabled();
                 POWERED.store(false, Ordering::Relaxed);
+                CHIPS_ANSWERED.store(false, Ordering::Relaxed);
                 if let Some(t) = thermal.as_mut() {
                     t.set_fans(100, 100);
                 }
@@ -2618,6 +2647,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             hold_reset_without_regulator(profile, vr.is_none());
             pf.disabled();
             POWERED.store(false, Ordering::Relaxed);
+            CHIPS_ANSWERED.store(false, Ordering::Relaxed);
             log::warn!("board: core voltage off");
             // Off for want of a pool: a warm-up still under way is over
             // (its end would hand the fans to the PID from full duty,

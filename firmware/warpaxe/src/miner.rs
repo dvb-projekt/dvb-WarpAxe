@@ -886,6 +886,8 @@ fn run(mut uart: ChipUart) {
                         // A second chip's diode reads from about here
                         // on: its settle window counts from the answer.
                         board::chips_started();
+                        // And both diodes count as readings from here.
+                        board::chips_answered();
                         if board::choice_pending() {
                             // Against the profile's own count, never the
                             // configured asicCount: that is the one tell
