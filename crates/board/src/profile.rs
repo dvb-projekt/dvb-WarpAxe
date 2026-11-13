@@ -428,6 +428,14 @@ impl Profile {
         f32::from(core_mv) / 1000.0 * f32::from(self.voltage_domains.max(1))
     }
 
+    /// The highest VOUT a reading may show and still count: 2 V per
+    /// domain. A fixed 2 V dropped every VOUT of a two-domain board above
+    /// 1000 mV core (Naja Duo at 1010 mV read 2.02 V, 2026-11-13), and
+    /// the power with it.
+    pub fn vout_plausible_max(&self) -> f32 {
+        2.0 * f32::from(self.voltage_domains.max(1))
+    }
+
     /// Core voltage in mV for a measured VOUT.
     pub fn core_mv_for_vout(&self, vout: f32) -> u16 {
         (vout / f32::from(self.voltage_domains.max(1)) * 1000.0) as u16
@@ -1433,6 +1441,24 @@ mod tests {
         assert_eq!(Profile::by_name("nerdaxe"), None);
         for (i, a) in ALL.iter().enumerate() {
             assert!(ALL[i + 1..].iter().all(|b| b.name != a.name));
+        }
+    }
+
+    #[test]
+    fn a_two_domain_board_keeps_its_vout_above_two_volts() {
+        // Naja Duo at 1010 mV: VOUT 2.02 V must still count.
+        let v = BITAXE_NAJA_DUO.vout_for_core_mv(1010);
+        assert!(v > 2.0 && v <= BITAXE_NAJA_DUO.vout_plausible_max());
+        assert_eq!(BITAXE_NAJA_DUO.vout_plausible_max(), 4.0);
+        assert_eq!(BITAXE_GAMMA_HEX.vout_plausible_max(), 4.0);
+        assert_eq!(BITAXE_GAMMA_TURBO.vout_plausible_max(), 2.0);
+        assert_eq!(BITAXE_GAMMA.vout_plausible_max(), 2.0);
+        for p in ALL {
+            assert!(
+                p.vout_for_core_mv(1500) <= p.vout_plausible_max(),
+                "{}",
+                p.name
+            );
         }
     }
 

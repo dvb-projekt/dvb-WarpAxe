@@ -2254,7 +2254,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 )
                 .map(|t| t as i32);
                 vin = plausible(vr.vin(), 0.0, 30.0, "vin");
-                vout = plausible(vr.vout(), 0.0, 2.0, "vout");
+                vout = plausible(vr.vout(), 0.0, profile.vout_plausible_max(), "vout");
                 current = plausible(vr.current_a(), -1.0, 150.0, "iout");
                 core_current =
                     plausible(vr.core_current_a(), -1.0, 300.0, "core current").map(|a| a.max(0.0));
