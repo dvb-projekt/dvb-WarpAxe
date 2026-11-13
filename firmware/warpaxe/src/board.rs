@@ -935,6 +935,24 @@ pub fn chips_started() {
     CHIP_STARTS.fetch_add(1, Ordering::Relaxed);
 }
 
+/// What the chips are doing for the supply watch (`psu_sag::Phase`):
+/// idle with the rail off or the chain not answered, ramping while the
+/// clock is on its way, under load at their clock. A clock the chips can
+/// never reach (no PLL word) counts as load: they run on at the old one,
+/// and the watch would otherwise wait for good (audit v0.1.45, N4).
+fn psu_phase() -> warpaxe_board::psu_sag::Phase {
+    use warpaxe_board::psu_sag::Phase;
+    if !POWERED.load(Ordering::Relaxed) || !CHIPS_ANSWERED.load(Ordering::Relaxed) {
+        return Phase::Idle;
+    }
+    let clock = crate::miner::clock();
+    if clock.settled_mhz == 0 && !clock.unreachable {
+        Phase::Ramp
+    } else {
+        Phase::Load
+    }
+}
+
 /// The chain answered (enumerated): from here a two-chip board's diodes
 /// read their chips. Before it, with the rail off or the chips in reset,
 /// the EMC2103 reads them as nonsense: a Gamma Turbo's first diode read
@@ -2235,6 +2253,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 }
             }
             let mut vin = None;
+            // What the chips were doing when VIN was read (`psu_phase`).
+            let mut vin_phase = warpaxe_board::psu_sag::Phase::Ramp;
             let mut vout = None;
             let mut current = None;
             let mut power = None;
@@ -2253,7 +2273,17 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     "vr temp",
                 )
                 .map(|t| t as i32);
+                // The phase on both sides of the read: a change in
+                // between (a stop, a chain reset) makes the sample count
+                // as neither, never a loaded reading as the rest one.
+                let before = psu_phase();
                 vin = plausible(vr.vin(), 0.0, 30.0, "vin");
+                let after = psu_phase();
+                vin_phase = if before == after {
+                    after
+                } else {
+                    warpaxe_board::psu_sag::Phase::Ramp
+                };
                 vout = plausible(vr.vout(), 0.0, profile.vout_plausible_max(), "vout");
                 current = plausible(vr.current_a(), -1.0, 150.0, "iout");
                 core_current =
@@ -2618,26 +2648,20 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
             };
-            // Running at their clock, or still on the way there
-            // (`psu_sag::Phase`).
-            let phase = if !rail_on || !CHIPS_ANSWERED.load(Ordering::Relaxed) {
-                warpaxe_board::psu_sag::Phase::Idle
-            } else if crate::miner::clock().settled_mhz == 0 {
-                warpaxe_board::psu_sag::Phase::Ramp
-            } else {
-                warpaxe_board::psu_sag::Phase::Load
-            };
             // The watch's own last verdict: no copy of the whole board
             // state every second for one flag.
             let warned = psu.warning();
-            let sag = psu.sample(vin, phase);
+            let sag = psu.sample(vin, vin_phase);
             if sag.warn != warned {
                 if sag.warn {
+                    // Whole millivolts: a float with fixed decimals costs
+                    // this thread up to 2.3 KB more stack (audit v0.1.45).
+                    let mv = |v: Option<f32>| (v.unwrap_or(0.0) * 1000.0) as u32;
                     log::warn!(
-                        "board: the input voltage sags {:.2} V under load ({:.2} V at rest, {:.2} V hashing): the power supply or its cable may be too weak",
-                        sag.sag_v.unwrap_or(0.0),
-                        sag.idle_v.unwrap_or(0.0),
-                        sag.load_v.unwrap_or(0.0)
+                        "board: the input voltage sags {} mV under load ({} mV at rest, {} mV hashing): the power supply or its cable may be too weak",
+                        mv(sag.sag_v),
+                        mv(sag.idle_v),
+                        mv(sag.load_v)
                     );
                 } else {
                     log::info!("board: the input voltage under load is back within range");
