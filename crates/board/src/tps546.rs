@@ -203,6 +203,9 @@ impl Config {
 
     /// ESP-Miner `TPS546_CONFIG_NAJA_DUO` (Bitaxe Naja Duo, 1201): two
     /// stacked phases, two chip voltage domains in series (VOUT = 2 × core).
+    /// Current limits as on ESP-Miner master (f5e74b1, #1992; in no
+    /// release tag yet): 61/68 A, up from 50/55 A, for the maker's
+    /// 600 MHz overclock.
     pub const NAJA_DUO: Config = Config {
         vin_on: 11.0,
         vin_off: 10.5,
@@ -212,8 +215,8 @@ impl Config {
         vout_min: 1.8,
         vout_max: 3.0,
         vout_command: 2.2,
-        iout_oc_warn: 50.0,
-        iout_oc_fault: 55.0,
+        iout_oc_warn: 61.0,
+        iout_oc_fault: 68.0,
         frequency_khz: 650,
         phase: 0xFF,
         stack_config: 0x0001,

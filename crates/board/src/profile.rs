@@ -595,7 +595,7 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// 2026-11-12 (v0.1.44).
 /// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
-/// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 50 A warning).
+/// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 61 A warning).
 /// AxeOS's own overclock mode has no upper bound at all.
 pub const BITAXE_NAJA_DUO: Profile = Profile {
     name: "bitaxe-naja-duo",
@@ -1369,6 +1369,12 @@ mod tests {
         assert_eq!(naja.small_cores, 0);
         assert_eq!(naja.fan_target_c, 50.0);
         assert!(!naja.silent_chip_restart);
+        let vr = naja.tps546().unwrap();
+        assert_eq!(
+            (vr.iout_oc_warn, vr.iout_oc_fault),
+            (61.0, 68.0),
+            "ESP-Miner master f5e74b1"
+        );
         assert_eq!(
             migrated_fan_target(&BITAXE_NAJA_DUO, 60),
             None,
