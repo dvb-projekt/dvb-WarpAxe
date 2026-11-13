@@ -10,9 +10,15 @@
 //!
 //! - The idle voltage is the median of the samples taken while the chips
 //!   are not running (rail off, in reset, chain not answered yet), at
-//!   boot and at every chips off/on; kept until the next such phase.
+//!   boot and at every chips off/on; kept until the next such phase. At
+//!   boot that phase is short (the chain answers a second or two after
+//!   the board task starts), so one sample is enough.
+//! - While the clock ramps up (or moves to a new clock) a sample is
+//!   neither: the load is still climbing. Seen on a Bitaxe Gamma
+//!   2026-11-13: 5.38 V right after the chain answered, 5.20 V once the
+//!   ramp was over.
 //! - The load voltage is the median of the last [`WINDOW`] samples with
-//!   the chips running.
+//!   the chips running at their clock.
 //! - The sag is idle minus load. It is reported once both are known; a
 //!   warning holds when the sag reaches [`WARN_SHARE`] of the board's
 //!   nominal input for a full window, and goes when it is back under
@@ -21,13 +27,24 @@
 /// Samples (seconds) the load voltage is the median of.
 pub const WINDOW: usize = 60;
 /// Idle samples needed before an idle voltage counts.
-pub const IDLE_MIN: usize = 3;
+pub const IDLE_MIN: usize = 1;
 /// A sag of this share of the nominal input warns (0.4 V on 5 V,
 /// 0.96 V on 12 V). A healthy supply and cable stay well under it: the
 /// boards on our bench sag 1–2 %.
 pub const WARN_SHARE: f32 = 0.08;
 /// The warning goes again under this share.
 pub const CLEAR_SHARE: f32 = 0.06;
+
+/// What the chips are doing at a sample.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    /// Not running: rail off, in reset, or the chain not answered yet.
+    Idle,
+    /// Running, but the clock is still on its way: the sample is skipped.
+    Ramp,
+    /// Running at their clock.
+    Load,
+}
 
 /// What the watch reports.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -93,9 +110,14 @@ impl PsuSag {
         }
     }
 
-    /// One sample: the input voltage (`None` = no reading) and whether
-    /// the chips are running.
-    pub fn sample(&mut self, vin: Option<f32>, chips_running: bool) -> Reading {
+    /// One sample: the input voltage (`None` = no reading) and what the
+    /// chips are doing.
+    pub fn sample(&mut self, vin: Option<f32>, phase: Phase) -> Reading {
+        if phase == Phase::Ramp {
+            // Nothing measured, nothing changed: what stood stays.
+            return self.reading(self.was_running);
+        }
+        let chips_running = phase == Phase::Load;
         if chips_running != self.was_running {
             self.was_running = chips_running;
             if chips_running {
@@ -122,12 +144,8 @@ impl PsuSag {
                 }
             }
         }
-        let load_v = median(&self.load[..self.load_n]);
-        let sag_v = match (self.idle_v, load_v) {
-            (Some(i), Some(l)) if chips_running => Some((i - l).max(0.0)),
-            _ => None,
-        };
-        if let Some(s) = sag_v {
+        let r = self.reading(chips_running);
+        if let Some(s) = r.sag_v {
             let share = if self.nominal_v > 0.0 {
                 s / self.nominal_v
             } else {
@@ -142,6 +160,18 @@ impl PsuSag {
         // No load, no verdict: a warning that held stays until the chips
         // run again and say otherwise.
         Reading {
+            warn: self.warn,
+            ..r
+        }
+    }
+
+    fn reading(&self, chips_running: bool) -> Reading {
+        let load_v = median(&self.load[..self.load_n]);
+        let sag_v = match (self.idle_v, load_v) {
+            (Some(i), Some(l)) if chips_running => Some((i - l).max(0.0)),
+            _ => None,
+        };
+        Reading {
             idle_v: self.idle_v,
             load_v,
             sag_v,
@@ -155,9 +185,10 @@ mod tests {
     use super::*;
 
     fn run(w: &mut PsuSag, v: f32, n: usize, running: bool) -> Reading {
+        let phase = if running { Phase::Load } else { Phase::Idle };
         let mut r = Reading::default();
         for _ in 0..n {
-            r = w.sample(Some(v), running);
+            r = w.sample(Some(v), phase);
         }
         r
     }
@@ -193,13 +224,34 @@ mod tests {
         let r = run(&mut w, 12.0, WINDOW, true);
         assert_eq!(r.sag_v, None);
         assert!(!r.warn);
-        let r = w.sample(None, true);
+        let r = w.sample(None, Phase::Load);
         assert_eq!(r.load_v, Some(12.0));
-        // Two idle samples are not enough yet.
+        // One idle sample at boot is enough.
         let mut w = PsuSag::new(12.0);
-        run(&mut w, 12.4, IDLE_MIN - 1, false);
+        run(&mut w, 12.4, 1, false);
         let r = run(&mut w, 12.0, 5, true);
-        assert_eq!(r.idle_v, None);
+        assert_eq!(r.idle_v, Some(12.4));
+    }
+
+    #[test]
+    fn the_ramp_is_neither_idle_nor_load() {
+        // The Gamma of 2026-11-13: 5.40 V before the chain answered,
+        // 5.38 V falling to 5.20 V over the ramp, 5.20 V at its clock.
+        let mut w = PsuSag::new(5.0);
+        run(&mut w, 5.40, 1, false);
+        for v in [5.38, 5.33, 5.28, 5.24, 5.21] {
+            let r = w.sample(Some(v), Phase::Ramp);
+            assert_eq!(r.idle_v, Some(5.40));
+            assert_eq!(r.load_v, None);
+        }
+        let r = run(&mut w, 5.20, WINDOW, true);
+        assert_eq!(r.load_v, Some(5.20));
+        assert!((r.sag_v.unwrap() - 0.20).abs() < 1e-4);
+        // A later clock change: the window and its sag stand through it.
+        let r = w.sample(Some(5.0), Phase::Ramp);
+        assert!((r.sag_v.unwrap() - 0.20).abs() < 1e-4);
+        let r = run(&mut w, 5.21, 1, true);
+        assert_eq!(r.load_v, Some(5.20));
     }
 
     #[test]

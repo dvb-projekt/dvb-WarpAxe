@@ -2618,7 +2618,16 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
             };
-            let sag = psu.sample(vin, rail_on && CHIPS_ANSWERED.load(Ordering::Relaxed));
+            // Running at their clock, or still on the way there
+            // (`psu_sag::Phase`).
+            let phase = if !rail_on || !CHIPS_ANSWERED.load(Ordering::Relaxed) {
+                warpaxe_board::psu_sag::Phase::Idle
+            } else if crate::miner::clock().settled_mhz == 0 {
+                warpaxe_board::psu_sag::Phase::Ramp
+            } else {
+                warpaxe_board::psu_sag::Phase::Load
+            };
+            let sag = psu.sample(vin, phase);
             if sag.warn != state().psu_sag_warn {
                 if sag.warn {
                     log::warn!(
