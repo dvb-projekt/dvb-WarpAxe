@@ -48,6 +48,22 @@ unsafe extern "C" fn frame_sent(
     false
 }
 
+/// `len` zeroed bytes of PSRAM for the time of `f`: room to unpack a
+/// picture that is drawn and then not needed again. Asked for from PSRAM
+/// by name, because a plain allocation below 16 KB comes from the
+/// internal heap, which is the scarce one. `None` when PSRAM has no such
+/// piece.
+pub fn with_psram_scratch<R>(len: usize, f: impl FnOnce(&mut [u8]) -> R) -> Option<R> {
+    let p = unsafe { sys::heap_caps_calloc(1, len, sys::MALLOC_CAP_SPIRAM | sys::MALLOC_CAP_8BIT) };
+    if p.is_null() {
+        return None;
+    }
+    // Nobody else knows the block, and it is freed only after `f`.
+    let r = f(unsafe { core::slice::from_raw_parts_mut(p as *mut u8, len) });
+    unsafe { sys::heap_caps_free(p) };
+    Some(r)
+}
+
 /// Rows per transfer: the frame goes out in bands through a small buffer
 /// in internal RAM (320 × 10 × 2 = 6.4 KB), as LVGL-based stock firmware
 /// does. Straight from the PSRAM frame buffer the i80 DMA now and then
@@ -197,6 +213,17 @@ impl Lcd {
     pub fn blit(&mut self, frame: &[u8]) {
         let n = frame.len().min(self.fb.len());
         self.fb[..n].copy_from_slice(&frame[..n]);
+    }
+
+    /// A whole frame stored packed (raw DEFLATE), unpacked straight into
+    /// the frame buffer: no second buffer, and the 1.3 KB the unpacking
+    /// works with are on this thread's stack for the call. A stream that
+    /// is not exactly one frame cannot come out of the build (host test
+    /// crates/inflate/tests/splash.rs); should it, the frame is black.
+    pub fn blit_packed(&mut self, packed: &[u8]) {
+        if warpaxe_inflate::inflate(packed, self.fb) != Ok(self.fb.len()) {
+            self.clear(BLACK);
+        }
     }
 
     pub fn text(&mut self, x: usize, y: usize, scale: usize, color: u16, text: &str) {

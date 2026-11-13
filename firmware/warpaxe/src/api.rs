@@ -14,11 +14,14 @@ use serde_json::json;
 use crate::{board, config, diag, display, events, miner, net, selftest, stratum, swarm};
 use warpaxe_displaycfg as dcfg;
 
+/// The icon, once in the image for both of its paths.
+static FAVICON: &[u8] = include_bytes!("ui/assets/favicon.svg");
+
 /// The web UI's files: fonts (OFL, Latin subsets), the wordmark and the
 /// icon, all in the firmware so the page looks the same offline.
 fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
     Some(match name {
-        "favicon.svg" => (include_bytes!("ui/assets/favicon.svg"), "image/svg+xml"),
+        "favicon.svg" => (FAVICON, "image/svg+xml"),
         "wordmark.webp" => (include_bytes!("ui/assets/wordmark.webp"), "image/webp"),
         "inter.woff2" => (include_bytes!("ui/assets/inter.woff2"), "font/woff2"),
         "space-grotesk-700.woff2" => (
@@ -1141,7 +1144,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     })?;
     server.fn_handler("/favicon.ico", Method::Get, |req| {
         let mut r = req.into_response(200, None, &[("Content-Type", "image/svg+xml")])?;
-        r.write_all(include_bytes!("ui/assets/favicon.svg"))?;
+        r.write_all(FAVICON)?;
         Ok::<(), EspIOError>(())
     })?;
     server.fn_handler("/api/system/wifi/scan", Method::Get, |req| {

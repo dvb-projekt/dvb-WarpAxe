@@ -3,12 +3,23 @@
 
   lcd_320x170.rgb565  ST7789 frame, RGB565 big-endian (the LCD framebuffer's byte order)
   oled_128x32.bits    SSD1306 frame, 1 bit per pixel, row-major, MSB first
+  badge_WxH.rgb565a   the wordmark for the LCD's page header, RGB565 + alpha
+  mark_NAME_WxH.rgb565a  the makers' wordmarks for the boot screen
+
+The LCD frame and the makers' wordmarks go into the firmware packed
+(raw DEFLATE, the file name plus ".z") and are unpacked when the splash
+is drawn (crates/inflate, docs/16): 203 KB of pictures take 35 KB of
+the image. The raw files stay in the repo as what the packed ones must
+unpack to, byte for byte (crates/inflate/tests/splash.rs); the firmware
+does not include them. The badge and the OLED frame are drawn on every
+frame and stay raw.
 
 Run from the repo root: python3 tools/make-splash.py [--preview DIR]
+Only pack the raw files that are there (no Pillow needed, nothing is
+drawn again): python3 tools/make-splash.py --pack
 """
-import math, sys
+import math, sys, zlib
 from pathlib import Path
-from PIL import Image, ImageEnhance, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "docs/brand/dvb-WarpAxe_wordmark.png"
@@ -132,8 +143,29 @@ def maker_mark(folder, name, height):
     return w, height, bytes(out), img
 
 
+def pack():
+    """Write NAME.z, the raw DEFLATE stream (no zlib header, no checksum:
+    the firmware knows each picture's size) of the LCD frame and of every
+    maker's wordmark, and drop packed files whose raw file is gone."""
+    for old in OUT.glob("*.z"):
+        if not old.with_suffix("").exists():
+            old.unlink()
+    for raw in sorted([*OUT.glob("lcd_*.rgb565"), *OUT.glob("mark_*.rgb565a")]):
+        data = raw.read_bytes()
+        c = zlib.compressobj(9, zlib.DEFLATED, -15, 9)
+        packed = c.compress(data) + c.flush()
+        assert zlib.decompress(packed, -15) == data
+        raw.with_name(raw.name + ".z").write_bytes(packed)
+        print(f"packed {raw.name}: {len(data)} -> {len(packed)}")
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    if "--pack" in sys.argv:
+        pack()
+        return
+    global Image, ImageEnhance
+    from PIL import Image, ImageEnhance
     l, o = lcd(), oled()
     (OUT / "lcd_320x170.rgb565").write_bytes(rgb565(l))
     (OUT / "oled_128x32.bits").write_bytes(bits(o))
@@ -146,6 +178,7 @@ def main():
             old.unlink()
         (OUT / f"mark_{name}_{mw}x{mh}.rgb565a").write_bytes(mdata)
         print(f"mark {name} {mw}x{mh}")
+    pack()
     if "--preview" in sys.argv:
         d = Path(sys.argv[sys.argv.index("--preview") + 1])
         l.resize((960, 510), Image.NEAREST).save(d / "splash-lcd.png")

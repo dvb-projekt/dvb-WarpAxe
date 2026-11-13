@@ -678,7 +678,8 @@ fn clock_text() -> Option<String> {
 }
 
 static BADGE: &[u8] = include_bytes!("splash/badge_66x20.rgb565a");
-static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
+/// The OLED's wordmark: the boot splash (main.rs) and the "logo" slide.
+pub static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
 /// The wordmark top left of every page, the page title after it.
 fn badge(c: &mut Canvas) {

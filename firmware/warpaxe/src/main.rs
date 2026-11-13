@@ -52,44 +52,53 @@ fn set_step(s: &'static str) {
 /// Seconds after boot the splash stays up (the display thread starts
 /// about a second in, so it shows for four to five).
 const SPLASH_S: u64 = 6;
-static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565");
+/// The LCD's splash frame and the makers' wordmarks are in the image
+/// packed (raw DEFLATE, written by tools/make-splash.py) and unpacked
+/// when the splash is drawn: the frame straight into the display's
+/// frame buffer, a wordmark into a PSRAM buffer that lives for the one
+/// draw. 203 KB of pictures take 35 KB of the image that way; that each
+/// unpacks to its raw file byte for byte is a host test
+/// (crates/inflate/tests/splash.rs, docs/16).
+static SPLASH_LCD: &[u8] = include_bytes!("splash/lcd_320x170.rgb565.z");
 /// The makers' wordmarks (docs/brand/nerd and docs/brand/bitaxe, used with
 /// their authors' and the trade mark holders' consent): width, height,
-/// RGB565 + alpha.
+/// packed RGB565 + alpha.
 static MARK_NQPP: (i32, i32, &[u8]) = (
     138,
     30,
-    include_bytes!("splash/mark_nerdqaxe-plusplus_138x30.rgb565a"),
+    include_bytes!("splash/mark_nerdqaxe-plusplus_138x30.rgb565a.z"),
 );
 static MARK_OCTAXE: (i32, i32, &[u8]) = (
     143,
     34,
-    include_bytes!("splash/mark_nerdoctaxe_143x34.rgb565a"),
+    include_bytes!("splash/mark_nerdoctaxe_143x34.rgb565a.z"),
 );
 static MARK_NERDAXE: (i32, i32, &[u8]) = (
     143,
     34,
-    include_bytes!("splash/mark_nerdaxe_143x34.rgb565a"),
+    include_bytes!("splash/mark_nerdaxe_143x34.rgb565a.z"),
 );
 static MARK_GAIA: (i32, i32, &[u8]) = (
     108,
     40,
-    include_bytes!("splash/mark_nerdaxe-gaia_108x40.rgb565a"),
+    include_bytes!("splash/mark_nerdaxe-gaia_108x40.rgb565a.z"),
 );
-static MARK_NERDNOS: (i32, i32, &[u8]) =
-    (51, 40, include_bytes!("splash/mark_nerdnos_51x40.rgb565a"));
+static MARK_NERDNOS: (i32, i32, &[u8]) = (
+    51,
+    40,
+    include_bytes!("splash/mark_nerdnos_51x40.rgb565a.z"),
+);
 static MARK_NERDQX: (i32, i32, &[u8]) =
-    (86, 38, include_bytes!("splash/mark_nerdqx_86x38.rgb565a"));
+    (86, 38, include_bytes!("splash/mark_nerdqx_86x38.rgb565a.z"));
 static MARK_BITAXE: (i32, i32, &[u8]) =
-    (92, 40, include_bytes!("splash/mark_bitaxe_92x40.rgb565a"));
+    (92, 40, include_bytes!("splash/mark_bitaxe_92x40.rgb565a.z"));
 /// The Naja Duo's front silkscreen: the Bitaxe logo with "1201" (the
 /// board's KiCad layout, docs/brand/bitaxe).
 static MARK_NAJA: (i32, i32, &[u8]) = (
     97,
     42,
-    include_bytes!("splash/mark_bitaxe-naja-duo_97x42.rgb565a"),
+    include_bytes!("splash/mark_bitaxe-naja-duo_97x42.rgb565a.z"),
 );
-static SPLASH_OLED: &[u8] = include_bytes!("splash/oled_128x32.bits");
 
 /// One frame: the splash for the first seconds, then the screens.
 /// Returns how long until the next frame.
@@ -114,7 +123,7 @@ fn draw_splash(d: &mut display::Display) {
                 cfg.flipscreen ^ crate::board::profile().display_flip,
                 cfg.invertscreen,
             );
-            l.blit(SPLASH_LCD);
+            l.blit_packed(SPLASH_LCD);
             let col = if profile.name.starts_with("bitaxe") {
                 BTC
             } else {
@@ -131,11 +140,20 @@ fn draw_splash(d: &mut display::Display) {
                 "bitaxe-gamma-hex" => Some(MARK_BITAXE),
                 _ => None,
             };
-            if let Some((w, h, data)) = mark {
-                // Centred where the model name would stand.
-                l.canvas()
-                    .sprite((WIDTH as i32 - w) / 2, 125 - h / 2, w, h, data);
-            } else {
+            // Centred where the model name would stand; a wordmark that
+            // cannot be unpacked (no PSRAM to be had) leaves the name.
+            let marked = mark.is_some_and(|(w, h, packed)| {
+                with_psram_scratch((w * h * 3) as usize, |data| {
+                    let whole = warpaxe_inflate::inflate(packed, data) == Ok(data.len());
+                    if whole {
+                        l.canvas()
+                            .sprite((WIDTH as i32 - w) / 2, 125 - h / 2, w, h, data);
+                    }
+                    whole
+                })
+                .unwrap_or(false)
+            });
+            if !marked {
                 let model = profile.model.to_ascii_uppercase();
                 l.text((WIDTH - text_width(&model, 2)) / 2, 122, 2, col, &model);
             }
@@ -147,7 +165,7 @@ fn draw_splash(d: &mut display::Display) {
                 cfg.flipscreen ^ crate::board::profile().display_flip,
                 cfg.invertscreen,
             );
-            o.bitmap(SPLASH_OLED);
+            o.bitmap(screens::SPLASH_OLED);
             let line = format!("{} {version}", profile.model.to_ascii_uppercase());
             let w = display::text_width(&line, 1).min(128);
             o.text((128 - w) / 2, 23, 1, &line);

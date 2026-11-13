@@ -1055,7 +1055,7 @@ Host crates and tests:
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board -p warpaxe-ota \
-    --target thumbv7em-none-eabihf                             # proves no_std
+    -p warpaxe-inflate --target thumbv7em-none-eabihf          # proves no_std
 ```
 
 Firmware (Xtensa, ESP-IDF 5.3 via `esp-idf-svc`; toolchain from
@@ -1082,7 +1082,8 @@ for f in /tmp/frames/*.raw; do python3 tools/frame2png.py "$f" "${f%.raw}.png"; 
 
 Fonts and the splash are generated from `tools/fonts` (SIL Open Font
 License) and `docs/brand` by `tools/make-fonts.py` and
-`tools/make-splash.py`; releases are published with
+`tools/make-splash.py` (which also packs the splash pictures for the
+image: `--pack` does only that); releases are published with
 `tools/release-firmware.sh`.
 
 ## Repository
@@ -1095,6 +1096,7 @@ License) and `docs/brand` by `tools/make-fonts.py` and
 | `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading and payout (the worker's address decoded — base58, bech32/bech32m, CashAddr — for any SHA-256 coin), tested against a captured WarpPool session |
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |
+| `crates/inflate` | a small DEFLATE decoder: the boot screen's pictures are in the image packed and unpacked into the frame buffer when drawn ([docs/16](docs/16-Image-size-where-it-goes-and-what-was-taken-out.md)) — `no_std`, host-tested against the raw pictures |
 | `crates/diag` | the diagnostics file's privacy rules (passwords never, addresses and the Wi-Fi name masked, every section scrubbed) and the event log's ring — host-tested |
 | `crates/avalon` | read-only cgminer API client for an Avalon (`summary`, `estats`, `pools`), translated to an AxeOS-like document |
 | `crates/cpuminer` | SHA-256 hashing without an ASIC for the T-Display-S3, NerdMiner settings import |

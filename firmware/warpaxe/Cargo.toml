@@ -53,6 +53,8 @@ warpaxe-avalon = { path = "../../crates/avalon" }
 # The firmware writer's hand-off: one image at a time to the main task.
 warpaxe-ota = { path = "../../crates/ota" }
 warpaxe-trust = { path = "../../crates/trust" }
+# The boot screen's pictures are in the image packed; this unpacks them.
+warpaxe-inflate = { path = "../../crates/inflate" }
 # The diagnostics file's privacy rules and the event log's ring.
 warpaxe-diag = { path = "../../crates/diag" }
 
