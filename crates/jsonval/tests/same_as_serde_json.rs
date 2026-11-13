@@ -158,3 +158,147 @@ fn a_wide_document() {
         "lastBlock": null, "yieldPercent": Some(97.3f64), "psuWatts": None::<u16>,
     });
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Step {
+    from_mhz: u32,
+    to_mhz: u32,
+    cause: &'static str,
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+enum Verdict {
+    Pass,
+    Fail,
+}
+
+/// Readings are `f32`: what is not a number becomes `null`, and a
+/// reading is printed as the `f64` of the same value (56.3 as
+/// 56.29999923706055), which is how serde_json's `Value` keeps it and
+/// how the API has always printed it.
+#[test]
+fn f32_readings() {
+    let v = same!({
+        "nan": f32::NAN, "inf": f32::INFINITY, "ninf": f32::NEG_INFINITY,
+        "negZero": -0.0f32, "zero": 0.0f32,
+        "temp": 56.3f32, "tenth": 0.1f32, "third": 1.0f32 / 3.0,
+        "max": f32::MAX, "min": f32::MIN_POSITIVE, "whole": 12.0f32,
+        "none": None::<f32>, "some": Some(49.7f32), "someNan": Some(f32::NAN),
+        "chips": [Some(61.5f32), None::<f32>, Some(f32::NAN)],
+        "list": vec![Some(1.25f32), None],
+        "f64": 0.1f64, "f64nan": f64::NAN, "f64inf": f64::INFINITY,
+        "sum": ([1.5f32, 2.25].iter().sum::<f32>()),
+    });
+    for key in ["nan", "inf", "ninf", "someNan", "f64nan", "f64inf"] {
+        assert!(v[key].is_null(), "{key}");
+    }
+    assert!(v["chips"][2].is_null());
+    let text = v.to_string();
+    for part in [
+        "\"temp\":56.29999923706055",
+        "\"tenth\":0.10000000149011612",
+        "\"f64\":0.1,",
+        "\"negZero\":-0.0",
+        "\"whole\":12.0",
+    ] {
+        assert!(text.contains(part), "{part} in {text}");
+    }
+}
+
+#[test]
+fn whole_numbers_at_their_limits() {
+    let v = same!({
+        "u64": u64::MAX, "i64": i64::MIN, "u32": u32::MAX, "i32": i32::MIN,
+        "usize": usize::MAX, "u8": u8::MAX, "i8": i8::MIN, "u16": 65_535u16,
+        "shares": 18_446_744_073_709_551_615u64, "negative": -1i64,
+        "bool": u8::from(true), "list": [u64::MAX, 0, 1],
+    });
+    assert_eq!(
+        v["u64"].to_string(),
+        "18446744073709551615",
+        "not through an f64"
+    );
+    assert_eq!(v["i64"].to_string(), "-9223372036854775808");
+}
+
+/// Host name, pool password, error texts: whatever a user or a pool
+/// puts into a string comes out escaped as the original escapes it,
+/// and reads back as the same value.
+#[test]
+fn strings_with_quotes_backslashes_control_characters_and_utf8() {
+    let host = String::from("miner \"one\" \\ two/three");
+    let pass = "p\u{0}\u{1}\u{8}\t\n\u{c}\r\u{1f}\u{7f}\u{80}äß€—😀\u{2028}\u{feff}";
+    let error = format!("expected {{\"members\": [{}]}}", "addresses");
+    let v = same!({
+        "hostname": host, "byRef": &host, "asStr": host.as_str(),
+        "password": pass, "error": error, "empty": "", "char": 'ß',
+        "some": Some(&host), "none": None::<&str>,
+        "list": [pass, "", "\"", "\\"],
+        "key with \"quotes\" \\ and\nnewline": 1,
+        "ключ 鍵 🔑": pass,
+    });
+    let back: serde_json::Value = serde_json::from_str(&v.to_string()).unwrap();
+    assert_eq!(back, v);
+    assert_eq!(back["password"], pass);
+    assert_eq!(back["hostname"], "miner \"one\" \\ two/three");
+}
+
+/// The other things the API hands over: references, options in
+/// options, slices and arrays, structs and enums with renamed fields,
+/// maps, values built by either macro.
+#[test]
+fn what_the_api_passes() {
+    let hash = String::from("00000000000000000001a2b3");
+    let status = String::new();
+    let temps: Vec<Option<f32>> = vec![Some(55.5), None];
+    let heals: [&str; 3] = ["chain_silent", "chip_silent", "domain_latch"];
+    let mut reasons = BTreeMap::new();
+    reasons.insert(String::from("stale"), 3u32);
+    reasons.insert(String::from("low difficulty"), 1);
+    let mut by_number = BTreeMap::new();
+    by_number.insert(2u8, "two");
+    let last = Some((1u8, 1150u16, 86_400u64));
+    let step = Some(Step {
+        from_mhz: 525,
+        to_mhz: 490,
+        cause: "hot",
+    });
+    let v = same!({
+        "hash": (!hash.is_empty()).then_some(&hash),
+        "status": (!status.is_empty()).then_some(&status),
+        "temps": temps, "tempsRef": &temps, "slice": &temps[..1],
+        "selfHeals": heals, "nested": Some(None::<u8>), "unit": (),
+        "reasons": reasons.iter().map(|(m, c)| warpaxe_jsonval::json!({"message": m, "count": c})).collect::<Vec<_>>(),
+        "reasonsMap": reasons, "byNumber": by_number,
+        "last": last.map(|(chip, mv, at)| serde_json::json!({"chip": chip, "mv": mv, "uptime_s": at})),
+        "clockStep": step, "noStep": None::<Step>,
+        "verdicts": [Verdict::Pass, Verdict::Fail],
+        "pick": if temps.len() > 1 { warpaxe_jsonval::json!(1.5) } else { warpaxe_jsonval::json!(0) },
+        "stratum": { "usingFallback": false, "pools": [{ "connected": true, "accepted": 12u64, }], },
+        "null": null,
+    });
+    assert_eq!(v["clockStep"]["fromMhz"], 525);
+    assert_eq!(v["verdicts"][1], "fail");
+    assert_eq!(v["byNumber"]["2"], "two");
+    assert!(v["status"].is_null() && v["nested"].is_null() && v["unit"].is_null());
+    // Added after the macro, as the firmware does past its size limit.
+    let mut ours = warpaxe_jsonval::json!({ "a": 1 });
+    let mut theirs = serde_json::json!({ "a": 1 });
+    ours["late"] = warpaxe_jsonval::json!([temps, null]);
+    theirs["late"] = serde_json::json!([temps, null]);
+    assert_eq!(ours, theirs);
+}
+
+/// A type JSON has no form for (a map whose keys are not strings or
+/// numbers) panics in the conversion, here as in the original: the
+/// firmware passes none.
+#[test]
+fn a_map_json_cannot_hold_panics_as_the_original_does() {
+    let mut map = BTreeMap::new();
+    map.insert((1u8, 2u8), 3u8);
+    let ours = std::panic::catch_unwind(|| warpaxe_jsonval::json!({ "map": map }));
+    let theirs = std::panic::catch_unwind(|| serde_json::json!({ "map": map }));
+    assert!(ours.is_err() && theirs.is_err());
+}
