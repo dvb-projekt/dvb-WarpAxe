@@ -436,6 +436,13 @@ impl Profile {
         2.0 * f32::from(self.voltage_domains.max(1))
     }
 
+    /// A chip profile's small-core count is not the one this board asks
+    /// for. A board that asks for none (`small_cores` 0: the chip's own
+    /// count) fits every chip profile.
+    pub fn small_cores_differ(&self, chip_small_cores: u16) -> bool {
+        self.small_cores != 0 && self.small_cores != chip_small_cores
+    }
+
     /// Core voltage in mV for a measured VOUT.
     pub fn core_mv_for_vout(&self, vout: f32) -> u16 {
         (vout / f32::from(self.voltage_domains.max(1)) * 1000.0) as u16
@@ -1442,6 +1449,23 @@ mod tests {
         for (i, a) in ALL.iter().enumerate() {
             assert!(ALL[i + 1..].iter().all(|b| b.name != a.name));
         }
+    }
+
+    /// The Naja Duo since 2026-11-13 asks for no count of its own: the
+    /// chip's 6860 is not a mismatch (the firmware warned "the board's
+    /// copy is missing" at every chain start).
+    #[test]
+    fn a_board_without_a_core_count_of_its_own_fits_every_chip_profile() {
+        use super::*;
+        assert_eq!(BITAXE_NAJA_DUO.small_cores, 0);
+        assert!(!BITAXE_NAJA_DUO.small_cores_differ(6860));
+        assert!(!BITAXE_NAJA_DUO.small_cores_differ(6725));
+        let own = Profile {
+            small_cores: 6725,
+            ..BITAXE_NAJA_DUO
+        };
+        assert!(!own.small_cores_differ(6725));
+        assert!(own.small_cores_differ(6860));
     }
 
     #[test]

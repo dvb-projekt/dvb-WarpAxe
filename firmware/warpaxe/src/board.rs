@@ -352,7 +352,7 @@ pub fn select_chip_init(setting: &str) {
     if before != u8::MAX && before != rung {
         CHIP_INIT_FALLEN.store(0, Ordering::Relaxed);
     }
-    if is_naja_duo() && chip().small_cores != profile().small_cores {
+    if is_naja_duo() && profile().small_cores_differ(chip().small_cores) {
         log::warn!(
             "board: the chip profile counts {} small cores, the board {}: the board's copy is missing",
             chip().small_cores,
