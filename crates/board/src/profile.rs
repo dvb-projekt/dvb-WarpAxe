@@ -591,7 +591,7 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// Bitaxe Naja Duo (1201): two BM1373 in two series voltage domains on
 /// 12 V, two stacked TPS546 (ESP-Miner `TPS546_CONFIG_NAJA_DUO`, VOUT =
 /// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
-/// Color pins. Stock 327 MHz / 1000 mV, 60 W. Runs on our bench since
+/// Color pins. Stock 327 MHz / 1000 mV. Runs on our bench since
 /// 2026-11-12 (v0.1.44).
 /// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
@@ -610,7 +610,13 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     default_frequency_mhz: 327,
     default_core_mv: 1000,
     nominal_voltage_v: 12,
-    max_power_w: 60,
+    // ESP-Miner reports 60 W. WarpTune uses 90 % of `maxPower` as its
+    // hard limit: at 60 W that limit (54 W) blocked the Max 410 MHz step
+    // on the bench, 2026-11-13 (54.2 W predicted). 90 W at the 2.24 V
+    // stacked rail is about 40 A, well below the 61 A warning; the
+    // regulator's protection and the temperature limits still guard the
+    // board. The maker's 600 MHz overclock (~92 W) stays just above it.
+    max_power_w: 90,
     power_offset_w: 0.0,
     frequency_options: &[327, 350, 375, 380, 400, 410],
     voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
@@ -1374,6 +1380,10 @@ mod tests {
             (vr.iout_oc_warn, vr.iout_oc_fault),
             (61.0, 68.0),
             "ESP-Miner master f5e74b1"
+        );
+        assert_eq!(
+            naja.max_power_w, 90,
+            "must not block WarpTune's 410 MHz step"
         );
         assert_eq!(
             migrated_fan_target(&BITAXE_NAJA_DUO, 60),
