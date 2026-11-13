@@ -116,6 +116,21 @@ has dual-pool mining, Wi-Fi and pool setup over Bluetooth, and share and
 self-test signals on the Nano's two LEDs. WarpAxe is early; if you need any of
 that, stay with the stock firmware.
 
+[AxeForge](https://github.com/IsSasoriDev/AxeForge) (C/C++, GPL-3.0, public
+since October 2026; read at v1.4.10) is another alternative firmware for
+many of the same boards. It has no column above because it is no board's
+stock firmware. It had a clock per chip before WarpAxe: when tuning for
+hashrate (the default), its built-in tuner raises the chips that hold a
+higher clock, in 12 MHz steps up to 48 MHz above the chain's, except on
+single-chip boards, on the BM1373 and on boards whose chips are stacked in
+series (such as the Naja Duo). WarpAxe's offsets go both ways, mainly down
+for a weak chip so the whole board can run at a lower voltage. They also
+apply to the BM1373 and, within tighter limits, to stacked boards. They are
+set by hand for now; a later WarpPool release will let WarpTune search for
+them on boards whose chips run in parallel. AxeForge also has two-factor
+login, Discord and Telegram alerts, an optional pool worker per chip, and an
+API of its own; WarpAxe keeps the AxeOS API.
+
 ## With WarpTune
 
 [WarpTune](https://git.warppool.org/dvb-projekt/dvb-WarpPool/src/branch/main/scripts/warptune-setup.md#what-each-firmware-gives-warptune),
