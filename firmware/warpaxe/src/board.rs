@@ -88,6 +88,13 @@ pub struct BoardState {
     /// boards — what AxeOS and NerdOS each report as `current`.
     pub iout_ma: Option<f32>,
     pub power_w: Option<f32>,
+    /// The input voltage without load (chips off), under load (median of
+    /// the last minute) and the difference, V; the warning when the sag
+    /// reaches 8 % of the nominal input (`warpaxe_board::psu_sag`).
+    pub vin_idle_v: Option<f32>,
+    pub vin_load_v: Option<f32>,
+    pub vin_sag_v: Option<f32>,
+    pub psu_sag_warn: bool,
     /// `power_w` is the profile's estimate, not a measurement (the
     /// NerdNOS: nothing on the board reads power).
     pub power_estimated: bool,
@@ -2164,6 +2171,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     let mut sensor = SensorWatch::new();
     // Two chip diodes: which have read since boot (`chip_temps`).
     let mut two_chips = ChipTemps::<2>::new();
+    // The supply's voltage under load against its voltage at rest.
+    let mut psu = warpaxe_board::psu_sag::PsuSag::new(f32::from(profile.nominal_voltage_v));
     // The chips' starts seen so far (`CHIP_STARTS`); the second diode's
     // reading is held back in the settle window, and that was said for
     // this start.
@@ -2609,7 +2618,24 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 });
                 (g.latched(), g.recent_trips(now_s) as u8, cause)
             };
+            let sag = psu.sample(vin, rail_on && CHIPS_ANSWERED.load(Ordering::Relaxed));
+            if sag.warn != state().psu_sag_warn {
+                if sag.warn {
+                    log::warn!(
+                        "board: the input voltage sags {:.2} V under load ({:.2} V at rest, {:.2} V hashing): the power supply or its cable may be too weak",
+                        sag.sag_v.unwrap_or(0.0),
+                        sag.idle_v.unwrap_or(0.0),
+                        sag.load_v.unwrap_or(0.0)
+                    );
+                } else {
+                    log::info!("board: the input voltage under load is back within range");
+                }
+            }
             update(|s| {
+                s.vin_idle_v = sag.idle_v;
+                s.vin_load_v = sag.load_v;
+                s.vin_sag_v = sag.sag_v;
+                s.psu_sag_warn = sag.warn;
                 s.temp_c = temp;
                 s.vr_temp_c = vr_temp;
                 s.vin_mv = vin.map(|v| v * 1000.0);
