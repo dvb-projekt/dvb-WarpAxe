@@ -62,7 +62,7 @@ a.btn{text-decoration:none}
 .badges{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
 .badge{font-size:12px;overflow-wrap:anywhere;color:var(--mute);border:1px solid var(--line);border-radius:99px;padding:3px 10px}
 figure{margin:0;text-align:center}
-figure img{width:100%;max-width:300px;height:auto;filter:drop-shadow(0 0 40px rgba(123,92,255,.28))}
+figure img{width:100%;max-width:440px;height:auto;filter:drop-shadow(0 0 40px rgba(123,92,255,.28))}
 figcaption{color:var(--mute);font-size:13px;margin-top:6px}
 .feat{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(270px,100%),1fr));gap:14px}
 .feat .card{gap:6px}
@@ -83,7 +83,7 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
 .honest strong{color:var(--fg)}
 .links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
 .sep{border:0;border-top:1px solid var(--line);margin:8px 0 0}
-@media (max-width:700px){.hero{grid-template-columns:1fr}.hero figure{order:-1}figure img{max-width:200px}}
+@media (max-width:700px){.hero{grid-template-columns:1fr}.hero figure{order:-1}figure img{max-width:320px}}
 </style>
 </head>
 <body>
@@ -123,7 +123,7 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
       </div>
     </div>
     <figure>
-      <img src="gaia.webp" width="560" height="700" data-ta="lp_img_alt">
+      <img src="naja-duo.webp" width="900" height="670" data-ta="lp_img_alt">
       <figcaption data-t="lp_img_cap"></figcaption>
     </figure>
   </div>
@@ -227,8 +227,8 @@ const T = {
     lp_man: "User manual",
     lp_src: "Source code",
     lp_b_lang: "Web UI in 8 languages",
-    lp_img_alt: "A NerdAxe Gaia in a stand, its display showing WarpAxe: hashrate with a one-hour graph, chip temperature, power and efficiency",
-    lp_img_cap: "My NerdAxe Gaia on WarpAxe: 2.41 TH/s at 28.1 W.",
+    lp_img_alt: "A Bitaxe Naja Duo in its stand, the display showing WarpAxe: hashrate with a one-hour graph, chip temperature, power and efficiency",
+    lp_img_cap: "My Bitaxe Naja Duo on WarpAxe: 4.38 TH/s at 49.7 W.",
     lp_c1h: "One image for every board",
     lp_c1p: "WarpAxe detects the board on first boot, from the factory settings and a read-only probe. A Bitaxe Gamma, BitForge Nano, NerdAxe Gaia or NerdNOS starts mining at once; where boards look alike, such as the NerdQAxe++ and NerdOctaxe, you are asked once which model it is.",
     lp_c2h: "Signed updates, with a way back",
@@ -340,8 +340,8 @@ const T = {
     lp_man: "Handbuch",
     lp_src: "Quellcode",
     lp_b_lang: "Weboberfläche in 8 Sprachen",
-    lp_img_alt: "Ein NerdAxe Gaia im Ständer, das Display zeigt WarpAxe: Hashrate mit Ein-Stunden-Verlauf, Chiptemperatur, Leistung und Effizienz",
-    lp_img_cap: "Mein NerdAxe Gaia mit WarpAxe: 2,41 TH/s bei 28,1 W.",
+    lp_img_alt: "Ein Bitaxe Naja Duo im Ständer, das Display zeigt WarpAxe: Hashrate mit Ein-Stunden-Verlauf, Chiptemperatur, Leistung und Effizienz",
+    lp_img_cap: "Mein Bitaxe Naja Duo mit WarpAxe: 4,38 TH/s bei 49,7 W.",
     lp_c1h: "Ein Image für alle Boards",
     lp_c1p: "WarpAxe erkennt das Board beim ersten Start anhand der Werkseinstellungen und einer reinen Leseabfrage. Ein Bitaxe Gamma, BitForge Nano, NerdAxe Gaia oder NerdNOS schürft sofort los; wo sich Boards gleichen, etwa NerdQAxe++ und NerdOctaxe, fragt WarpAxe einmal, welches es ist.",
     lp_c2h: "Signierte Updates mit Rückweg",
@@ -453,8 +453,8 @@ const T = {
     lp_man: "Manual",
     lp_src: "Código fuente",
     lp_b_lang: "Interfaz web en 8 idiomas",
-    lp_img_alt: "Un NerdAxe Gaia en un soporte; su pantalla muestra WarpAxe: hashrate con gráfico de una hora, temperatura del chip, potencia y eficiencia",
-    lp_img_cap: "Mi NerdAxe Gaia con WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_img_alt: "Un Bitaxe Naja Duo en su soporte; la pantalla muestra WarpAxe: hashrate con gráfico de una hora, temperatura del chip, potencia y eficiencia",
+    lp_img_cap: "Mi Bitaxe Naja Duo con WarpAxe: 4,38 TH/s a 49,7 W.",
     lp_c1h: "Una imagen para todas las placas",
     lp_c1p: "WarpAxe detecta la placa en el primer arranque, a partir de la configuración de fábrica y de una consulta de solo lectura. Un Bitaxe Gamma, BitForge Nano, NerdAxe Gaia o NerdNOS empieza a minar enseguida; con placas que se parecen entre sí, como la NerdQAxe++ y la NerdOctaxe, se te pregunta una sola vez qué modelo es.",
     lp_c2h: "Actualizaciones firmadas, con vuelta atrás",
@@ -566,8 +566,8 @@ const T = {
     lp_man: "Manuel",
     lp_src: "Code source",
     lp_b_lang: "Interface web en 8 langues",
-    lp_img_alt: "Un NerdAxe Gaia sur un support ; son écran affiche WarpAxe : hashrate avec courbe sur une heure, température de la puce, puissance et efficacité",
-    lp_img_cap: "Mon NerdAxe Gaia sous WarpAxe : 2,41 TH/s pour 28,1 W.",
+    lp_img_alt: "Un Bitaxe Naja Duo sur son support ; son écran affiche WarpAxe : hashrate avec courbe sur une heure, température de la puce, puissance et efficacité",
+    lp_img_cap: "Mon Bitaxe Naja Duo sous WarpAxe : 4,38 TH/s pour 49,7 W.",
     lp_c1h: "Une seule image pour toutes les cartes",
     lp_c1p: "WarpAxe reconnaît la carte au premier démarrage, d’après les réglages d’usine et une détection en lecture seule. Un Bitaxe Gamma, BitForge Nano, NerdAxe Gaia ou NerdNOS commence à miner aussitôt ; lorsque des cartes se ressemblent, comme la NerdQAxe++ et la NerdOctaxe, l’interface demande une seule fois de quel modèle il s’agit.",
     lp_c2h: "Mises à jour signées, avec retour arrière",
@@ -679,8 +679,8 @@ const T = {
     lp_man: "Manuale (in inglese)",
     lp_src: "Codice sorgente",
     lp_b_lang: "Interfaccia web in 8 lingue",
-    lp_img_alt: "Un NerdAxe Gaia su un supporto; il display mostra WarpAxe: hashrate con grafico dell’ultima ora, temperatura del chip, potenza ed efficienza",
-    lp_img_cap: "Il mio NerdAxe Gaia con WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_img_alt: "Un Bitaxe Naja Duo sul suo supporto; il display mostra WarpAxe: hashrate con grafico dell’ultima ora, temperatura del chip, potenza ed efficienza",
+    lp_img_cap: "Il mio Bitaxe Naja Duo con WarpAxe: 4,38 TH/s a 49,7 W.",
     lp_c1h: "Un’unica immagine per tutte le schede",
     lp_c1p: "Al primo avvio WarpAxe riconosce la scheda in base alle impostazioni di fabbrica e a un rilevamento in sola lettura. Un Bitaxe Gamma, BitForge Nano, NerdAxe Gaia o NerdNOS inizia subito a minare; con schede simili tra loro, come NerdQAxe++ e NerdOctaxe, ti viene chiesto una sola volta di quale modello si tratta.",
     lp_c2h: "Aggiornamenti firmati, con ripristino automatico",
@@ -791,8 +791,8 @@ const T = {
     lp_man: "Manual (em inglês)",
     lp_src: "Código-fonte",
     lp_b_lang: "Interface web em 8 idiomas",
-    lp_img_alt: "Um NerdAxe Gaia num suporte; o display mostra o WarpAxe: hashrate com gráfico de uma hora, temperatura do chip, potência e eficiência",
-    lp_img_cap: "Meu NerdAxe Gaia com o WarpAxe: 2,41 TH/s a 28,1 W.",
+    lp_img_alt: "Um Bitaxe Naja Duo no seu suporte; o display mostra o WarpAxe: hashrate com gráfico de uma hora, temperatura do chip, potência e eficiência",
+    lp_img_cap: "Meu Bitaxe Naja Duo com o WarpAxe: 4,38 TH/s a 49,7 W.",
     lp_c1h: "Uma imagem para todas as placas",
     lp_c1p: "O WarpAxe identifica a placa na primeira inicialização, a partir das configurações de fábrica e de uma verificação somente leitura. Um Bitaxe Gamma, BitForge Nano, NerdAxe Gaia ou NerdNOS começa a minerar na hora; em placas parecidas entre si, como a NerdQAxe++ e a NerdOctaxe, ele pergunta uma vez qual é o modelo.",
     lp_c2h: "Atualizações assinadas, com caminho de volta",
@@ -903,8 +903,8 @@ const T = {
     lp_man: "マニュアル（英語）",
     lp_src: "ソースコード",
     lp_b_lang: "Web UI は 8 言語対応",
-    lp_img_alt: "スタンドに立てた NerdAxe Gaia。画面に WarpAxe が表示されている：1 時間グラフ付きのハッシュレート、チップ温度、消費電力、効率",
-    lp_img_cap: "WarpAxe で動く私の NerdAxe Gaia：28.1 W で 2.41 TH/s。",
+    lp_img_alt: "スタンドに置いた Bitaxe Naja Duo。画面に WarpAxe が表示されている：1 時間グラフ付きのハッシュレート、チップ温度、消費電力、効率",
+    lp_img_cap: "WarpAxe で動く私の Bitaxe Naja Duo：49.7 W で 4.38 TH/s。",
     lp_c1h: "1 つのイメージで全ボードに対応",
     lp_c1p: "WarpAxe は初回起動時に、工場出荷時の設定と書き込みを伴わない検出でボードを判別します。Bitaxe Gamma、BitForge Nano、NerdAxe Gaia、NerdNOS はすぐにマイニングを始めます。NerdQAxe++ と NerdOctaxe のように見分けにくいボードでは、どのボードかを一度だけ尋ねます。",
     lp_c2h: "署名付きアップデートとロールバック",
@@ -1015,8 +1015,8 @@ const T = {
     lp_man: "用户手册（英文）",
     lp_src: "源代码",
     lp_b_lang: "网页界面支持 8 种语言",
-    lp_img_alt: "支架上的 NerdAxe Gaia，屏幕显示 WarpAxe：带一小时曲线的算力、芯片温度、功耗和能效",
-    lp_img_cap: "我的 NerdAxe Gaia 运行 WarpAxe：2.41 TH/s，功耗 28.1 W。",
+    lp_img_alt: "支架上的 Bitaxe Naja Duo，屏幕显示 WarpAxe：带一小时曲线的算力、芯片温度、功耗和能效",
+    lp_img_cap: "我的 Bitaxe Naja Duo 运行 WarpAxe：4.38 TH/s，功耗 49.7 W。",
     lp_c1h: "一个镜像，适配所有板卡",
     lp_c1p: "WarpAxe 在首次启动时根据出厂设置和只读探测识别板卡。Bitaxe Gamma、BitForge Nano、NerdAxe Gaia 和 NerdNOS 会立即开始挖矿；对于难以区分的板卡（如 NerdQAxe++ 和 NerdOctaxe），会询问一次具体型号。",
     lp_c2h: "签名更新，留有退路",
