@@ -738,9 +738,12 @@ fn session(
     {
         let stream = Arc::clone(&stream);
         let pending = Arc::clone(&pending);
-        std::thread::Builder::new()
-            .stack_size(6 * 1024)
-            .spawn(move || {
+        // The submit thread's stack in PSRAM: 6 KB of internal RAM in one
+        // piece is not always there on a reconnect (4.8 KB largest block
+        // seen on a NerdOctaxe on TLS, 2026-11-13), and without the thread
+        // the session hashed on and sent no share, with no word of it.
+        // It only sends on the link, never touches flash.
+        diag::spawn_psram("submit", 6 * 1024, move || {
                 while let Ok(out) = rx.recv() {
                     let Outgoing::V1(req) = out else {
                         continue; // a share from before the protocol switch
@@ -752,8 +755,12 @@ fn session(
                         break;
                     }
                 }
-            })
-            .ok();
+        })
+        .map_err(|e| {
+            // No thread to take them: shares go nowhere until the next session.
+            *SUBMIT.lock().unwrap() = None;
+            anyhow::anyhow!("submit thread not started: {e}")
+        })?;
     }
     let _drop_sender_on_exit = SenderGuard;
 
@@ -1121,9 +1128,12 @@ fn session_v2(
         let stream = Arc::clone(&stream);
         let transport = Arc::clone(&transport);
         let client = Arc::clone(&client);
-        std::thread::Builder::new()
-            .stack_size(6 * 1024)
-            .spawn(move || {
+        // The submit thread's stack in PSRAM: 6 KB of internal RAM in one
+        // piece is not always there on a reconnect (4.8 KB largest block
+        // seen on a NerdOctaxe on TLS, 2026-11-13), and without the thread
+        // the session hashed on and sent no share, with no word of it.
+        // It only sends on the link, never touches flash.
+        diag::spawn_psram("submit", 6 * 1024, move || {
                 while let Ok(out) = rx.recv() {
                     let Outgoing::V2 {
                         job_id,
@@ -1149,8 +1159,12 @@ fn session_v2(
                         Err(e) => log::warn!("stratum: sv2 share dropped: {e}"),
                     }
                 }
-            })
-            .ok();
+        })
+        .map_err(|e| {
+            // No thread to take them: shares go nowhere until the next session.
+            *SUBMIT.lock().unwrap() = None;
+            anyhow::anyhow!("submit thread not started: {e}")
+        })?;
     }
     let _drop_sender_on_exit = SenderGuard;
     let started = Instant::now();
