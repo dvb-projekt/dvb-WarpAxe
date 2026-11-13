@@ -1,4 +1,4 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process::Command;
 
 fn git(args: &[&str]) -> Option<String> {
@@ -12,20 +12,25 @@ fn git(args: &[&str]) -> Option<String> {
 
 /// The web UI, gzip-compressed into OUT_DIR for `include_bytes!`: the
 /// page is served with `Content-Encoding: gzip` and never kept
-/// uncompressed in the image (290 KB → 90 KB). Deterministic: no mtime,
-/// no file name in the header, so the same source gives the same image.
-/// The result is decompressed again here and compared byte for byte
+/// uncompressed in the image (433 KB → 131 KB). Packed with zopfli: the
+/// same gzip format any browser reads, about 7 KB smaller than zlib's
+/// best level for a second of build time when the page changed
+/// (docs/16). Deterministic: no mtime, no file name in the header, so
+/// the same source gives the same image. The result is decompressed
+/// again here, by another implementation, and compared byte for byte
 /// with the source; a mismatch fails the build.
 fn gzip_ui() {
     let src = "src/ui/index.html";
     println!("cargo:rerun-if-changed={src}");
     let html = std::fs::read(src).expect("read src/ui/index.html");
-    let mut gz = flate2::GzBuilder::new()
-        .mtime(0)
-        .operating_system(255)
-        .write(Vec::new(), flate2::Compression::best());
-    gz.write_all(&html).expect("gzip the web UI");
-    let packed = gz.finish().expect("finish the gzip");
+    let mut packed = Vec::new();
+    zopfli::compress(
+        zopfli::Options::default(),
+        zopfli::Format::Gzip,
+        html.as_slice(),
+        &mut packed,
+    )
+    .expect("gzip the web UI");
     let mut back = Vec::new();
     flate2::read::GzDecoder::new(packed.as_slice())
         .read_to_end(&mut back)

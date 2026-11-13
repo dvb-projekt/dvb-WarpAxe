@@ -23,9 +23,17 @@ debug = true
 [profile.release.package.warpaxe-cpuminer]
 opt-level = 3
 
+# build.rs packs the web UI with zopfli: optimised it takes a second,
+# unoptimised (the default for what a build script uses) half a minute.
+[profile.release.package.zopfli]
+opt-level = 3
+
 [profile.dev]
 debug = true
 opt-level = "z"
+
+[profile.dev.package.zopfli]
+opt-level = 3
 
 [dependencies]
 log = "0.4"
@@ -60,8 +68,11 @@ warpaxe-diag = { path = "../../crates/diag" }
 
 [build-dependencies]
 embuild = "0.33"
-# The web UI goes into the image gzip-compressed (build.rs): 290 KB of
-# HTML with eight languages become 90 KB. Pure Rust (miniz_oxide).
+# The web UI goes into the image gzip-compressed (build.rs): 433 KB of
+# HTML with eight languages become 131 KB. zopfli packs it (pure Rust,
+# 7 KB smaller than zlib's best level), flate2 (miniz_oxide) unpacks it
+# again as the check.
+zopfli = { version = "0.8", default-features = false, features = ["std", "gzip"] }
 flate2 = "1"
 
 [features]

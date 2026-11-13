@@ -38,7 +38,7 @@ fn asset(name: &str) -> Option<(&'static [u8], &'static str)> {
 
 /// The web UI: one static page on top of the JSON API, gzip-compressed
 /// by build.rs (the source is `ui/index.html`; the image holds only the
-/// compressed form, 90 KB instead of 290 KB) and served with
+/// compressed form, 131 KB instead of 433 KB) and served with
 /// `Content-Encoding: gzip` on every path the page comes from: Wi-Fi,
 /// the USB network and the setup hotspot's captive portal, whose
 /// redirects all end at `/`.
