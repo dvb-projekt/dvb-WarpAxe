@@ -1428,6 +1428,9 @@ async function watchUpdate() {
   if (u && ["checking", "downloading", "verifying", "flashing"].includes(u.phase)) {
     if (!watch.seen) { watch.seen = true; setWatch(watch); }
     const pct = u.phase === "downloading" ? u.progress : u.phase === "flashing" ? (u.flashProgress ?? 0) : null;
+    // On the System page the update card shows the same phase and bar:
+    // one bar there, not two (a user's report, 2026-11-13).
+    if (route === "system" && $("#online")) { updBar(null); return; }
     updBar(u.phase === "downloading" ? t("ph_downloading", {p: u.progress}) : u.phase === "flashing" ? t("ph_flashing", {p: u.flashProgress ?? 0}) : t(u.phase === "verifying" ? "ph_verifying" : "ph_checking"), pct);
     return;
   }
