@@ -325,6 +325,59 @@ address 0 and gets the same bytes as before. The single-chip *read* that
 had brought nothing back from chip 1 (docs/05) went to address 4 too;
 reads stay by broadcast, as the references do them.
 
+## What the devices said (2026-11-13, runs by dvb-WarpAxe #2)
+
+Test build 873fa78 (v0.1.44 plus the v0.1.45 audit fixes), each board
+taken out of WarpTune for the run and put back to its point after it.
+
+**NerdOctaxe** (625 MHz, SV1+TLS), against ten minutes at 625 MHz /
+1170 mV without offsets (errors per chip: chip 0 0.71 %, chip 2 0.08 %,
+chip 4 0.10 %, the others about 0):
+
+- *Offsets and voltage in one PATCH* (`[0,0,-25,0,-50,0,0,0]` and
+  1150 mV): chips 2 and 4 ramped down in 6.25 MHz steps to 600 and
+  575 MHz; the log said "core 1150 mV waits for the clock to come down",
+  0.85 s later "the clock is down, core 1150 mV goes now". Over 17
+  minutes chip 2 hashed 1226 GH/s and chip 4 1174 (96 % and 92 % of
+  1277, as their clocks), the others 1267–1277; no chain restart, no
+  latch reset, no silent chip. Chip 2's errors rose to 1.15 % (0.08 %
+  at 625 / 1170): this chip takes the 20 mV less worse than the lower
+  clock helps it, the kind of finding the search per chip is for.
+- *Chips off and on, and a restart*, with the offsets stored: all chips
+  ramp together, chips 2 and 4 stop at their own clock; after the
+  restart the first reading already showed 600 and 575; chip 4's four
+  domains all hashing.
+- *Limits*: an offset that puts a chip above the board's 850 MHz
+  ("chip 3 at 875 MHz above the board's 850 MHz"), one below half the
+  clock ("chip 1 at 305 MHz below 313 MHz") and `"x"` were refused with
+  400; the stored list stayed as it was. +100 MHz at 625 is 725, inside
+  this board's range, and was taken, as it should be; a shorter list is
+  filled with zeros, as documented above.
+- *Self-test* with the offsets: passed, each chip at 98.8–101.4 % of its
+  own clock (chip 2 98.8 % at 600, chip 4 100.5 % at 575).
+- Once, after the restart at 1150 mV, domain 1 of chips 1, 3, 5 and 7
+  stayed dead (8.4 TH/s instead of 10). Two came back on their own; the
+  latch reset healed the rest after its ten-minute window, as designed
+  (`lastDomainLatchReset` chip 1, domain 1). Two more restarts at
+  1150 mV, with and without the offsets, and one at 1170 mV came up
+  clean: not the boot voltage, a sporadic latch. NerdOS brings the
+  Octaxe up at the configured voltage too (`m_initVoltageMillis = 0`).
+
+**NerdQAxe++** (800 MHz / 1250 mV): chip 3 at −25 MHz, over 20 minutes
+1578 GH/s against 1643 at 800 (−4 %, expected −3.1 %; the others moved
+by up to 1 % as well), `expectedHashrate` 6528 → 6477 (−0.8 %); no
+restart, no new duplicate.
+
+**Naja Duo** (327 MHz / 1000 mV): `[-60, 0]` refused with 400 ("60 MHz
+between the chips, this board's chips are in series: at most 25 MHz");
+`[0, -25]` taken, chip 1 at 301.8 MHz; chips off and on: chip 1 came up
+at its own clock, chip 0 at the chain's. One hour with `[0, -25]`:
+`counterRestarts` 0 on both, no restart; chip 1 2081 GH/s against 2258
+for chip 0 (expected about 2085), errors 0.04 % and 0.07 %.
+
+Left of the list below: on the Naja Duo, with the midpoint measured,
+what a small offset does to it.
+
 ## Still to run
 
 Run on 2026-11-12 (v0.1.44 test builds, NerdOctaxe on SV1+TLS, 625 MHz /
@@ -333,8 +386,8 @@ measured with `hashCount` over 4 minutes chip 2 hashed 1229 GH/s against
 1265–1289 for the other seven (expected about 4 % less), and on read-back
 only chip 2's PLL word differed (0xd0c00230 against 0xd0c80230); no chain
 restart, no latch reset, no silent-chip restart; back to `[]` within about
-20 s. The limit texts were seen as documented. Items 3–6 below are still
-to run.
+20 s. The limit texts were seen as documented. Items 3–8 ran on
+2026-11-13 (above), all but the Naja Duo's midpoint.
 
 Whether a real BM1370 takes a PLL write addressed to it alone while it
 hashes, the way it takes the same register written to all, the simulator
@@ -356,7 +409,7 @@ the driver are not yet. To be run with Oliver's OK, through dvb-WarpAxe
 4. **Chips off and on, and a restart**, with offsets stored: each chip
    comes up at its own clock (`asicFrequencies` from the first reading),
    chip 4's domains all present.
-5. **Limits**: +100 on one chip at 625 MHz (above the board's highest), an
+5. **Limits**: +250 on one chip at 625 MHz (above the board's 850), an
    offset below half the clock and `"x"` are refused with 400 and the
    chip named; the stored list is unchanged.
 6. **Self-test** with offsets: passes, each chip near 100 % of its own
