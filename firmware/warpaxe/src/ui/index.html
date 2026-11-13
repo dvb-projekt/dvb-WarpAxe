@@ -1156,7 +1156,7 @@ function systemPage() {
     <div class="actions" style="justify-content:flex-start"><button type="button" class="btn pri" id="fwgo" disabled>${t("start_update")}</button><span id="fwmsg" class="mute" style="font-size:13px"></span></div>
     <div class="row" style="align-items:center;gap:12px"><span class="dim" style="font-size:12px">${t("dlmode_s")}</span><button type="button" class="btn" data-act="dlmode" style="white-space:nowrap;flex:none">${t("dlmode")}</button></div></section>
   <section class="card" style="display:flex;flex-direction:column;gap:14px"><h2>${t("maintenance")}</h2>
-    <div><div class="row"><span class="mute">${t("status")}</span><span class="${fine ? "ok" : "err"}">${fine ? t("st_fine") : esc(statusText(i, err))}</span></div>${i.vinSag != null ? `<div class="row"><span class="mute">${t("psu_load")}</span><span class="num ${i.psuSagWarning ? "warn" : ""}">${esc(t("psu_load_v", {l: nf(i.vinLoad, 2), r: nf(i.vinIdle, 2), s: nf(i.vinSag, 2)}))}</span></div>` : ""}${i.psuSagWarning ? `<div class="warn" style="font-size:13px">${esc(t("psu_weak", {s: nf(i.vinSag, 2)}))}</div>` : ""}<div class="row"><span class="mute">${t("last_reset")}</span><span class="num">${esc(i.resetReason)}</span></div><div class="row"><span class="mute">${t("free_heap")}</span><span class="num">${nf(i.freeHeap / 1024)} KB</span></div></div>
+    <div><div class="row"><span class="mute">${t("status")}</span><span class="${fine ? "ok" : "err"}">${fine ? t("st_fine") : esc(statusText(i, err))}</span></div>${i.vinSag != null ? `<div class="row"><span class="mute">${t("psu_load")}</span><span class="num ${i.psuSagWarning ? "warn" : ""}">${esc(t("psu_load_v", {l: nf(i.vinLoad, 2), r: nf(i.vinIdle, 2), s: nf(i.vinSag, 2)}))}</span></div>` : ""}${i.psuSagWarning && i.vinSag != null ? `<div class="warn" style="font-size:13px">${esc(t("psu_weak", {s: nf(i.vinSag, 2)}))}</div>` : ""}<div class="row"><span class="mute">${t("last_reset")}</span><span class="num">${esc(i.resetReason)}</span></div><div class="row"><span class="mute">${t("free_heap")}</span><span class="num">${nf(i.freeHeap / 1024)} KB</span></div></div>
     <div class="g2" style="gap:10px"><button type="button" class="btn" data-act="restart">${t("restart")}</button>${i.shutdown ? `<button type="button" class="btn" data-act="on">${t("chips_on")}</button>` : `<button type="button" class="btn dng" data-act="off">${t("chips_off")}</button>`}${i.cpuMiner ? "" : `<button type="button" class="btn" data-act="overheat" ${i.overheat_mode ? "" : "disabled"}>${t("reset_overheat")}</button>`}<button type="button" class="btn" data-act="best">${t("reset_best")}</button></div>
     <div class="dim" style="font-size:12px">${t("maint_note")}</div></section></div>
   <div class="g2"><section class="card" id="stcard" style="display:flex;flex-direction:column;gap:14px">${selftestHtml()}</section>
@@ -1298,7 +1298,7 @@ function blockBanner() {
   // A block on another chain while the coin setting says BTC (a pool
   // switch without changing the ticker): Bitcoin passed height 900 000
   // in 2025, so a lower height cannot be a Bitcoin block found now.
-  const notBtc = (b.coin || "BTC") === "BTC" && Number(b.height) < 900000;
+  const hNum = Number(b.height), notBtc = (b.coin || "BTC") === "BTC" && hNum > 0 && hNum < 900000;
   const hash = !hx ? "" : (b.coin || "BTC") === "BTC" && !notBtc ? `<a class="num" style="font-size:13px" href="https://mempool.space/block/${hx}" target="_blank" rel="noopener noreferrer">${short}</a>` : `<span class="num mute" style="font-size:13px">${short}</span>`;
   const when = whenAt(b.time), cols = ["var(--btc)", "#FFD166", "var(--plasma)", "var(--warp)"];
   const bits = Array.from({length: 14}, (_, k) => `<i style="left:${(k * 37 + 5) % 97}%;background:${cols[k % 4]};animation-delay:${(k * 0.53 % 3.6).toFixed(2)}s"></i>`).join("");
@@ -1427,14 +1427,17 @@ async function watchUpdate() {
   clearTimeout(to);
   if (!watch) return;
   // The card on the System page shows the same phase as the bar.
-  if (u) { upd = u; const e = $("#online"); if (route === "system" && e && !e.contains(document.activeElement)) e.innerHTML = onlineHtml(); }
+  let drawn = false;
+  if (u) { upd = u; const e = $("#online"); if (route === "system" && e && !e.contains(document.activeElement)) { e.innerHTML = onlineHtml(); drawn = true; } }
   const late = Date.now() - watch.t0 > 300000;
   if (u && ["checking", "downloading", "verifying", "flashing"].includes(u.phase)) {
     if (!watch.seen) { watch.seen = true; setWatch(watch); }
     const pct = u.phase === "downloading" ? u.progress : u.phase === "flashing" ? (u.flashProgress ?? 0) : null;
     // On the System page the update card shows the same phase and bar:
-    // one bar there, not two (a user's report, 2026-11-13).
-    if (route === "system" && $("#online")) { updBar(null); return; }
+    // one bar there, not two (a user's report, 2026-11-13). Only when the
+    // card was redrawn just now: with the focus in it, it stands still,
+    // and the bar on top stays.
+    if (drawn) { updBar(null); return; }
     updBar(u.phase === "downloading" ? t("ph_downloading", {p: u.progress}) : u.phase === "flashing" ? t("ph_flashing", {p: u.flashProgress ?? 0}) : t(u.phase === "verifying" ? "ph_verifying" : "ph_checking"), pct);
     return;
   }
@@ -1495,7 +1498,7 @@ async function act(a) {
     if (a === "best") { if (!await ask(t("ask_best"))) return; await post("/api/v1/bestdiff/reset"); }
     if (a === "ocoff") { try { sessionStorage.removeItem("oc"); } catch (e) {} history.replaceState(null, "", location.pathname + "#/settings"); render(); return; }
     if (a === "updcheck") { await post("/api/v1/update/check"); upd = Object.assign(upd || {}, {phase: "checking"}); $("#online").innerHTML = onlineHtml(); return; }
-    if (a === "updinstall") { if (["checking", "downloading", "verifying", "flashing"].includes(upd?.phase) || !await ask(t("ask_install", {v: upd?.latest?.version || ""}))) return; upd = Object.assign(upd || {}, {phase: "downloading", progress: 0}); $("#online").innerHTML = onlineHtml(); await post("/api/v1/update/install"); setWatch({from: upd?.installed || "", t0: Date.now()}); updBar(t("ph_downloading", {p: 0}), 0); return; }
+    if (a === "updinstall") { if (["checking", "downloading", "verifying", "flashing"].includes(upd?.phase) || !await ask(t("ask_install", {v: upd?.latest?.version || ""}))) return; upd = Object.assign(upd || {}, {phase: "downloading", progress: 0}); $("#online").innerHTML = onlineHtml(); await post("/api/v1/update/install"); setWatch({from: upd?.installed || "", t0: Date.now()}); if (route !== "system") updBar(t("ph_downloading", {p: 0}), 0); return; }
     if (a === "bdset") { const n = $("#bdpick")?.value; const m = (info.boardModels || []).find(b => b.name === n); if (!n || !await ask(t("bd_ask", {m: m ? m.model : n}))) return; await post("/api/system", {boardModel: n}); await fetch("/api/system/restart", {method: "POST"}).catch(() => {}); toast(t("restarting")); setTimeout(() => location.reload(), 30000); return; }
     if (a === "bdshowall") { bdShowAll = true; render(); return; }
     if (a === "bdretry") { if (!await ask(t("ask_restart"))) return; await fetch("/api/system/restart", {method: "POST"}).catch(() => {}); toast(t("restarting")); setTimeout(() => location.reload(), 30000); return; }

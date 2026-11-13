@@ -155,8 +155,10 @@ impl Lcd {
             check!(tusb::esp_lcd_panel_set_gap(panel, 0, 35));
             check!(tusb::esp_lcd_panel_disp_on_off(panel, true));
         }
-        // Internal RAM, like the first build that lit the screen; the
-        // PSRAM-aligned variant is the prime suspect for the black screen.
+        // A plain allocation: at 108,800 bytes it is above the 16 KB
+        // threshold and lands in PSRAM (the field's comment says so too).
+        // The PSRAM-aligned variant was the prime suspect for the black
+        // screen of the first builds; this one lit it.
         let len = WIDTH * HEIGHT * 2;
         let fb: &'static mut [u8] = Box::leak(vec![0u8; len].into_boxed_slice());
         let bounce = unsafe {
