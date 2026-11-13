@@ -43,5 +43,5 @@ pub fn status() -> Status {
 /// The status as `/api/system/info` and the endpoint report it.
 pub fn json() -> serde_json::Value {
     let s = status();
-    serde_json::json!({"active": s.active, "expires_in_s": s.expires_in_s})
+    warpaxe_jsonval::json!({"active": s.active, "expires_in_s": s.expires_in_s})
 }

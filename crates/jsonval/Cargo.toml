@@ -1,0 +1,17 @@
+[package]
+name = "warpaxe-jsonval"
+description = "serde_json's json! macro with the code for each entry out of line: the firmware's API documents have several hundred keys, and the stock macro spends about 140 bytes of the image on each. Same grammar, same value; host-tested against the original."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = "1"
+serde_json = "1"
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }

@@ -9,7 +9,7 @@ use esp_idf_svc::http::server::{Configuration, EspHttpServer, Request};
 use esp_idf_svc::http::Method;
 use esp_idf_svc::io::{EspIOError, Write};
 use esp_idf_svc::ota::EspOta;
-use serde_json::json;
+use warpaxe_jsonval::json;
 
 use crate::{board, config, diag, display, events, miner, net, selftest, stratum, swarm};
 use warpaxe_displaycfg as dcfg;

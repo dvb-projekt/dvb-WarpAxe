@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use serde_json::json;
+use warpaxe_jsonval::json;
 
 use crate::{board, diag, miner};
 

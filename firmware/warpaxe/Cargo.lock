@@ -1776,6 +1776,7 @@ dependencies = [
  "warpaxe-diag",
  "warpaxe-displaycfg",
  "warpaxe-inflate",
+ "warpaxe-jsonval",
  "warpaxe-ota",
  "warpaxe-stratum",
  "warpaxe-sv2",
@@ -1835,6 +1836,14 @@ dependencies = [
 [[package]]
 name = "warpaxe-inflate"
 version = "0.1.0"
+
+[[package]]
+name = "warpaxe-jsonval"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
 
 [[package]]
 name = "warpaxe-ota"

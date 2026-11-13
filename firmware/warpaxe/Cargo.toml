@@ -61,6 +61,9 @@ warpaxe-avalon = { path = "../../crates/avalon" }
 # The firmware writer's hand-off: one image at a time to the main task.
 warpaxe-ota = { path = "../../crates/ota" }
 warpaxe-trust = { path = "../../crates/trust" }
+# serde_json's json! with each entry's code out of line: the API
+# documents have several hundred keys (docs/16).
+warpaxe-jsonval = { path = "../../crates/jsonval" }
 # The boot screen's pictures are in the image packed; this unpacks them.
 warpaxe-inflate = { path = "../../crates/inflate" }
 # The diagnostics file's privacy rules and the event log's ring.

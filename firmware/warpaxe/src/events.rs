@@ -91,5 +91,5 @@ pub fn list() -> Vec<Event> {
 pub fn json() -> serde_json::Value {
     let mut v = list();
     v.reverse();
-    serde_json::json!({ "events": v, "capacity": warpaxe_diag::events::CAPACITY })
+    warpaxe_jsonval::json!({ "events": v, "capacity": warpaxe_diag::events::CAPACITY })
 }

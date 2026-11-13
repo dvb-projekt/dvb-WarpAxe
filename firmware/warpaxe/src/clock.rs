@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use esp_idf_svc::sntp::{EspSntp, SntpConf};
 use esp_idf_svc::sys;
-use serde_json::json;
+use warpaxe_jsonval::json;
 
 use crate::config;
 
