@@ -375,8 +375,8 @@ at its own clock, chip 0 at the chain's. One hour with `[0, -25]`:
 `counterRestarts` 0 on both, no restart; chip 1 2081 GH/s against 2258
 for chip 0 (expected about 2085), errors 0.04 % and 0.07 %.
 
-Left of the list below: on the Naja Duo, with the midpoint measured,
-what a small offset does to it.
+The Naja Duo's midpoint measurement (item 8's last part) was dropped
+(Oliver, 2026-11-13): not needed.
 
 ## Still to run
 
@@ -387,7 +387,7 @@ measured with `hashCount` over 4 minutes chip 2 hashed 1229 GH/s against
 only chip 2's PLL word differed (0xd0c00230 against 0xd0c80230); no chain
 restart, no latch reset, no silent-chip restart; back to `[]` within about
 20 s. The limit texts were seen as documented. Items 3–8 ran on
-2026-11-13 (above), all but the Naja Duo's midpoint.
+2026-11-13 (above); the Naja Duo's midpoint was dropped.
 
 Whether a real BM1370 takes a PLL write addressed to it alone while it
 hashes, the way it takes the same register written to all, the simulator
