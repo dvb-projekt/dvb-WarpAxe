@@ -101,10 +101,15 @@ static MARK_NAJA: (i32, i32, &[u8]) = (
 );
 
 /// One frame: the splash for the first seconds, then the screens.
-/// Returns how long until the next frame.
-fn draw(d: &mut display::Display, ui: &mut screens::Ui) -> Duration {
+/// Returns how long until the next frame. `splash_for` is the board the
+/// LCD's splash was last composed for (the display thread keeps it).
+fn draw(
+    d: &mut display::Display,
+    ui: &mut screens::Ui,
+    splash_for: &mut Option<&'static str>,
+) -> Duration {
     if diag::uptime_s() < SPLASH_S {
-        draw_splash(d);
+        draw_splash(d, splash_for);
         return Duration::from_millis(500);
     }
     ui.frame(d)
@@ -112,13 +117,25 @@ fn draw(d: &mut display::Display, ui: &mut screens::Ui) -> Duration {
 
 /// The wordmark with the model and firmware version under it, in the
 /// board family's colour (as the web UI's type plate).
-fn draw_splash(d: &mut display::Display) {
+fn draw_splash(d: &mut display::Display, splash_for: &mut Option<&'static str>) {
     let cfg = config::get();
     let profile = board::profile();
     let version = env!("CARGO_PKG_VERSION");
     match d {
+        // The splash is sent twice a second, but nothing else draws into
+        // the frame buffer before it ends: it is unpacked and composed
+        // once, and again only for another board (the one detected on a
+        // first start arrives a moment into the splash). The other
+        // calls send the frame as it stands.
+        display::Display::Lcd(l) if *splash_for == Some(profile.name) => {
+            l.orient(
+                cfg.flipscreen ^ crate::board::profile().display_flip,
+                cfg.invertscreen,
+            );
+        }
         display::Display::Lcd(l) => {
             use display::*;
+            *splash_for = Some(profile.name);
             l.orient(
                 cfg.flipscreen ^ crate::board::profile().display_flip,
                 cfg.invertscreen,
@@ -360,6 +377,7 @@ fn main() {
             }
             display::touch();
             let mut ui = screens::Ui::new();
+            let mut splash_for = None;
             let mut awake = true;
             let mut was_down = [false; 2];
             let mut next_frame = std::time::Instant::now();
@@ -393,7 +411,7 @@ fn main() {
                     d.set_awake(awake);
                 }
                 if awake && std::time::Instant::now() >= next_frame {
-                    next_frame = std::time::Instant::now() + draw(&mut d, &mut ui);
+                    next_frame = std::time::Instant::now() + draw(&mut d, &mut ui, &mut splash_for);
                 }
                 std::thread::sleep(Duration::from_millis(20));
             }
