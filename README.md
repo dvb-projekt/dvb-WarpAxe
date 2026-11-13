@@ -1084,7 +1084,9 @@ Fonts and the splash are generated from `tools/fonts` (SIL Open Font
 License) and `docs/brand` by `tools/make-fonts.py` and
 `tools/make-splash.py` (which also packs the splash pictures for the
 image: `--pack` does only that); releases are published with
-`tools/release-firmware.sh`.
+`tools/release-firmware.sh`. `tools/image-breakdown.py` says where the
+image's bytes are, from the last build's linker map
+([docs/16](docs/16-Image-size-where-it-goes-and-what-was-taken-out.md)).
 
 ## Repository
 
@@ -1097,6 +1099,7 @@ image: `--pack` does only that); releases are published with
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |
 | `crates/inflate` | a small DEFLATE decoder: the boot screen's pictures are in the image packed and unpacked into the frame buffer when drawn ([docs/16](docs/16-Image-size-where-it-goes-and-what-was-taken-out.md)) — `no_std`, host-tested against the raw pictures |
+| `crates/jsonval` | serde_json's `json!` with each entry's code out of line: the API documents have several hundred keys, and the stock macro spends about 140 bytes of the image on each — host-tested against the original |
 | `crates/diag` | the diagnostics file's privacy rules (passwords never, addresses and the Wi-Fi name masked, every section scrubbed) and the event log's ring — host-tested |
 | `crates/avalon` | read-only cgminer API client for an Avalon (`summary`, `estats`, `pools`), translated to an AxeOS-like document |
 | `crates/cpuminer` | SHA-256 hashing without an ASIC for the T-Display-S3, NerdMiner settings import |

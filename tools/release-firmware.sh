@@ -64,7 +64,8 @@ espflash save-image --chip esp32s3 --flash-size 16mb \
 # day, the plan is to give up the import (the devkit's first start then
 # asks for Wi-Fi and wallet like any board) rather than hold a release
 # for the boards with chips; Oliver decides then. The headroom is printed
-# so the day does not come as a surprise.
+# so the day does not come as a surprise; docs/16 says where the image's
+# bytes are and what else could be taken out (tools/image-breakdown.py).
 APP_BYTES=$(wc -c < "$OUT/warpaxe.bin")
 HEADROOM=$((0x2F0000 - APP_BYTES))
 echo "import window headroom: $HEADROOM bytes below 0x2F0000 (app $APP_BYTES bytes)"
