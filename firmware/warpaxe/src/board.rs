@@ -2627,8 +2627,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             } else {
                 warpaxe_board::psu_sag::Phase::Load
             };
+            // The watch's own last verdict: no copy of the whole board
+            // state every second for one flag.
+            let warned = psu.warning();
             let sag = psu.sample(vin, phase);
-            if sag.warn != state().psu_sag_warn {
+            if sag.warn != warned {
                 if sag.warn {
                     log::warn!(
                         "board: the input voltage sags {:.2} V under load ({:.2} V at rest, {:.2} V hashing): the power supply or its cable may be too weak",

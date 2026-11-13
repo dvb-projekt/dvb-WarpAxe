@@ -110,6 +110,12 @@ impl PsuSag {
         }
     }
 
+    /// The warning as the last sample left it: what a caller compares
+    /// the next [`Reading`] with to see it come or go.
+    pub fn warning(&self) -> bool {
+        self.warn
+    }
+
     /// One sample: the input voltage (`None` = no reading) and what the
     /// chips are doing.
     pub fn sample(&mut self, vin: Option<f32>, phase: Phase) -> Reading {
@@ -211,11 +217,18 @@ mod tests {
         // 0.45 V sag = 9 % of 5 V: not before the window is full.
         let r = run(&mut w, 4.75, WINDOW - 1, true);
         assert!(!r.warn);
+        // What the watch held before a sample is what the sample before
+        // it reported: the caller sees the change without a copy of its own.
+        assert!(!w.warning());
         let r = run(&mut w, 4.75, 1, true);
         assert!(r.warn);
+        assert!(w.warning());
+        // Through a ramp and with the chips off it stands as it was.
+        assert!(w.sample(Some(4.8), Phase::Ramp).warn && w.warning());
         // Back to 0.2 V (4 %): the window's median follows, the warning goes.
         let r = run(&mut w, 5.0, WINDOW, true);
         assert!(!r.warn);
+        assert!(!w.warning());
     }
 
     #[test]
