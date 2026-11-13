@@ -157,7 +157,8 @@ pub fn system_info() -> serde_json::Value {
         // stack or a DMA buffer must fit into it, the total says nothing
         // about that once the heap is fragmented.
         "largestFreeInternal": diag::largest_free_internal(),
-        "coreVoltage": cfg.core_voltage,
+        // A fixed rail (the NerdNOS) has no setting: report the profile's 1400 mV.
+        "coreVoltage": profile.reported_core_mv(cfg.core_voltage),
         "coreVoltageActual": b.vout_mv.map(|v| profile.core_mv_for_vout(v / 1000.0)).unwrap_or(0),
         // The lowest core voltage the regulator holds cleanly, mV; a
         // PATCH below it is refused (400). WarpTune's floor for every

@@ -448,6 +448,17 @@ impl Profile {
         (vout / f32::from(self.voltage_domains.max(1)) * 1000.0) as u16
     }
 
+    /// The core voltage the API reports as set, mV: the stored setting.
+    /// A board without a regulator (the NerdNOS, fixed 1.4 V rail)
+    /// reports the profile's value instead, since no setting reaches that
+    /// rail; its stored setting is only the generic default, 1150 mV.
+    pub fn reported_core_mv(&self, configured_mv: u16) -> u16 {
+        match self.vr {
+            Vr::None => self.default_core_mv,
+            _ => configured_mv,
+        }
+    }
+
     /// The lowest core voltage the regulator holds cleanly, mV per
     /// voltage domain: a TPS546's configured floor, never below the clean
     /// range of its divider ([`tps546::Config::min_vout`]); the TPS5364x
@@ -1654,6 +1665,16 @@ mod tests {
         assert_eq!(p.display, Display::St7789I80);
         assert_eq!(p.i2c, None);
         assert_eq!((p.default_frequency_mhz, p.default_core_mv), (300, 1400));
+        assert_eq!(
+            p.reported_core_mv(1150),
+            1400,
+            "the fixed rail, not the stored default"
+        );
+        assert_eq!(
+            BITAXE_GAMMA.reported_core_mv(1150),
+            1150,
+            "a regulator: the setting"
+        );
         assert_eq!(p.chip_stop_c, 80.0);
         assert_eq!(p.abs_max_frequency_mhz, 400);
         assert!(p.voltage_options.is_empty());
