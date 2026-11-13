@@ -419,6 +419,13 @@ mod miner {
             chips: crate::board::profile().asic_count.into(),
         }
     }
+    impl MinerState {
+        /// As the firmware's: what the chips hash at their clock, H/s
+        /// (no chip has a clock of its own in the preview).
+        pub fn expected_hs(&self, small_cores: u16) -> f64 {
+            f64::from(small_cores) * f64::from(self.frequency_hz) * f64::from(self.chips.max(1))
+        }
+    }
 }
 
 mod net {
@@ -492,7 +499,7 @@ mod stratum {
 /// with sample readings, so the screen shows what the firmware would.
 mod selftest {
     use warpaxe_board::selftest::{
-        judge, BoardReadings, FanReadings, Limits, Report, Window,
+        judge, BoardReadings, FanReadings, Limits, PhaseReadings, Report, Window,
     };
     pub const WINDOW_S: u32 = 60;
     pub struct Shown {
@@ -532,6 +539,7 @@ mod selftest {
             vr_limit_c: if gamma { 105.0 } else { 70.0 },
             vin_v: Some(if gamma { 5.12 } else { 12.05 }),
             nominal_v: if gamma { 5.0 } else { 12.0 },
+            phases: PhaseReadings::NotStacked,
         };
         let f = FanReadings {
             duty_before: 59,
