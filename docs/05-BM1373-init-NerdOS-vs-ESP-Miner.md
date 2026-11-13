@@ -350,9 +350,11 @@ board:
   takes `espminer`, `espminer-1m` or `nerdos` to start at a rung by
   hand (for the bench: the 1 MBaud variant without a reflash). Read at
   every chain start; a changed setting forgets the fallbacks.
-- The Naja Duo's copies of the three profiles carry its maker's
-  **6725 small cores** (`Profile::small_cores`, ESP-Miner's figure, the
-  reseller's 4.4 TH/s at 327 MHz); the Gaia keeps NerdOS's 6860.
+- The Naja Duo's copies of the three profiles carried its maker's
+  6725 small cores (ESP-Miner's figure) until 2026-11-13; both chips'
+  `hashCount` read about 6900 at a fixed clock, as the Gaia's, so the
+  Naja takes the chip's 6860 again (`Profile::small_cores` 0; ESP-Miner
+  issue #2102).
 - Simulator: two BM1373 under `BM1373_ESP` enumerate at addresses 0
   and 16, both land the domain-end strength, the chain moves to 3 MBaud
   with nothing lost, both chips hash and their nonces are attributed to

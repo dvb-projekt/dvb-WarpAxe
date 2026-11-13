@@ -248,9 +248,9 @@ pub struct Profile {
     /// ([`PowerEstimate`]); `None` where the regulator reports power.
     pub power_estimate: Option<PowerEstimate>,
     /// Small cores per chip as this board's maker counts them, where
-    /// that differs from the chip profile's: ESP-Miner's 6725 on the
-    /// Naja Duo against NerdOS's 6860 on the Gaia (both BM1373; the
-    /// reseller's 4.4 TH/s at 327 MHz is 6725 × 2). 0 = the chip's own
+    /// that differs from the chip profile's (the Naja Duo used
+    /// ESP-Miner's 6725 until its counters read about 6900 per chip,
+    /// like the Gaia's; both now take the chip's 6860). 0 = the chip's own
     /// count. The nominal rate, the efficiency, the self-test's target
     /// and the silence watchdog's window all multiply by it; the
     /// firmware's `board::chip()` carries it into the chip profile.
@@ -595,9 +595,10 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // 2026-11-12): `temptarget 50`; ESP-Miner's own default is 60.
     fan_target_c: 50.0,
     asic_enable: COLOR_ENABLE,
-    // ESP-Miner's BM1373 small-core count (`device_config.h`), the
-    // reseller's 4.4 TH/s at 327 MHz; NerdOS's 6860 stays on the Gaia.
-    small_cores: 6725,
+    // The chip's own count (NerdOS's 6860), as on the Gaia: both chips'
+    // hash counters read about 6900 cores at a fixed clock (2026-11-13,
+    // ESP-Miner issue #2102), ESP-Miner's 6725 was 2.5 % low.
+    small_cores: 0,
     // Report only until the nonce-to-chip attribution has been seen on a
     // device: see the field. One line to arm it after the first run.
     silent_chip_restart: false,
@@ -1336,10 +1337,10 @@ mod tests {
     /// NVS; nothing else carries a board small-core count, and every
     /// other board restarts its chain for a silent chip.
     #[test]
-    fn naja_duo_carries_esp_miners_small_cores_and_only_reports_silence() {
+    fn naja_duo_counts_the_chips_own_cores_and_only_reports_silence() {
         use super::*;
         let naja = Profile::by_name("bitaxe-naja-duo").unwrap();
-        assert_eq!(naja.small_cores, 6725);
+        assert_eq!(naja.small_cores, 0);
         assert_eq!(naja.fan_target_c, 50.0);
         assert!(!naja.silent_chip_restart);
         assert_eq!(

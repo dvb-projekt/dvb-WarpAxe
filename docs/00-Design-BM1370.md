@@ -823,7 +823,10 @@ the profile format is determined by it, not only by the BM1370.
 `small_cores` is not a structural number on any BM13xx (BM1366: 894 on 112
 cores) but a *measured* effective value. Both firmware numbers are placeholders.
 The measurement on the Gaia favors 6860 over 6725, but cannot separate 6860 from
-~6950. **Resolution to < 1 %:** one day at fixed frequency, then `hashRate_1d` —
+~6950. Read from the chips' total hash counter (`hashCount`) at a fixed clock on
+2026-11-13: about 6900 on the Gaia (320 MHz, two 30-min windows) and on each
+chip of a Naja Duo (326.8 MHz); open whether the counter includes hashes that
+end in a hardware error (ESP-Miner issue #2102). **Resolution to < 1 %:** one day at fixed frequency, then `hashRate_1d` —
 or in Stage B read `TOTAL_COUNT` (0x8C) directly over a known interval, which
 counts hashes exactly. The profile value for the BM1373 gets the attribute
 `#[src("measured Gaia 2026-xx-xx")]`, not one of the two numbers.
