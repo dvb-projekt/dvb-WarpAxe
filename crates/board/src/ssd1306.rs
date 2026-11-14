@@ -62,7 +62,27 @@ pub struct Ssd1306<I> {
     bus: I,
     addr: u8,
     fb: [u8; WIDTH * PAGES],
+    shift: (i8, i8),
 }
+
+/// Positions the picture steps through against burn-in (pixels right,
+/// down), the first one unshifted. The screens leave at least one free
+/// column left and right, one free row on top (the logo) and two at the
+/// bottom, so nothing is cut off.
+pub const ORBIT: [(i8, i8); 12] = [
+    (0, 0),
+    (1, 0),
+    (1, 1),
+    (0, 1),
+    (-1, 1),
+    (-1, 0),
+    (-1, -1),
+    (0, -1),
+    (1, -1),
+    (1, 2),
+    (0, 2),
+    (-1, 2),
+];
 
 impl<I: I2c> Ssd1306<I> {
     /// Wrap the bus; nothing is sent until [`init`](Self::init).
@@ -71,6 +91,7 @@ impl<I: I2c> Ssd1306<I> {
             bus,
             addr,
             fb: [0; WIDTH * PAGES],
+            shift: (0, 0),
         }
     }
 
@@ -168,14 +189,48 @@ impl<I: I2c> Ssd1306<I> {
         }
     }
 
-    /// Send the frame buffer: the full column and page window, then the
-    /// four pages as data writes.
+    /// Move the picture by (`dx`, `dy`) pixels on the next flushes,
+    /// against burn-in; the frame buffer itself stays put.
+    pub fn set_shift(&mut self, dx: i8, dy: i8) {
+        self.shift = (dx, dy);
+    }
+
+    /// The frame as sent: the buffer moved by the shift, what leaves
+    /// the panel dropped.
+    fn shifted(&self) -> [u8; WIDTH * PAGES] {
+        let (dx, dy) = (isize::from(self.shift.0), isize::from(self.shift.1));
+        if (dx, dy) == (0, 0) {
+            return self.fb;
+        }
+        let mut out = [0u8; WIDTH * PAGES];
+        for y in 0..HEIGHT {
+            let ty = y as isize + dy;
+            if !(0..HEIGHT as isize).contains(&ty) {
+                continue;
+            }
+            let ty = ty as usize;
+            for x in 0..WIDTH {
+                let tx = x as isize + dx;
+                if !(0..WIDTH as isize).contains(&tx) {
+                    continue;
+                }
+                if self.fb[(y / 8) * WIDTH + x] & (1 << (y % 8)) != 0 {
+                    out[(ty / 8) * WIDTH + tx as usize] |= 1 << (ty % 8);
+                }
+            }
+        }
+        out
+    }
+
+    /// Send the frame buffer (moved by the shift): the full column and
+    /// page window, then the four pages as data writes.
     pub fn flush(&mut self) -> Result<(), Error<I::Error>> {
         self.command(&[0x21, 0, (WIDTH - 1) as u8, 0x22, 0, (PAGES - 1) as u8])?;
+        let frame = self.shifted();
         for page in 0..PAGES {
             let mut buf = [0u8; WIDTH + 1];
             buf[0] = CTRL_DATA;
-            buf[1..].copy_from_slice(&self.fb[page * WIDTH..(page + 1) * WIDTH]);
+            buf[1..].copy_from_slice(&frame[page * WIDTH..(page + 1) * WIDTH]);
             self.bus.write(self.addr, &buf)?;
         }
         Ok(())
@@ -222,6 +277,33 @@ fn drive_for(pct: u8) -> (u8, u8) {
 mod tests {
     use super::*;
     use crate::i2c::mock::{Bus, Tx};
+
+    #[test]
+    fn the_shift_moves_the_picture_and_drops_what_leaves() {
+        let mut d = Ssd1306::new(Bus::sink(), ADDR);
+        d.set_pixel(10, 7, true);
+        d.set_pixel(0, 0, true);
+        d.set_shift(1, 2);
+        let f = d.shifted();
+        let on = |x: usize, y: usize| f[(y / 8) * WIDTH + x] & (1 << (y % 8)) != 0;
+        assert!(on(11, 9), "across the page border");
+        assert!(on(1, 2));
+        assert!(!on(10, 7));
+        d.set_shift(-1, -2);
+        let f = d.shifted();
+        assert_eq!(
+            f.iter().map(|b| b.count_ones()).sum::<u32>(),
+            1,
+            "(0,0) left the panel"
+        );
+        assert_eq!(f[9] & (1 << 5), 1 << 5, "(10,7) now at (9,5)");
+        d.set_shift(0, 0);
+        assert_eq!(d.shifted(), *d.frame());
+        assert_eq!(ORBIT[0], (0, 0), "the boot splash is drawn unshifted");
+        assert!(ORBIT
+            .iter()
+            .all(|&(x, y)| x.abs() <= 1 && (-1..=2).contains(&y)));
+    }
 
     #[test]
     fn init_sends_the_sequence_then_a_blank_frame() {

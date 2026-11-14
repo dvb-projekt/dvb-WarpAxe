@@ -416,6 +416,11 @@ impl Oled {
     }
     pub fn flush(&mut self) -> Result<(), String> {
         snapshot(self.panel.frame());
+        // Against burn-in: the picture steps one position along the
+        // orbit every ten minutes (unshifted for the first ten).
+        let orbit = &warpaxe_board::ssd1306::ORBIT;
+        let (dx, dy) = orbit[(crate::diag::uptime_s() / 600) as usize % orbit.len()];
+        self.panel.set_shift(dx, dy);
         self.panel.flush().map_err(|e| format!("{e:?}"))
     }
     pub fn set_power(&mut self, on: bool) {
