@@ -306,6 +306,25 @@ mod tests {
     }
 
     #[test]
+    fn the_safe_box_survives_every_orbit_position() {
+        let mut d = Ssd1306::new(Bus::sink(), ADDR);
+        for (x, y) in [(1, 1), (126, 1), (1, 29), (126, 29)] {
+            d.set_pixel(x, y, true);
+        }
+        for &(dx, dy) in &ORBIT {
+            d.set_shift(dx, dy);
+            let lit: u32 = d.shifted().iter().map(|b| b.count_ones()).sum();
+            assert_eq!(lit, 4, "corner lost at ({dx},{dy})");
+        }
+        let mut d = Ssd1306::new(Bus::sink(), ADDR);
+        d.set_pixel(127, 31, true);
+        d.set_shift(1, 0);
+        assert!(d.shifted().iter().all(|&b| b == 0), "x 127 leaves at dx +1");
+        d.set_shift(0, 1);
+        assert!(d.shifted().iter().all(|&b| b == 0), "y 31 leaves at dy +1");
+    }
+
+    #[test]
     fn init_sends_the_sequence_then_a_blank_frame() {
         let mut d = Ssd1306::new(Bus::sink(), ADDR);
         d.init().unwrap();

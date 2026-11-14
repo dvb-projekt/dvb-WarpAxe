@@ -608,8 +608,9 @@ impl Ui {
                 }
                 oled_slide(o, slides[self.oled_i]);
                 if self.blink > 0 {
-                    for y in 0..3 {
-                        for x in 125..128 {
+                    // Inside the burn-in orbit's safe box (x 1..126, y 1..29).
+                    for y in 1..4 {
+                        for x in 124..127 {
                             o.pixel(x, y, true);
                         }
                     }
@@ -1503,7 +1504,7 @@ fn oled_clock(o: &mut Oled, m: &miner::MinerState) {
     let t = clock::local();
     let (s, ampm) = hhmm(t.as_ref());
     let s = s.replace('–', "-");
-    let w = OLED24.draw(0, 25, &s, |x, y, a| {
+    let w = OLED24.draw(1, 25, &s, |x, y, a| {
         if a >= 8 {
             o.pixel(x, y, true)
         }
@@ -2496,7 +2497,7 @@ fn oled_slide(o: &mut Oled, name: &str) {
     } else {
         (format!("{:.0}", m.hashrate_ghs), "GH/S")
     };
-    let w = OLED24.draw(0, 25, &v, |x, y, a| {
+    let w = OLED24.draw(1, 25, &v, |x, y, a| {
         if a >= 8 {
             o.pixel(x, y, true)
         }

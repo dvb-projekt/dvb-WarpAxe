@@ -1933,6 +1933,8 @@ mod tests {
         assert!(!BITAXE_GAMMA.has_page_key());
         assert!(NERDQAXE_PLUSPLUS.backlight_aw9364());
         assert!(!BITAXE_NAJA_DUO.backlight_aw9364());
+        assert!(!BITAXE_GAMMA_HEX.backlight_aw9364());
+        assert!(T_DISPLAY_S3_DEVKIT.backlight_aw9364());
     }
 
     #[test]
