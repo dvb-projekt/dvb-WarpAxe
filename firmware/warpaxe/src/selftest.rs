@@ -142,7 +142,8 @@ pub fn start() -> Result<u32, &'static str> {
         finished_unix: None,
         duration_s: 0,
         frequency_mhz: cfg.frequency,
-        core_mv: cfg.core_voltage,
+        // As `/api/system/info` reports it: a fixed rail's own value.
+        core_mv: board::profile().reported_core_mv(cfg.core_voltage),
         samples: 0,
         report: None,
         chips: Vec::new(),
