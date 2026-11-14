@@ -269,7 +269,7 @@ mod config {
             night_mode: false,
             night_start: 22 * 60,
             night_end: 7 * 60,
-            night_brightness: 10,
+            night_brightness: warpaxe_displaycfg::DEFAULT_NIGHT_BRIGHTNESS,
             // PREVIEW_CLOCK=12h|24h|auto, PREVIEW_TZ=EST5EDT,M3.2.0,M11.1.0
             clock_format: std::env::var("PREVIEW_CLOCK").unwrap_or_else(|_| "auto".into()),
             timezone: std::env::var("PREVIEW_TZ")

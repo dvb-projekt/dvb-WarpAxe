@@ -352,7 +352,7 @@ pub const DEFAULT_NIGHT_START_MIN: u16 = 22 * 60;
 pub const DEFAULT_NIGHT_END_MIN: u16 = 7 * 60;
 /// Backlight (LCD) or contrast (OLED) at night, percent of full; 0 =
 /// the display goes dark.
-pub const DEFAULT_NIGHT_BRIGHTNESS: u8 = 10;
+pub const DEFAULT_NIGHT_BRIGHTNESS: u8 = 50;
 /// Seconds a key press brings the full display back at night.
 pub const NIGHT_WAKE_S: u64 = 30;
 

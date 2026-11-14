@@ -1032,7 +1032,7 @@ function nightSec(i) {
   return sec(t("night"), t("night_s"), `<label class="f" style="grid-column:1/-1">${t("clockFormat")}<select name="clockFormat">${tf}</select></label>` + tog("nightMode", i.nightMode, t("nightMode_s"), true) +
     `<label class="f">${t("nightStart")}<input name="nightStartT" type="time" value="${hm(i.nightStart ?? 1320)}"></label>` +
     `<label class="f">${t("nightEnd")}<input name="nightEndT" type="time" value="${hm(i.nightEnd ?? 420)}"></label>` +
-    fld("nightBrightness", i.nightBrightness ?? 10, {type: "number", min: 0, max: 100}) +
+    fld("nightBrightness", i.nightBrightness ?? 50, {type: "number", min: 0, max: 100}) +
     `<div class="dim" style="grid-column:1/-1;font-size:12px">${t("night_hint")}${state ? ` · ${state}` : ""}</div>`);
 }
 // The places a board can fill: no regulator → no regulator temperature or input voltage, no fan → no fan, the chipless board → no power or J/TH but its shares per hour.

@@ -81,6 +81,8 @@ pub struct Lcd {
     fb: &'static mut [u8],
     flip: bool,
     invert: bool,
+    /// The backlight driver's level, 0 (off) to `BL_STEPS`.
+    bl_level: u8,
 }
 
 macro_rules! check {
@@ -98,6 +100,19 @@ fn gpio_out(pin: i32, level: bool) {
         sys::gpio_set_direction(pin, sys::gpio_mode_t_GPIO_MODE_OUTPUT);
         sys::gpio_set_level(pin, level as u32);
     }
+}
+
+/// The backlight driver's current levels (AW9364).
+const BL_STEPS: u8 = 16;
+
+/// The driver level for a brightness in percent: 0 is off, anything
+/// else one of the 16 levels, 1 at the least.
+fn backlight_level(pct: u8) -> u8 {
+    if pct == 0 {
+        return 0;
+    }
+    let lvl = (u16::from(pct.min(100)) * u16::from(BL_STEPS) + 50) / 100;
+    (lvl as u8).clamp(1, BL_STEPS)
 }
 
 // The panel handle is only ever used from the one thread that owns the
@@ -175,10 +190,14 @@ impl Lcd {
             fb,
             flip: false,
             invert: false,
+            bl_level: 0,
         };
         d.clear(BLACK);
         d.flush()?;
+        // Off since the start of the init, far longer than 2.5 ms: the
+        // driver starts at its top level.
         gpio_out(PIN_BACKLIGHT, true);
+        d.bl_level = BL_STEPS;
         Ok(d)
     }
 
@@ -264,47 +283,48 @@ impl Lcd {
 
     /// Backlight on or off; the panel keeps its content.
     pub fn set_backlight(&mut self, on: bool) {
-        gpio_out(PIN_BACKLIGHT, on);
+        self.set_backlight_pct(if on { 100 } else { 0 });
     }
 
-    /// Backlight in percent: 100 and 0 are the plain pin, as always;
-    /// anything between dims it by PWM (night mode). The LEDC is set up
-    /// on each change, so a later `set_backlight` (the pin taken back as
-    /// a GPIO) and a dimmed level can follow each other.
+    /// Backlight in percent. The LCD's backlight driver (AW9364) does not
+    /// dim by PWM: it counts low pulses on its enable pin, each one a
+    /// step down of its 16 current levels (from level 1 round to 16), and
+    /// a low longer than 2.5 ms switches it off; switched on it starts at
+    /// level 16. A PWM made it step round and round, so 75 % could come
+    /// out darker than 50 %. Here the percentage picks one of the 16
+    /// levels and the pulses to reach it are sent with interrupts off, so
+    /// no pulse is stretched or lost. The level the driver is at is kept
+    /// in `bl_level` (0 = off).
     pub fn set_backlight_pct(&mut self, pct: u8) {
-        match pct {
-            0 => gpio_out(PIN_BACKLIGHT, false),
-            100.. => gpio_out(PIN_BACKLIGHT, true),
-            p => {
-                let timer = sys::ledc_timer_config_t {
-                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
-                    duty_resolution: sys::ledc_timer_bit_t_LEDC_TIMER_8_BIT,
-                    timer_num: sys::ledc_timer_t_LEDC_TIMER_0,
-                    freq_hz: 5_000,
-                    clk_cfg: sys::soc_periph_ledc_clk_src_legacy_t_LEDC_AUTO_CLK,
-                    deconfigure: false,
-                };
-                // Duty in step with the percentage (8 bits).
-                let duty = (u32::from(p) * 255 / 100).max(1);
-                let chan = sys::ledc_channel_config_t {
-                    gpio_num: PIN_BACKLIGHT,
-                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
-                    channel: sys::ledc_channel_t_LEDC_CHANNEL_0,
-                    timer_sel: sys::ledc_timer_t_LEDC_TIMER_0,
-                    duty,
-                    ..Default::default()
-                };
-                let ok = unsafe {
-                    sys::ledc_timer_config(&timer) == sys::ESP_OK
-                        && sys::ledc_channel_config(&chan) == sys::ESP_OK
-                };
-                if !ok {
-                    // Better full than dark: the clock must stay readable.
-                    log::warn!("display: backlight PWM failed, full brightness");
-                    gpio_out(PIN_BACKLIGHT, true);
+        let target = backlight_level(pct);
+        if target == self.bl_level {
+            return;
+        }
+        let pin = PIN_BACKLIGHT;
+        if target == 0 {
+            unsafe { sys::gpio_set_level(pin, 0) };
+            self.bl_level = 0;
+            return;
+        }
+        if self.bl_level == 0 {
+            unsafe {
+                sys::gpio_set_level(pin, 1);
+                sys::esp_rom_delay_us(50);
+            }
+            self.bl_level = BL_STEPS;
+        }
+        let pulses = (self.bl_level + BL_STEPS - target) % BL_STEPS;
+        esp_idf_svc::hal::interrupt::free(|| {
+            for _ in 0..pulses {
+                unsafe {
+                    sys::gpio_set_level(pin, 0);
+                    sys::esp_rom_delay_us(2);
+                    sys::gpio_set_level(pin, 1);
+                    sys::esp_rom_delay_us(2);
                 }
             }
-        }
+        });
+        self.bl_level = target;
     }
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
         snapshot(self.fb);
