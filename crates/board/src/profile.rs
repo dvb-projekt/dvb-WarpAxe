@@ -338,6 +338,17 @@ impl Profile {
         }
     }
 
+    /// A stored chip stop above this board's ceiling, as it should be
+    /// stored: the ceiling. `None` when it fits (or is 0, the default).
+    /// v0.1.32 lowered the Bitaxe ceiling to 75 °C; a 90 kept from before
+    /// acts as 75 already, but the web UI's field (max 75) refused it and
+    /// with it every save of the settings form.
+    pub fn stored_chip_stop_fix(&self, setting: u8) -> Option<u8> {
+        let max = self.chip_stop_max_c();
+        // Whole degrees, rounded down (`as` truncates a positive float).
+        (setting != 0 && f32::from(setting) > max).then_some(max as u8)
+    }
+
     /// The chip temperature that stops mining: the owner's setting (0 =
     /// the board's line), never above [`Profile::chip_stop_max_c`].
     pub fn chip_limit_c(&self, setting: u8) -> f32 {
@@ -1898,5 +1909,17 @@ mod tests {
             Display::None
         );
         assert_eq!(undetected_for(&[]).display, Display::None);
+    }
+
+    #[test]
+    fn a_stored_chip_stop_above_the_ceiling_is_brought_down() {
+        let gamma = Profile::by_name("bitaxe-gamma").unwrap();
+        assert_eq!(gamma.chip_stop_max_c(), 75.0);
+        assert_eq!(gamma.stored_chip_stop_fix(90), Some(75));
+        assert_eq!(gamma.stored_chip_stop_fix(75), None);
+        assert_eq!(gamma.stored_chip_stop_fix(70), None);
+        assert_eq!(gamma.stored_chip_stop_fix(0), None, "0 = the default");
+        let qx = Profile::by_name("nerdqaxe-plusplus").unwrap();
+        assert_eq!(qx.stored_chip_stop_fix(90), None);
     }
 }

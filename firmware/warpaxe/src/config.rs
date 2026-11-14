@@ -1085,6 +1085,21 @@ pub fn take_restart() -> Option<warpaxe_diag::restart::Marker> {
 /// profile's value (`warpaxe_board::profile::migrated_fan_target`).
 /// On the main task (board::init_bus), before the board starts.
 pub fn migrate(profile: &warpaxe_board::Profile) {
+    // A chip stop above the board's ceiling (a Bitaxe's 90 from before
+    // v0.1.32): stored as the ceiling it acts as anyway, so the web UI's
+    // field, capped at the ceiling, does not refuse the whole form.
+    let cfg = get();
+    if let Some(fixed_c) = profile.stored_chip_stop_fix(cfg.overheat_temp) {
+        log::warn!(
+            "config: chip stop {} °C above this board's ceiling: stored as {fixed_c} °C (it acted as that already)",
+            cfg.overheat_temp
+        );
+        let mut fixed = cfg;
+        fixed.overheat_temp = fixed_c;
+        if let Err(e) = save(&fixed) {
+            log::warn!("config: saving the chip stop failed: {e}");
+        }
+    }
     const NANO_FAN_TARGET_KEY: &str = "mig_nanofan";
     if profile.name == warpaxe_board::profile::BITFORGE_NANO.name
         && nvs_get_str(NANO_FAN_TARGET_KEY, 8).is_none()
