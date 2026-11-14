@@ -99,21 +99,15 @@ impl<I: I2c> Ssd1306<I> {
         self.command(&[if on { 0xA7 } else { 0xA6 }])
     }
 
-    /// Brightness, percent: the contrast scaled from the init value
-    /// (0x8F), see `contrast_for`. The contrast alone dims an SSD1306 only a
-    /// little, so below 50 % the pre-charge period and the VCOMH level go
-    /// down as well (the usual "dim" trick); from 50 % they are the init
-    /// values. Off is `set_power(false)`.
+    /// Brightness, percent. The contrast alone dims an SSD1306 only a
+    /// little; the pre-charge period and the VCOMH level do most of it.
+    /// So from 100 % down to 50 % the pre-charge and VCOMH step down from
+    /// the init values to the dim ones while the contrast halves, and
+    /// below 50 % only the contrast falls further (`contrast_for`). 100 %
+    /// is exactly the init state. Off is `set_power(false)`.
     pub fn set_brightness(&mut self, pct: u8) -> Result<(), Error<I::Error>> {
-        let dim = pct < 50;
-        self.command(&[
-            0x81,
-            contrast_for(pct),
-            0xD9,
-            if dim { DIM_PRECHARGE } else { INIT_PRECHARGE },
-            0xDB,
-            if dim { DIM_VCOMH } else { INIT_VCOMH },
-        ])
+        let (precharge, vcomh) = drive_for(pct);
+        self.command(&[0x81, contrast_for(pct), 0xD9, precharge, 0xDB, vcomh])
     }
 
     /// Panel on or off (sleep); the frame buffer is kept.
@@ -207,6 +201,23 @@ fn contrast_for(pct: u8) -> u8 {
     ((half * pct * pct + 1250) / 2500) as u8
 }
 
+/// The VCOMH levels from the dim one to the init one.
+const VCOMH_STEPS: [u8; 4] = [DIM_VCOMH, 0x20, 0x30, INIT_VCOMH];
+
+/// Pre-charge and VCOMH for a brightness in percent: the dim values up
+/// to 50 %, then in steps up to the init values at 100 %. Phase 1 of the
+/// pre-charge stays at 1 (as in the init), phase 2 goes from 1 to 15.
+fn drive_for(pct: u8) -> (u8, u8) {
+    let pct = u16::from(pct.min(100));
+    if pct <= 50 {
+        return (DIM_PRECHARGE, DIM_VCOMH);
+    }
+    let up = pct - 50;
+    let phase2 = 1 + (14 * up + 25) / 50;
+    let vcomh = VCOMH_STEPS[usize::from((3 * up + 25) / 50)];
+    (((phase2 as u8) << 4) | 0x01, vcomh)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -242,6 +253,22 @@ mod tests {
         assert_eq!(contrast_for(100), INIT_CONTRAST);
         assert_eq!(contrast_for(255), INIT_CONTRAST);
         assert_eq!(contrast_for(50), 72);
+        assert_eq!(drive_for(100), (INIT_PRECHARGE, INIT_VCOMH));
+        assert_eq!(drive_for(255), (INIT_PRECHARGE, INIT_VCOMH));
+        assert_eq!(drive_for(75), (0x81, 0x30));
+        assert_eq!(drive_for(51), (0x11, DIM_VCOMH));
+        assert_eq!(drive_for(50), (DIM_PRECHARGE, DIM_VCOMH));
+        assert_eq!(drive_for(10), (DIM_PRECHARGE, DIM_VCOMH));
+        let mut last = drive_for(50);
+        for p in 51..=100 {
+            let now = drive_for(p);
+            assert!(
+                now.0 >= last.0 && now.1 >= last.1,
+                "{p} % is not dimmer than {} %",
+                p - 1
+            );
+            last = now;
+        }
         assert_eq!(contrast_for(49), 69);
         assert_eq!(contrast_for(25), 18);
         assert_eq!(contrast_for(10), 3);
