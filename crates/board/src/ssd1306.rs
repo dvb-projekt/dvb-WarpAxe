@@ -39,9 +39,9 @@ const INIT: [u8; 26] = [
     0x81,
     INIT_CONTRAST,
     0xD9,
-    0xF1,
+    INIT_PRECHARGE,
     0xDB,
-    0x40,
+    INIT_VCOMH,
     0xA4,
     0xA6,
     0x2E,
@@ -49,6 +49,13 @@ const INIT: [u8; 26] = [
 ];
 /// The contrast the init sets: full brightness.
 const INIT_CONTRAST: u8 = 0x8F;
+/// Pre-charge period (phase 1 / phase 2) and VCOMH deselect level the
+/// init sets, and the dim ones for night mode: the shortest pre-charge
+/// and the lowest VCOMH (about 0.65 × VCC).
+const INIT_PRECHARGE: u8 = 0xF1;
+const INIT_VCOMH: u8 = 0x40;
+const DIM_PRECHARGE: u8 = 0x11;
+const DIM_VCOMH: u8 = 0x00;
 
 /// The driver with its frame buffer.
 pub struct Ssd1306<I> {
@@ -92,10 +99,21 @@ impl<I: I2c> Ssd1306<I> {
         self.command(&[if on { 0xA7 } else { 0xA6 }])
     }
 
-    /// Brightness, percent of the init sequence's contrast (0x8F); 1 at
-    /// the least, so 1 % still shows. Off is `set_power(false)`.
+    /// Brightness, percent: the contrast scaled from the init value
+    /// (0x8F), 1 at the least. The contrast alone dims an SSD1306 only a
+    /// little, so below 50 % the pre-charge period and the VCOMH level go
+    /// down as well (the usual "dim" trick); from 50 % they are the init
+    /// values. Off is `set_power(false)`.
     pub fn set_brightness(&mut self, pct: u8) -> Result<(), Error<I::Error>> {
-        self.command(&[0x81, contrast_for(pct)])
+        let dim = pct < 50;
+        self.command(&[
+            0x81,
+            contrast_for(pct),
+            0xD9,
+            if dim { DIM_PRECHARGE } else { INIT_PRECHARGE },
+            0xDB,
+            if dim { DIM_VCOMH } else { INIT_VCOMH },
+        ])
     }
 
     /// Panel on or off (sleep); the frame buffer is kept.
@@ -221,7 +239,16 @@ mod tests {
         assert_eq!(INIT[i + 1], INIT_CONTRAST, "the init sequence's contrast");
         let mut d = Ssd1306::new(Bus::sink(), ADDR);
         d.set_brightness(10).unwrap();
-        assert_eq!(d.bus.log[0], Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 14]));
+        assert_eq!(
+            d.bus.log[0],
+            Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 14, 0xD9, 0x11, 0xDB, 0x00])
+        );
+        d.set_brightness(100).unwrap();
+        assert_eq!(
+            d.bus.log[1],
+            Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 0x8F, 0xD9, 0xF1, 0xDB, 0x40]),
+            "full brightness is exactly the init state"
+        );
     }
 
     #[test]
