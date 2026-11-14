@@ -100,7 +100,7 @@ impl<I: I2c> Ssd1306<I> {
     }
 
     /// Brightness, percent: the contrast scaled from the init value
-    /// (0x8F), 1 at the least. The contrast alone dims an SSD1306 only a
+    /// (0x8F), see `contrast_for`. The contrast alone dims an SSD1306 only a
     /// little, so below 50 % the pre-charge period and the VCOMH level go
     /// down as well (the usual "dim" trick); from 50 % they are the init
     /// values. Off is `set_power(false)`.
@@ -193,10 +193,18 @@ impl<I: I2c> Ssd1306<I> {
     }
 }
 
-/// The contrast byte for a brightness in percent of the init value.
+/// The contrast byte for a brightness in percent: from 50 % linear in
+/// the init value, below 50 % on a square curve from there down to 0,
+/// because the eye hardly sees the step between the low contrast values
+/// a straight line gives (10 % was 14 and still too bright at night).
 fn contrast_for(pct: u8) -> u8 {
-    let full = u16::from(INIT_CONTRAST);
-    ((full * u16::from(pct.min(100)) + 50) / 100).max(1) as u8
+    let full = u32::from(INIT_CONTRAST);
+    let pct = u32::from(pct.min(100));
+    if pct >= 50 {
+        return ((full * pct + 50) / 100) as u8;
+    }
+    let half = (full * 50 + 50) / 100;
+    ((half * pct * pct + 1250) / 2500) as u8
 }
 
 #[cfg(test)]
@@ -234,14 +242,18 @@ mod tests {
         assert_eq!(contrast_for(100), INIT_CONTRAST);
         assert_eq!(contrast_for(255), INIT_CONTRAST);
         assert_eq!(contrast_for(50), 72);
-        assert_eq!(contrast_for(0), 1);
+        assert_eq!(contrast_for(49), 69);
+        assert_eq!(contrast_for(25), 18);
+        assert_eq!(contrast_for(10), 3);
+        assert_eq!(contrast_for(1), 0);
+        assert_eq!(contrast_for(0), 0);
         let i = INIT.iter().position(|&b| b == 0x81).unwrap();
         assert_eq!(INIT[i + 1], INIT_CONTRAST, "the init sequence's contrast");
         let mut d = Ssd1306::new(Bus::sink(), ADDR);
         d.set_brightness(10).unwrap();
         assert_eq!(
             d.bus.log[0],
-            Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 14, 0xD9, 0x11, 0xDB, 0x00])
+            Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 3, 0xD9, 0x11, 0xDB, 0x00])
         );
         d.set_brightness(100).unwrap();
         assert_eq!(
