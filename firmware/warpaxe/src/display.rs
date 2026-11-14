@@ -292,28 +292,28 @@ impl Lcd {
     /// a low longer than 2.5 ms switches it off; switched on it starts at
     /// level 16. A PWM made it step round and round, so 75 % could come
     /// out darker than 50 %. Here the percentage picks one of the 16
-    /// levels and the pulses to reach it are sent with interrupts off, so
-    /// no pulse is stretched or lost. The level the driver is at is kept
-    /// in `bl_level` (0 = off).
+    /// levels. The driver cannot be read back, so every change starts
+    /// from a known state: off for 3 ms, on (level 16), 1 ms to settle,
+    /// then the pulses down to the level, sent with interrupts off so
+    /// none is stretched or lost. A missed pulse is then put right by the
+    /// next change instead of lasting. The 4 ms dark is not seen.
     pub fn set_backlight_pct(&mut self, pct: u8) {
         let target = backlight_level(pct);
         if target == self.bl_level {
             return;
         }
         let pin = PIN_BACKLIGHT;
+        unsafe { sys::gpio_set_level(pin, 0) };
+        self.bl_level = 0;
         if target == 0 {
-            unsafe { sys::gpio_set_level(pin, 0) };
-            self.bl_level = 0;
             return;
         }
-        if self.bl_level == 0 {
-            unsafe {
-                sys::gpio_set_level(pin, 1);
-                sys::esp_rom_delay_us(50);
-            }
-            self.bl_level = BL_STEPS;
+        unsafe {
+            sys::esp_rom_delay_us(3_000);
+            sys::gpio_set_level(pin, 1);
+            sys::esp_rom_delay_us(1_000);
         }
-        let pulses = (self.bl_level + BL_STEPS - target) % BL_STEPS;
+        let pulses = BL_STEPS - target;
         esp_idf_svc::hal::interrupt::free(|| {
             for _ in 0..pulses {
                 unsafe {
@@ -421,8 +421,9 @@ impl Oled {
     pub fn set_power(&mut self, on: bool) {
         let _ = self.panel.set_power(on);
     }
-    pub fn set_brightness(&mut self, pct: u8) {
-        let _ = self.panel.set_brightness(pct);
+    /// Whether the panel took it (an I²C write on the shared bus).
+    pub fn set_brightness(&mut self, pct: u8) -> bool {
+        self.panel.set_brightness(pct).is_ok()
     }
 }
 
@@ -487,10 +488,14 @@ impl Display {
     }
 
     /// Brightness of an awake panel, percent (night mode); 100 is the
-    /// normal light.
-    pub fn set_brightness(&mut self, pct: u8) {
+    /// normal light. `false` when the OLED did not take it, so the
+    /// caller sends it again.
+    pub fn set_brightness(&mut self, pct: u8) -> bool {
         match self {
-            Display::Lcd(l) => l.set_backlight_pct(pct.max(1)),
+            Display::Lcd(l) => {
+                l.set_backlight_pct(pct.max(1));
+                true
+            }
             Display::Oled(o) => o.set_brightness(pct.max(1)),
         }
     }

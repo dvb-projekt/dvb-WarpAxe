@@ -388,6 +388,11 @@ fn main() {
             let mut splash_for = None;
             let mut awake = true;
             let mut level: u8 = 100;
+            // Last failed brightness write; the night flag and when it
+            // was looked up.
+            let start = std::time::Instant::now();
+            let mut level_at = start.checked_sub(Duration::from_secs(1)).unwrap_or(start);
+            let (mut night, mut night_at) = (false, level_at);
             let (mut alert, mut alert_at) = (false, std::time::Instant::now());
             let mut was_down = [false; 2];
             // The boot key on a board without a page key: when it went
@@ -446,7 +451,11 @@ fn main() {
                 let idle = diag::uptime_s().saturating_sub(display::last_wake());
                 // Night mode: the clock, dimmed, and no timeout; a key
                 // press brings the full display back for a while.
-                let night = screens::night_now(&cfg);
+                // The night window, looked up once a second.
+                if night_at.elapsed() >= Duration::from_secs(1) {
+                    night_at = std::time::Instant::now();
+                    night = screens::night_now(&cfg);
+                }
                 // A key, or an alert the person should see (a found
                 // block, an overheat stop, an update, a self-test).
                 // Looked up once a second, and only at night.
@@ -472,10 +481,16 @@ fn main() {
                 let dim = night && !woken;
                 ui.night = dim;
                 let want_level = if dim { night_pct } else { 100 };
-                if awake && want_level != level {
-                    level = want_level;
-                    d.set_brightness(level);
-                    next_frame = std::time::Instant::now();
+                // A write the OLED missed (shared I²C bus) is tried
+                // again, at most once a second.
+                let retry_ok = level_at.elapsed() >= Duration::from_secs(1);
+                if awake && want_level != level && retry_ok {
+                    if d.set_brightness(want_level) {
+                        level = want_level;
+                        next_frame = std::time::Instant::now();
+                    } else {
+                        level_at = std::time::Instant::now();
+                    }
                 }
                 if awake && std::time::Instant::now() >= next_frame {
                     next_frame = std::time::Instant::now() + draw(&mut d, &mut ui, &mut splash_for);

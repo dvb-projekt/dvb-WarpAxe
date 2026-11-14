@@ -177,6 +177,8 @@ impl Local {
 pub fn local() -> Option<Local> {
     let now = unix_now()?;
     let tz = config::get().timezone;
+    let t = now as sys::time_t;
+    let mut tm: sys::tm = unsafe { core::mem::zeroed() };
     {
         let mut applied = TZ_APPLIED.lock().unwrap();
         if *applied != tz {
@@ -188,10 +190,9 @@ pub fn local() -> Option<Local> {
             }
             *applied = tz;
         }
+        // Under the lock: another thread may be changing TZ.
+        unsafe { sys::localtime_r(&t, &mut tm) };
     }
-    let t = now as sys::time_t;
-    let mut tm: sys::tm = unsafe { core::mem::zeroed() };
-    unsafe { sys::localtime_r(&t, &mut tm) };
     Some(Local {
         hour: tm.tm_hour as u8,
         min: tm.tm_min as u8,

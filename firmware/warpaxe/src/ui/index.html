@@ -751,6 +751,8 @@ function collect(form, cfg) {
   const body = {};
   for (const el of form.elements) {
     if (!el.name || !(el.name in cfg) || el.type === "radio") continue;
+    // An emptied number field is "no change", not 0.
+    if (el.type === "number" && el.value.trim() === "") continue;
     const v = el.type === "checkbox" ? (el.dataset.num ? Number(el.checked) : el.checked) : (el.type === "number" || el.dataset.num) ? Number(el.value) : el.value;
     if (SECRET.includes(el.name)) { if (v !== "") body[el.name] = v; continue; }
     if (v !== cfg[el.name]) body[el.name] = v;
