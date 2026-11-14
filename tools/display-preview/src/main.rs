@@ -122,8 +122,48 @@ mod diag {
 }
 
 mod clock {
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Local {
+        pub hour: u8,
+        pub min: u8,
+        pub sec: u8,
+        pub wday: u8,
+        pub mday: u8,
+        pub mon: u8,
+        pub year: i32,
+        pub yday: u16,
+    }
+    impl Local {
+        pub fn minute_of_day(&self) -> u16 {
+            u16::from(self.hour) * 60 + u16::from(self.min)
+        }
+    }
+    /// Saturday 14 November 2026, 17:42:25; PREVIEW_TIME=08:15 sets the
+    /// hour and minute, PREVIEW_NOTIME=1 an unset clock.
+    pub fn local() -> Option<Local> {
+        if std::env::var("PREVIEW_NOTIME").is_ok() {
+            return None;
+        }
+        let (hour, min) = std::env::var("PREVIEW_TIME")
+            .ok()
+            .and_then(|v| {
+                let (h, m) = v.split_once(':')?;
+                Some((h.parse().ok()?, m.parse().ok()?))
+            })
+            .unwrap_or((17, 42));
+        Some(Local {
+            hour,
+            min,
+            sec: 25,
+            wday: 6,
+            mday: 14,
+            mon: 10,
+            year: 2026,
+            yday: 317,
+        })
+    }
     pub fn local_hm() -> Option<(u8, u8)> {
-        Some((17, 42))
+        local().map(|t| (t.hour, t.min))
     }
 }
 
@@ -194,6 +234,12 @@ mod config {
         pub cockpit_footer: String,
         pub oled_slides: Vec<String>,
         pub oled_interval: u8,
+        pub night_mode: bool,
+        pub night_start: u16,
+        pub night_end: u16,
+        pub night_brightness: u8,
+        pub clock_format: String,
+        pub timezone: String,
     }
     /// A comma-separated list from the environment, empty when unset.
     fn list(var: &str) -> Vec<String> {
@@ -220,6 +266,14 @@ mod config {
             cockpit_footer: std::env::var("PREVIEW_FOOTER").unwrap_or_default(),
             oled_slides: list("PREVIEW_OLED"),
             oled_interval: 4,
+            night_mode: false,
+            night_start: 22 * 60,
+            night_end: 7 * 60,
+            night_brightness: 10,
+            // PREVIEW_CLOCK=12h|24h|auto, PREVIEW_TZ=EST5EDT,M3.2.0,M11.1.0
+            clock_format: std::env::var("PREVIEW_CLOCK").unwrap_or_else(|_| "auto".into()),
+            timezone: std::env::var("PREVIEW_TZ")
+                .unwrap_or_else(|_| "CET-1CEST,M3.5.0,M10.5.0/3".into()),
             pid_target_temp: 58,
             overheat_temp: 70,
             flipscreen: false,
@@ -608,6 +662,11 @@ fn main() {
         save(&dir, &format!("lcd-{i}-{}", names[i]));
         ui.key(screens::Key::Next);
     }
+    // Night mode, dimmed: the clock alone.
+    ui.night = true;
+    ui.frame(&mut d);
+    save(&dir, "lcd-night");
+    ui.night = false;
     // PREVIEW_COCKPIT_ONLY=1: the cockpit alone (the combination runs).
     if std::env::var("PREVIEW_COCKPIT_ONLY").is_ok() {
         println!("frames in {dir}");
@@ -653,6 +712,10 @@ fn main() {
         save(&dir, &format!("oled-{i}-{name}"));
         ui.key(screens::Key::Home);
     }
+    ui.night = true;
+    ui.frame(&mut o);
+    save(&dir, "oled-night");
+    ui.night = false;
     *display::DEMO.lock().unwrap() = Some(("overheat".into(), u64::MAX));
     ui.frame(&mut o);
     save(&dir, "oled-ev-overheat");

@@ -615,5 +615,21 @@
   "blk_st_unknown": "未知：矿机中途曾离线，此处已无法核实",
   "evd_block_unknown": "区块 {h}：状态未知，矿机中途曾离线，已无法核实",
   "cfo": "单芯片频率",
-  "cfo_live": "{f} MHz · 错误率 {e}"
+  "cfo_live": "{f} MHz · 错误率 {e}",
+  "pg_clock": "时钟",
+  "os_clock": "时钟 · 日期 · 算力",
+  "night": "时钟和夜间模式",
+  "night_s": "显示屏上的时钟，夜间只显示调暗的时钟。",
+  "nightMode": "夜间模式",
+  "nightMode_s": "在时间段内：只显示调暗的时钟，屏幕不会自动关闭。按任意按键可恢复完整显示 30 秒。",
+  "nightStart": "开始",
+  "nightEnd": "结束",
+  "nightBrightness": "夜间亮度（%，0 = 关闭）",
+  "night_hint": "需要通过 NTP 获取时间（网络设置）并设置正确的时区。",
+  "night_on_now": "当前已启用",
+  "night_off_now": "当前未启用",
+  "clockFormat": "时间格式",
+  "tf_auto": "自动（按时区）",
+  "tf_24h": "24 小时",
+  "tf_12h": "12 小时（AM/PM）"
 }

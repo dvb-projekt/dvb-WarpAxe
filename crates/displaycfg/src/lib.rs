@@ -11,8 +11,11 @@
 
 #![forbid(unsafe_code)]
 
-/// The LCD pages, in their factory order. `cockpit` is the home page.
-pub const PAGES: &[&str] = &["cockpit", "bitcoin", "device", "pool", "log"];
+/// The LCD pages there are. `clock` (v0.1.46) is not among the factory
+/// pages: an owner adds it.
+pub const PAGES: &[&str] = &["cockpit", "bitcoin", "device", "pool", "log", "clock"];
+/// The factory pages and their order. `cockpit` is the home page.
+pub const DEFAULT_PAGES: &[&str] = &["cockpit", "bitcoin", "device", "pool", "log"];
 
 /// What the cockpit's large number can be.
 pub const BIG: &[&str] = &["hashrate", "efficiency", "power"];
@@ -47,10 +50,23 @@ pub const FOOTERS: &[&str] = &[
     "worker-ip",
 ];
 
-/// The OLED's slides in their factory order: five with the hashrate
-/// large on the left and one value on the right, three full-width info
-/// slides, the wordmark.
+/// The OLED's slides there are: five with the hashrate large on the left
+/// and one value on the right, three full-width info slides, the
+/// wordmark, and the clock (v0.1.46, not among the factory slides).
 pub const OLED_SLIDES: &[&str] = &[
+    "temp",
+    "power",
+    "efficiency",
+    "shares",
+    "best",
+    "pool",
+    "block",
+    "wifi",
+    "logo",
+    "clock",
+];
+/// The factory slides and their order.
+pub const DEFAULT_OLED_SLIDES: &[&str] = &[
     "temp",
     "power",
     "efficiency",
@@ -88,7 +104,7 @@ pub fn default_slots(devkit: bool) -> [&'static str; 3] {
 }
 
 /// The page list as the display steps through it: the configured
-/// names that exist, in their order; the full factory list when the
+/// names that exist, in their order; the factory list when the
 /// configured one is empty or holds nothing known (a config written by
 /// hand, or by a later firmware with pages this one lacks).
 pub fn pages(configured: &[String]) -> Vec<&'static str> {
@@ -97,7 +113,7 @@ pub fn pages(configured: &[String]) -> Vec<&'static str> {
         .filter_map(|p| PAGES.iter().copied().find(|k| k == p))
         .collect();
     if known.is_empty() {
-        PAGES.to_vec()
+        DEFAULT_PAGES.to_vec()
     } else {
         known
     }
@@ -139,15 +155,15 @@ pub fn footer(configured: &str) -> &'static str {
         .unwrap_or(DEFAULT_FOOTER)
 }
 
-/// The OLED rotation: the configured slides that exist, in order; all
-/// of them when none is known.
+/// The OLED rotation: the configured slides that exist, in order; the
+/// factory slides when none is known.
 pub fn oled_slides(configured: &[String]) -> Vec<&'static str> {
     let known: Vec<&'static str> = configured
         .iter()
         .filter_map(|s| OLED_SLIDES.iter().copied().find(|k| k == s))
         .collect();
     if known.is_empty() {
-        OLED_SLIDES.to_vec()
+        DEFAULT_OLED_SLIDES.to_vec()
     } else {
         known
     }
@@ -285,7 +301,7 @@ pub fn check_patch(v: &serde_json::Value, current_pages: &[String]) -> Option<St
                     None => current_pages.to_vec(),
                 };
                 let pages = if pages.is_empty() {
-                    PAGES.iter().map(|p| p.to_string()).collect()
+                    DEFAULT_PAGES.iter().map(|p| p.to_string()).collect()
                 } else {
                     pages
                 };
@@ -307,7 +323,142 @@ pub fn check_patch(v: &serde_json::Value, current_pages: &[String]) -> Option<St
             return Some(why);
         }
     }
+    for k in ["nightStart", "nightEnd"] {
+        if let Some(x) = v.get(k) {
+            if let Err(why) = check_minute_of_day(k, x.as_i64().unwrap_or(-1)) {
+                return Some(why);
+            }
+        }
+    }
+    if let Some(x) = v.get("clockFormat") {
+        let ok = x.as_str().is_some_and(|f| CLOCK_FORMATS.contains(&f));
+        if !ok {
+            return Some(unknown("clockFormat", &x.to_string(), CLOCK_FORMATS));
+        }
+    }
+    if let Some(x) = v.get("nightBrightness") {
+        if let Err(why) = check_night_brightness(x.as_i64().unwrap_or(-1)) {
+            return Some(why);
+        }
+    }
     None
+}
+
+// ------------------------------------------------------------ night mode
+
+/// Night mode's window by default: from 22:00 …
+pub const DEFAULT_NIGHT_START_MIN: u16 = 22 * 60;
+/// … to 07:00 (minutes of the day).
+pub const DEFAULT_NIGHT_END_MIN: u16 = 7 * 60;
+/// Backlight (LCD) or contrast (OLED) at night, percent of full; 0 =
+/// the display goes dark.
+pub const DEFAULT_NIGHT_BRIGHTNESS: u8 = 10;
+/// Seconds a key press brings the full display back at night.
+pub const NIGHT_WAKE_S: u64 = 30;
+
+/// Whether `now` (minutes of the local day) lies in the night window
+/// from `start` up to, not including, `end`. A window may run past
+/// midnight (22:00–07:00); `start == end` is no window at all.
+pub fn in_night(now: u16, start: u16, end: u16) -> bool {
+    match start.cmp(&end) {
+        std::cmp::Ordering::Equal => false,
+        std::cmp::Ordering::Less => (start..end).contains(&now),
+        std::cmp::Ordering::Greater => now >= start || now < end,
+    }
+}
+
+/// The brightness at night, percent, kept to 0–100.
+pub fn night_brightness(configured: u8) -> u8 {
+    configured.min(100)
+}
+
+/// `nightStart` / `nightEnd`: a minute of the day, 0–1439.
+pub fn check_minute_of_day(field: &str, value: i64) -> Result<(), String> {
+    if (0..24 * 60).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!(
+            "{field}: {value} is not a minute of the day (0–1439)"
+        ))
+    }
+}
+
+/// `nightBrightness`: percent, 0–100.
+pub fn check_night_brightness(value: i64) -> Result<(), String> {
+    if (0..=100).contains(&value) {
+        Ok(())
+    } else {
+        Err(format!("nightBrightness: {value} outside 0–100 %"))
+    }
+}
+
+// ----------------------------------------------------------- time format
+
+/// The clock's formats: by the time zone, or fixed.
+pub const CLOCK_FORMATS: &[&str] = &["auto", "24h", "12h"];
+/// Factory setting.
+pub const DEFAULT_CLOCK_FORMAT: &str = "auto";
+
+/// POSIX time zone rules that start like these read the clock in 12
+/// hours: the United States and Canada (with their positive offsets, so
+/// China's "CST-8" is not Chicago's "CST6"), Australia and New Zealand.
+const TWELVE_HOUR_ZONES: &[&str] = &[
+    "EST5", "CST6", "MST7", "PST8", "AKST9", "HST10", "AST4", "NST3", "AEST-10", "ACST-9",
+    "AWST-8", "NZST-12",
+];
+
+/// Whether the clock shows 12 hours with AM/PM: as set, or with `auto`
+/// (or anything unknown) by the time zone.
+pub fn twelve_hour(format: &str, tz: &str) -> bool {
+    match format {
+        "12h" => true,
+        "24h" => false,
+        _ => TWELVE_HOUR_ZONES.iter().any(|z| tz.starts_with(z)),
+    }
+}
+
+/// An hour of the day on the 12-hour clock, and whether it is PM
+/// (0 → 12 AM, 12 → 12 PM).
+pub fn hour12(h: u8) -> (u8, bool) {
+    let pm = h >= 12;
+    let h = h % 12;
+    (if h == 0 { 12 } else { h }, pm)
+}
+
+// ----------------------------------------------------------------- dates
+
+/// The ISO 8601 week of a date, 1–53, from its year, day of the year
+/// (0 = 1 January, as C's `tm_yday`) and weekday (0 = Sunday, as
+/// `tm_wday`).
+pub fn iso_week(year: i32, yday: u16, wday: u8) -> u8 {
+    // Monday = 1 … Sunday = 7.
+    let wd = if wday == 0 { 7 } else { i32::from(wday) };
+    let w = (i32::from(yday) + 1 - wd + 10) / 7;
+    if w < 1 {
+        weeks_in(year - 1)
+    } else if w > i32::from(weeks_in(year)) {
+        1
+    } else {
+        w as u8
+    }
+}
+
+/// 52 or 53: a year has 53 ISO weeks when 1 January is a Thursday, or
+/// a Wednesday in a leap year.
+fn weeks_in(year: i32) -> u8 {
+    let jan1 = jan1_weekday(year);
+    let leap = (year % 4 == 0 && year % 100 != 0) || year % 400 == 0;
+    if jan1 == 4 || (leap && jan1 == 3) {
+        53
+    } else {
+        52
+    }
+}
+
+/// Weekday of 1 January (0 = Sunday), by Gauss.
+fn jan1_weekday(year: i32) -> i32 {
+    let y = year - 1;
+    (1 + 5 * (y % 4) + 4 * (y % 100) + 6 * (y % 400)).rem_euclid(7)
 }
 
 #[cfg(test)]
@@ -373,14 +524,121 @@ mod tests {
 
     #[test]
     fn defaults_are_the_screens_of_v0_1_30() {
-        assert_eq!(pages(&[]), PAGES);
-        assert_eq!(start_index(PAGES, "cockpit"), 0);
+        assert_eq!(pages(&[]), ["cockpit", "bitcoin", "device", "pool", "log"]);
+        assert_eq!(start_index(DEFAULT_PAGES, "cockpit"), 0);
         assert_eq!(slots(&[], false), ["chip", "power", "efficiency"]);
         assert_eq!(slots(&[], true), ["chip", "sharesph", "uptime"]);
         assert_eq!(big(""), "hashrate");
         assert_eq!(footer(""), "pool-shares-ip");
-        assert_eq!(oled_slides(&[]), OLED_SLIDES);
+        assert_eq!(oled_slides(&[]), DEFAULT_OLED_SLIDES);
+        assert!(!oled_slides(&[]).contains(&"clock"));
         assert_eq!(oled_interval_s(0), 4);
+    }
+
+    #[test]
+    fn the_clock_is_a_choice_not_a_default() {
+        assert!(PAGES.contains(&"clock") && !DEFAULT_PAGES.contains(&"clock"));
+        assert!(OLED_SLIDES.contains(&"clock") && !DEFAULT_OLED_SLIDES.contains(&"clock"));
+        assert_eq!(&PAGES[..DEFAULT_PAGES.len()], DEFAULT_PAGES);
+        assert_eq!(
+            &OLED_SLIDES[..DEFAULT_OLED_SLIDES.len()],
+            DEFAULT_OLED_SLIDES
+        );
+        assert_eq!(pages(&s(&["clock", "cockpit"])), ["clock", "cockpit"]);
+        assert!(check_pages(&s(&["clock"])).is_ok());
+        assert!(check_start_page("clock", &s(&["cockpit", "clock"])).is_ok());
+        assert_eq!(oled_slides(&s(&["clock", "temp"])), ["clock", "temp"]);
+        assert!(check_oled_slides(&s(&["clock"])).is_ok());
+        // An empty stored list falls back to the factory pages, so the
+        // start page must be one of those.
+        assert!(check_patch(&json!({"displayStartPage": "clock"}), &[]).is_some());
+    }
+
+    #[test]
+    fn the_night_window_may_run_past_midnight() {
+        let (s22, e7) = (DEFAULT_NIGHT_START_MIN, DEFAULT_NIGHT_END_MIN);
+        assert!(in_night(22 * 60, s22, e7));
+        assert!(in_night(23 * 60 + 59, s22, e7));
+        assert!(in_night(0, s22, e7));
+        assert!(in_night(6 * 60 + 59, s22, e7));
+        assert!(!in_night(7 * 60, s22, e7));
+        assert!(!in_night(12 * 60, s22, e7));
+        assert!(!in_night(21 * 60 + 59, s22, e7));
+        // Within one day.
+        assert!(in_night(13 * 60, 12 * 60, 14 * 60));
+        assert!(!in_night(14 * 60, 12 * 60, 14 * 60));
+        // No window.
+        assert!(!in_night(600, 600, 600));
+        assert_eq!(night_brightness(250), 100);
+        assert_eq!(night_brightness(0), 0);
+    }
+
+    #[test]
+    fn night_fields_are_checked_in_a_patch() {
+        let cur = s(&["cockpit"]);
+        assert_eq!(
+            check_patch(
+                &json!({"nightStart": 0, "nightEnd": 1439, "nightBrightness": 0}),
+                &cur
+            ),
+            None
+        );
+        assert!(check_patch(&json!({"nightStart": 1440}), &cur)
+            .unwrap()
+            .contains("nightStart"));
+        assert!(check_patch(&json!({"nightEnd": -1}), &cur).is_some());
+        assert!(check_patch(&json!({"nightEnd": "07:00"}), &cur).is_some());
+        assert!(check_patch(&json!({"nightBrightness": 101}), &cur)
+            .unwrap()
+            .contains("nightBrightness"));
+        assert_eq!(check_patch(&json!({"nightBrightness": 100}), &cur), None);
+    }
+
+    #[test]
+    fn twelve_hours_follow_the_time_zone_unless_set() {
+        assert!(twelve_hour("auto", "EST5EDT,M3.2.0,M11.1.0"));
+        assert!(twelve_hour("auto", "PST8PDT,M3.2.0,M11.1.0"));
+        assert!(twelve_hour("auto", "MST7"));
+        assert!(twelve_hour("auto", "AEST-10AEDT,M10.1.0,M4.1.0/3"));
+        assert!(twelve_hour("auto", "NZST-12NZDT,M9.5.0,M4.1.0/3"));
+        assert!(!twelve_hour("auto", "CET-1CEST,M3.5.0,M10.5.0/3"));
+        assert!(!twelve_hour("auto", "GMT0BST,M3.5.0/1,M10.5.0"));
+        assert!(!twelve_hour("auto", "CST-8"), "China, not Chicago");
+        assert!(!twelve_hour("auto", "JST-9"));
+        assert!(!twelve_hour("auto", "UTC0"));
+        assert!(!twelve_hour("24h", "EST5EDT,M3.2.0,M11.1.0"));
+        assert!(twelve_hour("12h", "CET-1CEST,M3.5.0,M10.5.0/3"));
+        assert!(!twelve_hour("", "CET-1CEST"));
+        assert_eq!(hour12(0), (12, false));
+        assert_eq!(hour12(8), (8, false));
+        assert_eq!(hour12(12), (12, true));
+        assert_eq!(hour12(23), (11, true));
+        let cur = s(&["cockpit"]);
+        assert_eq!(check_patch(&json!({"clockFormat": "12h"}), &cur), None);
+        assert!(check_patch(&json!({"clockFormat": "am"}), &cur)
+            .unwrap()
+            .contains("clockFormat"));
+        assert!(check_patch(&json!({"clockFormat": 12}), &cur).is_some());
+    }
+
+    #[test]
+    fn iso_weeks_at_the_turn_of_the_year() {
+        // Sat 14 Nov 2026: day 317, week 46.
+        assert_eq!(iso_week(2026, 317, 6), 46);
+        // Thu 1 Jan 2026: week 1.
+        assert_eq!(iso_week(2026, 0, 4), 1);
+        // Fri 1 Jan 2027: still week 53 of 2026 (2026 starts on a Thursday).
+        assert_eq!(iso_week(2027, 0, 5), 53);
+        // Mon 4 Jan 2027: week 1.
+        assert_eq!(iso_week(2027, 3, 1), 1);
+        // Mon 29 Dec 2025: already week 1 of 2026.
+        assert_eq!(iso_week(2025, 362, 1), 1);
+        // Sun 1 Jan 2023: week 52 of 2022.
+        assert_eq!(iso_week(2023, 0, 0), 52);
+        // Thu 31 Dec 2020: week 53.
+        assert_eq!(iso_week(2020, 365, 4), 53);
+        assert_eq!(jan1_weekday(2026), 4);
+        assert_eq!(jan1_weekday(2024), 1);
     }
 
     #[test]
@@ -389,7 +647,7 @@ mod tests {
             pages(&s(&["pool", "cockpit", "later"])),
             ["pool", "cockpit"]
         );
-        assert_eq!(pages(&s(&["later"])), PAGES);
+        assert_eq!(pages(&s(&["later"])), DEFAULT_PAGES);
         assert_eq!(start_index(&["pool", "cockpit"], "cockpit"), 1);
         assert_eq!(start_index(&["pool", "cockpit"], "log"), 0);
     }

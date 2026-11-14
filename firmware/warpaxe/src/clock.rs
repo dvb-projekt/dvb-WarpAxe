@@ -148,9 +148,33 @@ pub fn wifi_scan() -> Result<serde_json::Value, String> {
 
 static TZ_APPLIED: Mutex<String> = Mutex::new(String::new());
 
-/// Local wall-clock hours and minutes by the configured time zone, once
-/// the clock is set. A changed `timezone` applies on the next call.
-pub fn local_hm() -> Option<(u8, u8)> {
+/// The local date and time by the configured time zone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Local {
+    pub hour: u8,
+    pub min: u8,
+    pub sec: u8,
+    /// 0 = Sunday.
+    pub wday: u8,
+    /// 1–31.
+    pub mday: u8,
+    /// 0 = January.
+    pub mon: u8,
+    pub year: i32,
+    /// 0 = 1 January.
+    pub yday: u16,
+}
+
+impl Local {
+    /// Minutes since local midnight.
+    pub fn minute_of_day(&self) -> u16 {
+        u16::from(self.hour) * 60 + u16::from(self.min)
+    }
+}
+
+/// Local date and time once the clock is set. A changed `timezone`
+/// applies on the next call.
+pub fn local() -> Option<Local> {
     let now = unix_now()?;
     let tz = config::get().timezone;
     {
@@ -168,5 +192,19 @@ pub fn local_hm() -> Option<(u8, u8)> {
     let t = now as sys::time_t;
     let mut tm: sys::tm = unsafe { core::mem::zeroed() };
     unsafe { sys::localtime_r(&t, &mut tm) };
-    Some((tm.tm_hour as u8, tm.tm_min as u8))
+    Some(Local {
+        hour: tm.tm_hour as u8,
+        min: tm.tm_min as u8,
+        sec: tm.tm_sec.clamp(0, 59) as u8,
+        wday: tm.tm_wday as u8,
+        mday: tm.tm_mday as u8,
+        mon: tm.tm_mon as u8,
+        year: tm.tm_year + 1900,
+        yday: tm.tm_yday as u16,
+    })
+}
+
+/// Local wall-clock hours and minutes, once the clock is set.
+pub fn local_hm() -> Option<(u8, u8)> {
+    local().map(|t| (t.hour, t.min))
 }

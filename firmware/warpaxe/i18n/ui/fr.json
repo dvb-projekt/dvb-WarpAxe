@@ -615,5 +615,21 @@
   "blk_st_unknown": "Inconnu : le mineur a été hors ligne entre-temps, la vérification n’est plus possible ici",
   "evd_block_unknown": "bloc {h} : état inconnu, le mineur a été hors ligne entre-temps et la vérification n’est plus possible",
   "cfo": "Fréquence par puce",
-  "cfo_live": "{f} MHz · {e} d'erreurs"
+  "cfo_live": "{f} MHz · {e} d'erreurs",
+  "pg_clock": "Horloge",
+  "os_clock": "Horloge · date · hashrate",
+  "night": "Horloge et mode nuit",
+  "night_s": "L’horloge sur l’écran et, la nuit, l’horloge seule, atténuée.",
+  "nightMode": "Mode nuit",
+  "nightMode_s": "Dans la plage horaire : l’horloge seule, atténuée, sans mise en veille de l’écran. Un appui sur une touche rétablit l’écran complet pendant 30 s.",
+  "nightStart": "De",
+  "nightEnd": "À",
+  "nightBrightness": "Luminosité la nuit (%, 0 = éteint)",
+  "night_hint": "Nécessite l’heure via NTP (réglages réseau) et le bon fuseau horaire.",
+  "night_on_now": "actif maintenant",
+  "night_off_now": "inactif maintenant",
+  "clockFormat": "Format de l’heure",
+  "tf_auto": "Automatique (selon le fuseau horaire)",
+  "tf_24h": "24 heures",
+  "tf_12h": "12 heures (AM/PM)"
 }

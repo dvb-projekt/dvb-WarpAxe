@@ -615,5 +615,21 @@
   "blk_st_unknown": "Desconocido: el minero estuvo desconectado entretanto y aquí ya no se puede comprobar",
   "evd_block_unknown": "bloque {h}: estado desconocido, el minero estuvo desconectado entretanto y ya no se puede comprobar",
   "cfo": "Frecuencia por chip",
-  "cfo_live": "{f} MHz · {e} de errores"
+  "cfo_live": "{f} MHz · {e} de errores",
+  "pg_clock": "Reloj",
+  "os_clock": "Reloj · fecha · hashrate",
+  "night": "Reloj y modo nocturno",
+  "night_s": "El reloj en la pantalla y, por la noche, solo el reloj, atenuado.",
+  "nightMode": "Modo nocturno",
+  "nightMode_s": "Dentro del horario: solo el reloj, atenuado, sin apagado de pantalla. Una pulsación de botón devuelve la pantalla completa durante 30 s.",
+  "nightStart": "Desde",
+  "nightEnd": "Hasta",
+  "nightBrightness": "Brillo por la noche (%, 0 = apagada)",
+  "night_hint": "Necesita la hora por NTP (ajustes de red) y la zona horaria correcta.",
+  "night_on_now": "activo ahora",
+  "night_off_now": "inactivo ahora",
+  "clockFormat": "Formato de hora",
+  "tf_auto": "Automático (según zona horaria)",
+  "tf_24h": "24 horas",
+  "tf_12h": "12 horas (AM/PM)"
 }

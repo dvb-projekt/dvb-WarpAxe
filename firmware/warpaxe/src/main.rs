@@ -379,6 +379,7 @@ fn main() {
             let mut ui = screens::Ui::new();
             let mut splash_for = None;
             let mut awake = true;
+            let mut level: u8 = 100;
             let mut was_down = [false; 2];
             let mut next_frame = std::time::Instant::now();
             loop {
@@ -393,7 +394,7 @@ fn main() {
                                 screens::Key::Home
                             });
                         }
-                        display::touch();
+                        display::touch_key();
                         next_frame = std::time::Instant::now();
                     }
                     was_down[i] = down;
@@ -403,12 +404,32 @@ fn main() {
                     2 => ui.key(screens::Key::Home),
                     _ => {}
                 }
-                let timeout_s = u64::from(config::get().display_timeout) * 60;
+                let cfg = config::get();
+                let timeout_s = u64::from(cfg.display_timeout) * 60;
                 let idle = diag::uptime_s().saturating_sub(display::last_wake());
-                let want_awake = timeout_s == 0 || idle < timeout_s;
+                // Night mode: the clock, dimmed, and no timeout; a key
+                // press brings the full display back for a while.
+                let night = screens::night_now(&cfg);
+                let woken = display::since_key() < warpaxe_displaycfg::NIGHT_WAKE_S;
+                let night_pct = warpaxe_displaycfg::night_brightness(cfg.night_brightness);
+                let want_awake = if night {
+                    night_pct > 0 || woken
+                } else {
+                    timeout_s == 0 || idle < timeout_s
+                };
                 if want_awake != awake {
                     awake = want_awake;
                     d.set_awake(awake);
+                    // Waking turns the light fully on.
+                    level = 100;
+                }
+                let dim = night && !woken;
+                ui.night = dim;
+                let want_level = if dim { night_pct } else { 100 };
+                if awake && want_level != level {
+                    level = want_level;
+                    d.set_brightness(level);
+                    next_frame = std::time::Instant::now();
                 }
                 if awake && std::time::Instant::now() >= next_frame {
                     next_frame = std::time::Instant::now() + draw(&mut d, &mut ui, &mut splash_for);

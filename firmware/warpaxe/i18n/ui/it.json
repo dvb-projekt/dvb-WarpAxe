@@ -615,5 +615,21 @@
   "blk_st_unknown": "Sconosciuto: il miner è stato offline nel frattempo e qui non si può più verificare",
   "evd_block_unknown": "blocco {h}: stato sconosciuto, il miner è stato offline nel frattempo e non si può più verificare",
   "cfo": "Frequenza per chip",
-  "cfo_live": "{f} MHz · {e} di errori"
+  "cfo_live": "{f} MHz · {e} di errori",
+  "pg_clock": "Orologio",
+  "os_clock": "Orologio · data · hashrate",
+  "night": "Orologio e modalità notte",
+  "night_s": "L’orologio sul display e, di notte, solo l’orologio, attenuato.",
+  "nightMode": "Modalità notte",
+  "nightMode_s": "Nella fascia oraria: solo l’orologio, attenuato, senza spegnimento dello schermo. Premendo un tasto il display completo torna per 30 s.",
+  "nightStart": "Dalle",
+  "nightEnd": "Alle",
+  "nightBrightness": "Luminosità di notte (%, 0 = spento)",
+  "night_hint": "Richiede l’ora via NTP (impostazioni di rete) e il fuso orario corretto.",
+  "night_on_now": "attiva ora",
+  "night_off_now": "non attiva ora",
+  "clockFormat": "Formato dell’ora",
+  "tf_auto": "Automatico (in base al fuso orario)",
+  "tf_24h": "24 ore",
+  "tf_12h": "12 ore (AM/PM)"
 }

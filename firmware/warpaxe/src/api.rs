@@ -293,6 +293,17 @@ pub fn system_info() -> serde_json::Value {
     v["domainLatchResets"] = json!(m.domain_latch_resets);
     v["lastDomainLatchReset"] = m.last_domain_latch_reset.map_or(serde_json::Value::Null, |(chip, domain, percent, at)| json!({"chip": chip, "domain": domain, "percent": percent, "uptime_s": at}));
     v["domainsGivenUp"] = m.domains_given_up.iter().map(|(c, d)| json!({"chip": c, "domain": d})).collect();
+    // Night mode (display): on/off, the window in minutes of the local
+    // day, the brightness in percent, and whether it is in force now
+    // (on, the clock set, the time inside the window).
+    v["nightMode"] = json!(cfg.night_mode);
+    v["nightStart"] = json!(cfg.night_start);
+    v["nightEnd"] = json!(cfg.night_end);
+    v["nightBrightness"] = json!(warpaxe_displaycfg::night_brightness(cfg.night_brightness));
+    v["nightActive"] = json!(crate::screens::night_now(&cfg));
+    // The clock's format as set, and whether it shows 12 hours now.
+    v["clockFormat"] = json!(cfg.clock_format);
+    v["clock12h"] = json!(warpaxe_displaycfg::twelve_hour(&cfg.clock_format, &cfg.timezone));
     // A board with a diode per chip (Naja Duo, Gamma Turbo): `temp`
     // above is the hotter of the two, which fan and stop line act on;
     // `temp2` is the second chip's own, under AxeOS's name and with its
@@ -1547,7 +1558,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let k = if req.uri().contains("k=home") { 2 } else { 1 };
         display::REMOTE_KEY.store(k, Ordering::Relaxed);
-        display::touch();
+        display::touch_key();
         reply_json(
             req,
             200,

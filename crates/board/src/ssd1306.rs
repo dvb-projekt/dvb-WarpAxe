@@ -20,9 +20,35 @@ const CTRL_DATA: u8 = 0x40;
 /// (0, 0) is top-left with the connector at the top, COM pins for 32
 /// rows, contrast, precharge, VCOM, normal display, on.
 const INIT: [u8; 26] = [
-    0xAE, 0xD5, 0x80, 0xA8, 0x1F, 0xD3, 0x00, 0x40, 0x8D, 0x14, 0x20, 0x00, 0xA1, 0xC8, 0xDA, 0x02,
-    0x81, 0x8F, 0xD9, 0xF1, 0xDB, 0x40, 0xA4, 0xA6, 0x2E, 0xAF,
+    0xAE,
+    0xD5,
+    0x80,
+    0xA8,
+    0x1F,
+    0xD3,
+    0x00,
+    0x40,
+    0x8D,
+    0x14,
+    0x20,
+    0x00,
+    0xA1,
+    0xC8,
+    0xDA,
+    0x02,
+    0x81,
+    INIT_CONTRAST,
+    0xD9,
+    0xF1,
+    0xDB,
+    0x40,
+    0xA4,
+    0xA6,
+    0x2E,
+    0xAF,
 ];
+/// The contrast the init sets: full brightness.
+const INIT_CONTRAST: u8 = 0x8F;
 
 /// The driver with its frame buffer.
 pub struct Ssd1306<I> {
@@ -64,6 +90,12 @@ impl<I: I2c> Ssd1306<I> {
     /// Inverse video: lit background, dark text.
     pub fn set_invert(&mut self, on: bool) -> Result<(), Error<I::Error>> {
         self.command(&[if on { 0xA7 } else { 0xA6 }])
+    }
+
+    /// Brightness, percent of the init sequence's contrast (0x8F); 1 at
+    /// the least, so 1 % still shows. Off is `set_power(false)`.
+    pub fn set_brightness(&mut self, pct: u8) -> Result<(), Error<I::Error>> {
+        self.command(&[0x81, contrast_for(pct)])
     }
 
     /// Panel on or off (sleep); the frame buffer is kept.
@@ -143,6 +175,12 @@ impl<I: I2c> Ssd1306<I> {
     }
 }
 
+/// The contrast byte for a brightness in percent of the init value.
+fn contrast_for(pct: u8) -> u8 {
+    let full = u16::from(INIT_CONTRAST);
+    ((full * u16::from(pct.min(100)) + 50) / 100).max(1) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,6 +209,19 @@ mod tests {
                 _ => panic!("data write expected"),
             }
         }
+    }
+
+    #[test]
+    fn brightness_scales_the_init_contrast() {
+        assert_eq!(contrast_for(100), INIT_CONTRAST);
+        assert_eq!(contrast_for(255), INIT_CONTRAST);
+        assert_eq!(contrast_for(50), 72);
+        assert_eq!(contrast_for(0), 1);
+        let i = INIT.iter().position(|&b| b == 0x81).unwrap();
+        assert_eq!(INIT[i + 1], INIT_CONTRAST, "the init sequence's contrast");
+        let mut d = Ssd1306::new(Bus::sink(), ADDR);
+        d.set_brightness(10).unwrap();
+        assert_eq!(d.bus.log[0], Tx::Write(ADDR, vec![CTRL_CMD, 0x81, 14]));
     }
 
     #[test]

@@ -266,6 +266,47 @@ impl Lcd {
     pub fn set_backlight(&mut self, on: bool) {
         gpio_out(PIN_BACKLIGHT, on);
     }
+
+    /// Backlight in percent: 100 and 0 are the plain pin, as always;
+    /// anything between dims it by PWM (night mode). The LEDC is set up
+    /// on each change, so a later `set_backlight` (the pin taken back as
+    /// a GPIO) and a dimmed level can follow each other.
+    pub fn set_backlight_pct(&mut self, pct: u8) {
+        match pct {
+            0 => gpio_out(PIN_BACKLIGHT, false),
+            100.. => gpio_out(PIN_BACKLIGHT, true),
+            p => {
+                let timer = sys::ledc_timer_config_t {
+                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
+                    duty_resolution: sys::ledc_timer_bit_t_LEDC_TIMER_8_BIT,
+                    timer_num: sys::ledc_timer_t_LEDC_TIMER_0,
+                    freq_hz: 5_000,
+                    clk_cfg: sys::soc_periph_ledc_clk_src_legacy_t_LEDC_AUTO_CLK,
+                    deconfigure: false,
+                };
+                // Perceived brightness is far from linear: square the
+                // percentage, so 10 % is dim but still readable.
+                let duty = (u32::from(p) * u32::from(p) * 255 / 10_000).max(1);
+                let chan = sys::ledc_channel_config_t {
+                    gpio_num: PIN_BACKLIGHT,
+                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
+                    channel: sys::ledc_channel_t_LEDC_CHANNEL_0,
+                    timer_sel: sys::ledc_timer_t_LEDC_TIMER_0,
+                    duty,
+                    ..Default::default()
+                };
+                let ok = unsafe {
+                    sys::ledc_timer_config(&timer) == sys::ESP_OK
+                        && sys::ledc_channel_config(&chan) == sys::ESP_OK
+                };
+                if !ok {
+                    // Better full than dark: the clock must stay readable.
+                    log::warn!("display: backlight PWM failed, full brightness");
+                    gpio_out(PIN_BACKLIGHT, true);
+                }
+            }
+        }
+    }
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
         snapshot(self.fb);
         match self.bounce.as_deref_mut() {
@@ -361,6 +402,9 @@ impl Oled {
     pub fn set_power(&mut self, on: bool) {
         let _ = self.panel.set_power(on);
     }
+    pub fn set_brightness(&mut self, pct: u8) {
+        let _ = self.panel.set_brightness(pct);
+    }
 }
 
 /// Whichever display the board profile names.
@@ -387,6 +431,28 @@ pub fn last_wake() -> u64 {
     u64::from(LAST_WAKE.load(std::sync::atomic::Ordering::Relaxed))
 }
 
+/// Uptime second of the last key press, on the device or by the API's
+/// remote key. Night mode wakes for this alone: a write on the API (a
+/// tuner's PATCH every few minutes) must not light the display at night.
+static LAST_KEY: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// A key was pressed: wake the display, at night too.
+pub fn touch_key() {
+    LAST_KEY.store(
+        crate::diag::uptime_s() as u32,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    touch();
+}
+
+/// Seconds since the last key press; `u64::MAX` before the first.
+pub fn since_key() -> u64 {
+    match LAST_KEY.load(std::sync::atomic::Ordering::Relaxed) {
+        0 => u64::MAX,
+        k => crate::diag::uptime_s().saturating_sub(u64::from(k)),
+    }
+}
+
 pub fn asleep() -> bool {
     ASLEEP.load(std::sync::atomic::Ordering::Relaxed)
 }
@@ -399,6 +465,15 @@ impl Display {
             Display::Oled(o) => o.set_power(awake),
         }
         ASLEEP.store(!awake, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Brightness of an awake panel, percent (night mode); 100 is the
+    /// normal light.
+    pub fn set_brightness(&mut self, pct: u8) {
+        match self {
+            Display::Lcd(l) => l.set_backlight_pct(pct.max(1)),
+            Display::Oled(o) => o.set_brightness(pct.max(1)),
+        }
     }
 
     /// The profile's display, or `None` when it is absent or failed.

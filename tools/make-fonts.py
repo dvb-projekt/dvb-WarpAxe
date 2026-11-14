@@ -21,7 +21,7 @@ OUT = ROOT / "firmware/warpaxe/src/gfx"
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 EXTRA = "äöüÄÖÜß°·≈€…–"
 # Latin letters of the other display languages (es, fr, it, pt).
-LATIN = "àâçéèêëîïôûùÿñáíóúãõœÀÂÇÉÈÊËÎÏÔÛÙÑÁÍÓÚÃÕŒ¿¡«»’"
+LATIN = "àâçéèêëîïôûùÿñáíóúãõœìòÀÂÇÉÈÊËÎÏÔÛÙÑÁÍÓÚÃÕŒÌÒ¿¡«»’"
 TEXT = ASCII + EXTRA + LATIN
 DIGITS = "0123456789.,-–: "
 
@@ -37,7 +37,9 @@ FONTS = [
     ("MONO11", "JetBrainsMono.ttf", 11, [500], TEXT),
     ("LABEL10", "Inter.ttf", 10, [14, 600], TEXT),
     ("UNIT13", "Inter.ttf", 13, [14, 500], TEXT),
-    ("OLED24", "SpaceGrotesk.ttf", 24, [700], "0123456789.-"),
+    ("OLED24", "SpaceGrotesk.ttf", 24, [700], "0123456789.-:"),
+    # The clock page and night mode (v0.1.46): the time alone.
+    ("CLOCK", "SpaceGrotesk.ttf", 72, [700], "0123456789:–"),
 ]
 
 

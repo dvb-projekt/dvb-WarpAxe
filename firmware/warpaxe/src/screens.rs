@@ -72,6 +72,9 @@ pub struct Ui {
     oled_t: Instant,
     last_acc: u64,
     blink: u8,
+    /// Night mode, dimmed (set by the display thread): the clock alone,
+    /// and a key press only wakes the full display.
+    pub night: bool,
 }
 
 /// Key presses from the display thread.
@@ -303,6 +306,7 @@ impl Ui {
             oled_t: Instant::now(),
             last_acc: 0,
             blink: 0,
+            night: false,
         }
     }
 
@@ -316,6 +320,11 @@ impl Ui {
 
     pub fn key(&mut self, k: Key) {
         self.last_key_s = diag::uptime_s();
+        // At night the first press brings the full display back; it
+        // does not step a page as well.
+        if self.night {
+            return;
+        }
         if let Some(Event::Block(h)) = self.event {
             self.acked_block = Some(h);
             *display::DEMO.lock().unwrap() = None;
@@ -444,6 +453,10 @@ impl Ui {
                 event_screen(&mut l.canvas(), ev, t);
                 Duration::from_millis(80)
             }
+            None if self.night => {
+                night_screen(&mut l.canvas());
+                Duration::from_millis(1000)
+            }
             None => {
                 l.blit(&self.base);
                 let mut c = l.canvas();
@@ -458,6 +471,7 @@ impl Ui {
                     "device" => device(&mut c, pos, n),
                     "pool" => pool(&mut c, pos, n),
                     "log" => log_page(&mut c, pos, n),
+                    "clock" => clock_page(&mut c, pos, n),
                     _ => cockpit(&mut c, pos, n),
                 }
                 Duration::from_millis(500)
@@ -562,6 +576,10 @@ impl Ui {
             Some(ev) => {
                 oled_event(o, ev, t, &mut self.rng);
                 Duration::from_millis(100)
+            }
+            None if self.night => {
+                oled_slide(o, "clock");
+                Duration::from_millis(1000)
             }
             None => {
                 let (slides, step) = oled_rotation_of(cfg);
@@ -1267,6 +1285,232 @@ fn bitcoin(c: &mut Canvas, pos: usize, total: usize) {
             c.text(&MONO9, 308, 158, gfx::MUTE, &s, Align::Right);
         }
     }
+}
+
+// ------------------------------------------------- clock and night mode
+
+/// Night mode is on and the local time lies in its window (false while
+/// the clock is not set).
+pub fn night_now(cfg: &config::Config) -> bool {
+    cfg.night_mode
+        && clock::local().is_some_and(|t| {
+            dcfg::in_night(t.minute_of_day(), cfg.night_start, cfg.night_end)
+        })
+}
+
+/// The day's name, full, in the display language (0 = Sunday).
+fn weekday(w: u8) -> &'static str {
+    match w {
+        1 => l("Monday", "Montag"),
+        2 => l("Tuesday", "Dienstag"),
+        3 => l("Wednesday", "Mittwoch"),
+        4 => l("Thursday", "Donnerstag"),
+        5 => l("Friday", "Freitag"),
+        6 => l("Saturday", "Samstag"),
+        _ => l("Sunday", "Sonntag"),
+    }
+}
+
+/// The month, short, in the display language (0 = January).
+fn month(m: u8) -> &'static str {
+    match m {
+        0 => l("Jan", "Jan"),
+        1 => l("Feb", "Feb"),
+        2 => l("Mar", "Mär"),
+        3 => l("Apr", "Apr"),
+        4 => l("May", "Mai"),
+        5 => l("Jun", "Jun"),
+        6 => l("Jul", "Jul"),
+        7 => l("Aug", "Aug"),
+        8 => l("Sep", "Sep"),
+        9 => l("Oct", "Okt"),
+        10 => l("Nov", "Nov"),
+        _ => l("Dec", "Dez"),
+    }
+}
+
+/// "Nov 14" in English, "14. Nov" in German, "14 nov" in the others.
+fn date_short(t: &clock::Local) -> String {
+    let m = month(t.mon);
+    match lang() {
+        "en" => format!("{m} {}", t.mday),
+        "de" => format!("{}. {m}", t.mday),
+        _ => format!("{} {}", t.mday, m.to_lowercase()),
+    }
+}
+
+/// The time as the clock font draws it (dashes while it is not set),
+/// and "AM"/"PM" on the 12-hour clock.
+fn hhmm(t: Option<&clock::Local>) -> (String, Option<&'static str>) {
+    let Some(t) = t else {
+        return ("––:––".into(), None);
+    };
+    let cfg = config::get();
+    if dcfg::twelve_hour(&cfg.clock_format, &cfg.timezone) {
+        let (h, pm) = dcfg::hour12(t.hour);
+        (format!("{h}:{:02}", t.min), Some(if pm { "PM" } else { "AM" }))
+    } else {
+        (format!("{:02}:{:02}", t.hour, t.min), None)
+    }
+}
+
+/// The clock page: the time large, the date beside it, the hashrate,
+/// and the block (with price and fee when market data is on) below.
+fn clock_page(c: &mut Canvas, pos: usize, total: usize) {
+    let t = clock::local();
+    badge(c);
+    c.text(
+        &LABEL12,
+        82,
+        17,
+        gfx::PLASMA,
+        &l("Time", "Uhr").to_uppercase(),
+        Align::Left,
+    );
+    dots(c, 305, 11, pos, total);
+    c.rect(12, 25, 298, 1, gfx::WHITE, 16);
+
+    // The time; the colon in the brand colour.
+    let col = if t.is_some() { gfx::FG } else { gfx::DIM };
+    let (s, ampm) = hhmm(t.as_ref());
+    let (hh, mm) = s.split_at(s.find(':').unwrap_or(2));
+    let mut x = 10;
+    x += c.text(&CLOCK, x, 96, col, hh, Align::Left);
+    x += c.text(&CLOCK, x, 96, gfx::WARP, ":", Align::Left);
+    c.text(&CLOCK, x, 96, col, &mm[1..], Align::Left);
+    // How far the minute has run; AM/PM at its end on the 12-hour clock.
+    let bar = if ampm.is_some() { 184 } else { 206 };
+    c.rect(12, 104, bar, 3, gfx::WHITE, 20);
+    if let Some(t) = &t {
+        let w = bar * i32::from(t.sec) / 59;
+        c.rect(12, 104, w, 3, gfx::PLASMA, 255);
+    }
+    if let Some(a) = ampm {
+        c.text(&LABEL11, 218, 108, gfx::MUTE, a, Align::Right);
+    }
+
+    // Beside it: the day, the date, the week, the hashrate.
+    let x0 = 232;
+    match &t {
+        Some(t) => {
+            let wd = weekday(t.wday).to_uppercase();
+            c.text(&LABEL11, x0, 46, gfx::MUTE, &wd, Align::Left);
+            c.text(&VAL12, x0, 63, gfx::FG, &date_short(t), Align::Left);
+            let week = dcfg::iso_week(t.year, t.yday, t.wday);
+            let wk = format!("{} · {} {week}", t.year, l("Week", "KW"));
+            c.text(&LABEL10, x0, 77, gfx::DIM, &wk, Align::Left);
+        }
+        None => {
+            c.text(&LABEL11, x0, 52, gfx::MUTE, l("NO TIME YET", "KEINE ZEIT"), Align::Left);
+            c.text(&LABEL10, x0, 66, gfx::DIM, l("Check NTP", "NTP prüfen"), Align::Left);
+        }
+    }
+    let m = miner::state();
+    let ok = m.hashrate_ghs > 0.0;
+    c.rect(x0, 87, 5, 5, if ok { gfx::OK } else { gfx::WARN }, 255);
+    let (v, unit) = hashrate(m.hashrate_ghs);
+    let w = c.text(&VAL12, x0 + 9, 93, gfx::FG, &v, Align::Left);
+    c.text(&MONO9, x0 + 12 + w, 93, gfx::MUTE, unit, Align::Left);
+
+    // Below: the block, then price and fee, or pool and uptime.
+    c.rect(12, 116, 296, 1, gfx::WHITE, 16);
+    let st = stratum::state();
+    let h = st.block_height;
+    let block = if h > 0 { num(h as f64, 0) } else { "–".into() };
+    let col3 = |c: &mut Canvas, x: i32, label: &str, val: &str, vcol: u16| {
+        c.text(&LABEL10, x, 131, gfx::MUTE, &label.to_uppercase(), Align::Left);
+        c.text(&VAL12, x, 149, vcol, val, Align::Left);
+    };
+    col3(c, 12, l("Block", "Block"), &block, gfx::BTC);
+    match market::get() {
+        Some(mk) => {
+            if let Some((cur, p)) = &mk.price {
+                let sym = match cur.as_str() {
+                    "EUR" => "€",
+                    "USD" => "$",
+                    other => other,
+                };
+                col3(c, 112, "BTC", &format!("{} {sym}", num(*p, 0)), gfx::FG);
+            }
+            if let Some((next, _, _)) = mk.fees {
+                let f = format!("{} sat/vB", num(next, 0));
+                col3(c, 212, l("Fee", "Gebühr"), &f, gfx::FG);
+            }
+        }
+        None => {
+            let pool = st.pool.split(':').next().unwrap_or("").to_string();
+            let pool: String = pool.chars().take(14).collect();
+            col3(c, 112, "Pool", if pool.is_empty() { "–" } else { &pool }, gfx::FG);
+            col3(c, 212, l("Uptime", "Laufzeit"), &uptime(diag::uptime_s()), gfx::FG);
+        }
+    }
+}
+
+/// Night mode: the time, the date and one line, dim, on black.
+fn night_screen(c: &mut Canvas) {
+    c.fill(gfx::BLACK);
+    let t = clock::local();
+    let (s, ampm) = hhmm(t.as_ref());
+    let (hh, mm) = s.split_at(s.find(':').unwrap_or(2));
+    let suffix_w = ampm.map_or(0, |a| 6 + LABEL12.width(a));
+    let width = CLOCK.width(&s) + suffix_w;
+    let mut x = (W - width) / 2;
+    x += c.text(&CLOCK, x, 98, gfx::MUTE, hh, Align::Left);
+    x += c.text(&CLOCK, x, 98, gfx::WARP, ":", Align::Left);
+    x += c.text(&CLOCK, x, 98, gfx::MUTE, &mm[1..], Align::Left);
+    if let Some(a) = ampm {
+        c.text(&LABEL12, x + 6, 98, gfx::DIM, a, Align::Left);
+    }
+    if let Some(t) = &t {
+        let d = format!("{} · {}", weekday(t.wday), date_short(t));
+        c.text(&LABEL12, W / 2, 128, gfx::DIM, &d, Align::Center);
+    }
+    let m = miner::state();
+    let (v, unit) = hashrate(m.hashrate_ghs);
+    let mut line = format!("{v} {unit}");
+    if let Some(tc) = board::state().temp_c {
+        line.push_str(&format!(" · {} °C", num(f64::from(tc), 0)));
+    }
+    c.text(&MONO9, W / 2, 152, gfx::DIM, &line, Align::Center);
+}
+
+/// The OLED clock: the time large, the day and date and the hashrate
+/// beside it.
+fn oled_clock(o: &mut Oled, m: &miner::MinerState) {
+    let t = clock::local();
+    let (s, ampm) = hhmm(t.as_ref());
+    let s = s.replace('–', "-");
+    let w = OLED24.draw(0, 25, &s, |x, y, a| {
+        if a >= 8 {
+            o.pixel(x, y, true)
+        }
+    });
+    if let Some(a) = ampm {
+        oled_text(o, w + 2, 19, a);
+    }
+    let date = match &t {
+        Some(t) if lang() == "en" => {
+            let wd: String = oled_str(weekday(t.wday)).chars().take(3).collect();
+            format!("{wd} {}/{}", t.mon + 1, t.mday)
+        }
+        Some(t) => {
+            let wd: String = oled_str(weekday(t.wday)).chars().take(2).collect();
+            format!("{wd} {}.{}.", t.mday, t.mon + 1)
+        }
+        None => "NO NTP".into(),
+    };
+    let w = (date.len() * 6) as i32 - 1;
+    oled_text(o, 127 - w, 5, &date);
+    let ths = m.hashrate_ghs / 1000.0;
+    let hr = if m.hashrate_ghs <= 0.0 {
+        "-".to_string()
+    } else if ths >= 1.0 {
+        format!("{ths:.2}TH")
+    } else {
+        format!("{:.0}GH", m.hashrate_ghs)
+    };
+    let w = (hr.len() * 6) as i32 - 1;
+    oled_text(o, 127 - w, 19, &hr);
 }
 
 fn device(c: &mut Canvas, pos: usize, total: usize) {
@@ -2177,6 +2421,10 @@ fn oled_slide(o: &mut Oled, name: &str) {
         );
         let line: String = line.chars().take(21).collect();
         oled_center(o, 23, &line);
+        return;
+    }
+    if name == "clock" {
+        oled_clock(o, &m);
         return;
     }
     if matches!(name, "pool" | "block" | "wifi") {

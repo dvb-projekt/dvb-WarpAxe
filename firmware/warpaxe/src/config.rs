@@ -199,7 +199,7 @@ pub struct Config {
     #[serde(rename = "psuWatts")]
     pub psu_watts: u16,
     /// The LCD pages the page key steps through, in order; names from
-    /// `warpaxe_displaycfg::PAGES`. An empty list = all of them.
+    /// `warpaxe_displaycfg::PAGES`. An empty list = the factory pages.
     #[serde(rename = "displayPages")]
     pub display_pages: Vec<String>,
     /// The page shown at boot and after a minute without a key press.
@@ -216,12 +216,30 @@ pub struct Config {
     #[serde(rename = "cockpitFooter")]
     pub cockpit_footer: String,
     /// The OLED slides that rotate, in order
-    /// (`warpaxe_displaycfg::OLED_SLIDES`); an empty list = all of them.
+    /// (`warpaxe_displaycfg::OLED_SLIDES`); an empty list = the factory
+    /// slides.
     #[serde(rename = "oledSlides")]
     pub oled_slides: Vec<String>,
     /// Seconds an OLED slide stays, 1–60.
     #[serde(rename = "oledInterval")]
     pub oled_interval: u8,
+    /// Night mode: inside the window the display shows only the clock,
+    /// dimmed to `night_brightness`, and the screen timeout does not
+    /// apply. Needs the clock (SNTP); off by default.
+    #[serde(rename = "nightMode")]
+    pub night_mode: bool,
+    /// The window, minutes of the local day; it may run past midnight.
+    #[serde(rename = "nightStart")]
+    pub night_start: u16,
+    #[serde(rename = "nightEnd")]
+    pub night_end: u16,
+    /// Backlight (LCD) or contrast (OLED) at night, percent; 0 = dark.
+    #[serde(rename = "nightBrightness")]
+    pub night_brightness: u8,
+    /// The display clock: "auto" (12 h with AM/PM in US, Canadian,
+    /// Australian and New Zealand time zones, else 24 h), "24h", "12h".
+    #[serde(rename = "clockFormat")]
+    pub clock_format: String,
 }
 
 impl Default for Config {
@@ -291,7 +309,7 @@ impl Default for Config {
             psu_watts: 0,
             // The screens of v0.1.30, spelt out: a device updated from
             // there shows no difference.
-            display_pages: warpaxe_displaycfg::PAGES
+            display_pages: warpaxe_displaycfg::DEFAULT_PAGES
                 .iter()
                 .map(|p| p.to_string())
                 .collect(),
@@ -299,11 +317,16 @@ impl Default for Config {
             cockpit_big: warpaxe_displaycfg::DEFAULT_BIG.into(),
             cockpit_slots: Vec::new(),
             cockpit_footer: warpaxe_displaycfg::DEFAULT_FOOTER.into(),
-            oled_slides: warpaxe_displaycfg::OLED_SLIDES
+            oled_slides: warpaxe_displaycfg::DEFAULT_OLED_SLIDES
                 .iter()
                 .map(|p| p.to_string())
                 .collect(),
             oled_interval: warpaxe_displaycfg::DEFAULT_OLED_INTERVAL_S,
+            night_mode: false,
+            night_start: warpaxe_displaycfg::DEFAULT_NIGHT_START_MIN,
+            night_end: warpaxe_displaycfg::DEFAULT_NIGHT_END_MIN,
+            night_brightness: warpaxe_displaycfg::DEFAULT_NIGHT_BRIGHTNESS,
+            clock_format: warpaxe_displaycfg::DEFAULT_CLOCK_FORMAT.into(),
         }
     }
 }
