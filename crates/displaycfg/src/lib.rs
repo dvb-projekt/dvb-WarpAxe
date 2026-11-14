@@ -400,11 +400,27 @@ pub const CLOCK_FORMATS: &[&str] = &["auto", "24h", "12h"];
 pub const DEFAULT_CLOCK_FORMAT: &str = "auto";
 
 /// POSIX time zone rules that start like these read the clock in 12
-/// hours: the United States and Canada (with their positive offsets, so
-/// China's "CST-8" is not Chicago's "CST6"), Australia and New Zealand.
+/// hours: the United States and Canada with their summer time (so
+/// Mexico's and Panama's "CST6" / "EST5" without it stay on 24 hours,
+/// and China's "CST-8" is not Chicago), Arizona, Hawaii, Australia, New
+/// Zealand, India, Pakistan and the Philippines. A heuristic: "12h" and
+/// "24h" set it by hand.
 const TWELVE_HOUR_ZONES: &[&str] = &[
-    "EST5", "CST6", "MST7", "PST8", "AKST9", "HST10", "AST4", "NST3", "AEST-10", "ACST-9",
-    "AWST-8", "NZST-12",
+    "EST5EDT",
+    "CST6CDT",
+    "MST7",
+    "PST8PDT",
+    "AKST9AKDT",
+    "HST10",
+    "AST4ADT",
+    "NST3:30NDT",
+    "AEST-10",
+    "ACST-9",
+    "AWST-8",
+    "NZST-12",
+    "IST-5:30",
+    "PKT-5",
+    "PST-8",
 ];
 
 /// Whether the clock shows 12 hours with AM/PM: as set, or with `auto`
@@ -604,6 +620,11 @@ mod tests {
         assert!(!twelve_hour("auto", "CET-1CEST,M3.5.0,M10.5.0/3"));
         assert!(!twelve_hour("auto", "GMT0BST,M3.5.0/1,M10.5.0"));
         assert!(!twelve_hour("auto", "CST-8"), "China, not Chicago");
+        assert!(!twelve_hour("auto", "CST6"), "Mexico City, no summer time");
+        assert!(!twelve_hour("auto", "EST5"), "Panama");
+        assert!(twelve_hour("auto", "AKST9AKDT,M3.2.0,M11.1.0"));
+        assert!(twelve_hour("auto", "IST-5:30"));
+        assert!(twelve_hour("auto", "PST-8"), "Manila");
         assert!(!twelve_hour("auto", "JST-9"));
         assert!(!twelve_hour("auto", "UTC0"));
         assert!(!twelve_hour("24h", "EST5EDT,M3.2.0,M11.1.0"));

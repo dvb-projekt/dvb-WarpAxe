@@ -284,9 +284,8 @@ impl Lcd {
                     clk_cfg: sys::soc_periph_ledc_clk_src_legacy_t_LEDC_AUTO_CLK,
                     deconfigure: false,
                 };
-                // Perceived brightness is far from linear: square the
-                // percentage, so 10 % is dim but still readable.
-                let duty = (u32::from(p) * u32::from(p) * 255 / 10_000).max(1);
+                // Duty in step with the percentage (8 bits).
+                let duty = (u32::from(p) * 255 / 100).max(1);
                 let chan = sys::ledc_channel_config_t {
                     gpio_num: PIN_BACKLIGHT,
                     speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,

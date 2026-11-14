@@ -380,6 +380,7 @@ fn main() {
             let mut splash_for = None;
             let mut awake = true;
             let mut level: u8 = 100;
+            let (mut alert, mut alert_at) = (false, std::time::Instant::now());
             let mut was_down = [false; 2];
             let mut next_frame = std::time::Instant::now();
             loop {
@@ -410,7 +411,15 @@ fn main() {
                 // Night mode: the clock, dimmed, and no timeout; a key
                 // press brings the full display back for a while.
                 let night = screens::night_now(&cfg);
-                let woken = display::since_key() < warpaxe_displaycfg::NIGHT_WAKE_S;
+                // A key, or an alert the person should see (a found
+                // block, an overheat stop, an update, a self-test).
+                // Looked up once a second, and only at night.
+                if night && alert_at.elapsed() >= Duration::from_secs(1) {
+                    alert_at = std::time::Instant::now();
+                    alert = ui.alert();
+                }
+                let woken =
+                    display::since_key() < warpaxe_displaycfg::NIGHT_WAKE_S || (night && alert);
                 let night_pct = warpaxe_displaycfg::night_brightness(cfg.night_brightness);
                 let want_awake = if night {
                     night_pct > 0 || woken
@@ -420,8 +429,9 @@ fn main() {
                 if want_awake != awake {
                     awake = want_awake;
                     d.set_awake(awake);
-                    // Waking turns the light fully on.
-                    level = 100;
+                    // Waking powers the panel up but keeps its last
+                    // contrast (OLED): send the level again.
+                    level = u8::MAX;
                 }
                 let dim = night && !woken;
                 ui.night = dim;

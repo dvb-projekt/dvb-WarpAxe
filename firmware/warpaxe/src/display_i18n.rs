@@ -259,7 +259,7 @@ static FR: &[(&str, &str)] = &[
     ("Mining continues", "Le minage continue"),
     ("Monday", "Lundi"),
     ("NO POOL", "AUCUN POOL"),
-    ("NO TIME YET", "PAS D’HEURE"),
+    ("NO TIME YET", "SANS HEURE"),
     ("Network difficulty", "Difficulté réseau"),
     ("Network hashrate", "Hashrate réseau"),
     ("Nov", "Nov."),

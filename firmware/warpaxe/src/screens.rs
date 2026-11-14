@@ -355,6 +355,15 @@ impl Ui {
         }
     }
 
+    /// An alert is up that night mode must not keep dark or dim: a
+    /// found block, an overheat stop, a firmware update, a self-test.
+    pub fn alert(&self) -> bool {
+        matches!(
+            self.current_event(),
+            Some(Event::Block(_) | Event::Overheat | Event::Ota(_) | Event::SelfTest(_))
+        )
+    }
+
     fn current_event(&self) -> Option<Event> {
         let now = diag::uptime_s();
         if let Some((ev, until)) = display::DEMO.lock().unwrap().clone() {
@@ -1401,7 +1410,7 @@ fn clock_page(c: &mut Canvas, pos: usize, total: usize) {
             c.text(&LABEL10, x0, 77, gfx::DIM, &wk, Align::Left);
         }
         None => {
-            c.text(&LABEL11, x0, 52, gfx::MUTE, l("NO TIME YET", "KEINE ZEIT"), Align::Left);
+            c.text(&LABEL10, x0, 52, gfx::MUTE, l("NO TIME YET", "KEINE UHRZEIT"), Align::Left);
             c.text(&LABEL10, x0, 66, gfx::DIM, l("Check NTP", "NTP prüfen"), Align::Left);
         }
     }
@@ -1485,6 +1494,7 @@ fn oled_clock(o: &mut Oled, m: &miner::MinerState) {
             o.pixel(x, y, true)
         }
     });
+    let time_w = w;
     if let Some(a) = ampm {
         oled_text(o, w + 2, 19, a);
     }
@@ -1494,10 +1504,19 @@ fn oled_clock(o: &mut Oled, m: &miner::MinerState) {
             format!("{wd} {}/{}", t.mon + 1, t.mday)
         }
         Some(t) => {
-            let wd: String = oled_str(weekday(t.wday)).chars().take(2).collect();
+            // Portuguese needs three letters: SEGunda and SEXta.
+            let n = if lang() == "pt" { 3 } else { 2 };
+            let wd: String = oled_str(weekday(t.wday)).chars().take(n).collect();
             format!("{wd} {}.{}.", t.mday, t.mon + 1)
         }
         None => "NO NTP".into(),
+    };
+    // Where it would touch the time, the date goes without the day.
+    let room = 128 - (time_w + 4);
+    let date = if (date.len() * 6) as i32 - 1 > room {
+        date.split_once(' ').map_or(date.clone(), |(_, d)| d.to_string())
+    } else {
+        date
     };
     let w = (date.len() * 6) as i32 - 1;
     oled_text(o, 127 - w, 5, &date);

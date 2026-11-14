@@ -621,7 +621,7 @@
   "night": "Orologio e modalità notte",
   "night_s": "L’orologio sul display e, di notte, solo l’orologio, attenuato.",
   "nightMode": "Modalità notte",
-  "nightMode_s": "Nella fascia oraria: solo l’orologio, attenuato, senza spegnimento dello schermo. Premendo un tasto il display completo torna per 30 s.",
+  "nightMode_s": "Nella fascia oraria: solo l’orologio, attenuato, senza spegnere lo schermo. Premendo un tasto, per 30 s torna la visualizzazione completa.",
   "nightStart": "Dalle",
   "nightEnd": "Alle",
   "nightBrightness": "Luminosità di notte (%, 0 = spento)",
