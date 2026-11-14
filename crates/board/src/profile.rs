@@ -323,6 +323,13 @@ const OCTAXE_6P_VOLTAGES: &[u16] = &[
 ];
 
 impl Profile {
+    /// Whether the board has a page key (GPIO14) beside its LCD: the Nerd
+    /// boards and the T-Display S3 do, a Bitaxe with an LCD (Naja Duo,
+    /// Gamma Hex) has only the boot key, which then does both jobs.
+    pub fn has_page_key(&self) -> bool {
+        self.display == Display::St7789I80 && !self.name.starts_with("bitaxe")
+    }
+
     /// How high an owner may set the chip stop: NerdOS lets them choose up
     /// to 90 °C (`range 50 90` in its Kconfig), so its boards keep that;
     /// AxeOS has no such setting, so a Bitaxe (and every other board) can
@@ -1909,6 +1916,13 @@ mod tests {
             Display::None
         );
         assert_eq!(undetected_for(&[]).display, Display::None);
+    }
+
+    #[test]
+    fn only_the_nerd_lcd_boards_have_a_page_key() {
+        assert!(NERDQAXE_PLUSPLUS.has_page_key());
+        assert!(!BITAXE_NAJA_DUO.has_page_key());
+        assert!(!BITAXE_GAMMA.has_page_key());
     }
 
     #[test]

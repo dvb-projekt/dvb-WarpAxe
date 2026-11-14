@@ -196,6 +196,10 @@ fn draw_splash(d: &mut display::Display, splash_for: &mut Option<&'static str>) 
     }
 }
 
+/// How long the boot key is held for "home" on a board where it also
+/// steps the pages (a Bitaxe with an LCD).
+const BOOT_LONG_PRESS: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn main() {
     sys::link_patches();
     diag::init_logger();
@@ -366,8 +370,12 @@ fn main() {
     if let Some(mut d) = d.take() {
         diag::spawn_psram("display", 16 * 1024, move || {
             // Keys, active low: GPIO0 (boot key) on every board; GPIO14
-            // (page key) next to the LCD on the Nerd boards.
-            let page_key = matches!(d, display::Display::Lcd(_));
+            // (page key) next to the LCD on the Nerd boards. A Bitaxe
+            // with an LCD (Naja Duo) has the boot key alone: a short
+            // press there steps the page, a long one goes home.
+            let lcd = matches!(d, display::Display::Lcd(_));
+            let page_key = lcd && board::profile().has_page_key();
+            let boot_pages = lcd && !page_key;
             let keys: &[i32] = if page_key { &[0, 14] } else { &[0] };
             for &k in keys {
                 unsafe {
@@ -382,10 +390,38 @@ fn main() {
             let mut level: u8 = 100;
             let (mut alert, mut alert_at) = (false, std::time::Instant::now());
             let mut was_down = [false; 2];
+            // The boot key on a board without a page key: when it went
+            // down, whether that press counts (it did not wake the
+            // display), and whether the long press has fired.
+            let (mut boot_at, mut boot_counts, mut boot_long) =
+                (std::time::Instant::now(), false, false);
             let mut next_frame = std::time::Instant::now();
             loop {
                 for (i, &k) in keys.iter().enumerate() {
                     let down = unsafe { sys::gpio_get_level(k) } == 0;
+                    if boot_pages {
+                        if down && !was_down[i] {
+                            // A press that wakes the display (or lights
+                            // it at night) does nothing else.
+                            boot_counts = awake && !ui.night;
+                            boot_at = std::time::Instant::now();
+                            boot_long = false;
+                            display::touch_key();
+                            next_frame = std::time::Instant::now();
+                        } else if down && boot_counts && !boot_long {
+                            if boot_at.elapsed() >= BOOT_LONG_PRESS {
+                                boot_long = true;
+                                ui.key(screens::Key::Home);
+                                next_frame = std::time::Instant::now();
+                            }
+                        } else if !down && was_down[i] && boot_counts && !boot_long {
+                            ui.key(screens::Key::Next);
+                            display::touch_key();
+                            next_frame = std::time::Instant::now();
+                        }
+                        was_down[i] = down;
+                        continue;
+                    }
                     if down && !was_down[i] {
                         // A press that wakes the display does nothing else.
                         if awake {
