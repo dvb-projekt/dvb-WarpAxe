@@ -1447,8 +1447,22 @@ fn clock_page(c: &mut Canvas, pos: usize, total: usize) {
             }
         }
         None => {
-            let pool = st.pool.split(':').next().unwrap_or("").to_string();
-            let pool: String = pool.chars().take(14).collect();
+            // The host without a "pool." or "stratum." in front, cut to
+            // the column (about 92 px) so it never runs into the next.
+            let host = st.pool.split(':').next().unwrap_or("");
+            let host = host
+                .strip_prefix("pool.")
+                .or_else(|| host.strip_prefix("stratum."))
+                .unwrap_or(host);
+            let mut pool = String::new();
+            for ch in host.chars() {
+                pool.push(ch);
+                if VAL12.width(&pool) > 92 {
+                    pool.pop();
+                    pool.push('…');
+                    break;
+                }
+            }
             col3(c, 112, "Pool", if pool.is_empty() { "–" } else { &pool }, gfx::FG);
             col3(c, 212, l("Uptime", "Laufzeit"), &uptime(diag::uptime_s()), gfx::FG);
         }
