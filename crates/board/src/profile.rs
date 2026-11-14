@@ -330,6 +330,14 @@ impl Profile {
         self.display == Display::St7789I80 && !self.name.starts_with("bitaxe")
     }
 
+    /// Whether the LCD backlight hangs on an AW9364 (pulse-count
+    /// dimming, 16 steps): the Nerd boards and the T-Display S3. A
+    /// Bitaxe with an LCD (Naja Duo) switches it some other way that a
+    /// PWM dims and the pulses do not (seen on the Naja, 2026-11-14).
+    pub fn backlight_aw9364(&self) -> bool {
+        self.has_page_key()
+    }
+
     /// How high an owner may set the chip stop: NerdOS lets them choose up
     /// to 90 °C (`range 50 90` in its Kconfig), so its boards keep that;
     /// AxeOS has no such setting, so a Bitaxe (and every other board) can
@@ -1923,6 +1931,8 @@ mod tests {
         assert!(NERDQAXE_PLUSPLUS.has_page_key());
         assert!(!BITAXE_NAJA_DUO.has_page_key());
         assert!(!BITAXE_GAMMA.has_page_key());
+        assert!(NERDQAXE_PLUSPLUS.backlight_aw9364());
+        assert!(!BITAXE_NAJA_DUO.backlight_aw9364());
     }
 
     #[test]

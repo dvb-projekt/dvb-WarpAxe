@@ -81,8 +81,12 @@ pub struct Lcd {
     fb: &'static mut [u8],
     flip: bool,
     invert: bool,
-    /// The backlight driver's level, 0 (off) to `BL_STEPS`.
+    /// The backlight driver's level, 0 (off) to `BL_STEPS` (AW9364), or
+    /// the percentage last set (PWM boards).
     bl_level: u8,
+    /// The backlight hangs on an AW9364 (pulse steps), else it is dimmed
+    /// by PWM.
+    bl_pulses: bool,
 }
 
 macro_rules! check {
@@ -191,13 +195,14 @@ impl Lcd {
             flip: false,
             invert: false,
             bl_level: 0,
+            bl_pulses: crate::board::profile().backlight_aw9364(),
         };
         d.clear(BLACK);
         d.flush()?;
         // Off since the start of the init, far longer than 2.5 ms: the
         // driver starts at its top level.
         gpio_out(PIN_BACKLIGHT, true);
-        d.bl_level = BL_STEPS;
+        d.bl_level = if d.bl_pulses { BL_STEPS } else { 100 };
         Ok(d)
     }
 
@@ -298,6 +303,9 @@ impl Lcd {
     /// none is stretched or lost. A missed pulse is then put right by the
     /// next change instead of lasting. The 4 ms dark is not seen.
     pub fn set_backlight_pct(&mut self, pct: u8) {
+        if !self.bl_pulses {
+            return self.set_backlight_pwm(pct.min(100));
+        }
         let target = backlight_level(pct);
         if target == self.bl_level {
             return;
@@ -326,6 +334,50 @@ impl Lcd {
         });
         self.bl_level = target;
     }
+    /// Backlight in percent on a board without the AW9364 (Naja Duo): 100
+    /// and 0 are the plain pin, anything between a 5 kHz PWM with the
+    /// duty in step with the percentage. The LEDC is set up on each
+    /// change; `gpio_out` takes the pin back for 0 and 100.
+    fn set_backlight_pwm(&mut self, pct: u8) {
+        if pct == self.bl_level {
+            return;
+        }
+        self.bl_level = pct;
+        match pct {
+            0 => gpio_out(PIN_BACKLIGHT, false),
+            100.. => gpio_out(PIN_BACKLIGHT, true),
+            p => {
+                let timer = sys::ledc_timer_config_t {
+                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
+                    duty_resolution: sys::ledc_timer_bit_t_LEDC_TIMER_8_BIT,
+                    timer_num: sys::ledc_timer_t_LEDC_TIMER_0,
+                    freq_hz: 5_000,
+                    clk_cfg: sys::soc_periph_ledc_clk_src_legacy_t_LEDC_AUTO_CLK,
+                    deconfigure: false,
+                };
+                let duty = (u32::from(p) * 255 / 100).max(1);
+                let chan = sys::ledc_channel_config_t {
+                    gpio_num: PIN_BACKLIGHT,
+                    speed_mode: sys::ledc_mode_t_LEDC_LOW_SPEED_MODE,
+                    channel: sys::ledc_channel_t_LEDC_CHANNEL_0,
+                    timer_sel: sys::ledc_timer_t_LEDC_TIMER_0,
+                    duty,
+                    ..Default::default()
+                };
+                let ok = unsafe {
+                    sys::ledc_timer_config(&timer) == sys::ESP_OK
+                        && sys::ledc_channel_config(&chan) == sys::ESP_OK
+                };
+                if !ok {
+                    // Better full than dark: the clock must stay readable.
+                    log::warn!("display: backlight PWM failed, full brightness");
+                    gpio_out(PIN_BACKLIGHT, true);
+                    self.bl_level = 100;
+                }
+            }
+        }
+    }
+
     pub fn flush(&mut self) -> Result<(), sys::EspError> {
         snapshot(self.fb);
         match self.bounce.as_deref_mut() {
