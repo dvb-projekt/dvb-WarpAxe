@@ -674,13 +674,17 @@ function hcSmooth(i, m) {
 /* The error rate over the last full minute (errorPercentage1m, from
    v0.1.12); older firmware has only the per-second value. 0 in the first
    minute after a start means "not measured yet"; later it is a real 0 (a
-   Gamma can run minutes without a single error). The colours hold for the
-   BM1370; the BM1373 runs higher (a Gaia ~2.5 % at its hand point, more
-   at low voltage) and has no settled baseline, so its rate stays neutral. */
+   Gamma can run minutes without a single error). BM1370: yellow from 1 %,
+   red from 5 %. The BM1373 runs higher (WarpTune journal, 1-min values:
+   Gaia .40 mean 3.4 %, peak 8.15 % over 24 h to 2026-11-14; Naja Duo .47
+   at most 1.26 % per chip in its max test of 2026-11-15; docs/05 has an
+   older 6.2 % Gaia run), so yellow from 5 % and red from 9 %, where
+   WarpTune steps that chip down. This is the board's rate; the self-test's
+   8 % limit is the worst single chip's, a different figure. */
 function errRate(i) {
   const e1 = i.errorPercentage1m, ep = e1 != null ? (e1 > 0 || i.uptimeSeconds > 90 ? e1 : null) : i.errorPercentage;
-  const b1373 = /1373/.test(i.ASICModel || "");
-  return {ep, e1, cls: ep == null || b1373 ? "" : ep >= 5 ? "err" : ep >= 1 ? "warn" : "ok"};
+  const [warn, err] = /1373/.test(i.ASICModel || "") ? [5, 9] : [1, 5];
+  return {ep, e1, cls: ep == null ? "" : ep >= err ? "err" : ep >= warn ? "warn" : "ok"};
 }
 function hcCard(i) {
   const raw = i.hashrateMonitor && i.hashrateMonitor.asics;
