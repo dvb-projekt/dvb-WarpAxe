@@ -644,8 +644,12 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // board. 95 W since 2026-11-15 (Oliver, for WarpTune's search above
     // 500 MHz): WarpTune's soft limit becomes 85.5 W, so the search stops
     // near 550 MHz before the maker's 600 MHz overclock (~92 W). 95 W at
-    // 2.24 V is about 42 A, still well below the 61 A warning.
-    max_power_w: 95,
+    // 2.24 V is about 42 A, still well below the 61 A warning. 120 W
+    // since 2026-11-15 (Oliver, test image for the .47 only): the soft
+    // limit becomes 108 W so the Max search can reach 600 MHz (~96 W at
+    // 1100 mV, ~112 W at 1200 mV). 108 W at 2.24 V is about 48 A, below
+    // the 61 A warning; the current lines and fan are unchanged.
+    max_power_w: 120,
     power_offset_w: 0.0,
     // Up to the maker's overclock (Solo Satoshi profile 600 MHz / 1120 mV):
     // WarpTune searches at most 100 MHz above the highest option.
@@ -1413,8 +1417,8 @@ mod tests {
             "ESP-Miner master f5e74b1"
         );
         assert_eq!(
-            naja.max_power_w, 95,
-            "WarpTune's search above 500 MHz (soft limit 85.5 W)"
+            naja.max_power_w, 120,
+            "WarpTune's search up to 600 MHz (soft limit 108 W)"
         );
         assert_eq!(
             naja.frequency_options.last(),
