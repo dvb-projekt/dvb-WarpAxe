@@ -641,11 +641,16 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // on the bench, 2026-11-13 (54.2 W predicted). 90 W at the 2.24 V
     // stacked rail is about 40 A, well below the 61 A warning; the
     // regulator's protection and the temperature limits still guard the
-    // board. The maker's 600 MHz overclock (~92 W) stays just above it.
-    max_power_w: 90,
+    // board. 95 W since 2026-11-15 (Oliver, for WarpTune's search above
+    // 500 MHz): WarpTune's soft limit becomes 85.5 W, so the search stops
+    // near 550 MHz before the maker's 600 MHz overclock (~92 W). 95 W at
+    // 2.24 V is about 42 A, still well below the 61 A warning.
+    max_power_w: 95,
     power_offset_w: 0.0,
-    frequency_options: &[327, 350, 375, 380, 400, 410],
-    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    // Up to the maker's overclock (Solo Satoshi profile 600 MHz / 1120 mV):
+    // WarpTune searches at most 100 MHz above the highest option.
+    frequency_options: &[327, 350, 375, 380, 400, 410, 450, 500, 550, 600],
+    voltage_options: &[1000, 1060, 1100, 1120, 1150, 1200, 1250],
     abs_max_frequency_mhz: 600,
     abs_min_core_mv: 1000,
     abs_max_core_mv: 1250,
@@ -1408,9 +1413,14 @@ mod tests {
             "ESP-Miner master f5e74b1"
         );
         assert_eq!(
-            naja.max_power_w, 90,
-            "must not block WarpTune's 410 MHz step"
+            naja.max_power_w, 95,
+            "WarpTune's search above 500 MHz (soft limit 85.5 W)"
         );
+        assert_eq!(
+            naja.frequency_options.last(),
+            Some(&naja.abs_max_frequency_mhz)
+        );
+        assert!(naja.voltage_options.contains(&1120), "the maker's OC point");
         assert_eq!(
             migrated_fan_target(&BITAXE_NAJA_DUO, 60),
             None,
