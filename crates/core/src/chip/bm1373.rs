@@ -573,4 +573,16 @@ mod tests {
             );
         }
     }
+
+    /// The Naja Duo's clock options above the chip's own list (board
+    /// profile, v0.1.45: up to 550 MHz) and its free-value top, 600 MHz.
+    #[test]
+    fn naja_clocks_are_on_the_pll_grid() {
+        for mhz in [450u32, 500, 550, 600] {
+            assert!(
+                crate::pll::solve(&BM1373.pll, mhz * 1_000_000).is_some(),
+                "{mhz}"
+            );
+        }
+    }
 }

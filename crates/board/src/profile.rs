@@ -364,6 +364,14 @@ impl Profile {
         (setting != 0 && f32::from(setting) > max).then_some(max as u8)
     }
 
+    /// A stored core voltage above the board's ceiling (a Naja Duo's
+    /// 1150–1250 mV from before v0.1.45): brought down to the ceiling, so
+    /// the web UI's field, capped there, does not refuse the whole form.
+    pub fn stored_core_mv_fix(&self, mv: u16) -> Option<u16> {
+        let max = self.abs_max_core_mv;
+        (max > 0 && mv > max).then_some(max)
+    }
+
     /// The chip temperature that stops mining: the owner's setting (0 =
     /// the board's line), never above [`Profile::chip_stop_max_c`].
     pub fn chip_limit_c(&self, setting: u8) -> f32 {
@@ -619,7 +627,8 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
 /// Color pins. Stock 327 MHz / 1000 mV. Runs on our bench since
 /// 2026-11-12 (v0.1.44).
-/// The preset list is AxeOS's (to 410 MHz); free values (`?oc`) go up to
+/// The preset list goes to 550 MHz, the voltage to 1120 mV (Oliver,
+/// 2026-11-15, after the .47 bench); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
 /// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 61 A warning).
 /// AxeOS's own overclock mode has no upper bound at all.
@@ -641,14 +650,24 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // on the bench, 2026-11-13 (54.2 W predicted). 90 W at the 2.24 V
     // stacked rail is about 40 A, well below the 61 A warning; the
     // regulator's protection and the temperature limits still guard the
-    // board. The maker's 600 MHz overclock (~92 W) stays just above it.
-    max_power_w: 90,
+    // board. 105 W since 2026-11-15 (Oliver, .47 bench): WarpTune's
+    // limit becomes 94.5 W, enough for 550 MHz at 1120 mV (~92 W by the
+    // bench model, 9.8 W static + f·V²); at 95 W the search stopped at
+    // 500 MHz. 105 W at 2.24 V is about 47 A, below the 61 A warning.
+    max_power_w: 105,
     power_offset_w: 0.0,
-    frequency_options: &[327, 350, 375, 380, 400, 410],
-    voltage_options: &[1000, 1060, 1100, 1150, 1200, 1250],
+    // WarpTune's Max ceiling is the top clock option (550 MHz: at 600 the
+    // regulator reached 84 °C without a rear fan, 2026-11-15); 550 MHz
+    // needs about 1100 mV on the weaker chip, 1120 leaves 20 mV.
+    frequency_options: &[327, 350, 375, 380, 400, 410, 450, 500, 550],
+    voltage_options: &[1000, 1060, 1100, 1120],
     abs_max_frequency_mhz: 600,
     abs_min_core_mv: 1000,
-    abs_max_core_mv: 1250,
+    // WarpTune takes `absMaxVoltage` as its voltage ceiling; the maker's
+    // own overclock stops at 1120 mV too. Manual values are capped with
+    // it, and a higher stored value is brought down at start
+    // (`stored_core_mv_fix`).
+    abs_max_core_mv: 1120,
     // The factory NVS of a delivered board (config-1201.csv, read
     // 2026-11-12): `temptarget 50`; ESP-Miner's own default is 60.
     fan_target_c: 50.0,
@@ -1408,8 +1427,23 @@ mod tests {
             "ESP-Miner master f5e74b1"
         );
         assert_eq!(
-            naja.max_power_w, 90,
-            "must not block WarpTune's 410 MHz step"
+            naja.max_power_w, 105,
+            "WarpTune's limit 94.5 W fits 550 MHz / 1120 mV (~92 W)"
+        );
+        // WarpTune's Max ceiling: the top clock option, and absMaxVoltage
+        // as its voltage ceiling (Oliver, 2026-11-15).
+        assert_eq!(naja.frequency_options.last(), Some(&550));
+        assert_eq!(naja.voltage_options.last(), Some(&1120));
+        let c = naja.choices(false);
+        assert_eq!((c.abs_max_frequency_mhz, c.abs_max_core_mv), (600, 1120));
+        assert_eq!(naja.stored_core_mv_fix(1250), Some(1120));
+        assert_eq!(naja.stored_core_mv_fix(1121), Some(1120));
+        assert_eq!(naja.stored_core_mv_fix(1120), None);
+        assert_eq!(naja.stored_core_mv_fix(1000), None);
+        assert_eq!(
+            T_DISPLAY_S3_DEVKIT.stored_core_mv_fix(1400),
+            None,
+            "no ceiling"
         );
         assert_eq!(
             migrated_fan_target(&BITAXE_NAJA_DUO, 60),

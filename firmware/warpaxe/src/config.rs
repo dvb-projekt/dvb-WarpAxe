@@ -1102,10 +1102,12 @@ pub fn take_restart() -> Option<warpaxe_diag::restart::Marker> {
     m
 }
 
-/// One-time moves of stored settings after an update, keyed by a marker
-/// in NVS so each runs once per device. v0.1.36: a Nano's stored fan
-/// target 60 (the old default on the old diode scale) goes back to the
-/// profile's value (`warpaxe_board::profile::migrated_fan_target`).
+/// Moves of stored settings after an update. A value above the board's
+/// ceiling (the chip stop; on the Naja Duo the core voltage, v0.1.45) is
+/// checked at every start and saved only when it is above. v0.1.36,
+/// keyed by a marker in NVS so it runs once per device: a Nano's stored
+/// fan target 60 (the old default on the old diode scale) goes back to
+/// the profile's value (`warpaxe_board::profile::migrated_fan_target`).
 /// On the main task (board::init_bus), before the board starts.
 pub fn migrate(profile: &warpaxe_board::Profile) {
     // A chip stop above the board's ceiling (a Bitaxe's 90 from before
@@ -1121,6 +1123,24 @@ pub fn migrate(profile: &warpaxe_board::Profile) {
         fixed.overheat_temp = fixed_c;
         if let Err(e) = save(&fixed) {
             log::warn!("config: saving the chip stop failed: {e}");
+        }
+    }
+    // A Naja Duo's core voltage above its v0.1.45 ceiling of 1120 mV
+    // (stored by hand up to 1250 before): stored as the ceiling, for the
+    // same reason. Only the Naja's ceiling moved; other boards' stored
+    // values are left as they are.
+    let cfg = get();
+    if profile.name == warpaxe_board::profile::BITAXE_NAJA_DUO.name {
+        if let Some(fixed_mv) = profile.stored_core_mv_fix(cfg.core_voltage) {
+            log::warn!(
+                "config: core voltage {} mV above this board's ceiling: stored as {fixed_mv} mV",
+                cfg.core_voltage
+            );
+            let mut fixed = cfg;
+            fixed.core_voltage = fixed_mv;
+            if let Err(e) = save(&fixed) {
+                log::warn!("config: saving the core voltage failed: {e}");
+            }
         }
     }
     const NANO_FAN_TARGET_KEY: &str = "mig_nanofan";
