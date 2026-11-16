@@ -7,6 +7,7 @@ Small `no_std` drivers for the parts around a BM13xx miner board, from
 | Module | Part |
 |---|---|
 | `i2c` | the `I2c` trait the drivers use (write, write_read, read), with a scripted test bus behind the `mock` feature |
+| `emc2302` | EMC2302 two-channel PWM fan controller: direct drive, tachometer RPM |
 | `ina260` | INA260 power monitor: bus voltage, current, power |
 | `tmp1075` | TMP1075 temperature sensor, with detection of the NerdQAxe boards' sensor layout |
 | `pca9544` | PCA9544 four-channel I²C multiplexer |

@@ -1121,7 +1121,7 @@ and merged there.
 | `crates/core` | BM13xx wire protocol: frames, CRCs, decoders, PLL solvers (ESP-Miner's and cgminer's gekko formula), register payloads, SHA-256 midstates for the BM1397, chip profiles with the init sequence as data — `no_std`, no alloc |
 | `crates/chain` | the chain driver over a `Uart` trait — `no_std`, the code the firmware runs |
 | `crates/board` | regulators, fans, fan PID, board profiles over an `I2c` trait — `no_std`, tested against a scripted bus |
-| `crates/drivers` | the part drivers `crates/board` builds on: the `I2c` trait, INA260, TMP1075, PCA9544, SSD1306 OLED with its 5×7 font, PMBus number formats, NTC thermistor — `no_std`, **MIT OR Apache-2.0** for use in other firmware |
+| `crates/drivers` | the part drivers `crates/board` builds on: embedded-hal's `I2c` re-exported, EMC2302 fan controller, INA260, TMP1075, PCA9544, SSD1306 OLED with its 5×7 font, PMBus number formats, NTC thermistor — `no_std`, **MIT OR Apache-2.0** for use in other firmware |
 | `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading and payout (the worker's address decoded — base58, bech32/bech32m, CashAddr — for any SHA-256 coin), tested against a captured WarpPool session |
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |

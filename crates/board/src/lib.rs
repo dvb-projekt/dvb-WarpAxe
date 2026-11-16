@@ -15,7 +15,6 @@ pub mod core_hold;
 pub mod detect;
 pub mod emc2101;
 pub mod emc2103;
-pub mod emc2302;
 pub mod fan;
 pub mod fxl6408;
 pub mod overheat;
@@ -30,7 +29,7 @@ pub mod warm_boot;
 
 // The drivers that live in warpaxe-drivers (MIT OR Apache-2.0), under
 // their old paths.
-pub use warpaxe_drivers::{font, i2c, ina260, ntc, pca9544, pmbus, ssd1306, tmp1075};
+pub use warpaxe_drivers::{emc2302, font, i2c, ina260, ntc, pca9544, pmbus, ssd1306, tmp1075};
 
 pub use i2c::I2c;
 pub use profile::{

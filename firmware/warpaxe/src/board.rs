@@ -26,7 +26,7 @@ use warpaxe_board::core_hold::{self, CoreHold, Step};
 use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2103::Emc2103;
-use warpaxe_board::emc2302::{Emc2302, Fan};
+use warpaxe_board::emc2302::{self, Emc2302, Fan};
 use warpaxe_board::fan::{FanPid, Warmup, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
 use warpaxe_board::ina260::Ina260;
@@ -2038,7 +2038,9 @@ fn nerd_thermal(profile: &'static Profile, bus: &SharedI2c, invert_polarity: boo
     if let Ok((product, mfr)) = fans.identify() {
         log::info!("board: EMC2302 product {product:#04x} manufacturer {mfr:#04x}");
     }
-    let fans_ok = fans.init(invert_polarity).is_ok()
+    // FAN2 is the fan on the ASIC cooler (NerdOS's channel 0), FAN1 the
+    // one at the regulator.
+    let fans_ok = fans.init(&emc2302::Config::two_pole(invert_polarity)).is_ok()
         && fans.set_fan_percent(Fan::One, 100).is_ok()
         && fans.set_fan_percent(Fan::Two, 100).is_ok();
     if !fans_ok {

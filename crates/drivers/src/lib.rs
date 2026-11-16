@@ -1,5 +1,5 @@
 //! Small `no_std` drivers for the parts around a BM13xx miner board:
-//! the INA260 power monitor, the TMP1075 temperature sensor, the PCA9544
+//! the EMC2302 fan controller, the INA260 power monitor, the TMP1075 temperature sensor, the PCA9544
 //! I²C multiplexer, the SSD1306 128×32 OLED with a 5×7 font, the PMBus
 //! number encodings (LINEAR11, ULINEAR16) and an NTC thermistor.
 //!
@@ -13,6 +13,7 @@
 //! other firmware to use.
 #![cfg_attr(not(any(test, feature = "mock")), no_std)]
 
+pub mod emc2302;
 pub mod font;
 pub mod i2c;
 pub mod ina260;
