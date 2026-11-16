@@ -125,7 +125,8 @@ impl<I: I2c> Emc2101<I> {
             }
         };
         bus.write(ADDR, &[REG_CONFIG, CONFIG]).map_err(Error::Bus)?;
-        bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG]).map_err(Error::Bus)?;
+        bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG])
+            .map_err(Error::Bus)?;
         let mut dev = EMC2101::new(bus).map_err(map)?;
         dev.enable_tach_input().map_err(map)?;
         let pwm_f = BoundedU8::new(PWM_F_POWER_ON).ok_or(Error::OutOfRange)?;
