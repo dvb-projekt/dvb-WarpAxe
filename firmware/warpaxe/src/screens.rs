@@ -72,8 +72,8 @@ pub struct Ui {
     oled_t: Instant,
     last_acc: u64,
     blink: u8,
-    /// Night mode, dimmed (set by the display thread): the clock alone,
-    /// and a key press only wakes the full display.
+    /// Night mode, dimmed (set by the display thread): the clock screen
+    /// instead of the pages, and a key press only wakes the full display.
     pub night: bool,
 }
 
