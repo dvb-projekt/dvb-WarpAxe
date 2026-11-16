@@ -240,9 +240,9 @@ checksum = "361a90feb7004eca4019fb28352a9465666b24f840f5c3cddf0ff13920590b89"
 
 [[package]]
 name = "emc2101"
-version = "4.1.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0f5adc79f631b0ddf589df5ee6a2a5b7c60a27293d115531c757883d74321f2"
+checksum = "3458c8acecb5ed49773c079909e25055ac6bbb5a7212c313e01b6ea982e1a79e"
 dependencies = [
  "bounded-integer",
  "embedded-hal",

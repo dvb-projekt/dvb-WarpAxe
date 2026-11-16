@@ -11,7 +11,7 @@ authors.workspace = true
 warpaxe-drivers = { path = "../drivers" }
 # The EMC2101 driver (GPTechinno, MIT OR Apache-2.0); 4.1 brings the
 # diode tuning, the PWM clock choice and the zero-count fix.
-emc2101 = { version = "4.1", default-features = false, features = ["sync"] }
+emc2101 = { version = "4.2", default-features = false, features = ["sync"] }
 # The crate's bounded integers for its fan step and ideality arguments.
 bounded-integer = "0.6"
 

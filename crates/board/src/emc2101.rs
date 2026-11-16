@@ -23,13 +23,19 @@ const PWM_F_POWER_ON: u8 = 0x17;
 const FAN_STEPS: u16 = 63;
 /// Configuration register (datasheet §6.5) as the init leaves it: only
 /// ALT_TCH set (ALERT/TACH pin as tach input). Written whole, so a
-/// STANDBY or other bit a previous firmware left set across a warm
-/// restart is cleared; the crate only sets and clears single bits.
+/// STANDBY, FAN_STANDBY, DAC or other bit a previous firmware left set
+/// across a warm restart is cleared. The crate's `set_standby(false)`
+/// (4.2) clears only STANDBY, and its `new()` leaves the rest as the
+/// chip holds it by design (emc2101-rs#7).
 const CONFIG: u8 = 0x04;
 const REG_CONFIG: u8 = 0x03;
 /// Fan Configuration (§6.16) as the init leaves it: PROG (fan setting
 /// written directly), 360 kHz base clock, not inverted, TACH_M 11
-/// (ignored at 360 kHz, Note 6.2).
+/// (ignored at 360 kHz, Note 6.2). With PROG set here the crate's
+/// first `set_fan_power` reads Fan Config once, finds the Look-Up Table
+/// off, and from then on writes only the fan setting (4.2,
+/// emc2101-rs#7): a corrupted read inside the fan loop can no longer be
+/// written back over polarity or clock.
 const FAN_CONFIG: u8 = 0x23;
 const REG_FAN_CONFIG: u8 = 0x4A;
 /// From 127 °C up the reading is the open-diode code (0x3F8 in eighths),
@@ -253,17 +259,16 @@ mod tests {
         s
     }
 
+    /// Fan Config is read on the first fan write only; after that each
+    /// percentage is one write of the fan setting.
     #[test]
     fn fan_percent_maps_to_63_steps() {
         let mut s = ready(
             vec![
-                get(0x4A, 0x23),
+                get(0x4A, 0x23), // once: PROG set, Look-Up Table off
                 put(0x4C, 63),
-                get(0x4A, 0x23),
                 put(0x4C, 31),
-                get(0x4A, 0x23),
                 put(0x4C, 0),
-                get(0x4A, 0x23),
                 put(0x4C, 63),
             ],
             Config::BM1370_DIODE,
