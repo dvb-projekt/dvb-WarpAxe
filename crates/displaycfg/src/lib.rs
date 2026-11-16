@@ -11,7 +11,7 @@
 
 #![forbid(unsafe_code)]
 
-/// The LCD pages there are. `clock` (v0.1.46) is not among the factory
+/// The LCD pages there are. `clock` (v0.1.45) is not among the factory
 /// pages: an owner adds it.
 pub const PAGES: &[&str] = &["cockpit", "bitcoin", "device", "pool", "log", "clock"];
 /// The factory pages and their order. `cockpit` is the home page.
@@ -52,7 +52,7 @@ pub const FOOTERS: &[&str] = &[
 
 /// The OLED's slides there are: five with the hashrate large on the left
 /// and one value on the right, three full-width info slides, the
-/// wordmark, and the clock (v0.1.46, not among the factory slides).
+/// wordmark, and the clock (v0.1.45, not among the factory slides).
 pub const OLED_SLIDES: &[&str] = &[
     "temp",
     "power",

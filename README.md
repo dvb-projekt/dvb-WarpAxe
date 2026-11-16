@@ -186,8 +186,8 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display, dashboard" width="760"><br>
-  <em>Settings — clock and voltage as the manufacturer's steps, the power supply's rating, fans (on the Nerd boards both linked to the chips by default), display, and the dashboard's hash-counter card (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
+  <img src="docs/screenshots/web-settings.png" alt="Settings: clock and voltage presets, fans and temperature, display, pages with order, start page and live view, cockpit values, clock and night mode, dashboard" width="760"><br>
+  <em>Settings — clock and voltage as the manufacturer's steps, the power supply's rating, fans (on the Nerd boards both linked to the chips by default), display, the pages the key steps through (order, start page, and a live view of the device's screen), the cockpit's values, clock and night mode (since v0.1.45), and the dashboard's hash-counter card (Wi-Fi, hostname and time are on their own Network tab); <code>?oc</code> in the address unlocks free values and the expert section (fan PID, second fan output, suggested difficulty, job interval).</em>
 </p>
 
 <p align="center">
@@ -220,6 +220,12 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 <p align="center">
   <img src="docs/screenshots/lcd-pages.png" alt="NerdQAxe++ LCD pages: cockpit, Bitcoin, device, pool" width="760"><br>
   <em>NerdQAxe++ (320×170 LCD) — the cockpit and three of the four pages the page key steps through (a log page follows). Block height, halving and network difficulty come from the pool's job; the BTC price line appears only if you switch it on.</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/lcd-clock.png" alt="Clock page on the LCD with date, week, hashrate, block height, price and fee; night mode: the clock dimmed with date, hashrate and temperature" width="760"><br>
+  <img src="docs/screenshots/oled-clock.png" alt="Clock slide on the Bitaxe OLED: time, weekday and short date, hashrate" width="272"><br>
+  <em>Clock (since v0.1.45; not among the factory pages, night mode off by default) — the clock page with weekday, date, calendar week and hashrate, below them block height, BTC price and fee (pool and uptime instead while the price is off); night mode with the clock dimmed above date, hashrate and temperature; the Bitaxe OLED's clock slide.</em>
 </p>
 
 <p align="center">
