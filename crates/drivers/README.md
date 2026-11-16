@@ -6,7 +6,7 @@ Small `no_std` drivers for the parts around a BM13xx miner board, from
 
 | Module | Part |
 |---|---|
-| `i2c` | the `I2c` trait the drivers use (write, write_read, read), with a scripted test bus behind the `mock` feature |
+| `i2c` | embedded-hal 1.0's `I2c` re-exported with the pieces an implementation needs, the drivers' error type, and a scripted test bus behind the `mock` feature |
 | `emc2302` | EMC2302 two-channel PWM fan controller: direct drive, tachometer RPM |
 | `ina260` | INA260 power monitor: bus voltage, current, power |
 | `tmp1075` | TMP1075 temperature sensor, with detection of the NerdQAxe boards' sensor layout |
@@ -16,8 +16,8 @@ Small `no_std` drivers for the parts around a BM13xx miner board, from
 | `pmbus` | PMBus command codes and the LINEAR11 / ULINEAR16 number formats |
 | `ntc` | NTC thermistor on a voltage divider (β equation) |
 
-The `I2c` trait is close to embedded-hal 1.0's `I2c` (`write`,
-`write_read`, `read`).
+Every driver is generic over embedded-hal 1.0's `I2c`, so any bus that
+implements it works.
 
 ## License
 
