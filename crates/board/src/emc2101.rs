@@ -1,31 +1,44 @@
 //! EMC2101: fan controller with one external temperature diode, I²C
 //! 0x4C. On the Bitaxe the diode is the BM1370's, so "external" is the
-//! chip temperature. Register use follows ESP-Miner's EMC2101.c.
+//! chip temperature.
+//!
+//! The register work is the `emc2101` crate's (GPTechinno, MIT OR
+//! Apache-2.0); this module holds what is board-specific: the diode
+//! tuning per board, the fan as a percentage, and an open or shorted
+//! diode as a fault instead of a temperature.
+
+use bounded_integer::BoundedU8;
+use emc2101::{BetaCompensation, PwmClock, EMC2101};
 
 use crate::i2c::{Error, I2c};
 
 /// I²C address of the EMC2101.
 pub const ADDR: u8 = 0x4C;
-const REG_INTERNAL_TEMP: u8 = 0x00;
-const REG_EXTERNAL_TEMP_MSB: u8 = 0x01;
+
+/// PWM_F at power-on (datasheet table 6.24): with the 360 kHz base
+/// clock that is 360 kHz / (2 · 23) ≈ 7.8 kHz, the frequency the Bitaxe
+/// firmware has always run its fan at. Full duty from fan step 46.
+const PWM_F_POWER_ON: u8 = 0x17;
+/// The highest fan step; the percentage maps onto 0–63.
+const FAN_STEPS: u16 = 63;
+/// Configuration register (datasheet §6.5) as the init leaves it: only
+/// ALT_TCH set (ALERT/TACH pin as tach input). Written whole, so a
+/// STANDBY or other bit a previous firmware left set across a warm
+/// restart is cleared; the crate only sets and clears single bits.
+const CONFIG: u8 = 0x04;
 const REG_CONFIG: u8 = 0x03;
-const REG_EXTERNAL_TEMP_LSB: u8 = 0x10;
-const REG_IDEALITY: u8 = 0x17;
-const REG_BETA: u8 = 0x18;
-const REG_TACH_LSB: u8 = 0x46;
-const REG_TACH_MSB: u8 = 0x47;
+/// Fan Configuration (§6.16) as the init leaves it: PROG (fan setting
+/// written directly), 360 kHz base clock, not inverted, TACH_M 11
+/// (ignored at 360 kHz, Note 6.2).
+const FAN_CONFIG: u8 = 0x23;
 const REG_FAN_CONFIG: u8 = 0x4A;
-const REG_FAN_SETTING: u8 = 0x4C;
-const REG_PART_ID: u8 = 0xFD;
-const PART_ID: u8 = 0x16;
-const PART_ID_ALT: u8 = 0x28;
-/// Tach counts to RPM (datasheet, 2 pulses per revolution).
-const TACH_NUMERATOR: u32 = 5_400_000;
-const TEMP_FAULT_OPEN: i16 = 0x3F8;
-const TEMP_FAULT_SHORT: i16 = 0x3FF;
+/// From 127 °C up the reading is the open-diode code (0x3F8 in eighths),
+/// the short (0x3FF) or an unpowered chip's diode (0x3FE seen on a Gamma
+/// with the core rail off), never a temperature.
+const FAULT_FROM_C: f32 = 127.0;
 
 /// Diode tuning per board: the BM1370 diode wants ideality 0x24 and
-/// no beta compensation (ESP-Miner board table); the BitForge Nano's
+/// beta register 0x00 (ESP-Miner board table); the BitForge Nano's
 /// maker tunes the same chip's diode to 0x37 ([`Config::BITFORGE_NANO_DIODE`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Config {
@@ -38,7 +51,8 @@ pub struct Config {
 }
 
 impl Config {
-    /// The BM1370's diode as ESP-Miner tunes it: ideality 0x24, beta off.
+    /// The BM1370's diode as ESP-Miner tunes it: ideality 0x24, beta
+    /// register 0x00.
     pub const BM1370_DIODE: Config = Config {
         ideality: Some(0x24),
         beta: Some(0x00),
@@ -46,7 +60,7 @@ impl Config {
     };
 
     /// The BM1370 diode as ForgeOS tunes it on the BitForge Nano:
-    /// ideality 0x37 (1.0566), beta off (ForgeOS v1.7 `f75f3ff`,
+    /// ideality 0x37 (1.0566), beta register 0x00 (ForgeOS v1.7 `f75f3ff`,
     /// `main/ThermalMonitoring/src/ThermalMonitoring.c` 27–28, 43–44;
     /// values `EMC2101.h` 8, 80; unchanged since v1.0). ESP-Miner's 0x24
     /// (1.0319) on the same chip reads higher: measured on the Nano .44,
@@ -64,93 +78,104 @@ impl Config {
     };
 }
 
-/// The driver, owning the bus.
-pub struct Emc2101<I> {
-    bus: I,
+enum State<I: I2c> {
+    /// The bus, before [`Emc2101::init`].
+    Bus(I),
+    /// The crate's driver, after a successful init.
+    Ready(EMC2101<I>),
+    /// An init failed; the crate kept the bus.
+    Failed,
+}
+
+/// The driver: the bus until [`init`](Self::init), the crate's driver
+/// after it.
+pub struct Emc2101<I: I2c> {
+    state: State<I>,
     cfg: Config,
+}
+
+fn map<E>(e: emc2101::Error<E>) -> Error<E> {
+    match e {
+        emc2101::Error::I2c(e) => Error::Bus(e),
+        emc2101::Error::InvalidID => Error::WrongDevice,
+        _ => Error::OutOfRange,
+    }
 }
 
 impl<I: I2c> Emc2101<I> {
     /// Wrap the bus; nothing is sent until [`init`](Self::init).
     pub fn new(bus: I, cfg: Config) -> Self {
-        Emc2101 { bus, cfg }
-    }
-
-    /// Give the bus back.
-    pub fn release(self) -> I {
-        self.bus
-    }
-
-    fn read(&mut self, reg: u8) -> Result<u8, Error<I::Error>> {
-        let mut b = [0u8; 1];
-        self.bus.write_read(ADDR, &[reg], &mut b)?;
-        Ok(b[0])
-    }
-
-    fn write(&mut self, reg: u8, v: u8) -> Result<(), Error<I::Error>> {
-        Ok(self.bus.write(ADDR, &[reg, v])?)
-    }
-
-    /// Check the part id, enable the TACH input and the fan driver in
-    /// direct PWM mode (~22.5 kHz, 2 pulses/rev), apply the diode tuning.
-    pub fn init(&mut self) -> Result<(), Error<I::Error>> {
-        let id = self.read(REG_PART_ID)?;
-        if id != PART_ID && id != PART_ID_ALT {
-            return Err(Error::WrongDevice);
+        Emc2101 {
+            state: State::Bus(bus),
+            cfg,
         }
-        self.write(REG_CONFIG, 0x04)?;
-        self.write(REG_FAN_CONFIG, 0b0010_0011)?;
+    }
+
+    /// Put Configuration and Fan Configuration to known values, check
+    /// the part, make ALERT/TACH the tach input, run the fan output as
+    /// PWM at the power-on frequency, non-inverted, and apply the diode
+    /// tuning. Only once: a second call, or a call after a failed
+    /// one, is [`Error::WrongDevice`].
+    pub fn init(&mut self) -> Result<(), Error<I::Error>> {
+        let mut bus = match core::mem::replace(&mut self.state, State::Failed) {
+            State::Bus(bus) => bus,
+            other => {
+                self.state = other;
+                return Err(Error::WrongDevice);
+            }
+        };
+        bus.write(ADDR, &[REG_CONFIG, CONFIG]).map_err(Error::Bus)?;
+        bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG]).map_err(Error::Bus)?;
+        let mut dev = EMC2101::new(bus).map_err(map)?;
+        dev.enable_tach_input().map_err(map)?;
+        let pwm_f = BoundedU8::new(PWM_F_POWER_ON).ok_or(Error::OutOfRange)?;
+        dev.set_fan_pwm_advanced(PwmClock::Base360kHz, pwm_f, false)
+            .map_err(map)?;
         if let Some(i) = self.cfg.ideality {
-            self.write(REG_IDEALITY, i)?;
+            let i = BoundedU8::new(i).ok_or(Error::OutOfRange)?;
+            dev.set_ideality_factor(i).map_err(map)?;
         }
         if let Some(b) = self.cfg.beta {
-            self.write(REG_BETA, b)?;
+            let b = BetaCompensation::try_from(b).map_err(|_| Error::OutOfRange)?;
+            dev.set_beta_compensation(b).map_err(map)?;
         }
+        self.state = State::Ready(dev);
         Ok(())
     }
 
-    /// Fan duty, 0–100 %; the register holds 0–63.
-    pub fn set_fan_percent(&mut self, percent: u8) -> Result<(), Error<I::Error>> {
-        let duty = (u16::from(percent.min(100)) * 63 / 100) as u8;
-        self.write(REG_FAN_SETTING, duty)
-    }
-
-    /// Fan speed from the tach input; 0 when the fan does not turn
-    /// (the counter saturates at 0xFFFF, which would read as 82 RPM).
-    pub fn fan_rpm(&mut self) -> Result<u16, Error<I::Error>> {
-        let lsb = self.read(REG_TACH_LSB)?;
-        let msb = self.read(REG_TACH_MSB)?;
-        let count = u32::from(u16::from_le_bytes([lsb, msb]));
-        if count == 0 || count == 0xFFFF {
-            return Ok(0);
+    fn dev(&mut self) -> Result<&mut EMC2101<I>, Error<I::Error>> {
+        match &mut self.state {
+            State::Ready(dev) => Ok(dev),
+            _ => Err(Error::WrongDevice),
         }
-        Ok((TACH_NUMERATOR / count).min(u32::from(u16::MAX)) as u16)
     }
 
-    /// The diode temperature, °C, with the board offset applied.
-    /// An open or shorted diode is a fault, not a value.
+    /// Fan duty, 0–100 %, onto the 64 fan steps.
+    pub fn set_fan_percent(&mut self, percent: u8) -> Result<(), Error<I::Error>> {
+        let step = (u16::from(percent.min(100)) * FAN_STEPS / 100) as u8;
+        let step = BoundedU8::new(step).ok_or(Error::OutOfRange)?;
+        self.dev()?.set_fan_power(step).map_err(map)?;
+        Ok(())
+    }
+
+    /// Fan speed from the tach input; 0 when the fan does not turn.
+    pub fn fan_rpm(&mut self) -> Result<u16, Error<I::Error>> {
+        self.dev()?.fan_rpm().map_err(map)
+    }
+
+    /// The diode temperature, °C, with the board offset applied. An open
+    /// or shorted diode is a fault, not a value.
     pub fn external_temp_c(&mut self) -> Result<f32, Error<I::Error>> {
-        let msb = self.read(REG_EXTERNAL_TEMP_MSB)?;
-        let lsb = self.read(REG_EXTERNAL_TEMP_LSB)?;
-        let raw = (u16::from_be_bytes([msb, lsb]) >> 5) as i16;
-        // 0x3F8 is the open-diode code, 0x3FF the short; anything from
-        // 127 °C up is one of them or an unpowered chip's diode, never a
-        // temperature (seen 0x3FE on a Gamma with the core rail off).
-        if (TEMP_FAULT_OPEN..=TEMP_FAULT_SHORT).contains(&raw) {
+        let c = self.dev()?.temp_external_precise().map_err(map)?;
+        if c >= FAULT_FROM_C {
             return Err(Error::SensorFault);
         }
-        // 11-bit two's complement, 0.125 °C per LSB.
-        let signed = if raw & 0x0400 != 0 {
-            raw | !0x07FF
-        } else {
-            raw
-        };
-        Ok(f32::from(signed) / 8.0 + f32::from(self.cfg.temp_offset_c))
+        Ok(c + f32::from(self.cfg.temp_offset_c))
     }
 
     /// The controller's own die temperature, °C.
     pub fn internal_temp_c(&mut self) -> Result<i8, Error<I::Error>> {
-        Ok(self.read(REG_INTERNAL_TEMP)? as i8)
+        self.dev()?.temp_internal().map_err(map)
     }
 }
 
@@ -159,38 +184,43 @@ mod tests {
     use super::*;
     use crate::i2c::mock::{Bus, Tx};
 
+    fn get(reg: u8, v: u8) -> Tx {
+        Tx::WriteRead(ADDR, vec![reg], vec![v])
+    }
+    fn put(reg: u8, v: u8) -> Tx {
+        Tx::Write(ADDR, vec![reg, v])
+    }
+
+    /// The init: both configuration registers written whole, then the
+    /// crate's steps (which find nothing to change), then the diode.
+    fn init_script(ideality: u8) -> Vec<Tx> {
+        vec![
+            put(0x03, 0x04), // Configuration: ALT_TCH only
+            put(0x4A, 0x23), // Fan Config: PROG, 360 kHz, TACH_M 11
+            get(0xFD, 0x16), // product id
+            put(0x16, 0xFF), // alert mask
+            get(0x03, 0x04), // ALT_TCH already set
+            put(0x4D, 0x17), // PWM_F at its power-on value
+            get(0x4A, 0x23), // 360 kHz, non-inverted: no change
+            get(0x03, 0x04), // PWM, not DAC: no change
+            put(0x17, ideality),
+            put(0x18, 0x00),
+        ]
+    }
+
     #[test]
-    fn init_checks_the_part_and_configures_fan_and_diode() {
-        let bus = Bus::new(vec![Tx::WriteRead(ADDR, vec![REG_PART_ID], vec![0x16])]);
-        let mut s = Emc2101::new(bus, Config::BM1370_DIODE);
+    fn init_sets_tach_pwm_and_the_diode() {
+        let mut s = Emc2101::new(Bus::new(init_script(0x24)), Config::BM1370_DIODE);
         s.init().unwrap();
-        let log = s.release().log;
-        assert_eq!(
-            &log[1..],
-            &[
-                Tx::Write(ADDR, vec![REG_CONFIG, 0x04]),
-                Tx::Write(ADDR, vec![REG_FAN_CONFIG, 0x23]),
-                Tx::Write(ADDR, vec![REG_IDEALITY, 0x24]),
-                Tx::Write(ADDR, vec![REG_BETA, 0x00]),
-            ]
-        );
+        assert_eq!(s.init(), Err(Error::WrongDevice), "only once");
     }
 
     /// The Nano's sensors get the maker's ideality; every other
     /// EMC2101 board stays on ESP-Miner's.
     #[test]
     fn the_nano_diode_is_forgeos_tuning() {
-        let bus = Bus::new(vec![Tx::WriteRead(ADDR, vec![REG_PART_ID], vec![0x16])]);
-        let mut s = Emc2101::new(bus, Config::BITFORGE_NANO_DIODE);
+        let mut s = Emc2101::new(Bus::new(init_script(0x37)), Config::BITFORGE_NANO_DIODE);
         s.init().unwrap();
-        let log = s.release().log;
-        assert_eq!(
-            &log[3..],
-            &[
-                Tx::Write(ADDR, vec![REG_IDEALITY, 0x37]),
-                Tx::Write(ADDR, vec![REG_BETA, 0x00]),
-            ]
-        );
         assert_eq!(Config::BM1370_DIODE.ideality, Some(0x24));
         assert_eq!(
             Config::BITFORGE_NANO_DIODE.temp_offset_c,
@@ -200,60 +230,80 @@ mod tests {
     }
 
     #[test]
-    fn wrong_part_id_is_an_error() {
-        let bus = Bus::new(vec![Tx::WriteRead(ADDR, vec![REG_PART_ID], vec![0x00])]);
-        assert_eq!(
-            Emc2101::new(bus, Config::BM1370_DIODE).init(),
-            Err(Error::WrongDevice)
-        );
+    fn wrong_part_id_is_an_error_and_nothing_works_after() {
+        let script = vec![put(0x03, 0x04), put(0x4A, 0x23), get(0xFD, 0x00)];
+        let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
+        assert_eq!(s.init(), Err(Error::WrongDevice));
+        assert_eq!(s.fan_rpm(), Err(Error::WrongDevice));
+    }
+
+    #[test]
+    fn nothing_is_sent_before_init() {
+        let mut s = Emc2101::new(Bus::new(vec![]), Config::BM1370_DIODE);
+        assert_eq!(s.set_fan_percent(50), Err(Error::WrongDevice));
+        assert_eq!(s.external_temp_c(), Err(Error::WrongDevice));
+    }
+
+    fn ready(extra: Vec<Tx>, cfg: Config) -> Emc2101<Bus> {
+        let mut script = init_script(cfg.ideality.unwrap_or(0));
+        script.extend(extra);
+        let mut s = Emc2101::new(Bus::new(script), cfg);
+        s.init().unwrap();
+        s
     }
 
     #[test]
     fn fan_percent_maps_to_63_steps() {
-        let mut s = Emc2101::new(Bus::sink(), Config::BM1370_DIODE);
-        s.set_fan_percent(100).unwrap();
-        s.set_fan_percent(50).unwrap();
-        s.set_fan_percent(0).unwrap();
-        s.set_fan_percent(200).unwrap();
-        let log = s.release().log;
-        let duties: Vec<u8> = log
-            .iter()
-            .map(|t| match t {
-                Tx::Write(_, b) => b[1],
-                _ => unreachable!(),
-            })
-            .collect();
-        assert_eq!(duties, vec![63, 31, 0, 63]);
+        let mut s = ready(
+            vec![
+                get(0x4A, 0x23),
+                put(0x4C, 63),
+                get(0x4A, 0x23),
+                put(0x4C, 31),
+                get(0x4A, 0x23),
+                put(0x4C, 0),
+                get(0x4A, 0x23),
+                put(0x4C, 63),
+            ],
+            Config::BM1370_DIODE,
+        );
+        for p in [100, 50, 0, 200] {
+            s.set_fan_percent(p).unwrap();
+        }
     }
 
     #[test]
     fn tach_converts_to_rpm_and_a_stalled_fan_reads_zero() {
-        let bus = Bus::new(vec![
-            Tx::WriteRead(ADDR, vec![REG_TACH_LSB], vec![0xD0]),
-            Tx::WriteRead(ADDR, vec![REG_TACH_MSB], vec![0x07]), // 2000 counts
-            Tx::WriteRead(ADDR, vec![REG_TACH_LSB], vec![0xFF]),
-            Tx::WriteRead(ADDR, vec![REG_TACH_MSB], vec![0xFF]),
-        ]);
-        let mut s = Emc2101::new(bus, Config::BM1370_DIODE);
+        let mut s = ready(
+            vec![
+                get(0x46, 0xD0),
+                get(0x47, 0x07), // 2000 counts
+                get(0x46, 0xFF),
+                get(0x47, 0xFF),
+            ],
+            Config::BM1370_DIODE,
+        );
         assert_eq!(s.fan_rpm().unwrap(), 2700);
         assert_eq!(s.fan_rpm().unwrap(), 0);
     }
 
     #[test]
     fn external_temp_decodes_eighths_and_flags_faults() {
-        // 58.125 °C = 465 eighths = 0b001_1101_0001 → MSB 0x3A, LSB 0x20
-        let bus = Bus::new(vec![
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_MSB], vec![0x3A]),
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_LSB], vec![0x20]),
-            // -2.0 °C = -16 eighths → 11-bit 0x7F0 → MSB 0xFE, LSB 0x00
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_MSB], vec![0xFE]),
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_LSB], vec![0x00]),
-            // open diode: 0x3F8 → MSB 0x7F, LSB 0x00
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_MSB], vec![0x7F]),
-            Tx::WriteRead(ADDR, vec![REG_EXTERNAL_TEMP_LSB], vec![0x00]),
-        ]);
-        let mut s = Emc2101::new(
-            bus,
+        let mut s = ready(
+            vec![
+                // 58.125 °C = 465 eighths → MSB 0x3A, LSB 0x20
+                get(0x01, 0x3A),
+                get(0x10, 0x20),
+                // -2.0 °C = -16 eighths → MSB 0xFE, LSB 0x00
+                get(0x01, 0xFE),
+                get(0x10, 0x00),
+                // open diode: 0x3F8 eighths → MSB 0x7F, LSB 0x00
+                get(0x01, 0x7F),
+                get(0x10, 0x00),
+                // 126.875 °C is still a reading: MSB 0x7E, LSB 0xE0
+                get(0x01, 0x7E),
+                get(0x10, 0xE0),
+            ],
             Config {
                 temp_offset_c: 1,
                 ..Config::BM1370_DIODE
@@ -262,5 +312,6 @@ mod tests {
         assert!((s.external_temp_c().unwrap() - 59.125).abs() < 1e-6);
         assert!((s.external_temp_c().unwrap() - -1.0).abs() < 1e-6);
         assert_eq!(s.external_temp_c(), Err(Error::SensorFault));
+        assert!((s.external_temp_c().unwrap() - 127.875).abs() < 1e-6);
     }
 }
