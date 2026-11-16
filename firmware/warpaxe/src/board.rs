@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use esp_idf_svc::hal::delay::BLOCK;
 use esp_idf_svc::hal::gpio::AnyIOPin;
-use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver, I2C0};
+use esp_idf_svc::hal::i2c::{I2cConfig, I2cDriver, I2cError, I2C0};
 use esp_idf_svc::hal::units::Hertz;
 use esp_idf_svc::sys::{self, EspError};
 use serde::Serialize;
@@ -38,6 +38,7 @@ use warpaxe_board::tmp1075::{self, Addrs};
 use warpaxe_board::tps53647::{self, Tps53647};
 use warpaxe_board::tps546::{PhaseCurrents, Tps546};
 use warpaxe_board::warm_boot;
+use warpaxe_board::i2c::{ErrorKind, ErrorType, NoAcknowledgeSource, Operation};
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
     bm1370::{BM1370, BM1370_NERD},
@@ -1015,16 +1016,36 @@ fn retry(mut f: impl FnMut() -> Result<(), EspError>) -> Result<(), EspError> {
     last
 }
 
+// The drivers speak embedded-hal 1.0's I2c (through warpaxe-drivers);
+// errors as esp-idf-hal reports them, a NACK as a NACK.
+fn bus_err(e: EspError) -> I2cError {
+    if e.code() == sys::ESP_FAIL {
+        I2cError::new(ErrorKind::NoAcknowledge(NoAcknowledgeSource::Unknown), e)
+    } else {
+        I2cError::other(e)
+    }
+}
+
+impl ErrorType for SharedI2c {
+    type Error = I2cError;
+}
+
 impl I2c for SharedI2c {
-    type Error = EspError;
-    fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), EspError> {
-        retry(|| self.0.lock().unwrap().write(addr, bytes, BLOCK))
+    fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), I2cError> {
+        retry(|| self.0.lock().unwrap().write(addr, bytes, BLOCK)).map_err(bus_err)
     }
-    fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), EspError> {
-        retry(|| self.0.lock().unwrap().write_read(addr, wr, rd, BLOCK))
+    fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), I2cError> {
+        retry(|| self.0.lock().unwrap().write_read(addr, wr, rd, BLOCK)).map_err(bus_err)
     }
-    fn read(&mut self, addr: u8, rd: &mut [u8]) -> Result<(), EspError> {
-        retry(|| self.0.lock().unwrap().read(addr, rd, BLOCK))
+    fn read(&mut self, addr: u8, rd: &mut [u8]) -> Result<(), I2cError> {
+        retry(|| self.0.lock().unwrap().read(addr, rd, BLOCK)).map_err(bus_err)
+    }
+    fn transaction(&mut self, addr: u8, ops: &mut [Operation<'_>]) -> Result<(), I2cError> {
+        // esp-idf-hal indexes the last operation; nothing to send is done.
+        if ops.is_empty() {
+            return Ok(());
+        }
+        retry(|| self.0.lock().unwrap().transaction(addr, ops, BLOCK)).map_err(bus_err)
     }
 }
 

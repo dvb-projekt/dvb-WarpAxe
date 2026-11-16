@@ -9,6 +9,8 @@ license = "MIT OR Apache-2.0"
 authors.workspace = true
 
 [dependencies]
+# The I2c trait the drivers are written against (no_std, no features).
+embedded-hal = "1.0"
 # ln and exp for the thermistor formula, without std.
 libm = "0.2"
 

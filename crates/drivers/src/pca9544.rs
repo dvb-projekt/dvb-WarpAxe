@@ -4,7 +4,7 @@
 //! bit 2 enables the output, bits 1..0 pick it; reading the byte back
 //! gives the selection plus the four interrupt inputs in bits 7..4.
 
-use crate::i2c::I2c;
+use crate::i2c::{ErrorType, I2c, Operation};
 
 /// I²C address with A0–A2 to ground (the Nano).
 pub const ADDR: u8 = 0x70;
@@ -40,15 +40,14 @@ impl<I: I2c> Muxed<I> {
     }
 }
 
-impl<I: I2c> I2c for Muxed<I> {
+impl<I: I2c> ErrorType for Muxed<I> {
     type Error = I::Error;
-    fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), I::Error> {
+}
+
+impl<I: I2c> I2c for Muxed<I> {
+    fn transaction(&mut self, addr: u8, ops: &mut [Operation<'_>]) -> Result<(), I::Error> {
         self.select()?;
-        self.bus.write(addr, bytes)
-    }
-    fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), I::Error> {
-        self.select()?;
-        self.bus.write_read(addr, wr, rd)
+        self.bus.transaction(addr, ops)
     }
 }
 

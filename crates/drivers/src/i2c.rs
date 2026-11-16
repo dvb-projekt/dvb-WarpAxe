@@ -1,21 +1,11 @@
-//! The bus the drivers need: a write, and a write followed by a read
-//! without a stop in between (register access). Addresses are 7-bit.
+//! The bus the drivers need: embedded-hal 1.0's [`I2c`] with 7-bit
+//! addresses (a write, a write followed by a read after a repeated
+//! start, a plain read), re-exported here with the pieces an
+//! implementation needs, and the drivers' own [`Error`].
 
-/// A 7-bit-addressed I²C master.
-pub trait I2c {
-    /// The bus error.
-    type Error;
-    /// Write `bytes` to `addr`.
-    fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), Self::Error>;
-    /// Write `wr` to `addr`, then read `rd` after a repeated start.
-    fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), Self::Error>;
-    /// Read `rd` from `addr` with no command byte (the SMBus alert
-    /// response address, for one). Default: a write of nothing, then
-    /// the read.
-    fn read(&mut self, addr: u8, rd: &mut [u8]) -> Result<(), Self::Error> {
-        self.write_read(addr, &[], rd)
-    }
-}
+pub use embedded_hal::i2c::{
+    Error as BusError, ErrorKind, ErrorType, I2c, NoAcknowledgeSource, Operation,
+};
 
 /// A driver error: the bus failed, or the device answered but is not
 /// what the driver expects.
@@ -45,12 +35,13 @@ impl<E> From<E> for Error<E> {
 #[cfg(any(test, feature = "mock"))]
 #[allow(missing_docs)]
 pub mod mock {
-    use super::I2c;
+    use super::{ErrorKind, ErrorType, I2c, Operation};
     use std::collections::VecDeque;
 
     #[derive(Debug, Clone, PartialEq, Eq)]
     pub enum Tx {
         Write(u8, Vec<u8>),
+        /// A register read; a plain read is logged with an empty write.
         WriteRead(u8, Vec<u8>, Vec<u8>),
         /// A register read the device does not acknowledge (absent part).
         Nack(u8, Vec<u8>),
@@ -76,16 +67,13 @@ pub mod mock {
         pub fn sink() -> Self {
             Bus::default()
         }
-    }
 
-    impl I2c for Bus {
-        type Error = ();
-        fn write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), ()> {
+        fn do_write(&mut self, addr: u8, bytes: &[u8]) -> Result<(), ErrorKind> {
             self.log.push(Tx::Write(addr, bytes.to_vec()));
             match self.script.pop_front() {
                 Some(Tx::NackWrite(a, b)) => {
                     assert_eq!((a, b.as_slice()), (addr, bytes), "unexpected write");
-                    return Err(());
+                    return Err(ErrorKind::Other);
                 }
                 Some(next) => {
                     assert_eq!(next, Tx::Write(addr, bytes.to_vec()), "unexpected write");
@@ -94,7 +82,8 @@ pub mod mock {
             }
             Ok(())
         }
-        fn write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), ()> {
+
+        fn do_write_read(&mut self, addr: u8, wr: &[u8], rd: &mut [u8]) -> Result<(), ErrorKind> {
             self.log.push(Tx::WriteRead(addr, wr.to_vec(), Vec::new()));
             match self.script.pop_front() {
                 Some(Tx::WriteRead(a, w, answer)) => {
@@ -104,12 +93,27 @@ pub mod mock {
                 }
                 Some(Tx::Nack(a, w)) => {
                     assert_eq!((a, w.as_slice()), (addr, wr), "unexpected read");
-                    return Err(());
+                    return Err(ErrorKind::Other);
                 }
                 Some(other) => panic!("expected {other:?}, got read of {wr:?}"),
                 None => rd.iter_mut().for_each(|b| *b = 0),
             }
             Ok(())
+        }
+    }
+
+    impl ErrorType for Bus {
+        type Error = ErrorKind;
+    }
+
+    impl I2c for Bus {
+        fn transaction(&mut self, addr: u8, ops: &mut [Operation<'_>]) -> Result<(), ErrorKind> {
+            match ops {
+                [Operation::Write(w)] => self.do_write(addr, w),
+                [Operation::Write(w), Operation::Read(r)] => self.do_write_read(addr, w, r),
+                [Operation::Read(r)] => self.do_write_read(addr, &[], r),
+                _ => panic!("the scripted bus knows write, write_read and read"),
+            }
         }
     }
 }
