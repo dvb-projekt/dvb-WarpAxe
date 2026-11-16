@@ -1200,6 +1200,20 @@ says where it came from. The Bitcoin whitepaper the web UI links to (on
 warppool.org, next to the installer) is Satoshi Nakamoto's `bitcoin.pdf`
 (SHA-256 `b1674191…f553`).
 
+Earlier Rust work on the same chip family:
+[GPTechinno/bm13xx-rs](https://github.com/GPTechinno/bm13xx-rs)
+(MIT/Apache-2.0), a `no_std` driver for the BM1397, BM1366 and BM1370,
+split into crates for the protocol, the chain and each chip, with every
+register described as a typed struct with named fields. It came first and
+deserves the credit for showing that these chips can be driven cleanly
+from Rust. WarpAxe's chip layer was written separately and contains no code
+from it.
+
+The Stratum V2 client uses the `noise_sv2` crate from the
+[Stratum V2 reference implementation](https://github.com/stratum-mining/stratum)
+for its Noise handshake; the messages and the channel logic are WarpAxe's
+own.
+
 The makers' wordmarks on the boot screen come from the makers' own
 firmware: the Nerd boards' are cut from NerdOS and BitMaker's Gaia
 firmware themes, the NerdNOS lettering from WantClue's NerdNOS firmware,
