@@ -60,7 +60,7 @@ miner.
 
 ## Compared with the stock firmware
 
-As of 2026-11-10, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
+As of 2026-11-16, against [ESP-Miner/AxeOS](https://github.com/bitaxeorg/ESP-Miner)
 v2.15.4, [ESP-Miner-NerdQAxePlus](https://github.com/shufps/ESP-Miner-NerdQAxePlus)
 (NerdOS) v1.1.2 and [ForgeOS](https://github.com/wantclue/forge-os) v1.8
 (the BitForge Nano's firmware, built on ESP-Miner), from their source. All three
@@ -103,6 +103,9 @@ move fast; corrections welcome.
 | Clock | no NTP; set from the pool's job time | NTP with fixed servers and a fixed time zone (Berlin), no status shown | NTP (`pool.ntp.org`, fixed) since v1.8, also set hourly from the pool's job time; no status shown | NTP server and time zone in the settings; the web UI shows whether and when the clock was synchronised and how far it is from the browser's |
 | Power supply's rating | no (a fixed maximum per board family) | no (a fixed maximum per board) | no (a fixed 60 W) | **set in the settings** (`psuWatts`), so a tuner can keep below it; the dashboard asks for it while it is unknown |
 | What the device display shows | fixed pages; settable are the panel type, rotation, inverted colours and screen-off time | fixed pages; settable are flip, inverted colours and screen-off | no display; two status LEDs (the share blink can be switched off) | **choosable**: which LCD pages the key steps through, their order and start page, the cockpit's large number, its three places and its footer line, which OLED slides rotate and for how long; a live view of the screen in the settings |
+| Clock and night mode on the display | no (no clock page); the display always on, off, or off after a timeout; the backlight on or off, no dimming | no (uptime only); the screen on or off, an optional automatic screen-off, no dimming | no display | yes since v0.1.45: a clock page on the LCD and a clock slide on the OLED (not among the factory pages); night mode (off by default, 22:00–07:00) dims to its own brightness (OLED contrast, the Nerd boards' AW9364 in 16 steps, PWM on the Naja Duo and Gamma Hex), on the LCD with the clock above weekday, date, hashrate and temperature; a key press brings the full display back for 30 s, an alert shows at full brightness |
+| Protection against OLED burn-in | no pixel shift; a screen-off timeout (factory setting: always on) | no pixel shift | no display | the picture moves by one pixel every ten minutes through twelve positions; every OLED screen leaves room for it, so nothing is cut off (since v0.1.45) |
+| Input voltage sagging under load | "Danger: Low Voltage" on the dashboard while the input reads below 94.9 % of nominal (not compared with the input with the chips off) | the input-voltage bar turns yellow outside `voltageMin`–`voltageMax` (default 11.5–12.6 V) | "Input voltage is low" on the dashboard below 87 % of nominal plus 0.5 V | the input with the chips off compared with the input under load (median of the last minute); a drop of 8 % of nominal or more for a full minute shows a warning with the drop in volts on the System page, gone again below 6 %; only reported (since v0.1.45; `vinIdle`, `vinLoad`, `vinSag`, `psuSagWarning`) |
 | Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | English | 8 |
 | Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
@@ -722,8 +725,8 @@ back at any time with `GET /api/v1/display/frame`.
   clock, on chips without an error counter such as the BM1397),
   `minerStackFree` (since v0.1.44: the least stack the mining loop has
   had to spare since boot, of its 12 KB; its driver and policies live in
-  PSRAM), `vinIdle`, `vinLoad`, `vinSag` and `psuSagWarning` (after
-  v0.1.44: the input voltage with the chips off, under load as the median
+  PSRAM), `vinIdle`, `vinLoad`, `vinSag` and `psuSagWarning` (since
+  v0.1.45: the input voltage with the chips off, under load as the median
   of the last minute, the drop between them, and a warning once the drop
   reaches 8 % of the nominal input for a full minute, gone again under
   6 %; the System page shows it under Maintenance; only reported, nothing
