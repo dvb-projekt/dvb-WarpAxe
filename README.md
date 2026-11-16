@@ -16,6 +16,10 @@
   <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe/releases"><img alt="Release" src="https://img.shields.io/badge/release-v0.1.45-7B5CFF"></a>
 </p>
 
+<p align="center">
+  <a href="https://git.warppool.org/dvb-projekt/dvb-WarpAxe">Source on git.warppool.org</a> · <a href="https://github.com/dvb-projekt/dvb-WarpAxe">Mirror on GitHub</a> (issues and pull requests welcome)
+</p>
+
 ---
 
 dvb-WarpAxe is a from-scratch firmware for ESP32-S3 miners with BM1370,
@@ -1103,6 +1107,14 @@ image's bytes are, from the last build's linker map
 ([docs/16](docs/16-Image-size-where-it-goes-and-what-was-taken-out.md)).
 
 ## Repository
+
+The main repository is
+[git.warppool.org/dvb-projekt/dvb-WarpAxe](https://git.warppool.org/dvb-projekt/dvb-WarpAxe);
+releases and the devices' online updates come from there.
+[github.com/dvb-projekt/dvb-WarpAxe](https://github.com/dvb-projekt/dvb-WarpAxe)
+is a mirror, updated on every push. Issues and pull requests are welcome on
+either; pull requests opened on GitHub are carried over to the main repository
+and merged there.
 
 | Path | What |
 |---|---|
