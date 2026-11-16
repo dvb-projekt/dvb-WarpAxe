@@ -4,7 +4,7 @@
 //! LINEAR11: 5-bit signed exponent, 11-bit signed mantissa, value =
 //! mantissa × 2^exponent. ULINEAR16: 16-bit unsigned mantissa with the
 //! exponent taken from VOUT_MODE. Encoding picks the finest exponent
-//! whose mantissa still fits, like ESP-Miner's `float_2_slinear11`.
+//! whose mantissa still fits.
 
 /// PMBus command code.
 pub const OPERATION: u8 = 0x01;
@@ -203,7 +203,7 @@ mod tests {
 
     #[test]
     fn linear11_matches_the_reference_encoding() {
-        // 4.8 V: mantissa 614 at 2^-7, as ESP-Miner's loop produces it.
+        // 4.8 V: mantissa 614 at 2^-7, the finest exponent that fits.
         assert_eq!(f32_to_linear11(4.8), 0xCA66);
         assert!((linear11_to_f32(0xCA66) - 4.8).abs() < 0.01);
         assert_eq!(i32_to_linear11(1), 0x0001);

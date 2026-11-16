@@ -1120,7 +1120,8 @@ and merged there.
 |---|---|
 | `crates/core` | BM13xx wire protocol: frames, CRCs, decoders, PLL solvers (ESP-Miner's and cgminer's gekko formula), register payloads, SHA-256 midstates for the BM1397, chip profiles with the init sequence as data — `no_std`, no alloc |
 | `crates/chain` | the chain driver over a `Uart` trait — `no_std`, the code the firmware runs |
-| `crates/board` | regulators, sensors, fans, fan PID, OLED, board profiles over an `I2c` trait — `no_std`, tested against a scripted bus |
+| `crates/board` | regulators, fans, fan PID, board profiles over an `I2c` trait — `no_std`, tested against a scripted bus |
+| `crates/drivers` | the part drivers `crates/board` builds on: the `I2c` trait, INA260, TMP1075, PCA9544, SSD1306 OLED with its 5×7 font, PMBus number formats, NTC thermistor — `no_std`, **MIT OR Apache-2.0** for use in other firmware |
 | `crates/stratum` | Stratum V1 without sockets: messages, jobs, coinbase reading and payout (the worker's address decoded — base58, bech32/bech32m, CashAddr — for any SHA-256 coin), tested against a captured WarpPool session |
 | `crates/sv2` | Stratum V2 client: Noise handshake, framing, mining messages, release-signature tool; tested against WarpPool's Sv2 server |
 | `crates/ota` | the firmware writer's hand-off: one image (or restart) at a time to the main task, a second refused — `no_std`, host-tested |
@@ -1248,7 +1249,13 @@ in [docs/brand/nerd](docs/brand/nerd/README.md) and
 
 ## License
 
-GPL-3.0-or-later (see [LICENSE](LICENSE)), for the reason above. The fonts
+GPL-3.0-or-later (see [LICENSE](LICENSE)), for the reason above, except
+`crates/drivers`: MIT OR Apache-2.0 at your option
+([LICENSE-MIT](crates/drivers/LICENSE-MIT),
+[LICENSE-APACHE](crates/drivers/LICENSE-APACHE)), so other firmware can
+use those drivers. They were written from the datasheets and published
+board schematics, and the font is a widely circulated 5×7 table. The
+drivers that follow ESP-Miner's or NerdOS's code in places stay GPL. The fonts
 in `tools/fonts` are under the SIL Open Font License. The makers' names and
 wordmarks remain their trade marks; the licence does not grant their use
 (see Provenance).

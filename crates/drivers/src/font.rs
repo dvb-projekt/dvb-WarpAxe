@@ -1,5 +1,9 @@
 //! A 5×7 font, column-major, bit 0 = top row. Digits, upper-case letters
 //! and the few marks a status screen needs. Anything else renders blank.
+//!
+//! The glyphs are those of the 5×7 ASCII table that circulates in many
+//! small-display projects (it is not Adafruit's glcdfont), cut down to
+//! what a status screen shows.
 
 /// Glyph width in pixels.
 pub const W: usize = 5;

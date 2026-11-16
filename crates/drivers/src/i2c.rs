@@ -23,7 +23,7 @@ pub trait I2c {
 pub enum Error<E> {
     /// The bus failed.
     Bus(E),
-    /// The identity register did not match; carries what was read.
+    /// The identity register did not match.
     WrongDevice,
     /// A block read announced a different length than requested.
     BadLength,
@@ -39,10 +39,12 @@ impl<E> From<E> for Error<E> {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod mock {
-    //! A scripted bus for tests: every expected transaction in order,
-    //! with the bytes the device answers.
+/// A scripted bus for tests (this crate's, and with the `mock` feature
+/// a dependent crate's): every expected transaction in order, with the
+/// bytes the device answers. Needs std.
+#[cfg(any(test, feature = "mock"))]
+#[allow(missing_docs)]
+pub mod mock {
     use super::I2c;
     use std::collections::VecDeque;
 

@@ -49,9 +49,9 @@ jobs:
 
       # The core crate must build without std. thumbv7em has no std at
       # all, so a successful build there proves it — no ESP toolchain needed.
-      - name: no_std build of warpaxe-core, warpaxe-chain, warpaxe-board, warpaxe-ota, warpaxe-trust and warpaxe-inflate
+      - name: no_std build of warpaxe-core, warpaxe-chain, warpaxe-board, warpaxe-drivers, warpaxe-ota, warpaxe-trust and warpaxe-inflate
         if: ${{ !cancelled() }}
-        run: cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board -p warpaxe-ota -p warpaxe-trust -p warpaxe-inflate --target thumbv7em-none-eabihf
+        run: cargo build -p warpaxe-core -p warpaxe-chain -p warpaxe-board -p warpaxe-drivers -p warpaxe-ota -p warpaxe-trust -p warpaxe-inflate --target thumbv7em-none-eabihf
 
   # WarpTune's regulator against the simulator, in-process. A separate
   # package (detached from the workspace) with a git dependency on

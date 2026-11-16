@@ -894,7 +894,7 @@ dependencies = [
 name = "warpaxe-board"
 version = "0.1.0"
 dependencies = [
- "libm",
+ "warpaxe-drivers",
 ]
 
 [[package]]
@@ -947,6 +947,13 @@ name = "warpaxe-displaycfg"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+]
+
+[[package]]
+name = "warpaxe-drivers"
+version = "0.1.0"
+dependencies = [
+ "libm",
 ]
 
 [[package]]

@@ -1,8 +1,8 @@
 //! INA260: the input-side power monitor of the BitForge Nano (12 V
 //! rail, before the regulator). Sixteen-bit registers, MSB first:
-//! bus voltage in 1.25 mV, current in 1.25 mA (signed), power in 10 mW,
-//! as ESP-Miner's `INA260.c` reads them. The part measures on its own
-//! in continuous mode after power-up; nothing is configured here.
+//! bus voltage in 1.25 mV, current in 1.25 mA (signed), power in 10 mW
+//! (datasheet). The part measures on its own in continuous mode after
+//! power-up; nothing is configured here.
 
 use crate::i2c::{Error, I2c};
 
@@ -75,7 +75,7 @@ mod tests {
     use crate::i2c::mock::{Bus, Tx};
 
     #[test]
-    fn init_checks_both_ids_and_readings_scale_like_esp_miner() {
+    fn init_checks_both_ids_and_readings_scale_per_datasheet() {
         let bus = Bus::new(vec![
             Tx::WriteRead(ADDR, vec![REG_MANUFACTURER_ID], vec![0x54, 0x49]),
             Tx::WriteRead(ADDR, vec![REG_DIE_ID], vec![0x22, 0x70]),

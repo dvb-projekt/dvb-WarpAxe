@@ -1,11 +1,11 @@
-//! A thermistor on an ADC pin: the NerdNOS's board temperature.
+//! A thermistor on an ADC pin: the NerdNOS board's temperature.
 //!
 //! The NerdNOS (benjamin-wilson/NerdNOS, `bm1397.kicad_sch`) has a 10 kΩ
 //! NTC (TH1, NTCG103JF103FT1, B = 3380 K) from the sense net to ground
-//! and a 10 kΩ pull-up (R8) to 3.3 V; the stock firmware reads it on
-//! ADC1 channel 1, GPIO2 (WantClue `adc.cpp`: `R_T = R0 · V / (3.3 − V)`,
-//! `T = B / (ln(R_T / R0) + B / 298.15)`). It sits next to the chip, not
-//! on its die: NerdNOS stops at 80 °C there and resumes 10 °C lower.
+//! and a 10 kΩ pull-up (R8) to 3.3 V, read on ADC1 channel 1 (GPIO2).
+//! The β equation: `R_T = R0 · V / (3.3 − V)`,
+//! `T = B / (ln(R_T / R0) + B / 298.15)`. It sits next to the chip, not
+//! on its die.
 //!
 //! Only the arithmetic lives here; the firmware brings the ADC.
 
@@ -22,9 +22,9 @@ pub struct Config {
     pub r_pullup_ohm: f32,
     /// The divider's supply, mV.
     pub vref_mv: u16,
-    /// An ADC1 GPIO that senses the core rail directly (WantClue
-    /// `adc.cpp`: `VCORE_CHANNEL ADC1_CHANNEL_2`, GPIO3, raw millivolts),
-    /// if the board has one. Reported as the board's VOUT.
+    /// An ADC1 GPIO that senses the core rail directly (ADC1 channel 2,
+    /// GPIO3, on the NerdNOS; raw millivolts), if the board has one.
+    /// Reported as the board's VOUT.
     pub vcore_gpio: Option<u8>,
 }
 
@@ -41,7 +41,7 @@ impl Config {
 
     /// Temperature for a midpoint voltage, °C; `None` when the voltage
     /// is at a rail (the divider is open or shorted: no thermistor to
-    /// speak of). The stock firmware returns −273.15 for a zero reading.
+    /// speak of).
     pub fn celsius(&self, mv: u16) -> Option<f32> {
         let v = f32::from(mv);
         let vref = f32::from(self.vref_mv);
@@ -93,7 +93,7 @@ mod tests {
         assert!((t - 25.0).abs() < 0.05, "{t}");
     }
 
-    /// The values the stock firmware's formula gives (computed in f64):
+    /// The β equation's values (computed in f64):
     /// 32 °C is what the .46 reported on 2026-10-08, 80 °C its stop.
     #[test]
     fn matches_the_beta_formula() {

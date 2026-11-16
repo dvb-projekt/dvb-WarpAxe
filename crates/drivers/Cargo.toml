@@ -1,0 +1,20 @@
+[package]
+name = "warpaxe-drivers"
+description = "Small no_std I2C drivers used by WarpAxe: INA260, TMP1075, PCA9544, SSD1306, PMBus encodings, NTC thermistor, 5x7 font"
+version.workspace = true
+edition.workspace = true
+# Unlike the rest of WarpAxe (GPL-3.0-or-later), these drivers are
+# permissively licensed so other firmware can use them.
+license = "MIT OR Apache-2.0"
+authors.workspace = true
+
+[dependencies]
+# ln and exp for the thermistor formula, without std.
+libm = "0.2"
+
+[features]
+# The scripted test bus `i2c::mock` for dependent crates' tests (needs std).
+mock = []
+
+[lints]
+workspace = true

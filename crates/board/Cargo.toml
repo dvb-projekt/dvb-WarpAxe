@@ -7,8 +7,11 @@ license.workspace = true
 authors.workspace = true
 
 [dependencies]
-# ln and exp for the thermistor formula, without std.
-libm = "0.2"
+# The permissively licensed drivers (MIT OR Apache-2.0) this crate builds on.
+warpaxe-drivers = { path = "../drivers" }
+
+[dev-dependencies]
+warpaxe-drivers = { path = "../drivers", features = ["mock"] }
 
 [lints]
 workspace = true

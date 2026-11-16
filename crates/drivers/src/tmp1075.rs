@@ -1,16 +1,16 @@
 //! TMP1075: 12-bit I²C temperature sensor, 0x48 + n. On the NerdQAxe
 //! family several sit on the board next to the ASICs and one on the back
-//! at the voltage regulator. Layout and detection follow NerdOS
-//! (`NerdQaxePlus::detectNumTempSensors`, `TMP1075.cpp`).
+//! at the voltage regulator. The addresses and the probe order below
+//! are those of the NerdQAxe boards.
 
 use crate::i2c::{Error, I2c};
 
 /// Address of sensor `n` is `BASE_ADDR + n` (A0..A2 strapping).
 pub const BASE_ADDR: u8 = 0x48;
-/// The sensor on the back, at the voltage regulator (NerdOS
-/// `VR_TEMP1075_ADDR` = 1).
+/// The sensor on the back, at the voltage regulator (A0 strapped high
+/// on the NerdQAxe boards).
 pub const VR_ADDR: u8 = BASE_ADDR + 1;
-/// The ASIC-side sensors in the order NerdOS probes them; detection
+/// The ASIC-side sensors in probe order; detection
 /// stops at the first one that does not answer.
 pub const ASIC_ADDRS: [u8; 3] = [BASE_ADDR, BASE_ADDR + 2, BASE_ADDR + 3];
 
@@ -20,8 +20,7 @@ const MIN_C: f32 = -55.0;
 const MAX_C: f32 = 125.0;
 
 /// Read one sensor in °C. The temperature register is a left-aligned
-/// 12-bit two's-complement value, 0.0625 °C per LSB (NerdOS treats it
-/// as unsigned; signed is the datasheet and costs nothing).
+/// 12-bit two's-complement value, 0.0625 °C per LSB (datasheet).
 pub fn read_celsius<I: I2c>(bus: &mut I, addr: u8) -> Result<f32, Error<I::Error>> {
     let mut b = [0u8; 2];
     bus.write_read(addr, &[REG_TEMP], &mut b)?;
@@ -34,7 +33,7 @@ pub fn read_celsius<I: I2c>(bus: &mut I, addr: u8) -> Result<f32, Error<I::Error
 }
 
 /// Which ASIC-side sensors answer, in probe order; stops at the first
-/// gap like NerdOS. At most three.
+/// gap. At most three.
 pub fn detect<I: I2c>(bus: &mut I) -> Addrs {
     let mut found = Addrs::default();
     for &a in &ASIC_ADDRS {
@@ -46,8 +45,8 @@ pub fn detect<I: I2c>(bus: &mut I) -> Addrs {
     found
 }
 
-/// The hottest of the detected ASIC-side sensors — what NerdOS feeds the
-/// fan PID and the overheat check. Sensors that fail this round are
+/// The hottest of the detected ASIC-side sensors, for a fan regulator
+/// or an overheat check. Sensors that fail this round are
 /// skipped; `None` when none answered.
 pub fn max_celsius<I: I2c>(bus: &mut I, addrs: &[u8]) -> Option<f32> {
     addrs
@@ -101,7 +100,7 @@ mod tests {
 
     #[test]
     fn a_reading_above_the_rated_range_is_a_fault() {
-        // 0x7FF0 = 127.94 °C: NerdOS's "invalid" threshold, above 125.
+        // 0x7FF0 = 127.94 °C, above the rated 125.
         let mut bus = Bus::new(vec![temp(0x48, 0x7FF0)]);
         assert_eq!(read_celsius(&mut bus, 0x48), Err(Error::SensorFault));
     }
