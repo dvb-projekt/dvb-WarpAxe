@@ -335,6 +335,17 @@ pub fn system_info() -> serde_json::Value {
     v["stratumTLSPin"] = json!(cfg.stratum_tls_pin);
     v["fallbackStratumTLSPin"] = json!(cfg.fallback_tls_pin);
     v["stratumTLSPinned"] = json!(st.tls_pinned);
+    // IPv6 (`docs/17`): the setting, the station's addresses that reach
+    // beyond the link (global, unique local), and the address and family
+    // the live pool connection went to (null while none is up).
+    v["ipv6"] = json!(cfg.ipv6);
+    v["ipv6Addresses"] = crate::net::dial::global_ipv6()
+        .iter()
+        .map(|a| serde_json::Value::from(a.to_string()))
+        .collect();
+    v["poolAddress"] = json!((!st.pool_ip.is_empty()).then(|| st.pool_ip.clone()));
+    v["poolAddressFamily"] = json!((!st.pool_ip.is_empty())
+        .then(|| if st.pool_ip.contains(':') { "IPv6" } else { "IPv4" }));
     v["stratumTLSPending"] = json!(tls_pending_main.as_ref().map(|p| p.key.clone()));
     v["stratumTLSKeyChanged"] = json!(tls_pending_main.as_ref().is_some_and(|p| p.changed));
     v["fallbackStratumTLSPending"] = json!(tls_pending_fb.as_ref().map(|p| p.key.clone()));
@@ -1085,13 +1096,15 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     // Before the voltage below, like the clock.
                     store_chip_offsets(&v);
                     // Any pool field (main or fallback, the fallback
-                    // switch, the suggested difficulty): the session is
-                    // rebuilt from the new config at once.
+                    // switch, the suggested difficulty) or the IPv6
+                    // switch: the session is rebuilt from the new config
+                    // at once.
                     let pool_change = v.as_object().is_some_and(|o| {
                         o.keys().any(|k| {
                             k.starts_with("stratum")
                                 || k.starts_with("fallbackStratum")
                                 || k == "useFallbackStratum"
+                                || k == "ipv6"
                         })
                     });
                     if pool_change {

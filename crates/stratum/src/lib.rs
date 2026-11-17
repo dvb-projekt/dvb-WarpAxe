@@ -13,6 +13,7 @@
 
 pub mod block;
 pub mod coinbase;
+pub mod dial;
 pub mod gate;
 pub mod job;
 pub mod line;

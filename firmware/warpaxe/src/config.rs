@@ -193,6 +193,14 @@ pub struct Config {
     /// leave the computer unable to reach either). Applied at boot.
     #[serde(rename = "usbSubnet")]
     pub usb_subnet: u8,
+    /// Pool connections may use IPv6: the station takes an IPv6 address
+    /// from the router (SLAAC) and a pool with AAAA records is tried over
+    /// IPv6 first, IPv4 a quarter second later (Happy Eyeballs,
+    /// `net::dial`). On by default; an IPv4-only network never tries
+    /// IPv6. Off: pools only over IPv4 at once; the address itself goes
+    /// at the next start. `docs/17`.
+    #[serde(rename = "ipv6")]
+    pub ipv6: bool,
     /// The rated output of the power supply that feeds this miner, whole
     /// watts; 0 = unknown. Only reported: WarpTune keeps a miner below
     /// 80 % of it and searches no higher than the stock point without it.
@@ -307,6 +315,7 @@ impl Default for Config {
             asic_difficulty: 0,
             chip_init: String::new(),
             usb_subnet: 7,
+            ipv6: true,
             psu_watts: 0,
             // The screens of v0.1.30, spelt out: a device updated from
             // there shows no difference.

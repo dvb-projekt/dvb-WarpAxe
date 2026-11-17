@@ -1,6 +1,7 @@
 //! Network interfaces as a list. Nothing above this module knows or cares
 //! whether a packet goes out over USB-C or Wi-Fi.
 
+pub mod dial;
 pub mod mdns;
 pub mod usb;
 pub mod wifi;

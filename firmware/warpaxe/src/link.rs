@@ -9,7 +9,7 @@
 //! one write.
 
 use std::io::{self, Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{SocketAddr, TcpStream};
 use std::os::fd::AsRawFd;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -28,7 +28,11 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub enum Link {
     Tcp(TcpStream),
-    Tls { tls: Mutex<SendTls>, fd: i32 },
+    Tls {
+        tls: Mutex<SendTls>,
+        fd: i32,
+        peer: SocketAddr,
+    },
 }
 
 /// `EspTls` is only `Send` with MBEDTLS_THREADING_C; every use here goes
@@ -80,12 +84,8 @@ impl Link {
     /// `tls_trust::pool_outcome` says whether the pin did the accepting.
     pub fn connect(host: &str, port: u16, tls: bool, pin: Option<Pin>) -> anyhow::Result<Link> {
         if !tls {
-            let addr = (host, port)
-                .to_socket_addrs()?
-                .next()
-                .ok_or_else(|| anyhow::anyhow!("dns: no address for {host}"))?;
-            log::info!("stratum: connecting to {host}:{port} ({addr})");
-            let s = TcpStream::connect_timeout(&addr, Duration::from_secs(10))?;
+            let (s, addr) = crate::net::dial::dial(host, port, Duration::from_secs(10))?;
+            log::info!("stratum: connected to {} ({addr})", warpaxe_stratum::dial::host_port(host, port));
             s.set_read_timeout(Some(READ_TIMEOUT))?;
             if let Err(e) = s.set_nodelay(true) {
                 log::warn!("stratum: nodelay not set: {e}");
@@ -93,7 +93,8 @@ impl Link {
             return Ok(Link::Tcp(s));
         }
         log::info!(
-            "stratum: connecting to {host}:{port} (TLS{})",
+            "stratum: connecting to {} (TLS{})",
+            warpaxe_stratum::dial::host_port(host, port),
             if pin.is_some() { ", pinned key" } else { "" }
         );
         // The certificate's dates are checked once NTP has set the clock
@@ -102,15 +103,25 @@ impl Link {
         if !crate::clock::trusted() {
             log::warn!("stratum: NTP has not set the clock yet, the pool certificate's dates are not checked");
         }
+        // The address that answers first (IPv6 or IPv4, `net::dial`);
+        // esp-tls then connects to that address, the name still going out
+        // as SNI and checked. esp-tls resolves names itself with
+        // AF_UNSPEC, which lwIP answers with the A records only. The probe
+        // connection closes before the TLS one opens: one extra TCP
+        // handshake per session, no data.
+        let name = warpaxe_stratum::dial::pool_host(host);
+        let (probe, peer) = crate::net::dial::dial(host, port, Duration::from_secs(10))?;
+        drop(probe);
+        let target = peer.ip().to_string();
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
         // The name goes out as SNI and is checked unless the pin accepts
         // the certificate (then an IP address works as the pool address).
-        cfg.common_name = Some(host);
+        cfg.common_name = Some(name);
         cfg.crt_bundle_attach = Some(tls_trust::attach_pool);
         cfg.timeout_ms = 10_000;
         tls_trust::pool_begin(pin);
-        let hs = t.connect(host, port, &cfg).map_err(|e| {
+        let hs = t.connect(&target, port, &cfg).map_err(|e| {
             match tls_trust::pool_outcome().0 {
                 Some(seen) => anyhow::Error::new(KeyRefused(seen)),
                 None => anyhow::anyhow!("tls handshake with {host}:{port}: {e}"),
@@ -132,14 +143,23 @@ impl Link {
             );
         }
         if tls_trust::pool_outcome().1 {
-            log::info!("stratum: TLS up, certificate accepted by the pinned key for {host}");
+            log::info!("stratum: TLS up ({peer}), certificate accepted by the pinned key for {name}");
         } else {
-            log::info!("stratum: TLS up, certificate verified for {host}");
+            log::info!("stratum: TLS up ({peer}), certificate verified for {name}");
         }
         Ok(Link::Tls {
             tls: Mutex::new(SendTls(t)),
             fd,
+            peer,
         })
+    }
+
+    /// The pool address this link went to.
+    pub fn peer(&self) -> Option<SocketAddr> {
+        match self {
+            Link::Tcp(s) => s.peer_addr().ok(),
+            Link::Tls { peer, .. } => Some(*peer),
+        }
     }
 
     /// End the connection from another thread; a blocked read returns.
@@ -160,7 +180,7 @@ impl Link {
                 w.write_all(buf)?;
                 w.flush()
             }
-            Link::Tls { tls, fd } => {
+            Link::Tls { tls, fd, .. } => {
                 let since = Instant::now();
                 while !buf.is_empty() {
                     let r = tls.lock().unwrap().0.write(buf);
@@ -187,7 +207,7 @@ impl Link {
                 let mut r = s;
                 r.read(buf)
             }
-            Link::Tls { tls, fd } => {
+            Link::Tls { tls, fd, .. } => {
                 let since = Instant::now();
                 loop {
                     // Decrypted bytes may already wait inside mbedTLS with

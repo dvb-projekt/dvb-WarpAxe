@@ -33,6 +33,11 @@ CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
 # pool one, mDNS two; the swarm page's search for an Avalon opens four
 # at a time on top (swarm.rs), and a scan must not starve the rest.
 CONFIG_LWIP_MAX_SOCKETS=16
+# IPv6 for pool connections (docs/17): the station takes its global and
+# unique-local addresses from the router's advertisements (SLAAC). Used
+# only while the ipv6 setting is on; then a pool's AAAA records are
+# tried first, IPv4 a quarter second later (net/dial.rs).
+CONFIG_LWIP_IPV6_AUTOCONFIG=y
 # A panic writes a core dump to flash and reboots; the next boot shows it.
 # The dump is an ELF of every task's used stack and registers, 60-64 KB on
 # this firmware, and the writer stores nothing when it would not fit the

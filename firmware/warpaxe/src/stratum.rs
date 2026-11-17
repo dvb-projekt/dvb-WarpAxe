@@ -6,7 +6,6 @@
 
 use std::collections::HashMap;
 use std::io::BufReader;
-use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
@@ -112,6 +111,9 @@ pub struct StratumState {
     /// The running TLS session's certificate was accepted by the pool's
     /// confirmed key, not by the CA bundle.
     pub tls_pinned: bool,
+    /// The address the live connection went to (IPv4 or IPv6, from
+    /// `net::dial`); empty while none is up.
+    pub pool_ip: String,
     pub extranonce1: String,
     pub extranonce2_size: usize,
     pub difficulty: f64,
@@ -514,6 +516,7 @@ fn run() {
             s.connected = false;
             s.subscribed = false;
             s.authorized = false;
+            s.pool_ip.clear();
         });
         let started = Instant::now();
         let jobs_before = state().jobs_received;
@@ -552,6 +555,7 @@ fn run() {
             update(|s| {
                 s.last_error = e.to_string();
                 s.connected = false;
+                s.pool_ip.clear();
                 s.reconnects += 1;
             });
         }
@@ -631,12 +635,9 @@ fn probe_primary() {
             continue;
         }
         let cfg = config::get();
-        let target = format!("{}:{}", cfg.stratum_url, cfg.stratum_port);
-        let reachable = target
-            .to_socket_addrs()
-            .ok()
-            .and_then(|mut a| a.next())
-            .is_some_and(|a| TcpStream::connect_timeout(&a, Duration::from_secs(5)).is_ok());
+        // Over IPv6 or IPv4 like the session itself (`net::dial`).
+        let reachable =
+            crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5)).is_ok();
         if reachable {
             if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
                 BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
@@ -687,6 +688,8 @@ fn session(
     }
     let pinned = tls && crate::tls_trust::pool_outcome().1;
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    let ip = stream.peer().map(|a| a.ip().to_string()).unwrap_or_default();
+    update(|s| s.pool_ip = ip);
     // Settings changed while this session was connecting (DNS, connect,
     // TLS): `reconnect` found no stream to shut, so end here and let
     // `run` start over with the new config.
@@ -1058,6 +1061,8 @@ fn session_v2(
     let stream = Arc::new(Link::connect(host, port, false, None)?);
 
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    let ip = stream.peer().map(|a| a.ip().to_string()).unwrap_or_default();
+    update(|s| s.pool_ip = ip);
     // Settings changed while this session was connecting (DNS, connect,
     // TLS): `reconnect` found no stream to shut, so end here and let
     // `run` start over with the new config.
