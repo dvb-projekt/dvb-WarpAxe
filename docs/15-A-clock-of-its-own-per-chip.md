@@ -385,14 +385,17 @@ The Naja Duo's midpoint measurement (item 8's last part) was dropped
 Naja Duo .47, fac2589, 550 MHz / 1080 mV, WarpTune off, 40 minutes per
 step, offsets read back from `asicFrequencies` after every step:
 
-| Chip 1 offset | Chip clocks | Board power | Errors chip 0 / chip 1 | Hashes per W |
+| Chip 1 offset | Chip clocks | Board power | Errors chip 0 / chip 1 | Good hashes per W |
 |---|---|---|---|---|
-| none | 550 / 550 | 85.2 W | 0.02 % / 2.32 % | 1244 |
-| −15 MHz | 550 / 535 | 84.3 W | 0.02 % / 0.21 % | 1254 |
-| −25 MHz | 550 / 525 | 83.6 W | 0.03 % / 0.07 % | 1252 |
+| none | 550 / 550 | 85.2 W | 0.02 % / 2.32 % | 100 % |
+| −15 MHz | 550 / 535 | 84.3 W | 0.02 % / 0.21 % | 100.8 % |
+| −25 MHz | 550 / 525 | 83.6 W | 0.03 % / 0.07 % | 100.6 % |
 
-For comparison, both chips at 550 MHz / 1100 mV gave about 1205 hashes
-per W. Chips 47/50 °C, regulator at most 54 °C, no rejected shares, no
+"Good hashes per W": both chips' hash-counter steps per minute, less the
+error share, divided by the mean board power, over minutes 6–40 of each
+step; relative to no offset, comparable only on this board. For
+comparison, both chips at 550 MHz / 1100 mV come to about 97 %
+(approximated from that morning's voltage test). Chips 47/50 °C, regulator at most 54 °C, no rejected shares, no
 input sag; at −25 MHz chip 1's domains spread a little more (435–466
 GH/s). Chip 0 did not get worse: on this board the offset is carried by
 the slowed chip's share of the voltage, and −15 MHz on chip 1 is about
