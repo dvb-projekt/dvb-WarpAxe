@@ -200,10 +200,13 @@ impl<I: I2c> Emc2302<I> {
     pub fn init(&mut self, cfg: &Config) -> Result<(), Error<I::Error>> {
         // Register 6-13: ENAG 0, RNG, EDG 01 (five edges), UDT 000.
         let fan_config = (cfg.range.code() << 5) | (0b01 << 3);
+        // The range before the writes: if one fails, the chip most likely
+        // still holds this range from the last boot (the same setting),
+        // not its reset value, and RPM must not read double.
+        self.range = cfg.range;
         for fan in [Fan::One, Fan::Two] {
             self.put(fan.reg(FAN_CONFIG), fan_config)?;
         }
-        self.range = cfg.range;
         self.set_polarity(cfg.invert_polarity)?;
         let code = cfg.pwm_base.code();
         let base = (code << Fan::One.base_shift()) | (code << Fan::Two.base_shift());

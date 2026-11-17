@@ -29,6 +29,9 @@ const FAN_STEPS: u16 = 63;
 /// chip holds it by design (emc2101-rs#7).
 const CONFIG: u8 = 0x04;
 const REG_CONFIG: u8 = 0x03;
+/// Product ID register; EMC2101 0x16, EMC2101-R 0x28 (the crate's own list).
+const REG_PRODUCT_ID: u8 = 0xFD;
+const PRODUCT_IDS: [u8; 2] = [0x16, 0x28];
 /// Fan Configuration (§6.16) as the init leaves it: PROG (fan setting
 /// written directly), 360 kHz base clock, not inverted, TACH_M 11
 /// (ignored at 360 kHz, Note 6.2). With PROG set here the crate's
@@ -130,6 +133,14 @@ impl<I: I2c> Emc2101<I> {
                 return Err(Error::WrongDevice);
             }
         };
+        // The part first, before anything is written: with a wrong board
+        // choice another chip may sit at this address (as up to v0.1.45).
+        let mut id = [0u8];
+        bus.write_read(ADDR, &[REG_PRODUCT_ID], &mut id)
+            .map_err(Error::Bus)?;
+        if !PRODUCT_IDS.contains(&id[0]) {
+            return Err(Error::WrongDevice);
+        }
         bus.write(ADDR, &[REG_CONFIG, CONFIG]).map_err(Error::Bus)?;
         bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG])
             .map_err(Error::Bus)?;
@@ -202,9 +213,10 @@ mod tests {
     /// crate's steps (which find nothing to change), then the diode.
     fn init_script(ideality: u8) -> Vec<Tx> {
         vec![
+            get(0xFD, 0x16), // product id, before any write
             put(0x03, 0x04), // Configuration: ALT_TCH only
             put(0x4A, 0x23), // Fan Config: PROG, 360 kHz, TACH_M 11
-            get(0xFD, 0x16), // product id
+            get(0xFD, 0x16), // product id (the crate's own check)
             put(0x16, 0xFF), // alert mask
             get(0x03, 0x04), // ALT_TCH already set
             put(0x4D, 0x17), // PWM_F at its power-on value
@@ -238,7 +250,8 @@ mod tests {
 
     #[test]
     fn wrong_part_id_is_an_error_and_nothing_works_after() {
-        let script = vec![put(0x03, 0x04), put(0x4A, 0x23), get(0xFD, 0x00)];
+        // Nothing is written to a part that is not an EMC2101.
+        let script = vec![get(0xFD, 0x00)];
         let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
         assert_eq!(s.init(), Err(Error::WrongDevice));
         assert_eq!(s.fan_rpm(), Err(Error::WrongDevice));

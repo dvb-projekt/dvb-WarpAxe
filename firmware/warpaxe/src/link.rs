@@ -114,7 +114,11 @@ impl Link {
         // connection closes before the TLS one opens: one extra TCP
         // handshake, no data; with one address (IPv4-only networks) none.
         let name = warpaxe_stratum::dial::pool_host(host);
-        let peer = crate::net::dial::pick(host, port, Duration::from_secs(10))?;
+        // One budget for both: the race and then esp-tls get 10 s together,
+        // not 10 s each (esp-tls at least 2 s for its handshake).
+        let budget = Duration::from_secs(10);
+        let begun = std::time::Instant::now();
+        let peer = crate::net::dial::pick(host, port, budget)?;
         let target = peer.ip().to_string();
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
@@ -122,7 +126,10 @@ impl Link {
         // the certificate (then an IP address works as the pool address).
         cfg.common_name = Some(name);
         cfg.crt_bundle_attach = Some(tls_trust::attach_pool);
-        cfg.timeout_ms = 10_000;
+        cfg.timeout_ms = budget
+            .saturating_sub(begun.elapsed())
+            .max(Duration::from_secs(2))
+            .as_millis() as u32;
         tls_trust::pool_begin(pin);
         let hs = t.connect(&target, port, &cfg).map_err(|e| {
             match tls_trust::pool_outcome().0 {

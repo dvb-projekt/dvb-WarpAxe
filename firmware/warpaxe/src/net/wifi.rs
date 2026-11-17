@@ -164,7 +164,12 @@ fn run(
                     }
                     Err(e) => log::error!("wifi: hotspot failed: {e}"),
                 }
+                // The stop dropped the link without the "link lost" branch
+                // above: IPv6 starts again with the next association.
                 was_connected = false;
+                ip6_started = false;
+                ip6_logged = false;
+                super::set_ip6_started(None);
             }
             Action::Close => {
                 let _ = wifi.stop();
@@ -178,6 +183,9 @@ fn run(
                 super::set_hotspot(None);
                 log::info!("wifi: setup hotspot closed, station holds");
                 was_connected = false;
+                ip6_started = false;
+                ip6_logged = false;
+                super::set_ip6_started(None);
                 next_try = Instant::now();
             }
             Action::Keep => {}
@@ -220,8 +228,10 @@ fn run(
             // SLAAC as soon as the station is associated, not after DHCP:
             // the router's prefix then arrives about when the IPv4 address
             // does, before the first pool connection (`net::dial`).
+            // With the switch off there is nothing to wait for.
+            let want_ip6 = crate::config::get().ipv6;
             match wifi.connect().and_then(|_| {
-                for _ in 0..20 {
+                for _ in 0..if want_ip6 { 20 } else { 0 } {
                     if ip6_started || start_ip6(wifi.wifi().sta_netif()) {
                         ip6_started = true;
                         break;
@@ -234,6 +244,9 @@ fn run(
                 Err(e) => {
                     log::warn!("wifi: connect failed: {e}");
                     super::set_wifi(false, None, None);
+                    ip6_started = false;
+                    ip6_logged = false;
+                    super::set_ip6_started(None);
                     let _ = wifi.disconnect();
                     next_try = Instant::now()
                         + if hotspot.is_open() {
