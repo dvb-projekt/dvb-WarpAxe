@@ -213,7 +213,7 @@
   "invertscreen": "Invertir colores",
   "displayTimeout": "Apagar pantalla tras (min, 0 = nunca)",
   "network": "Red",
-  "network_hint": "Los cambios de red se aplican tras reiniciar.",
+  "network_hint": "Wi-Fi, nombre de host, dirección USB y NTP se aplican tras reiniciar; IPv6 y zona horaria, al instante.",
   "hostname": "Nombre de host",
   "ssid": "Nombre de Wi-Fi (SSID)",
   "wifiPass": "Contraseña de Wi-Fi",

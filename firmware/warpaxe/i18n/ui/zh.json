@@ -213,7 +213,7 @@
   "invertscreen": "反转颜色",
   "displayTimeout": "屏幕熄灭时间（分钟，0 = 永不）",
   "network": "网络",
-  "network_hint": "网络更改在重启后生效。",
+  "network_hint": "Wi-Fi、主机名、USB 地址和 NTP 在重启后生效；IPv6 和时区立即生效。",
   "hostname": "主机名",
   "ssid": "Wi-Fi 名称（SSID）",
   "wifiPass": "Wi-Fi 密码",

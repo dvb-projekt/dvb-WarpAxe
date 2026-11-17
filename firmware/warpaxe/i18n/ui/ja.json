@@ -213,7 +213,7 @@
   "invertscreen": "色を反転",
   "displayTimeout": "画面オフまでの時間（分、0 = オフにしない）",
   "network": "ネットワーク",
-  "network_hint": "ネットワークの変更は再起動後に有効になります。",
+  "network_hint": "Wi-Fi、ホスト名、USB アドレス、NTP は再起動後に有効になります。IPv6 とタイムゾーンはすぐに反映されます。",
   "hostname": "ホスト名",
   "ssid": "Wi-Fi 名（SSID）",
   "wifiPass": "Wi-Fi パスワード",

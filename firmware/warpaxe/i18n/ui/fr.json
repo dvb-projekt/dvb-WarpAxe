@@ -213,7 +213,7 @@
   "invertscreen": "Inverser les couleurs",
   "displayTimeout": "Extinction de l’écran après (min, 0 = jamais)",
   "network": "Réseau",
-  "network_hint": "Les modifications réseau prennent effet après un redémarrage.",
+  "network_hint": "Wi-Fi, nom d’hôte, adresse USB et NTP prennent effet après un redémarrage ; IPv6 et le fuseau horaire, immédiatement.",
   "hostname": "Nom d’hôte",
   "ssid": "Nom du Wi-Fi (SSID)",
   "wifiPass": "Mot de passe Wi-Fi",

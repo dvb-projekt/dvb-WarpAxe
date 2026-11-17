@@ -213,7 +213,7 @@
   "invertscreen": "Inverter cores",
   "displayTimeout": "Desligar tela após (min, 0 = nunca)",
   "network": "Rede",
-  "network_hint": "Alterações de rede valem após reiniciar.",
+  "network_hint": "Wi-Fi, hostname, endereço USB e NTP são aplicados após reiniciar; IPv6 e fuso horário, de imediato.",
   "hostname": "Hostname",
   "ssid": "Nome do Wi-Fi (SSID)",
   "wifiPass": "Senha do Wi-Fi",
