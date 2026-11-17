@@ -50,3 +50,16 @@ pub fn hotspot() -> Option<(String, String)> {
 pub(crate) fn set_hotspot(h: Option<(String, String)>) {
     *HOTSPOT.lock().unwrap() = h;
 }
+
+/// When the station's IPv6 link-local address was created (SLAAC
+/// started), for this association; `None` before and after.
+static IP6_STARTED: Mutex<Option<std::time::Instant>> = Mutex::new(None);
+
+pub(crate) fn set_ip6_started(at: Option<std::time::Instant>) {
+    *IP6_STARTED.lock().unwrap() = at;
+}
+
+/// How long SLAAC has been running on this association, if it is.
+pub fn ip6_started_ago() -> Option<std::time::Duration> {
+    IP6_STARTED.lock().unwrap().map(|t| t.elapsed())
+}

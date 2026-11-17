@@ -42,6 +42,28 @@ struct Cand {
     family: i32,
 }
 
+/// Right after joining the network the router's prefix is still on its
+/// way (1.6–2.5 s on a FRITZ!Box, 2026-11-17), while the first pool
+/// connection follows the IPv4 address within a fraction of a second.
+/// That first connection waits up to this long, measured from the start
+/// of SLAAC, for a global or unique-local address; later ones never wait.
+/// On an IPv4-only network this is the one cost: up to 4 s once per
+/// association.
+const FIRST_PREFIX_WAIT: Duration = Duration::from_secs(4);
+
+/// The station's IPv6 addresses beyond the link, waiting for them only in
+/// the first [`FIRST_PREFIX_WAIT`] of SLAAC.
+fn own_ipv6_soon() -> Vec<Ipv6Addr> {
+    loop {
+        let own = global_ipv6();
+        let waiting = super::ip6_started_ago().is_some_and(|t| t < FIRST_PREFIX_WAIT);
+        if !own.is_empty() || !waiting {
+            return own;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 /// fc00::/7.
 fn is_ula(a: &Ipv6Addr) -> bool {
     (a.segments()[0] & 0xfe00) == 0xfc00
@@ -142,7 +164,7 @@ fn candidates(host: &str, port: u16) -> Vec<Cand> {
     }
     let v4 = lookup(host, port, sys::AF_INET, false);
     let own = if crate::config::get().ipv6 {
-        global_ipv6()
+        own_ipv6_soon()
     } else {
         Vec::new()
     };

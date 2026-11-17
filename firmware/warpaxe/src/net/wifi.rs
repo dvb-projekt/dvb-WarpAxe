@@ -139,6 +139,7 @@ fn run(
             super::set_wifi(false, None, None);
             ip = None;
             ip6_started = false;
+            super::set_ip6_started(None);
         }
         was_connected = connected;
 
@@ -201,6 +202,7 @@ fn run(
                 let r = unsafe { esp_idf_svc::sys::esp_netif_create_ip6_linklocal(handle) };
                 if r == 0 {
                     ip6_started = true;
+                    super::set_ip6_started(Some(Instant::now()));
                     log::info!("wifi: IPv6 link-local up, waiting for the router's prefix");
                 }
             }
