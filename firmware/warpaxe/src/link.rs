@@ -114,8 +114,9 @@ impl Link {
         // connection closes before the TLS one opens: one extra TCP
         // handshake, no data; with one address (IPv4-only networks) none.
         let name = warpaxe_stratum::dial::pool_host(host);
-        // One budget for both: the race and then esp-tls get 10 s together,
-        // not 10 s each (esp-tls at least 2 s for its handshake).
+        // One budget for both: the lookup and race, then esp-tls, get 10 s
+        // together, not 10 s each; esp-tls keeps at least 5 s for its
+        // connect and handshake (a distant pool, the devkit's busy CPU).
         let budget = Duration::from_secs(10);
         let begun = std::time::Instant::now();
         let peer = crate::net::dial::pick(host, port, budget)?;
@@ -128,7 +129,7 @@ impl Link {
         cfg.crt_bundle_attach = Some(tls_trust::attach_pool);
         cfg.timeout_ms = budget
             .saturating_sub(begun.elapsed())
-            .max(Duration::from_secs(2))
+            .max(Duration::from_secs(5))
             .as_millis() as u32;
         tls_trust::pool_begin(pin);
         let hs = t.connect(&target, port, &cfg).map_err(|e| {

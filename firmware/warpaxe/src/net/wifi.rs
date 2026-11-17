@@ -134,7 +134,7 @@ fn run(
     let mut ip6_started = false;
     let mut ip6_logged = false;
     loop {
-        let connected = wifi.is_connected().unwrap_or(false);
+        let mut connected = wifi.is_connected().unwrap_or(false);
         if was_connected && !connected {
             log::warn!("wifi: link lost");
             super::set_wifi(false, None, None);
@@ -165,8 +165,12 @@ fn run(
                     Err(e) => log::error!("wifi: hotspot failed: {e}"),
                 }
                 // The stop dropped the link without the "link lost" branch
-                // above: IPv6 starts again with the next association.
+                // above: the next association starts over (address, IPv6),
+                // and the rest of this pass does not see the old link.
                 was_connected = false;
+                connected = false;
+                ip = None;
+                super::set_wifi(false, None, None);
                 ip6_started = false;
                 ip6_logged = false;
                 super::set_ip6_started(None);
@@ -183,6 +187,9 @@ fn run(
                 super::set_hotspot(None);
                 log::info!("wifi: setup hotspot closed, station holds");
                 was_connected = false;
+                connected = false;
+                ip = None;
+                super::set_wifi(false, None, None);
                 ip6_started = false;
                 ip6_logged = false;
                 super::set_ip6_started(None);

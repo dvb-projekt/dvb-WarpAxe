@@ -92,7 +92,7 @@ enum State<I: I2c> {
     Bus(I),
     /// The crate's driver, after a successful init.
     Ready(EMC2101<I>),
-    /// An init failed; the crate kept the bus.
+    /// An init failed (or ran once already); the bus is gone with it.
     Failed,
 }
 
