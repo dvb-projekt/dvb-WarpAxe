@@ -223,9 +223,10 @@ pub struct Config {
     /// Seconds an OLED slide stays, 1–60.
     #[serde(rename = "oledInterval")]
     pub oled_interval: u8,
-    /// Night mode: inside the window the display shows only the clock,
-    /// dimmed to `night_brightness`, and the screen timeout does not
-    /// apply. Needs the clock (SNTP); off by default.
+    /// Night mode: inside the window the display shows the clock screen
+    /// instead of the pages (colour displays: time, date, hashrate and
+    /// temperature; OLED: its clock slide), dimmed to `night_brightness`,
+    /// and the screen timeout does not apply. Needs the clock (SNTP); off by default.
     #[serde(rename = "nightMode")]
     pub night_mode: bool,
     /// The window, minutes of the local day; it may run past midnight.
