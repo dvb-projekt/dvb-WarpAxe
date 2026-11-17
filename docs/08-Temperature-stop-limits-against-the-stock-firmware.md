@@ -181,8 +181,9 @@ chips themselves run as cool as before: the fan target moved with the
 scale), so Max can touch the warning line and, rarely, the shutdown.
 A shutdown is handled like an overheat stop: chips off, at least 60 s,
 back on; the third stop within an hour keeps the chips off with the
-reason on screen. ForgeOS offers 636 MHz / 1160 mV under the same
-40 A limit. WarpTune stays below 90 % of the warning line (34.2 A), so a
+reason on screen. ForgeOS's highest preset is "Power", 610 MHz /
+1200 mV (`performance-modes.ts`, forge-os 30c64e9, read 2026-11-17; this
+page said 636 MHz / 1160 mV before), under the same 40 A limit. WarpTune stays below 90 % of the warning line (34.2 A), so a
 tuned Nano does not get there (Oliver's decision 2026-10-23: keep 625
 and say so, rather than drop it).
 
