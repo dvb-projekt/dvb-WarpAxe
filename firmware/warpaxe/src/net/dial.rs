@@ -43,7 +43,7 @@ struct Cand {
 }
 
 /// Right after joining the network the router's prefix is still on its
-/// way (1.6–2.5 s on a FRITZ!Box, 2026-11-17), while the first pool
+/// way (about 3 s after SLAAC starts on a FRITZ!Box, 2026-11-17), while the first pool
 /// connection follows the IPv4 address within a fraction of a second.
 /// That first connection waits up to this long, measured from the start
 /// of SLAAC, for a global or unique-local address; later ones never wait.
