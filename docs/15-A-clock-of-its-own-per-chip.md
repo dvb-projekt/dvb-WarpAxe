@@ -242,10 +242,12 @@ Measured on main 6c68bea: Gaia with TLS 29,787 bytes of internal heap
 free (25,443 on v0.1.43), largest piece 18,432 (17,408); `minerStackFree`
 6,320 on the Gaia, 6,108 on a Gamma, 6,384 on the Naja Duo.
 
-**A BM1373 answers to its own address, not the shifted one.** Both
-reference drivers send a single-chip command for a BM1373 to the chip's
-address shifted right by two (ESP-Miner `BM1372_COMMAND_ADDRESS_SHIFT`,
-NerdOS's per-chip writes), and WarpAxe did as they do. On the Naja Duo
+**A BM1373 answers to its own address, not the shifted one.** ESP-Miner
+sends a single-chip command for a BM1373 to the chip's address shifted
+right by two (`BM1372_COMMAND_ADDRESS_SHIFT`), and WarpAxe did as it does.
+(Corrected 2026-11-17: this page said NerdOS shifts too. It does not:
+NerdOS's per-chip writes go to `i * 16`, the full address,
+`components/bm1397/bm1373.cpp`, develop 3f73884.) On the Naja Duo
 (two BM1373, ESP-Miner's init, chips at 0x00 and 0x10, 327 MHz) the
 first run with offsets gave, as the mean of each chip's hash counter
 over four minutes:
