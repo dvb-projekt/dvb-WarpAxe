@@ -610,7 +610,7 @@ fn store_chip_offsets(v: &serde_json::Value) {
     let by = config::OffsetsBy::from_patch(v.get("chipFreqOffsetsBy").and_then(|b| b.as_str()));
     if config::set_chip_offsets(new, by) {
         miner::request_chip_offsets();
-        if by != config::OffsetsBy::WarpTune {
+        if by != config::OffsetsBy::WarpTune && api_event_due(by) {
             crate::events::record(
                 "chain",
                 warpaxe_diag::events::detail::chip_clocks(
@@ -621,6 +621,22 @@ fn store_chip_offsets(v: &serde_json::Value) {
             crate::events::flush();
         }
     }
+}
+
+/// An event for a change of the clock offsets: always for one by hand;
+/// through the API at most every ten minutes, so a tuner that does not
+/// say it is WarpTune (`chipFreqOffsetsBy`) cannot fill the 32 events.
+fn api_event_due(by: config::OffsetsBy) -> bool {
+    static LAST: std::sync::Mutex<Option<std::time::Instant>> = std::sync::Mutex::new(None);
+    if by == config::OffsetsBy::Manual {
+        return true;
+    }
+    let mut last = LAST.lock().unwrap();
+    if last.is_some_and(|t| t.elapsed() < Duration::from_secs(600)) {
+        return false;
+    }
+    *last = Some(std::time::Instant::now());
+    true
 }
 
 /// A clock below [`board::MIN_FREQUENCY_MHZ`], or one the chip's PLL

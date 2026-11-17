@@ -47,12 +47,14 @@ then seconds since 1970) and reports both in `/api/system/info`:
 
 | Field | Meaning |
 |---|---|
-| `chipFreqOffsetsBy` | `"manual"`, `"warptune"` or `"api"` (also for offsets from before v0.1.47) |
+| `chipFreqOffsetsBy` | `"manual"`, `"warptune"` or `"api"`; null for offsets from before v0.1.47 |
 | `chipFreqOffsetsAt` | seconds since 1970 of the last change; null when the clock was not set then, or before v0.1.47 |
 
 A change by hand or through the API also goes into the event log
-(`chip_clocks`, `chip_clocks_api`, with the new list). WarpTune's changes
-do not: while it searches it changes the offsets every few minutes, and
+(`chip_clocks`, `chip_clocks_api`, with the chips that have an offset as
+`chip:MHz`, e.g. `1:-25 3:-10`); one through the API at most every ten
+minutes, so a tuner that does not name itself cannot fill the log either.
+WarpTune's changes do not go in: while it searches it changes the offsets every few minutes, and
 the event log keeps 32 events, so boots and crashes would be pushed out.
 WarpTune keeps its own journal, and the patch record
 (`/api/v1/diagnostics` → `configPatches`) has every change with its sender.

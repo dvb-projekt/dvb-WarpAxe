@@ -628,7 +628,7 @@
   "cfo_by_api": "via l’API",
   "cfo_ago": "il y a {t}",
   "cfo_base": "base",
-  "cfo_live": "{f} MHz · {e} d'erreurs",
+  "cfo_live": "{f} MHz · {e} d’erreurs",
   "pg_clock": "Horloge",
   "os_clock": "Horloge · date · hashrate",
   "night": "Horloge et mode nuit",

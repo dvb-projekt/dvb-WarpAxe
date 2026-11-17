@@ -623,7 +623,7 @@
   "blk_st_unknown": "Desconocido: el minero estuvo desconectado entretanto y aquí ya no se puede comprobar",
   "evd_block_unknown": "bloque {h}: estado desconocido, el minero estuvo desconectado entretanto y ya no se puede comprobar",
   "cfo": "Frecuencia por chip",
-  "cfo_by_warptune": "de WarpTune",
+  "cfo_by_warptune": "por WarpTune",
   "cfo_by_manual": "a mano",
   "cfo_by_api": "por la API",
   "cfo_ago": "hace {t}",

@@ -356,12 +356,15 @@ pub mod detail {
     }
 
     /// The clock offsets per chip were changed by hand (the web UI) or
-    /// through the API by another client than WarpTune: the new list
-    /// (MHz per chip, empty = every chip at the chain's clock).
+    /// through the API by another client than WarpTune: the chips with
+    /// an offset as `chip:MHz` (`1:-25 3:-10`; empty = every chip at the
+    /// chain's clock), so eight slowed chips still fit the field.
     pub fn chip_clocks(offsets: &[i16], manual: bool) -> Detail {
         let list = offsets
             .iter()
-            .map(|o| o.to_string())
+            .enumerate()
+            .filter(|(_, &o)| o != 0)
+            .map(|(k, o)| format!("{k}:{o}"))
             .collect::<Vec<_>>()
             .join(" ");
         coded(
@@ -751,8 +754,8 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "chip_clocks" | "chip_clocks_api" => {
             let o = g("o");
             let by = if c == "chip_clocks" { "by hand" } else { "through the API" };
-            if o.is_empty() || o.split(' ').all(|x| x == "0") {
-                format!("clock per chip off {by}: every chip at the chain's clock")
+            if o.is_empty() || o == "–" {
+                format!("clock per chip turned off {by}: every chip at the chain's clock")
             } else {
                 format!("clock per chip set {by}: {o} MHz")
             }
@@ -1328,18 +1331,23 @@ mod tests {
         assert_eq!(set.c, "chip_clocks");
         assert_eq!(
             english(set.c, &set.p).unwrap(),
-            "clock per chip set by hand: 0 -10 0 -20 MHz"
+            "clock per chip set by hand: 1:-10 3:-20 MHz"
         );
         let off = detail::chip_clocks(&[], false);
         assert_eq!(off.c, "chip_clocks_api");
         assert_eq!(
             english(off.c, &off.p).unwrap(),
-            "clock per chip off through the API: every chip at the chain's clock"
+            "clock per chip turned off through the API: every chip at the chain's clock"
         );
         let zeros = detail::chip_clocks(&[0, 0], true);
         assert!(english(zeros.c, &zeros.p)
             .unwrap()
-            .starts_with("clock per chip off by hand"));
+            .starts_with("clock per chip turned off by hand"));
+        // Sixteen slowed chips: the field is cut, the event still reads as set.
+        let many = detail::chip_clocks(&[-25; 16], true);
+        assert!(english(many.c, &many.p)
+            .unwrap()
+            .starts_with("clock per chip set by hand: 0:-25 1:-25"));
     }
 
     #[test]

@@ -770,6 +770,8 @@ static CHIP_OFFSETS_SET: Mutex<OffsetsSet> = Mutex::new(OffsetsSet::UNKNOWN);
 /// the offsets (docs/18).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum OffsetsBy {
+    /// Nothing stored: offsets from before v0.1.47, or none ever set.
+    Unknown,
     Api,
     Manual,
     WarpTune,
@@ -785,13 +787,14 @@ impl OffsetsBy {
         }
     }
 
-    /// As the API names it.
-    pub fn name(self) -> &'static str {
-        match self {
+    /// As the API names it; `None` when unknown.
+    pub fn name(self) -> Option<&'static str> {
+        Some(match self {
+            Self::Unknown => return None,
             Self::Api => "api",
             Self::Manual => "manual",
             Self::WarpTune => "warptune",
-        }
+        })
     }
 }
 
@@ -807,7 +810,7 @@ impl OffsetsSet {
     const BYTES: usize = 5;
     /// Nothing stored: offsets from before v0.1.47, or none ever set.
     const UNKNOWN: Self = Self {
-        by: OffsetsBy::Api,
+        by: OffsetsBy::Unknown,
         unix: 0,
     };
 
@@ -815,6 +818,7 @@ impl OffsetsSet {
     fn bytes(&self) -> [u8; Self::BYTES] {
         let [a, b, c, d] = self.unix.to_le_bytes();
         let by = match self.by {
+            OffsetsBy::Unknown => 0xFF,
             OffsetsBy::Api => 0,
             OffsetsBy::Manual => 1,
             OffsetsBy::WarpTune => 2,
@@ -827,9 +831,10 @@ impl OffsetsSet {
             return Self::UNKNOWN;
         };
         let by = match by {
+            0 => OffsetsBy::Api,
             1 => OffsetsBy::Manual,
             2 => OffsetsBy::WarpTune,
-            _ => OffsetsBy::Api,
+            _ => OffsetsBy::Unknown,
         };
         Self {
             by,
