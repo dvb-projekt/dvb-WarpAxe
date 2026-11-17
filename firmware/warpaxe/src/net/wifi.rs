@@ -132,6 +132,7 @@ fn run(
     let mut next_try = Instant::now();
     let mut ip: Option<String> = None;
     let mut ip6_started = false;
+    let mut ip6_logged = false;
     loop {
         let connected = wifi.is_connected().unwrap_or(false);
         if was_connected && !connected {
@@ -139,6 +140,7 @@ fn run(
             super::set_wifi(false, None, None);
             ip = None;
             ip6_started = false;
+            ip6_logged = false;
             super::set_ip6_started(None);
         }
         was_connected = connected;
@@ -197,20 +199,37 @@ fn run(
             // the global and unique-local ones a few seconds later. Once
             // per association, retried while the netif is not up yet
             // (ESP_FAIL), and also when the setting is switched on later.
-            if !ip6_started && crate::config::get().ipv6 {
-                let handle = esp_idf_svc::handle::RawHandle::handle(wifi.wifi().sta_netif());
-                let r = unsafe { esp_idf_svc::sys::esp_netif_create_ip6_linklocal(handle) };
-                if r == 0 {
-                    ip6_started = true;
-                    super::set_ip6_started(Some(Instant::now()));
-                    log::info!("wifi: IPv6 link-local up, waiting for the router's prefix");
+            if !ip6_started {
+                ip6_started = start_ip6(wifi.wifi().sta_netif());
+            }
+            if ip6_started && !ip6_logged {
+                if let Some(t) = super::ip6_started_ago() {
+                    if !super::dial::global_ipv6().is_empty() {
+                        log::info!(
+                            "wifi: IPv6 address from the router after {} ms",
+                            t.as_millis()
+                        );
+                        ip6_logged = true;
+                    }
                 }
             }
         } else if has_ssid && Instant::now() >= next_try && !(hotspot.is_open() && ap_clients() > 0)
         {
             // Not while someone is on the hotspot: an attempt scans every
             // channel for ~20 s and drops the phone that is setting it up.
-            match wifi.connect().and_then(|_| wifi.wait_netif_up()) {
+            // SLAAC as soon as the station is associated, not after DHCP:
+            // the router's prefix then arrives about when the IPv4 address
+            // does, before the first pool connection (`net::dial`).
+            match wifi.connect().and_then(|_| {
+                for _ in 0..20 {
+                    if ip6_started || start_ip6(wifi.wifi().sta_netif()) {
+                        ip6_started = true;
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                wifi.wait_netif_up()
+            }) {
                 Ok(()) => continue, // picked up at the top of the loop
                 Err(e) => {
                     log::warn!("wifi: connect failed: {e}");
@@ -227,6 +246,23 @@ fn run(
         }
         std::thread::sleep(Duration::from_secs(2));
     }
+}
+
+/// IPv6 (`docs/17`): create the station's link-local address, which
+/// starts SLAAC (LWIP_IPV6_AUTOCONFIG); the router's advertisement then
+/// adds the global and unique-local addresses. Off with the setting;
+/// false while the netif is not up yet (ESP_FAIL), so the caller retries.
+fn start_ip6(netif: &EspNetif) -> bool {
+    if !crate::config::get().ipv6 {
+        return false;
+    }
+    let handle = esp_idf_svc::handle::RawHandle::handle(netif);
+    if unsafe { esp_idf_svc::sys::esp_netif_create_ip6_linklocal(handle) } != 0 {
+        return false;
+    }
+    super::set_ip6_started(Some(Instant::now()));
+    log::info!("wifi: IPv6 link-local up, waiting for the router's prefix");
+    true
 }
 
 /// `WarpAxe-XXXX` from the soft-AP MAC and a password from the hardware
