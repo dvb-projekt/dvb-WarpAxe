@@ -344,8 +344,14 @@ pub fn system_info() -> serde_json::Value {
         .map(|a| serde_json::Value::from(a.to_string()))
         .collect();
     v["poolAddress"] = json!((!st.pool_ip.is_empty()).then(|| st.pool_ip.clone()));
-    v["poolAddressFamily"] = json!((!st.pool_ip.is_empty())
-        .then(|| if st.pool_ip.contains(':') { "IPv6" } else { "IPv4" }));
+    v["ipv6Refused"] = json!(IPV6_REFUSED.load(Ordering::Relaxed));
+    v["poolAddressFamily"] = json!(
+        (!st.pool_ip.is_empty()).then(|| if st.pool_ip.contains(':') {
+            "IPv6"
+        } else {
+            "IPv4"
+        })
+    );
     v["stratumTLSPending"] = json!(tls_pending_main.as_ref().map(|p| p.key.clone()));
     v["stratumTLSKeyChanged"] = json!(tls_pending_main.as_ref().is_some_and(|p| p.changed));
     v["fallbackStratumTLSPending"] = json!(tls_pending_fb.as_ref().map(|p| p.key.clone()));
@@ -870,11 +876,48 @@ pub fn handler_count() -> (usize, usize) {
     (HANDLERS.load(Ordering::Relaxed), MAX_URI_HANDLERS)
 }
 
+/// Connections refused by [`local_only`] since boot.
+pub static IPV6_REFUSED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// The web UI and API have no login: they answer the local network only.
+/// With IPv4 the router's NAT keeps the rest of the internet out; a
+/// global IPv6 address (docs/17) has no NAT in front, only the router's
+/// firewall. So a connection from IPv6 is served when it comes from the
+/// link (fe80::/10), a unique-local address (fc00::/7) or the miner's own
+/// /64; IPv4 (also as ::ffff:a.b.c.d on the dual-stack socket) always.
+/// Everything else is closed before a byte is read.
+unsafe extern "C" fn local_only(
+    _hd: esp_idf_svc::sys::httpd_handle_t,
+    fd: i32,
+) -> esp_idf_svc::sys::esp_err_t {
+    use esp_idf_svc::sys;
+    let mut buf = [0u8; 32];
+    let mut len = buf.len() as sys::socklen_t;
+    if sys::lwip_getpeername(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) != 0 {
+        return sys::ESP_OK;
+    }
+    if u32::from(buf[1]) != sys::AF_INET6 {
+        return sys::ESP_OK;
+    }
+    let mut a = [0u8; 16];
+    a.copy_from_slice(&buf[8..24]);
+    let peer = std::net::Ipv6Addr::from(a);
+    if warpaxe_stratum::dial::ipv6_peer_is_local(peer, &crate::net::dial::global_ipv6()) {
+        return sys::ESP_OK;
+    }
+    let n = IPV6_REFUSED.fetch_add(1, Ordering::Relaxed);
+    if n < 10 || n % 100 == 0 {
+        log::warn!("api: refused {peer}: not on the local network (IPv6, docs/17)");
+    }
+    sys::ESP_FAIL
+}
+
 pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
     let mut http = EspHttpServer::new(&Configuration {
         stack_size: 12 * 1024,
         max_uri_handlers: MAX_URI_HANDLERS,
         uri_match_wildcard: true,
+        open_fn: Some(local_only),
         ..Default::default()
     })?;
     let mut counted = Counted(&mut http);

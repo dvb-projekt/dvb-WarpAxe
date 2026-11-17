@@ -85,7 +85,10 @@ impl Link {
     pub fn connect(host: &str, port: u16, tls: bool, pin: Option<Pin>) -> anyhow::Result<Link> {
         if !tls {
             let (s, addr) = crate::net::dial::dial(host, port, Duration::from_secs(10))?;
-            log::info!("stratum: connected to {} ({addr})", warpaxe_stratum::dial::host_port(host, port));
+            log::info!(
+                "stratum: connected to {} ({addr})",
+                warpaxe_stratum::dial::host_port(host, port)
+            );
             s.set_read_timeout(Some(READ_TIMEOUT))?;
             if let Err(e) = s.set_nodelay(true) {
                 log::warn!("stratum: nodelay not set: {e}");
@@ -103,15 +106,15 @@ impl Link {
         if !crate::clock::trusted() {
             log::warn!("stratum: NTP has not set the clock yet, the pool certificate's dates are not checked");
         }
-        // The address that answers first (IPv6 or IPv4, `net::dial`);
-        // esp-tls then connects to that address, the name still going out
-        // as SNI and checked. esp-tls resolves names itself with
-        // AF_UNSPEC, which lwIP answers with the A records only. The probe
+        // The address to use (`net::dial::pick`: the only one, or the one
+        // that answers first between IPv6 and IPv4); esp-tls then connects
+        // to it, the name still going out as SNI and checked. esp-tls
+        // resolves names itself with AF_UNSPEC, which lwIP answers with
+        // the A records only. With several addresses the race's
         // connection closes before the TLS one opens: one extra TCP
-        // handshake per session, no data.
+        // handshake, no data; with one address (IPv4-only networks) none.
         let name = warpaxe_stratum::dial::pool_host(host);
-        let (probe, peer) = crate::net::dial::dial(host, port, Duration::from_secs(10))?;
-        drop(probe);
+        let peer = crate::net::dial::pick(host, port, Duration::from_secs(10))?;
         let target = peer.ip().to_string();
         let mut t = EspTls::new()?;
         let mut cfg = Config::new();
@@ -143,7 +146,9 @@ impl Link {
             );
         }
         if tls_trust::pool_outcome().1 {
-            log::info!("stratum: TLS up ({peer}), certificate accepted by the pinned key for {name}");
+            log::info!(
+                "stratum: TLS up ({peer}), certificate accepted by the pinned key for {name}"
+            );
         } else {
             log::info!("stratum: TLS up ({peer}), certificate verified for {name}");
         }

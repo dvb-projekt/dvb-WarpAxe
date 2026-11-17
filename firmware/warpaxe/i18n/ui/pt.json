@@ -360,7 +360,7 @@
   "usbSubnet": "Endereço USB (192.168.x.1)",
   "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui.",
   "ipv6": "IPv6",
-  "ipv6_s": "Pools que oferecem IPv6 são acessados por IPv6, com o IPv4 começando um quarto de segundo depois. Em uma rede sem IPv6, nada muda. Vale após reiniciar.",
+  "ipv6_s": "Pools que oferecem IPv6 são acessados por IPv6, com o IPv4 começando um quarto de segundo depois. Em uma rede sem IPv6, nada muda.",
   "ipv6_addr": "Endereços",
   "ipv6_none": "O roteador ainda não forneceu um endereço IPv6.",
   "ota_aborted": "A última atualização não iniciou: o minerador voltou para esta versão.",

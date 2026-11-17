@@ -360,7 +360,7 @@
   "usbSubnet": "Adresse USB (192.168.x.1)",
   "usb_subnet_s": "Pour un deuxième WarpAxe sur le même ordinateur, indiquez ici un autre numéro.",
   "ipv6": "IPv6",
-  "ipv6_s": "Les pools qui proposent l’IPv6 sont joints en IPv6, l’IPv4 démarrant un quart de seconde plus tard. Sur un réseau sans IPv6, rien ne change. Prend effet après un redémarrage.",
+  "ipv6_s": "Les pools qui proposent l’IPv6 sont joints en IPv6, l’IPv4 démarrant un quart de seconde plus tard. Sur un réseau sans IPv6, rien ne change.",
   "ipv6_addr": "Adresses",
   "ipv6_none": "Pas (encore) d’adresse IPv6 attribuée par le routeur.",
   "ota_aborted": "La dernière mise à jour n’a pas démarré : le mineur est revenu à cette version.",

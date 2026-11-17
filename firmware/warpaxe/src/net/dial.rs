@@ -6,19 +6,33 @@
 //! a name has both, so the two families are asked for separately. AAAA is
 //! only asked for when the setting allows IPv6 and the station holds a
 //! global or unique-local IPv6 address: an IPv4-only network pays nothing.
+//! A station with only a unique-local address (a router without IPv6
+//! upstream) uses IPv6 for unique-local pools only. A name whose AAAA
+//! lookup came back empty or slow is not asked again for half an hour, so
+//! a resolver that drops AAAA queries costs one wait, not one per
+//! reconnect. IPv4 is looked up first and never waits for AAAA.
 
 use std::ffi::CString;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::os::fd::FromRawFd;
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::sys;
 use warpaxe_stratum::dial::{interleave, pool_host, Race, Step};
 
-/// Most addresses tried per family (lwIP keeps at most this many per
-/// lookup with the default `DNS_MAX_HOST_IP` anyway).
+/// Most addresses kept per family. lwIP's resolver keeps
+/// `CONFIG_LWIP_DNS_MAX_HOST_IP` per name (1 in this build), so in
+/// practice the race is one IPv6 against one IPv4 address.
 const PER_FAMILY: usize = 4;
+/// A name whose AAAA lookup came back empty, or took longer than
+/// [`AAAA_SLOW`], is not asked for AAAA again for this long.
+const AAAA_SKIP: Duration = Duration::from_secs(30 * 60);
+const AAAA_SLOW: Duration = Duration::from_secs(2);
+/// Names to skip AAAA for, with when that ends (a few entries at most:
+/// the main and the fallback pool).
+static NO_AAAA: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
 
 /// One resolved address, as lwIP wants it for `connect`.
 struct Cand {
@@ -28,10 +42,9 @@ struct Cand {
     family: i32,
 }
 
-/// Whether pool connections may use IPv6 now: the setting on and the
-/// station holding a global or unique-local IPv6 address.
-pub fn ipv6_usable() -> bool {
-    crate::config::get().ipv6 && !global_ipv6().is_empty()
+/// fc00::/7.
+fn is_ula(a: &Ipv6Addr) -> bool {
+    (a.segments()[0] & 0xfe00) == 0xfc00
 }
 
 /// The station's IPv6 addresses that reach beyond the link: global
@@ -42,10 +55,12 @@ pub fn global_ipv6() -> Vec<Ipv6Addr> {
     if netif.is_null() {
         return Vec::new();
     }
-    let mut buf: [sys::esp_ip6_addr_t; 3] = unsafe { core::mem::zeroed() };
+    // ESP-IDF writes up to LWIP_IPV6_NUM_ADDRESSES entries, unbounded.
+    const N: usize = sys::LWIP_IPV6_NUM_ADDRESSES as usize;
+    let mut buf: [sys::esp_ip6_addr_t; N] = unsafe { core::mem::zeroed() };
     let n = unsafe { sys::esp_netif_get_all_preferred_ip6(netif, buf.as_mut_ptr()) };
     buf.iter()
-        .take(n.clamp(0, 3) as usize)
+        .take(n.clamp(0, N as i32) as usize)
         .map(|a| {
             let mut b = [0u8; 16];
             for (i, w) in a.addr.iter().enumerate() {
@@ -116,20 +131,52 @@ fn decode(raw: &[u8; 28]) -> Option<SocketAddr> {
     }
 }
 
-/// The addresses to try for `host:port`, in order: a literal alone; a
-/// name's IPv6 addresses (when usable) and IPv4 addresses alternating.
+/// The addresses to try for `host:port`, in order: a literal alone (an
+/// IPv6 literal is taken as typed, whatever the setting); a name's IPv6
+/// addresses (when usable) and IPv4 addresses alternating.
 fn candidates(host: &str, port: u16) -> Vec<Cand> {
     let host = pool_host(host);
     let literal = lookup(host, port, sys::AF_UNSPEC, true);
     if !literal.is_empty() {
         return literal;
     }
-    let v6 = if ipv6_usable() {
-        lookup(host, port, sys::AF_INET6, false)
+    let v4 = lookup(host, port, sys::AF_INET, false);
+    let own = if crate::config::get().ipv6 {
+        global_ipv6()
     } else {
         Vec::new()
     };
-    interleave(v6, lookup(host, port, sys::AF_INET, false))
+    let now = Instant::now();
+    let skip = {
+        let mut no = NO_AAAA.lock().unwrap();
+        no.retain(|(_, until)| *until > now);
+        no.iter().any(|(h, _)| h == host)
+    };
+    let mut v6 = Vec::new();
+    if !own.is_empty() && !skip {
+        let t = Instant::now();
+        v6 = lookup(host, port, sys::AF_INET6, false);
+        let took = t.elapsed();
+        if v6.is_empty() || took > AAAA_SLOW {
+            log::info!(
+                "stratum: AAAA for {host}: {} in {} ms, not asked again for {} min",
+                v6.len(),
+                took.as_millis(),
+                AAAA_SKIP.as_secs() / 60
+            );
+            NO_AAAA
+                .lock()
+                .unwrap()
+                .push((host.to_string(), now + AAAA_SKIP));
+        }
+        // Only unique-local addresses of our own: a global pool address
+        // has no route (a router without IPv6 upstream), so only
+        // unique-local pools are tried over IPv6.
+        if !own.iter().any(|a| !is_ula(a)) {
+            v6.retain(|c| matches!(c.addr.ip(), IpAddr::V6(a) if is_ula(&a)));
+        }
+    }
+    interleave(v6, v4)
 }
 
 /// A started, still pending connect.
@@ -181,7 +228,29 @@ fn so_error(fd: i32) -> i32 {
 /// rest are closed. The stream comes back blocking, as `TcpStream`
 /// expects, with the address it went to.
 pub fn dial(host: &str, port: u16, budget: Duration) -> anyhow::Result<(TcpStream, SocketAddr)> {
+    race(host, port, &candidates(host, port), budget)
+}
+
+/// The address a TLS session should go to: with one address (any
+/// IPv4-only network, any literal) that address without a connect; with
+/// several, the one that answers first (the race's connection is closed
+/// again, esp-tls opens its own). esp-tls gets the literal and the name
+/// separately, as SNI.
+pub fn pick(host: &str, port: u16, budget: Duration) -> anyhow::Result<SocketAddr> {
     let cands = candidates(host, port);
+    match cands.as_slice() {
+        [] => anyhow::bail!("dns: no address for {}", pool_host(host)),
+        [one] => Ok(one.addr),
+        _ => race(host, port, &cands, budget).map(|(_probe, addr)| addr),
+    }
+}
+
+fn race(
+    host: &str,
+    port: u16,
+    cands: &[Cand],
+    budget: Duration,
+) -> anyhow::Result<(TcpStream, SocketAddr)> {
     if cands.is_empty() {
         anyhow::bail!("dns: no address for {}", pool_host(host));
     }
@@ -227,7 +296,13 @@ pub fn dial(host: &str, port: u16, budget: Duration) -> anyhow::Result<(TcpStrea
             })
             .collect();
         let n = unsafe { sys::poll(fds.as_mut_ptr(), fds.len() as _, wait_ms.min(1000) as i32) };
-        if n <= 0 {
+        if n < 0 {
+            // A select error: not a refusal; do not spin on it.
+            log::warn!("stratum: poll failed: {}", io::Error::last_os_error());
+            std::thread::sleep(Duration::from_millis(50));
+            continue;
+        }
+        if n == 0 {
             continue;
         }
         let mut done: Option<usize> = None;
@@ -243,9 +318,13 @@ pub fn dial(host: &str, port: u16, budget: Duration) -> anyhow::Result<(TcpStrea
             }
             failed.push(k);
             let c = &cands[pending[k].idx];
-            let e = io::Error::from_raw_os_error(err.max(0));
-            log::info!("stratum: {} refused: {e}", c.addr);
-            last_err = Some(format!("{}: {e}", c.addr));
+            let why = if err > 0 {
+                io::Error::from_raw_os_error(err).to_string()
+            } else {
+                "connect failed (no socket error reported)".to_string()
+            };
+            log::info!("stratum: {} refused: {why}", c.addr);
+            last_err = Some(format!("{}: {why}", c.addr));
         }
         if let Some(k) = done {
             let win = pending.remove(k);

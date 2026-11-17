@@ -131,12 +131,14 @@ fn run(
     let mut was_connected = false;
     let mut next_try = Instant::now();
     let mut ip: Option<String> = None;
+    let mut ip6_started = false;
     loop {
         let connected = wifi.is_connected().unwrap_or(false);
         if was_connected && !connected {
             log::warn!("wifi: link lost");
             super::set_wifi(false, None, None);
             ip = None;
+            ip6_started = false;
         }
         was_connected = connected;
 
@@ -187,19 +189,21 @@ fn run(
                     .map(|i| i.ip.to_string())
                     .ok();
                 log::info!("wifi: connected, ip {ip:?}");
-                // IPv6 (`docs/17`): the link-local address starts SLAAC
-                // (LWIP_IPV6_AUTOCONFIG); the router's advertisement then
-                // adds the global and unique-local ones a few seconds
-                // later. Once per association; off with the setting.
-                if crate::config::get().ipv6 {
-                    let handle = esp_idf_svc::handle::RawHandle::handle(wifi.wifi().sta_netif());
-                    let r = unsafe { esp_idf_svc::sys::esp_netif_create_ip6_linklocal(handle) };
-                    if r != 0 {
-                        log::warn!("wifi: IPv6 link-local not created: {r}");
-                    }
-                }
             }
             super::set_wifi(true, ip.clone(), rssi());
+            // IPv6 (`docs/17`): the link-local address starts SLAAC
+            // (LWIP_IPV6_AUTOCONFIG); the router's advertisement then adds
+            // the global and unique-local ones a few seconds later. Once
+            // per association, retried while the netif is not up yet
+            // (ESP_FAIL), and also when the setting is switched on later.
+            if !ip6_started && crate::config::get().ipv6 {
+                let handle = esp_idf_svc::handle::RawHandle::handle(wifi.wifi().sta_netif());
+                let r = unsafe { esp_idf_svc::sys::esp_netif_create_ip6_linklocal(handle) };
+                if r == 0 {
+                    ip6_started = true;
+                    log::info!("wifi: IPv6 link-local up, waiting for the router's prefix");
+                }
+            }
         } else if has_ssid && Instant::now() >= next_try && !(hotspot.is_open() && ap_clients() > 0)
         {
             // Not while someone is on the hotspot: an attempt scans every

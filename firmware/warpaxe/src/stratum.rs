@@ -500,7 +500,7 @@ fn run() {
                 }),
             )
         };
-        let pool = format!("{host}:{port}");
+        let pool = warpaxe_stratum::dial::host_port(&host, port);
         let sv2 = v2.is_some();
         *SESSION_USER.lock().unwrap() = user.clone();
         // Without a network a pool cannot answer: such an attempt says
@@ -637,7 +637,8 @@ fn probe_primary() {
         let cfg = config::get();
         // Over IPv6 or IPv4 like the session itself (`net::dial`).
         let reachable =
-            crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5)).is_ok();
+            crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5))
+                .is_ok();
         if reachable {
             if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
                 BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
@@ -688,7 +689,10 @@ fn session(
     }
     let pinned = tls && crate::tls_trust::pool_outcome().1;
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
-    let ip = stream.peer().map(|a| a.ip().to_string()).unwrap_or_default();
+    let ip = stream
+        .peer()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
     update(|s| s.pool_ip = ip);
     // Settings changed while this session was connecting (DNS, connect,
     // TLS): `reconnect` found no stream to shut, so end here and let
@@ -1061,7 +1065,10 @@ fn session_v2(
     let stream = Arc::new(Link::connect(host, port, false, None)?);
 
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
-    let ip = stream.peer().map(|a| a.ip().to_string()).unwrap_or_default();
+    let ip = stream
+        .peer()
+        .map(|a| a.ip().to_string())
+        .unwrap_or_default();
     update(|s| s.pool_ip = ip);
     // Settings changed while this session was connecting (DNS, connect,
     // TLS): `reconnect` found no stream to shut, so end here and let

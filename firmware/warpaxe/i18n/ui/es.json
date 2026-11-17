@@ -360,7 +360,7 @@
   "usbSubnet": "Dirección USB (192.168.x.1)",
   "usb_subnet_s": "Un segundo WarpAxe en el mismo ordenador necesita aquí otro número.",
   "ipv6": "IPv6",
-  "ipv6_s": "Los pools que ofrecen IPv6 se conectan por IPv6; IPv4 arranca un cuarto de segundo después. En una red sin IPv6 no cambia nada. Se aplica tras reiniciar.",
+  "ipv6_s": "Los pools que ofrecen IPv6 se conectan por IPv6; IPv4 arranca un cuarto de segundo después. En una red sin IPv6 no cambia nada.",
   "ipv6_addr": "Direcciones",
   "ipv6_none": "El router no ha asignado (todavía) ninguna dirección IPv6.",
   "ota_aborted": "La última actualización no arrancó: el minero volvió a esta versión.",

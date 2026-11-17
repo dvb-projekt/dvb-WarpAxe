@@ -95,6 +95,9 @@ pub struct Configuration {
     pub server_certificate: Option<X509<'static>>,
     #[cfg(esp_idf_esp_https_server_enable)]
     pub private_key: Option<X509<'static>>,
+    /// WARPAXE PATCH 3: called for every new connection before it is
+    /// served (`httpd_config_t::open_fn`); anything but `ESP_OK` closes it.
+    pub open_fn: httpd_open_func_t,
 }
 
 impl Default for Configuration {
@@ -118,6 +121,7 @@ impl Default for Configuration {
             server_certificate: None,
             #[cfg(esp_idf_esp_https_server_enable)]
             private_key: None,
+            open_fn: None,
         }
     }
 }
@@ -155,7 +159,7 @@ impl From<&Configuration> for Newtype<httpd_config_t> {
             global_user_ctx_free_fn: None,
             global_transport_ctx: ptr::null_mut(),
             global_transport_ctx_free_fn: None,
-            open_fn: None,
+            open_fn: conf.open_fn,
             close_fn: None,
             uri_match_fn: conf.uri_match_wildcard.then_some(httpd_uri_match_wildcard),
             // Latest 4.4 and master branches have options to control SO linger,

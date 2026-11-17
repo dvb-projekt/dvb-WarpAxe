@@ -1,7 +1,7 @@
 # esp-idf-svc 0.51.0, patched for WarpAxe
 
 Unchanged copy of the crates.io release `esp-idf-svc 0.51.0`
-(MIT OR Apache-2.0, https://github.com/esp-rs/esp-idf-svc) with two changes.
+(MIT OR Apache-2.0, https://github.com/esp-rs/esp-idf-svc) with three changes.
 
 ## 1. `src/wifi.rs`
 
@@ -26,3 +26,14 @@ Why: the firmware's pool connection attaches `tls_trust::attach`, which
 installs a verify callback that also trusts a root of the pinned bundle the
 server sends along, cross-signed by a root the bundle no longer has
 (crates/trust). Added 2026-11-04 for v0.1.40.
+
+## 3. `src/http/server.rs`
+
+`http::server::Configuration` has a new field `open_fn`, passed through to
+`httpd_config_t::open_fn` (`None`, the default, as before).
+
+Why: with IPv6 (docs/17) the miner holds a global address, and its web UI
+and API, which have no login, would answer anyone the router's IPv6
+firewall lets through. NAT used to hide them. The firmware's open
+function refuses connections from global IPv6 addresses outside the
+miner's own /64 (api.rs `local_only`). Added 2026-11-17 for v0.1.46.

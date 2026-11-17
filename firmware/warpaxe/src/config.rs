@@ -197,8 +197,10 @@ pub struct Config {
     /// from the router (SLAAC) and a pool with AAAA records is tried over
     /// IPv6 first, IPv4 a quarter second later (Happy Eyeballs,
     /// `net::dial`). On by default; an IPv4-only network never tries
-    /// IPv6. Off: pools only over IPv4 at once; the address itself goes
-    /// at the next start. `docs/17`.
+    /// IPv6. Switched on, the address follows within seconds. Off: pool
+    /// names only over IPv4 at once (a pool typed as an IPv6 literal is
+    /// still used as typed); the address itself goes at the next start.
+    /// `docs/17`.
     #[serde(rename = "ipv6")]
     pub ipv6: bool,
     /// The rated output of the power supply that feeds this miner, whole

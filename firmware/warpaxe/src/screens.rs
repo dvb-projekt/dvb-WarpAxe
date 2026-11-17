@@ -1171,7 +1171,7 @@ fn footer(c: &mut Canvas, kind: &str, v: &Live) {
             },
             255,
         );
-        let host = st.pool.split(':').next().unwrap_or("").to_string();
+        let host = warpaxe_stratum::dial::host_of(&st.pool).to_string();
         let w = c.text(&MONO11, 20, 160, gfx::MUTE, &host, Align::Left);
         let mut end = 20 + w;
         if st.tls || st.sv2 {
@@ -1450,7 +1450,7 @@ fn clock_page(c: &mut Canvas, pos: usize, total: usize) {
         None => {
             // The host without a "pool." or "stratum." in front, cut to
             // the column (about 92 px) so it never runs into the next.
-            let host = st.pool.split(':').next().unwrap_or("");
+            let host = warpaxe_stratum::dial::host_of(&st.pool);
             let host = host
                 .strip_prefix("pool.")
                 .or_else(|| host.strip_prefix("stratum."))
@@ -2464,7 +2464,7 @@ fn oled_slide(o: &mut Oled, name: &str) {
     if matches!(name, "pool" | "block" | "wifi") {
         let (a, b2) = match name {
             "pool" => (
-                st.pool.split(':').next().unwrap_or("").to_uppercase(),
+                warpaxe_stratum::dial::host_of(&st.pool).to_uppercase(),
                 n.wifi_ip.or(n.usb_ip).unwrap_or_default(),
             ),
             "block" => (

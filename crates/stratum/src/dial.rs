@@ -40,6 +40,31 @@ pub fn host_port(host: &str, port: u16) -> String {
     }
 }
 
+/// The host back out of a [`host_port`] string, for a display that has
+/// no room for the port: `[2001:db8::1]:3333` gives `2001:db8::1`,
+/// `pool.example.org:3333` gives `pool.example.org`.
+pub fn host_of(host_port: &str) -> &str {
+    match host_port.strip_prefix('[') {
+        Some(rest) => rest.split(']').next().unwrap_or(rest),
+        None => host_port.split(':').next().unwrap_or(host_port),
+    }
+}
+
+/// Whether an IPv6 peer of the web UI counts as local: the link
+/// (fe80::/10), unique local (fc00::/7), loopback, an IPv4 address on the
+/// dual-stack socket (::ffff:a.b.c.d), or the same /64 as one of `own`
+/// (the miner's global addresses). Everything else is the internet.
+pub fn ipv6_peer_is_local(peer: core::net::Ipv6Addr, own: &[core::net::Ipv6Addr]) -> bool {
+    let seg = peer.segments();
+    let o = peer.octets();
+    let v4_mapped = o[..10].iter().all(|&b| b == 0) && o[10] == 0xff && o[11] == 0xff;
+    v4_mapped
+        || peer.is_loopback()
+        || (seg[0] & 0xffc0) == 0xfe80
+        || (seg[0] & 0xfe00) == 0xfc00
+        || own.iter().any(|a| a.segments()[..4] == seg[..4])
+}
+
 /// The order of the attempts: IPv6 and IPv4 addresses alternating,
 /// IPv6 first (RFC 8305 §4, "first address family count" 1). Either list
 /// may be empty.
@@ -153,6 +178,31 @@ mod tests {
         assert_eq!(host_port("[2001:db8::1]", 3333), "[2001:db8::1]:3333");
         assert_eq!(host_port("pool.example.org", 3333), "pool.example.org:3333");
         assert_eq!(host_port("10.0.0.2", 21496), "10.0.0.2:21496");
+    }
+
+    #[test]
+    fn host_of_undoes_host_port() {
+        for h in ["2001:db8::1", "pool.example.org", "10.0.0.2"] {
+            assert_eq!(host_of(&host_port(h, 3333)), h);
+        }
+        assert_eq!(host_of("pool.example.org"), "pool.example.org");
+        assert_eq!(host_of(""), "");
+    }
+
+    #[test]
+    fn only_the_local_network_reaches_the_web_ui_over_ipv6() {
+        let p = |s: &str| s.parse::<core::net::Ipv6Addr>().unwrap();
+        let own = [p("2a02:db8:1:8d60:9a88:e0ff:fe03:55c8"), p("fd00:1::5")];
+        assert!(ipv6_peer_is_local(p("fe80::1"), &own));
+        assert!(ipv6_peer_is_local(p("fdc8:396b:5f6c::61"), &own));
+        assert!(ipv6_peer_is_local(p("::ffff:192.168.178.10"), &own));
+        assert!(ipv6_peer_is_local(p("::1"), &own));
+        assert!(ipv6_peer_is_local(p("2a02:db8:1:8d60::abcd"), &own));
+        // Same provider, another customer's /64; and the wider internet.
+        assert!(!ipv6_peer_is_local(p("2a02:db8:1:8d61::abcd"), &own));
+        assert!(!ipv6_peer_is_local(p("2600:9000:a612:9253::1"), &own));
+        // Without a global address of our own, no global peer is local.
+        assert!(!ipv6_peer_is_local(p("2a02:db8:1:8d60::abcd"), &[]));
     }
 
     #[test]
