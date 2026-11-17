@@ -380,6 +380,25 @@ for chip 0 (expected about 2085), errors 0.04 % and 0.07 %.
 The Naja Duo's midpoint measurement (item 8's last part) was dropped
 (Oliver, 2026-11-13): not needed.
 
+## Naja Duo at 550 MHz (2026-11-17, run by Warppool #2)
+
+Naja Duo .47, fac2589, 550 MHz / 1080 mV, WarpTune off, 40 minutes per
+step, offsets read back from `asicFrequencies` after every step:
+
+| Chip 1 offset | Chip clocks | Board power | Errors chip 0 / chip 1 | Hashes per W |
+|---|---|---|---|---|
+| none | 550 / 550 | 85.2 W | 0.02 % / 2.32 % | 1244 |
+| −15 MHz | 550 / 535 | 84.3 W | 0.02 % / 0.21 % | 1254 |
+| −25 MHz | 550 / 525 | 83.6 W | 0.03 % / 0.07 % | 1252 |
+
+For comparison, both chips at 550 MHz / 1100 mV gave about 1205 hashes
+per W. Chips 47/50 °C, regulator at most 54 °C, no rejected shares, no
+input sag; at −25 MHz chip 1's domains spread a little more (435–466
+GH/s). Chip 0 did not get worse: on this board the offset is carried by
+the slowed chip's share of the voltage, and −15 MHz on chip 1 is about
+4 % better per watt than raising the voltage by 20 mV for both. The
+series-board search in WarpTune builds on this.
+
 ## Still to run
 
 Run on 2026-11-12 (v0.1.44 test builds, NerdOctaxe on SV1+TLS, 625 MHz /
