@@ -399,6 +399,10 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     if let Ok(Some(bytes)) = nvs.get_raw(CHIP_OFFSETS_KEY, &mut buf) {
         *CHIP_OFFSETS.lock().unwrap() = ChipOffsets::from_bytes(bytes);
     }
+    let mut buf = [0u8; OffsetsSet::BYTES];
+    if let Ok(Some(bytes)) = nvs.get_raw(CHIP_OFFSETS_SET_KEY, &mut buf) {
+        *CHIP_OFFSETS_SET.lock().unwrap() = OffsetsSet::from_bytes(bytes);
+    }
     // Read once here, on the main task: a thread whose stack is in PSRAM must
     // not touch flash (the cache is off while it reads), and the update
     // watcher is such a thread (0.1.5 rebooted every minute once the record
@@ -729,21 +733,114 @@ pub fn chip_offsets() -> ChipOffsets {
     *CHIP_OFFSETS.lock().unwrap()
 }
 
-/// Store the offsets (already in their stored form); `false` and no
-/// flash write when they are the ones in force. A flash write otherwise:
-/// internal-stack callers only (the API).
-pub fn set_chip_offsets(new: ChipOffsets) -> bool {
+/// Store the offsets (already in their stored form) with who set them;
+/// `false` and no flash write when they are the ones in force. A flash
+/// write otherwise: internal-stack callers only (the API).
+pub fn set_chip_offsets(new: ChipOffsets, by: OffsetsBy) -> bool {
     let mut g = CHIP_OFFSETS.lock().unwrap();
     if *g == new {
         return false;
     }
+    let set = OffsetsSet {
+        by,
+        unix: crate::clock::unix_now()
+            .and_then(|t| u32::try_from(t).ok())
+            .unwrap_or(0),
+    };
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if nvs.set_raw(CHIP_OFFSETS_KEY, &new.bytes()).is_err() {
             log::warn!("config: storing the clock offsets failed");
         }
+        if nvs.set_raw(CHIP_OFFSETS_SET_KEY, &set.bytes()).is_err() {
+            log::warn!("config: storing who set the clock offsets failed");
+        }
     }
     *g = new;
+    *CHIP_OFFSETS_SET.lock().unwrap() = set;
     true
+}
+
+const CHIP_OFFSETS_SET_KEY: &str = "chipoffset";
+/// Who set the offsets in force and when, read once at boot like them.
+static CHIP_OFFSETS_SET: Mutex<OffsetsSet> = Mutex::new(OffsetsSet::UNKNOWN);
+
+/// Who sent the PATCH that set the clock offsets per chip
+/// (`chipFreqOffsetsBy`): the web UI says `manual`, WarpTune `warptune`;
+/// anything else, or nothing, is `api`. The web UI shows it next to
+/// the offsets (docs/18).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum OffsetsBy {
+    Api,
+    Manual,
+    WarpTune,
+}
+
+impl OffsetsBy {
+    /// From the PATCH's `chipFreqOffsetsBy`.
+    pub fn from_patch(v: Option<&str>) -> Self {
+        match v {
+            Some("manual") => Self::Manual,
+            Some("warptune") => Self::WarpTune,
+            _ => Self::Api,
+        }
+    }
+
+    /// As the API names it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Api => "api",
+            Self::Manual => "manual",
+            Self::WarpTune => "warptune",
+        }
+    }
+}
+
+/// Who set the offsets in force, and when (seconds since 1970; 0 when
+/// the clock was not set then, or before v0.1.47 stored it).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct OffsetsSet {
+    pub by: OffsetsBy,
+    pub unix: u32,
+}
+
+impl OffsetsSet {
+    const BYTES: usize = 5;
+    /// Nothing stored: offsets from before v0.1.47, or none ever set.
+    const UNKNOWN: Self = Self {
+        by: OffsetsBy::Api,
+        unix: 0,
+    };
+
+    /// As stored: who (0 api, 1 manual, 2 warptune), then the time, LE.
+    fn bytes(&self) -> [u8; Self::BYTES] {
+        let [a, b, c, d] = self.unix.to_le_bytes();
+        let by = match self.by {
+            OffsetsBy::Api => 0,
+            OffsetsBy::Manual => 1,
+            OffsetsBy::WarpTune => 2,
+        };
+        [by, a, b, c, d]
+    }
+
+    fn from_bytes(b: &[u8]) -> Self {
+        let Ok(&[by, a, b2, c, d]) = <&[u8; Self::BYTES]>::try_from(b) else {
+            return Self::UNKNOWN;
+        };
+        let by = match by {
+            1 => OffsetsBy::Manual,
+            2 => OffsetsBy::WarpTune,
+            _ => OffsetsBy::Api,
+        };
+        Self {
+            by,
+            unix: u32::from_le_bytes([a, b2, c, d]),
+        }
+    }
+}
+
+/// Who set the offsets in force, and when.
+pub fn chip_offsets_set() -> OffsetsSet {
+    *CHIP_OFFSETS_SET.lock().unwrap()
 }
 
 const SWARM_KEY: &str = "swarm";

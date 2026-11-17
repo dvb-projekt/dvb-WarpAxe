@@ -355,6 +355,25 @@ pub mod detail {
         coded("pools_back", &[("s", Value::from(off_s))])
     }
 
+    /// The clock offsets per chip were changed by hand (the web UI) or
+    /// through the API by another client than WarpTune: the new list
+    /// (MHz per chip, empty = every chip at the chain's clock).
+    pub fn chip_clocks(offsets: &[i16], manual: bool) -> Detail {
+        let list = offsets
+            .iter()
+            .map(|o| o.to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        coded(
+            if manual {
+                "chip_clocks"
+            } else {
+                "chip_clocks_api"
+            },
+            &[("o", name(&list))],
+        )
+    }
+
     /// A saved pool was made the main pool.
     pub fn pool_saved(pool: &str) -> Detail {
         coded("pool_saved", &[("p", name(pool))])
@@ -649,6 +668,8 @@ pub const CODES: &[&str] = &[
     "pools_out",
     "pools_back",
     "pool_saved",
+    "chip_clocks",
+    "chip_clocks_api",
     "boot",
     "boot_dump",
     "boot_old_dump",
@@ -727,6 +748,15 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "pools_out" => "no pool answers, chips off until one does".into(),
         "pools_back" => format!("a pool answers again after {} s, chips back on", g("s")),
         "pool_saved" => format!("saved pool {} used", g("p")),
+        "chip_clocks" | "chip_clocks_api" => {
+            let o = g("o");
+            let by = if c == "chip_clocks" { "by hand" } else { "through the API" };
+            if o.is_empty() || o.split(' ').all(|x| x == "0") {
+                format!("clock per chip off {by}: every chip at the chain's clock")
+            } else {
+                format!("clock per chip set {by}: {o} MHz")
+            }
+        }
         // The text is stored with the code (detail::boot).
         "boot" | "boot_dump" | "boot_old_dump" => return None,
         "rollback" => "the last update did not boot: back on the previous image".into(),
@@ -1290,6 +1320,26 @@ mod tests {
             assert_eq!(english(code, &Map::new()).is_some(), !stored, "{code}");
         }
         assert_eq!(english("not_a_code", &Map::new()), None);
+    }
+
+    #[test]
+    fn chip_clocks_reads_as_set_or_off() {
+        let set = detail::chip_clocks(&[0, -10, 0, -20], true);
+        assert_eq!(set.c, "chip_clocks");
+        assert_eq!(
+            english(set.c, &set.p).unwrap(),
+            "clock per chip set by hand: 0 -10 0 -20 MHz"
+        );
+        let off = detail::chip_clocks(&[], false);
+        assert_eq!(off.c, "chip_clocks_api");
+        assert_eq!(
+            english(off.c, &off.p).unwrap(),
+            "clock per chip off through the API: every chip at the chain's clock"
+        );
+        let zeros = detail::chip_clocks(&[0, 0], true);
+        assert!(english(zeros.c, &zeros.p)
+            .unwrap()
+            .starts_with("clock per chip off by hand"));
     }
 
     #[test]

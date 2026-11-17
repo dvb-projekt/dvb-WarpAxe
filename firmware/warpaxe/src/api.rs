@@ -285,6 +285,10 @@ pub fn system_info() -> serde_json::Value {
         .iter()
         .map(|&mhz| serde_json::Value::from(mhz))
         .collect();
+    // Who set them and when (seconds since 1970; null when unknown).
+    let set = config::chip_offsets_set();
+    v["chipFreqOffsetsBy"] = json!(set.by.name());
+    v["chipFreqOffsetsAt"] = json!((set.unix > 0).then_some(set.unix));
     v["asicFrequencies"] = m
         .chip_clocks()
         .iter()
@@ -590,14 +594,32 @@ fn chip_offsets_refuse(
 /// After a PATCH went through: its clock offsets per chip stored and
 /// handed to the mining loop; the stored ones dropped when the PATCH
 /// names another board.
+///
+/// Who sent it (`chipFreqOffsetsBy`) is stored with them and shown in
+/// the web UI. A change by hand or through another client also goes
+/// into the event log; WarpTune's steps do not (one every few minutes
+/// while it searches would push boots and crashes out of the 32
+/// events; WarpTune keeps its own journal, and the patch record has
+/// every change with its sender).
 fn store_chip_offsets(v: &serde_json::Value) {
     let new = match patched_offsets(v) {
         _ if other_board(v) => config::ChipOffsets::NONE,
         Some(Ok(list)) => list,
         _ => return,
     };
-    if config::set_chip_offsets(new) {
+    let by = config::OffsetsBy::from_patch(v.get("chipFreqOffsetsBy").and_then(|b| b.as_str()));
+    if config::set_chip_offsets(new, by) {
         miner::request_chip_offsets();
+        if by != config::OffsetsBy::WarpTune {
+            crate::events::record(
+                "chain",
+                warpaxe_diag::events::detail::chip_clocks(
+                    new.list(),
+                    by == config::OffsetsBy::Manual,
+                ),
+            );
+            crate::events::flush();
+        }
     }
 }
 
