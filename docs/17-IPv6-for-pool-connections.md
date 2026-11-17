@@ -131,9 +131,9 @@ off.
 | TLS, dual-stack (solo.atlaspool.io:4333) | IPv6, certificate verified for the name |
 | TLS, IPv4-only (public-pool.io:4333) | IPv4, no probe, certificate verified |
 | First connection after boot, dual-stack pool | IPv6 (prefix about 3 s after link-local) |
+| Stratum V2 to warppool through the IPv6-only relay (`[ULA literal]`) | IPv6, Noise handshake and certificate verified, shares accepted |
 | Web UI over the global address from the same /64, and over the ULA | served |
 
 Not tested on hardware: an IPv6 route that drops packets silently (the
 timing is host-tested), a refused web connection from outside the /64
-(the rule is host-tested), Stratum V2 over IPv6 (no Sv2 pool with AAAA at
-hand; Sv2 uses the same `Link::connect`).
+(the rule is host-tested).
