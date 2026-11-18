@@ -137,12 +137,15 @@ pub fn from_stock_unsupported(
     {
         return Some(name);
     }
-    match asicmodel.unwrap_or("").trim().to_ascii_uppercase().as_str() {
-        "BM1397" => Some("Bitaxe (BM1397)"),
-        "BM1366" => Some("Bitaxe (BM1366)"),
-        "BM1368" => Some("Bitaxe (BM1368)"),
-        _ => None,
-    }
+    let asic = asicmodel.unwrap_or("").trim();
+    [
+        ("BM1397", "Bitaxe (BM1397)"),
+        ("BM1366", "Bitaxe (BM1366)"),
+        ("BM1368", "Bitaxe (BM1368)"),
+    ]
+    .iter()
+    .find(|(chip, _)| asic.eq_ignore_ascii_case(chip))
+    .map(|&(_, name)| name)
 }
 
 /// Board versions the stock firmware stores for boards WarpAxe carries
