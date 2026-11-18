@@ -306,6 +306,7 @@ const T = {
     st_connect: "Connecting…",
     st_chip: "Connected: {chip}. Loading the firmware…",
     st_wrongchip: "This is not an ESP32-S3 ({chip}). Nothing was written.",
+    st_unsup: "This miner is a {m}, which WarpAxe cannot run. Nothing was written; its firmware stays as it was.",
     st_nodl: "No answer from the miner. Put it into download mode and try again: if it already runs WarpAxe, use System → Download mode in its web UI (or open http://<miner>/bootloader); otherwise hold BOOT, press RST, release BOOT.",
     st_write: "Writing… {p}%",
     st_restart: "Written and checked. Restarting the miner…",
@@ -320,6 +321,7 @@ const T = {
     st_needclick: "The backup file is set. Click “Choose the miner” to continue.",
     st_bkread: "Backing up… {p}%",
     st_bkdone: "Backup saved: {f} ({mb} MB, checked against the chip). Loading the firmware…",
+    st_bkonly: "Backup saved: {f} ({mb} MB, checked against the chip). Nothing was written; the miner restarts into its own firmware.",
     st_bkerr: "Backup failed: {e}. Nothing was written to the miner.",
     st_loaderr: "Could not load the firmware: {e}. Nothing was written to the miner.",
     st_done_bk: "Done: WarpAxe {v} is installed; your backup is in {f}. The miner starts now; its web UI is reachable after about a minute.",
@@ -420,6 +422,7 @@ const T = {
     st_connect: "Verbinde …",
     st_chip: "Verbunden: {chip}. Lade die Firmware …",
     st_wrongchip: "Das ist kein ESP32-S3 ({chip}). Es wurde nichts geschrieben.",
+    st_unsup: "Dieser Miner ist ein {m}, den WarpAxe nicht betreiben kann. Es wurde nichts geschrieben; seine Firmware bleibt, wie sie war.",
     st_nodl: "Keine Antwort vom Miner. Versetze ihn in den Download-Modus und versuche es erneut: Läuft bereits WarpAxe, geht das über System → Download-Modus in seiner Weboberfläche (oder öffne http://<miner>/bootloader); sonst halte BOOT, drücke RST, lass BOOT los.",
     st_write: "Schreibe … {p} %",
     st_restart: "Geschrieben und geprüft. Starte den Miner neu …",
@@ -434,6 +437,7 @@ const T = {
     st_needclick: "Die Sicherungsdatei ist festgelegt. Klicke auf „Miner auswählen“, um fortzufahren.",
     st_bkread: "Sichere … {p} %",
     st_bkdone: "Sicherung gespeichert: {f} ({mb} MB, mit dem Chip abgeglichen). Lade die Firmware …",
+    st_bkonly: "Sicherung gespeichert: {f} ({mb} MB, mit dem Chip abgeglichen). Es wurde nichts geschrieben; der Miner startet mit seiner bisherigen Firmware neu.",
     st_bkerr: "Sicherung fehlgeschlagen: {e}. Auf den Miner wurde nichts geschrieben.",
     st_loaderr: "Firmware konnte nicht geladen werden: {e}. Auf den Miner wurde nichts geschrieben.",
     st_done_bk: "Fertig: WarpAxe {v} ist installiert, deine Sicherung liegt in {f}. Der Miner startet jetzt; seine Weboberfläche ist nach etwa einer Minute erreichbar.",
@@ -534,6 +538,7 @@ const T = {
     st_connect: "Conectando…",
     st_chip: "Conectado: {chip}. Cargando el firmware…",
     st_wrongchip: "Esto no es un ESP32-S3 ({chip}). No se ha escrito nada.",
+    st_unsup: "Este minero es un {m}, que WarpAxe no admite. No se ha escrito nada; su firmware sigue como estaba.",
     st_nodl: "El minero no responde. Ponlo en modo de descarga y vuelve a intentarlo: si ya ejecuta WarpAxe, usa Sistema → Modo de descarga en su interfaz web (o abre http://<minero>/bootloader); si no, mantén pulsado BOOT, pulsa RST y suelta BOOT.",
     st_write: "Flasheando… {p} %",
     st_restart: "Escrito y verificado. Reiniciando el minero…",
@@ -548,6 +553,7 @@ const T = {
     st_needclick: "El archivo de la copia está listo. Pulsa «Elegir el minero» para continuar.",
     st_bkread: "Guardando copia… {p} %",
     st_bkdone: "Copia guardada: {f} ({mb} MB, cotejada con el contenido del chip). Cargando el firmware…",
+    st_bkonly: "Copia guardada: {f} ({mb} MB, cotejada con el contenido del chip). No se ha escrito nada; el minero se reinicia con su propio firmware.",
     st_bkerr: "La copia ha fallado: {e}. No se ha escrito nada en el minero.",
     st_loaderr: "No se pudo cargar el firmware: {e}. No se ha escrito nada en el minero.",
     st_done_bk: "Listo: WarpAxe {v} está instalado; tu copia está en {f}. El minero arranca ahora; su interfaz web estará accesible en un minuto aproximadamente.",
@@ -648,6 +654,7 @@ const T = {
     st_connect: "Connexion…",
     st_chip: "Connecté : {chip}. Chargement du firmware…",
     st_wrongchip: "Ce n’est pas un ESP32-S3 ({chip}). Rien n’a été écrit.",
+    st_unsup: "Ce mineur est un {m}, que WarpAxe ne prend pas en charge. Rien n’a été écrit ; son firmware reste tel quel.",
     st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement et réessayez : s’il tourne déjà sous WarpAxe, utilisez Système → Mode téléchargement dans son interface web (ou ouvrez http://<mineur>/bootloader) ; sinon maintenez BOOT, appuyez sur RST, relâchez BOOT.",
     st_write: "Flashage… {p} %",
     st_restart: "Écrit et vérifié. Redémarrage du mineur…",
@@ -662,6 +669,7 @@ const T = {
     st_needclick: "Le fichier de sauvegarde est choisi. Cliquez sur « Choisir le mineur » pour continuer.",
     st_bkread: "Sauvegarde en cours… {p} %",
     st_bkdone: "Sauvegarde enregistrée : {f} ({mb} Mo, vérifiée par relecture de la puce). Chargement du firmware…",
+    st_bkonly: "Sauvegarde enregistrée : {f} ({mb} Mo, vérifiée par relecture de la puce). Rien n’a été écrit ; le mineur redémarre sur son propre firmware.",
     st_bkerr: "Échec de la sauvegarde : {e}. Rien n’a été écrit sur le mineur.",
     st_loaderr: "Impossible de charger le firmware : {e}. Rien n’a été écrit sur le mineur.",
     st_done_bk: "Terminé : WarpAxe {v} est installé ; votre sauvegarde se trouve dans {f}. Le mineur démarre ; son interface web sera accessible dans une minute environ.",
@@ -761,6 +769,7 @@ const T = {
     st_connect: "Connessione…",
     st_chip: "Connesso: {chip}. Caricamento del firmware…",
     st_wrongchip: "Questo non è un ESP32-S3 ({chip}). Non è stato scritto nulla.",
+    st_unsup: "Questo miner è un {m}, che WarpAxe non può far funzionare. Non è stato scritto nulla; il suo firmware resta com’era.",
     st_nodl: "Nessuna risposta dal miner. Mettilo in modalità download e riprova: se esegue già WarpAxe, usa Sistema → Modalità download nella sua interfaccia web (o apri http://<miner>/bootloader); altrimenti tieni premuto BOOT, premi RST, rilascia BOOT.",
     st_write: "Scrittura… {p}%",
     st_restart: "Scritto e verificato. Riavvio del miner…",
@@ -775,6 +784,7 @@ const T = {
     st_needclick: "Il file di backup è impostato. Clicca su “Scegli il miner” per continuare.",
     st_bkread: "Backup in corso… {p}%",
     st_bkdone: "Backup salvato: {f} ({mb} MB, confrontato con il contenuto del chip). Caricamento del firmware…",
+    st_bkonly: "Backup salvato: {f} ({mb} MB, confrontato con il contenuto del chip). Non è stato scritto nulla; il miner si riavvia con il proprio firmware.",
     st_bkerr: "Backup non riuscito: {e}. Sul miner non è stato scritto nulla.",
     st_loaderr: "Impossibile caricare il firmware: {e}. Sul miner non è stato scritto nulla.",
     st_done_bk: "Fatto: WarpAxe {v} è installato; il tuo backup è in {f}. Il miner si avvia ora; la sua interfaccia web sarà raggiungibile tra circa un minuto.",
@@ -874,6 +884,7 @@ const T = {
     st_connect: "Conectando…",
     st_chip: "Conectado: {chip}. Carregando o firmware…",
     st_wrongchip: "Isto não é um ESP32-S3 ({chip}). Nada foi gravado.",
+    st_unsup: "Este minerador é um {m}, que o WarpAxe não consegue rodar. Nada foi gravado; o firmware dele continua como estava.",
     st_nodl: "O minerador não respondeu. Coloque-o em modo de download e tente de novo: se ele já roda o WarpAxe, use Sistema → Modo de download na interface web dele (ou abra http://<minerador>/bootloader); senão, segure BOOT, aperte RST e solte BOOT.",
     st_write: "Gravando… {p}%",
     st_restart: "Gravado e verificado. Reiniciando o minerador…",
@@ -888,6 +899,7 @@ const T = {
     st_needclick: "O arquivo de backup está definido. Clique em “Escolher o minerador” para continuar.",
     st_bkread: "Fazendo backup… {p}%",
     st_bkdone: "Backup salvo: {f} ({mb} MB, conferido com o chip). Carregando o firmware…",
+    st_bkonly: "Backup salvo: {f} ({mb} MB, conferido com o chip). Nada foi gravado; o minerador reinicia com o próprio firmware.",
     st_bkerr: "O backup falhou: {e}. Nada foi gravado no minerador.",
     st_loaderr: "Não foi possível carregar o firmware: {e}. Nada foi gravado no minerador.",
     st_done_bk: "Pronto: o WarpAxe {v} está instalado; seu backup está em {f}. O minerador está iniciando; a interface web fica acessível em cerca de um minuto.",
@@ -987,6 +999,7 @@ const T = {
     st_connect: "接続中…",
     st_chip: "接続しました：{chip}。ファームウェアを読み込んでいます…",
     st_wrongchip: "ESP32-S3 ではありません（{chip}）。何も書き込んでいません。",
+    st_unsup: "このマイナーは {m} で、WarpAxe では動かせません。何も書き込んでいません。ファームウェアは元のままです。",
     st_nodl: "マイナーから応答がありません。ダウンロードモードにして、もう一度お試しください。すでに WarpAxe が動作している場合は、Web UI の「システム」→「ダウンロードモード」を使ってください（または http://<miner>/bootloader を開いてください）。それ以外の場合は、BOOT を押したまま RST を押し、BOOT を離してください。",
     st_write: "書き込み中… {p}%",
     st_restart: "書き込みと検証が完了しました。マイナーを再起動しています…",
@@ -1001,6 +1014,7 @@ const T = {
     st_needclick: "バックアップファイルを設定しました。続けるには「マイナーを選択」をクリックしてください。",
     st_bkread: "バックアップ中… {p}%",
     st_bkdone: "バックアップを保存しました：{f}（{mb} MB、チップと照合済み）。ファームウェアを読み込んでいます…",
+    st_bkonly: "バックアップを保存しました：{f}（{mb} MB、チップと照合済み）。何も書き込んでいません。マイナーは元のファームウェアで再起動します。",
     st_bkerr: "バックアップに失敗しました：{e}。マイナーには何も書き込んでいません。",
     st_loaderr: "ファームウェアを読み込めませんでした：{e}。マイナーには何も書き込んでいません。",
     st_done_bk: "完了：WarpAxe {v} をインストールしました。バックアップは {f} にあります。マイナーが起動します。約 1 分後に Web UI にアクセスできます。",
@@ -1100,6 +1114,7 @@ const T = {
     st_connect: "正在连接…",
     st_chip: "已连接：{chip}。正在加载固件…",
     st_wrongchip: "这不是 ESP32-S3（{chip}）。未写入任何内容。",
+    st_unsup: "这台矿机是 {m}，WarpAxe 无法运行它。未写入任何内容，其固件保持原样。",
     st_nodl: "矿机没有响应。请让它进入下载模式后重试：如果它已经在运行 WarpAxe，请在其网页界面中使用“系统”→“下载模式”（或打开 http://<miner>/bootloader）；否则请按住 BOOT，按一下 RST，再松开 BOOT。",
     st_write: "正在刷写… {p}%",
     st_restart: "已写入并校验。正在重启矿机…",
@@ -1114,6 +1129,7 @@ const T = {
     st_needclick: "备份保存位置已选好。点击“选择矿机”继续。",
     st_bkread: "正在备份… {p}%",
     st_bkdone: "备份已保存：{f}（{mb} MB，已与芯片内容校验）。正在加载固件…",
+    st_bkonly: "备份已保存：{f}（{mb} MB，已与芯片内容校验）。未写入任何内容；矿机将以原有固件重新启动。",
     st_bkerr: "备份失败：{e}。没有向矿机写入任何内容。",
     st_loaderr: "无法加载固件：{e}。没有向矿机写入任何内容。",
     st_done_bk: "完成：WarpAxe {v} 已安装；备份保存在 {f}。矿机正在启动，大约一分钟后即可访问其网页界面。",
@@ -1291,6 +1307,99 @@ async function readBlock(loader, addr, size, onProgress) {
   if (!(digest instanceof Uint8Array) || digest.length !== 16) throw new Error("read flash: no MD5 after the data");
   return { data, md5: Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("") };
 }
+// --- stock board check ---
+// The Bitaxes AxeOS runs and WarpAxe does not (BM1397, BM1366, BM1368),
+// as crates/board/src/detect.rs names them from the keys AxeOS keeps in
+// NVS namespace "main". Checked before anything is read for the backup
+// or written, so such a board keeps its firmware untouched.
+const UNSUPPORTED_STOCK = [
+  ["max", "Bitaxe Max (BM1397)", ["102", "2.2"]],
+  ["ultra", "Bitaxe Ultra (BM1366)", ["0.11", "201", "202", "203", "204", "205", "207"]],
+  ["hex", "Bitaxe Hex (6× BM1366)", ["302", "303"]],
+  ["supra", "Bitaxe Supra (BM1368)", ["400", "401", "402", "403"]],
+  ["suprahex", "Bitaxe Supra Hex (6× BM1368)", ["701", "702"]],
+  // TinyChipHub Zyber: by model only (its board versions overlap ESP-Miner's range).
+  ["zyber8s", "TinyChipHub Zyber8S (8× BM1368)", []],
+  ["zyber8g", "TinyChipHub Zyber8G (8× BM1370)", []],
+  ["zyber8gplus", "TinyChipHub Zyber8G+ (8× BM1370)", []],
+  ["zyber12g", "TinyChipHub Zyber12G (12× BM1370)", []],
+];
+function unsupportedStock(k) {
+  const model = (k.devicemodel || "").trim().toLowerCase(), version = (k.boardversion || "").trim();
+  const f = UNSUPPORTED_STOCK.find(([m, , v]) => model === m || (version && v.includes(version)));
+  if (f) return f[1];
+  if (model.startsWith("zyber")) return "TinyChipHub Zyber";
+  const asic = (k.asicmodel || "").trim().toUpperCase();
+  return ["BM1397", "BM1366", "BM1368"].includes(asic) ? `Bitaxe (${asic})` : null;
+}
+// The partition table at 0x8000: the first data partition of subtype nvs.
+function nvsPartition(pt) {
+  const v = new DataView(pt.buffer, pt.byteOffset, pt.byteLength);
+  for (let o = 0; o + 32 <= pt.length; o += 32) {
+    if (v.getUint16(o, true) !== 0x50aa) break;
+    if (pt[o + 2] === 0x01 && pt[o + 3] === 0x02) return { offset: v.getUint32(o + 4, true), size: v.getUint32(o + 8, true) };
+  }
+  return null;
+}
+// String values of one namespace, from the ESP-IDF NVS page format: 4 KB
+// pages (active, full, or freeing after a lost power), a 32-byte header, a 2-bit state per entry (0b10 written), then
+// 126 entries of 32 bytes (namespace index, type, span, chunk, CRC, key,
+// data); a string (type 0x21) keeps its length in the data and its bytes
+// in the next span - 1 entries. The page with the higher sequence number
+// wins a key written twice.
+function nvsStrings(buf, ns) {
+  const v = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const key = (o) => { let s = ""; for (let i = 0; i < 16 && buf[o + i]; i++) s += String.fromCharCode(buf[o + i]); return s; };
+  const pages = [];
+  for (let p = 0; p + 4096 <= buf.length; p += 4096) {
+    const state = v.getUint32(p, true);
+    if (state === 0xfffffffe || state === 0xfffffffc || state === 0xfffffff8) pages.push({ p, seq: v.getUint32(p + 4, true) });
+  }
+  pages.sort((a, b) => a.seq - b.seq);
+  const written = (p, i) => ((buf[p + 32 + (i >> 2)] >> ((i & 3) * 2)) & 3) === 2;
+  const nsIndex = new Map(), strings = [];
+  for (const { p } of pages) {
+    for (let i = 0; i < 126; ) {
+      const o = p + 64 + i * 32, span = buf[o + 2] || 1;
+      if (written(p, i)) {
+        const idx = buf[o], type = buf[o + 1];
+        if (idx === 0 && type === 0x01) nsIndex.set(key(o + 8), buf[o + 24]);
+        else if (type === 0x21 && i + span <= 126) {
+          const len = v.getUint16(o + 24, true), s = buf.subarray(o + 32, o + 32 + Math.min(len, (span - 1) * 32));
+          let str = "";
+          for (const b of s) { if (!b) break; str += String.fromCharCode(b); }
+          strings.push({ idx, key: key(o + 8), str });
+        }
+      }
+      i += span;
+    }
+  }
+  const want = nsIndex.get(ns), out = {};
+  for (const s of strings) if (s.idx === want) out[s.key] = s.str;
+  return want === undefined ? {} : out;
+}
+// --- end stock board check ---
+async function readChecked(loader, addr, n) {
+  for (let tries = 0; tries < 4; tries++) {
+    try {
+      const got = await readBlock(loader, addr, n, () => {});
+      if (md5hex(got.data) === got.md5) return got.data;
+    } catch (e) {
+      await resync(loader);
+    }
+  }
+  throw new Error("block at 0x" + addr.toString(16) + " did not read the same twice");
+}
+async function stockBoard(loader) {
+  const part = nvsPartition(await readChecked(loader, 0x8000, 0xc00));
+  if (!part || part.size > 0x20000) return null;
+  const nvs = new Uint8Array(part.size);
+  for (let a = 0; a < part.size; a += BLOCK) nvs.set(await readChecked(loader, part.offset + a, Math.min(BLOCK, part.size - a)), a);
+  const k = nvsStrings(nvs, "main"), verdict = unsupportedStock(k);
+  // For a hardware test: what the check read and decided (DevTools console).
+  console.log("board check: nvs 0x" + part.offset.toString(16) + "+0x" + part.size.toString(16) + ", devicemodel=" + (k.devicemodel ?? "-") + ", asicmodel=" + (k.asicmodel ?? "-") + ", boardversion=" + (k.boardversion ?? "-") + " -> " + (verdict || "go on"));
+  return verdict;
+}
 async function backup(loader, target) {
   const size = loader.flashSizeBytes(await loader.detectFlashSize());
   if (!(size > 0)) throw new Error("flash size not detected");
@@ -1361,6 +1470,19 @@ async function install(port, target) {
       st("st_wrongchip", { chip }, "err");
       return;
     }
+    // A Bitaxe on another chip family: stop before the backup and the
+    // write. A partition table or NVS that cannot be parsed leaves the
+    // decision to the firmware, which names the same boards on its first
+    // start; a read that fails (the stub lost, MD5 never matching) stops
+    // the install here, before anything is written.
+    stage = "check";
+    const other = await stockBoard(loader);
+    if (other) {
+      stage = "unsup";
+      try { await restartChip(loader); } catch (e) {}
+      st("st_unsup", { m: other }, "err");
+      return;
+    }
     let saved = null;
     if (target) {
       stage = "backup";
@@ -1368,9 +1490,9 @@ async function install(port, target) {
       if (DIAG.only) {
         // ?backuponly: diagnosis, read the flash and restart, write nothing
         stage = "restart";
-        st("st_restart");
+        st("st_bkonly", { f: saved.name, mb: saved.mb });
         await restartChip(loader);
-        st("st_bkdone", { f: saved.name, mb: saved.mb }, "ok");
+        st("st_bkonly", { f: saved.name, mb: saved.mb }, "ok");
         return;
       }
     }
