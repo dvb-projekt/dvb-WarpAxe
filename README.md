@@ -1232,6 +1232,12 @@ deserves the credit for showing that these chips can be driven cleanly
 from Rust. WarpAxe's chip layer was written separately and contains no code
 from it.
 
+The EMC2101 fan and temperature chip (Bitaxe Gamma and Gamma Duo,
+NerdAxe Gamma and Gaia, BitForge Nano) is driven by the
+[emc2101](https://github.com/Georges760/emc2101-rs) crate by GPTechinno
+(MIT/Apache-2.0) since v0.1.46; WarpAxe's board code only sets it up for
+each board.
+
 The Stratum V2 client uses the `noise_sv2` crate from the
 [Stratum V2 reference implementation](https://github.com/stratum-mining/stratum)
 for its Noise handshake; the messages and the channel logic are WarpAxe's
