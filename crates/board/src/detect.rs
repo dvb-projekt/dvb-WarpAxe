@@ -105,11 +105,11 @@ pub fn from_stock(
 /// the stock keys are the only place that tells them apart before a chip
 /// is powered.
 const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
-    ("max", "Bitaxe Max (BM1397)", &["102"]),
+    ("max", "Bitaxe Max (BM1397)", &["102", "2.2"]),
     (
         "ultra",
         "Bitaxe Ultra (BM1366)",
-        &["201", "202", "203", "204", "205", "207"],
+        &["0.11", "201", "202", "203", "204", "205", "207"],
     ),
     ("hex", "Bitaxe Hex (6× BM1366)", &["302", "303"]),
     (
@@ -434,6 +434,14 @@ mod tests {
         assert_eq!(
             named((None, None, Some("204")), &one),
             Some("Bitaxe Ultra (BM1366)")
+        );
+        assert_eq!(
+            named((None, None, Some("0.11")), &one),
+            Some("Bitaxe Ultra (BM1366)")
+        );
+        assert_eq!(
+            named((None, None, Some("2.2")), &one),
+            Some("Bitaxe Max (BM1397)")
         );
         assert_eq!(
             named((Some("Hex"), Some("BM1366"), Some("303")), &hex),

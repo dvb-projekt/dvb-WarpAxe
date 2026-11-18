@@ -536,7 +536,7 @@ const T = {
     st_connect: "Conectando…",
     st_chip: "Conectado: {chip}. Cargando el firmware…",
     st_wrongchip: "Esto no es un ESP32-S3 ({chip}). No se ha escrito nada.",
-    st_unsup: "Este minero es un {m}, que WarpAxe no puede manejar. No se ha escrito nada; su firmware sigue como estaba.",
+    st_unsup: "Este minero es un {m}, que WarpAxe no admite. No se ha escrito nada; su firmware sigue como estaba.",
     st_nodl: "El minero no responde. Ponlo en modo de descarga y vuelve a intentarlo: si ya ejecuta WarpAxe, usa Sistema → Modo de descarga en su interfaz web (o abre http://<minero>/bootloader); si no, mantén pulsado BOOT, pulsa RST y suelta BOOT.",
     st_write: "Flasheando… {p} %",
     st_restart: "Escrito y verificado. Reiniciando el minero…",
@@ -651,7 +651,7 @@ const T = {
     st_connect: "Connexion…",
     st_chip: "Connecté : {chip}. Chargement du firmware…",
     st_wrongchip: "Ce n’est pas un ESP32-S3 ({chip}). Rien n’a été écrit.",
-    st_unsup: "Ce mineur est un {m}, que WarpAxe ne sait pas faire fonctionner. Rien n’a été écrit ; son firmware reste tel quel.",
+    st_unsup: "Ce mineur est un {m}, que WarpAxe ne prend pas en charge. Rien n’a été écrit ; son firmware reste tel quel.",
     st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement et réessayez : s’il tourne déjà sous WarpAxe, utilisez Système → Mode téléchargement dans son interface web (ou ouvrez http://<mineur>/bootloader) ; sinon maintenez BOOT, appuyez sur RST, relâchez BOOT.",
     st_write: "Flashage… {p} %",
     st_restart: "Écrit et vérifié. Redémarrage du mineur…",
@@ -1305,8 +1305,8 @@ async function readBlock(loader, addr, size, onProgress) {
 // NVS namespace "main". Checked before anything is read for the backup
 // or written, so such a board keeps its firmware untouched.
 const UNSUPPORTED_STOCK = [
-  ["max", "Bitaxe Max (BM1397)", ["102"]],
-  ["ultra", "Bitaxe Ultra (BM1366)", ["201", "202", "203", "204", "205", "207"]],
+  ["max", "Bitaxe Max (BM1397)", ["102", "2.2"]],
+  ["ultra", "Bitaxe Ultra (BM1366)", ["0.11", "201", "202", "203", "204", "205", "207"]],
   ["hex", "Bitaxe Hex (6× BM1366)", ["302", "303"]],
   ["supra", "Bitaxe Supra (BM1368)", ["400", "401", "402", "403"]],
   ["suprahex", "Bitaxe Supra Hex (6× BM1368)", ["701", "702"]],
@@ -1328,7 +1328,7 @@ function nvsPartition(pt) {
   return null;
 }
 // String values of one namespace, from the ESP-IDF NVS page format: 4 KB
-// pages, a 32-byte header, a 2-bit state per entry (0b10 written), then
+// pages (active, full, or freeing after a lost power), a 32-byte header, a 2-bit state per entry (0b10 written), then
 // 126 entries of 32 bytes (namespace index, type, span, chunk, CRC, key,
 // data); a string (type 0x21) keeps its length in the data and its bytes
 // in the next span - 1 entries. The page with the higher sequence number
@@ -1339,7 +1339,7 @@ function nvsStrings(buf, ns) {
   const pages = [];
   for (let p = 0; p + 4096 <= buf.length; p += 4096) {
     const state = v.getUint32(p, true);
-    if (state === 0xfffffffe || state === 0xfffffffc) pages.push({ p, seq: v.getUint32(p + 4, true) });
+    if (state === 0xfffffffe || state === 0xfffffffc || state === 0xfffffff8) pages.push({ p, seq: v.getUint32(p + 4, true) });
   }
   pages.sort((a, b) => a.seq - b.seq);
   const written = (p, i) => ((buf[p + 32 + (i >> 2)] >> ((i & 3) * 2)) & 3) === 2;
@@ -1454,10 +1454,12 @@ async function install(port, target) {
       return;
     }
     // A Bitaxe on another chip family: stop before the backup and the
-    // write. A read that fails here leaves the decision to the firmware,
-    // which names the same boards on its first start.
-    let other = null;
-    try { other = await stockBoard(loader); } catch (e) { console.log("stock board check: " + (e && e.message)); }
+    // write. A partition table or NVS that cannot be parsed leaves the
+    // decision to the firmware, which names the same boards on its first
+    // start; a read that fails (the stub lost, MD5 never matching) stops
+    // the install here, before anything is written.
+    stage = "check";
+    const other = await stockBoard(loader);
     if (other) {
       stage = "unsup";
       try { await restartChip(loader); } catch (e) {}

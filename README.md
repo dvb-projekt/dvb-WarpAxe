@@ -945,6 +945,12 @@ Boards marked "profile only" have pins, regulator window and limits taken
 from their stock firmware, but nobody has run WarpAxe on one yet. Please
 don't flash them unless you can recover the stock firmware over USB.
 
+The Bitaxes on other chips (Max with the BM1397, Ultra and Hex with the
+BM1366, Supra and Supra Hex with the BM1368) cannot run WarpAxe. Since
+v0.1.47 the installer page recognises them from the settings their stock
+firmware keeps and stops before it writes anything, and the firmware
+names them on its first start and leaves their chips off.
+
 ### Experimental: the T-Display-S3 without an ASIC
 
 > ⚠️ **Hot to the touch.** Hashing all the time, the T-Display-S3 gets to
