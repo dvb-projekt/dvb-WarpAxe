@@ -43,7 +43,7 @@ WIFI = {"libnet80211", "libpp", "libphy", "libcore", "libcoexist", "libwpa_suppl
         "libsmartconfig", "libwapi", "libbtbb"}
 NET = {"liblwip", "libesp_netif", "libespressif__mdns", "libesp_eth"}
 TLS = {"libmbedtls", "libmbedcrypto", "libmbedx509", "libesp-tls", "libeverest", "libp256m"}
-LIBC = {"libc", "libm", "libgcc", "libstdc++", "libnewlib", "libcxx", "libpthread"}
+LIBC = {"libc", "libc_nano", "libm", "libm_nano", "libgcc", "libstdc++", "libnewlib", "libcxx", "libpthread"}
 USB = {"libespressif__tinyusb", "libesp_tinyusb", "libusb"}
 HTTP = {"libesp_http_server", "libhttp_parser", "libesp_http_client", "libtcp_transport",
         "libesp_https_ota", "libesp_https_server"}

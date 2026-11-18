@@ -8,7 +8,7 @@ CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="/Users/Oliver/code/dvb-WarpAxe/firmware/
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
 CONFIG_SPIRAM_SPEED_80M=y
-CONFIG_ESP_MAIN_TASK_STACK_SIZE=16000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=16512
 CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT=8192
 CONFIG_FREERTOS_HZ=1000
 # Console on USB-Serial/JTAG until TinyUSB takes the PHY.
@@ -28,7 +28,7 @@ CONFIG_TINYUSB_TASK_STACK_SIZE=6144
 CONFIG_TINYUSB_MODE_DMA=y
 # More NCM transfer blocks in flight: one per direction loses ACKs under load.
 CONFIG_LWIP_DHCPS=y
-CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6144
+CONFIG_LWIP_TCPIP_TASK_STACK_SIZE=6656
 # 16 instead of the default 10: the HTTP server holds up to five, the
 # pool one, mDNS two; the swarm page's search for an Avalon opens four
 # at a time on top (swarm.rs), and a scan must not starve the rest.
@@ -60,6 +60,28 @@ CONFIG_ESP_INT_WDT_TIMEOUT_MS=1000
 CONFIG_ESP_HTTPD_MAX_URI_LEN=128
 CONFIG_ESP_HTTPD_MAX_REQ_HDR_LEN=1024
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+# printf, snprintf and every ESP_LOG line through newlib's nano formatter
+# (docs/16, "ROM printf"): 44 KB less image. Nano knows only the h, l
+# and L length modifiers: %lld, %llu, PRIu64, %zu, %jd and positional
+# %1$ print the letters and take no argument, so every argument after
+# them shifts. Our C uses none; the ESP-IDF and Wi-Fi strings in the
+# image that do are listed in docs/16 (log wording only). On the S3 the
+# formatter comes from the toolchain's libc_nano in flash, not from ROM:
+# the ROM copy was built with a 32-bit time_t.
+CONFIG_NEWLIB_NANO_FORMAT=y
+# With nano ESP-IDF gives its tasks 512 bytes less stack
+# (TASK_EXTRA_STACK_SIZE in esp_task.h, TASK_STACK_SIZE_ADD in the
+# supplicant): its printf needs less. Four of them run here, and Rust
+# code runs on three (the main task, the event loop's handlers, the
+# esp_timer callbacks) without formatting through printf, so the 512
+# bytes go back and every stack stays as large as before: main task
+# 16000 -> 16512 and tcpip 6144 -> 6656 above, these two from their
+# defaults 2304 and 3584. (Ping, WPS, DPP and the enterprise task are
+# not linked.) The Wi-Fi blob's own task would lose 512 bytes the same
+# way through wifi_init_config_t.nano_enable; the vendored esp-idf-svc
+# passes 0 there (vendor/esp-idf-svc/WARPAXE-PATCH.md, 4.).
+CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE=2816
+CONFIG_ESP_TIMER_TASK_STACK_SIZE=4096
 
 # mbedTLS (Stratum TLS/Sv2, online update, price fetch) allocates from
 # PSRAM: with its buffers in the small internal RAM, an hour of mining on

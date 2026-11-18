@@ -565,7 +565,10 @@ impl<'d> WifiDriver<'d> {
             ampdu_tx_enable: WIFI_AMPDU_TX_ENABLED as _,
             amsdu_tx_enable: WIFI_AMSDU_TX_ENABLED as _,
             nvs_enable: i32::from(nvs_enabled),
-            nano_enable: WIFI_NANO_FORMAT_ENABLED as _,
+            // WarpAxe: 0 even with CONFIG_NEWLIB_NANO_FORMAT. The blob reads it
+            // only to size its own task's stack (512 bytes less under nano),
+            // and the Wi-Fi task keeps the stack it had (WARPAXE-PATCH.md 4).
+            nano_enable: 0,
             rx_ba_win: WIFI_DEFAULT_RX_BA_WIN as _,
             wifi_task_core_id: WIFI_TASK_CORE_ID as _,
             beacon_max_len: WIFI_SOFTAP_BEACON_MAX_LEN as _,

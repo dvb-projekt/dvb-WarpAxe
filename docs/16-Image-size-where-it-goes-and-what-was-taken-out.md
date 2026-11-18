@@ -276,7 +276,7 @@ time of the measurement; the figures do not simply add up.
 | `opt-level = "z"` for everything | 68,272 | The same, and slower code where it was inlined before. |
 | `codegen-units = 1` | 38,160 | The same in small. |
 | `CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT` | 53,472, and 6,896 bytes of internal RAM (`.iram0.text` −4,468, `.dram0.data` −2,428) | An ESP-IDF assert then says only where (the PC), no longer file, line and expression. The core dump is unchanged. A decision about crash reports, not about size alone. |
-| `CONFIG_NEWLIB_NANO_FORMAT` (ROM printf) | 44,624 | The ROM's printf has no 64-bit and no positional formats; ESP-IDF's and the Wi-Fi libraries' own log and `snprintf` uses would have to be checked one by one. |
+| `CONFIG_NEWLIB_NANO_FORMAT` (ROM printf) | 44,624 | Taken for v0.1.47 after the check one by one: see "Nano printf" below. |
 | `Config` read through one parser instead of two | 31,856 | Three lines in `config::init` (`from_slice::<Value>` then `from_value::<Config>`, the route every PATCH already takes). The result is the same for every stored document, but the boot would build the document as a tree first: about 7 KB of small internal allocations, freed again around the strings that stay. Too close to "no internal RAM" to do unmeasured. |
 | `CONFIG_LWIP_IPV6=n` | 25,808 (`.dram0.bss` −1,768) | A function: no IPv6 address, no AAAA. |
 | `CONFIG_ESP_ERR_TO_NAME_LOOKUP=n` | 7,600 | Error texts in the log and the API turn into numbers. |
@@ -297,6 +297,106 @@ time of the measurement; the figures do not simply add up.
 | `json!` in `board.rs` | 1,360 | The chip path's file. |
 | rustc_demangle (22,990) | – | Linked through std's backtrace printing (the panic hook, `anyhow`'s `Backtrace`); only a std without panic messages drops it. |
 | mbedTLS cipher suites, Wi-Fi feature switches (WPA3, enterprise, soft AP) | not measured | On the wire, or functions. |
+
+## Nano printf (v0.1.47, 2026-11-18)
+
+`CONFIG_NEWLIB_NANO_FORMAT=y`, on main `e0d3bbd`, built in the same
+path for both sides:
+
+| | Image | Below 0x2F0000 |
+|---|---|---|
+| main `e0d3bbd` | 2,850,960 | 229,232 |
+| with nano printf | 2,806,160 | **274,032** |
+
+44,800 bytes less: libc's and libm's formatting code in flash, 42,352
+of code and 2,452 of tables. `.iram0.text`, `.dram0.data` and
+`.dram0.bss` are byte for byte the same size (libc's 360 + 360 bytes
+of statics now come from `libc_nano.a`). Stack frames change only
+inside libc: `printf` and `vsnprintf` went through `_vfprintf_r` /
+`_svfprintf_r` (800 bytes, with floats) and now through nano's
+`_vfiprintf_r` / `_svfiprintf_r` (160) plus `_printf_i` and
+`_printf_common` (48 each), 544 bytes less per formatted line. The one
+`scanf` in use, `siscanf` in newlib's `tzset` (the display thread's
+clock, `clock.rs`, on a 16 KB PSRAM stack), grows by about 200 bytes
+(`__ssvfiscanf_r` 560 → 704, `_scanf_i` 64). Every Rust function's
+`entry` is unchanged.
+
+Despite the name, the S3 does not take the ROM's copy:
+`ESP_ROM_HAS_NEWLIB_32BIT_TIME` keeps ESP-IDF from linking it
+(`esp_rom/CMakeLists.txt`), so the formatter is the toolchain's
+`libc_nano.a` in flash. Floats still print: ESP-IDF links
+`_printf_float` under nano (`newlib_init.c`).
+
+**What nano cannot do.** Its parser knows the length modifiers `h`, `l`
+and `L` and the conversions `diouxXcspn` and `efgEFG`
+(`nano-vfprintf.o`'s `"hlL"` and `"efgEFG"`). Everything else is printed
+as the letter and **takes no argument**, so every argument after it
+shifts (`nano-vfprintf_i.o`, the default case): `%llu` prints `lu`,
+`%zu` prints `zu`, `PRIu64`, `%jd` and positional `%1$s` likewise. A
+`%s` after such a spec would read half of the 64-bit value as a
+pointer.
+
+**Where it would print wrongly.** Every printable string of the image
+(`save-image` output, all segments, the Wi-Fi blobs included) searched
+for a conversion with `ll`, `hh`, `j`, `z`, `t`, `q` or a position;
+`esp_rom_printf` (panic handler, core dump writer, boot ROM) has its own
+formatter and is not affected:
+
+| String (source) | When | Matters? |
+|---|---|---|
+| `read error :-0x%04zX:`, `write error :-0x%04zX:` (esp-tls) | a TLS pool or the update loses its connection | The mbedTLS code is gone from that one line (`-0x000zX`); the stratum line after it still names the `EspError`. Last argument, nothing shifts. |
+| `pm stop, total sleep time: %llu us / %llu us` (Wi-Fi blob) | Wi-Fi stops or drops | Reads `lu us / lu us`. Nothing parses it. |
+| `CCMP replay detected: … PN=%llu, RSC=%llu seq=%u` (Wi-Fi blob) | a replayed frame | Wrong numbers, no `%s` after. |
+| `(mesh)pm stop, sleep:%lld …` (Wi-Fi blob) | ESP-MESH only | Not used. |
+| `invalid buffer alignment: %zu`, `buffer not aligned to %zu` (gdma) | a programming error in a driver | Last argument, nothing shifts. |
+| `%s:%s:%016llx`, `…:%016llx:%s:%s`, `cnonce="%016llx"` (esp_http_client digest auth) | HTTP digest auth | Linked but unreachable: `CONFIG_ESP_HTTP_CLIENT_ENABLE_DIGEST_AUTH` is off. With it on, the `%s` after would crash. |
+
+esp_http_server's `%zu` lines switch to `PRIu32` by themselves under
+nano (`NEWLIB_NANO_COMPAT_FORMAT`, `esp_httpd_priv.h`) and are gone
+from the list on the nano build. Four more hits are machine code that
+happens to read `%jx`, `%qA`, `%qF`, `%zE`.
+
+Our own C (`warpaxe_glue`, the vendored `esp_tinyusb`, TinyUSB's level-1
+debug lines) uses no 64-bit, `z` or positional format; the core-dump
+summary prints with `%lu`/`%08lx`, the last words and the stack-overflow
+hook copy strings without printf. Rust's `log!` and `format!` do not go
+through printf: esp-idf-svc's `EspLogger` writes the finished text to
+newlib's `stdout`, and `wa_log_push` takes a finished line. No Rust code
+calls `printf`, `snprintf` or `esp_log_write`. The one C-formatted text
+our code reads back is the crash summary that `lastCrash` takes from the
+log (`warpaxe_glue.c` `CRASH …`/`BT…` lines, `api.rs`): `%s`, `%lu` and
+`%08lx` only, so it reads the same. No code and no WarpTune field parses
+a line from the table above.
+
+**Stacks.** Under nano ESP-IDF gives its tasks 512 bytes less stack
+(`TASK_EXTRA_STACK_SIZE`, `esp_task.h`; `TASK_STACK_SIZE_ADD` in the
+supplicant), since its printf needs 544 bytes less. Rust code runs on
+three of those tasks (main, the event loop's handlers, the esp_timer
+callbacks) and gains nothing from that, so `sdkconfig.defaults` gives
+the 512 bytes back to the four that run here: main 16,000 → 16,512,
+tcpip 6,144 → 6,656, event task 2,304 → 2,816, esp_timer 3,584 →
+4,096. (Ping, WPS, DPP and the enterprise task are not in the ELF.)
+
+The Wi-Fi blob takes the same 512 bytes from its own task: ESP-IDF
+passes `wifi_init_config_t.nano_enable`, and the blob's
+`config_get_wifi_task_stack_size` returns `0x1800` with WPA3 and adds
+`0x200` only when that flag is 0; no other code in the blob reads it
+(checked in the disassembly). No sdkconfig option sizes that task, and it
+runs the supplicant's SAE math and every Wi-Fi log line through our
+vprintf hook. The vendored esp-idf-svc therefore passes `nano_enable: 0`
+(`vendor/esp-idf-svc/WARPAXE-PATCH.md`, 4.), and the Wi-Fi task keeps
+its 6,656 bytes. With that every stack is as large as before, and no
+internal RAM is added or freed.
+
+`tools/image-breakdown.py` now counts `libc_nano.a` and `libm_nano.a`
+as libc.
+
+To check on devices: the list in "Still to check on devices" items 5–8
+on a Bitaxe Gamma, a NerdQAxe++ and the devkit; in the log the
+`pm stop` line after a Wi-Fi drop and no other stray `lu`/`zu`; the
+clock and night mode in a time zone with summer time
+(`CET-1CEST,M3.5.0,M10.5.0/3`, parsed by nano's `siscanf` now); a WPA3
+join.
 
 ## Still to check on devices
 
