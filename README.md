@@ -946,7 +946,9 @@ from their stock firmware, but nobody has run WarpAxe on one yet. Please
 don't flash them unless you can recover the stock firmware over USB.
 
 The Bitaxes on other chips (Max with the BM1397, Ultra and Hex with the
-BM1366, Supra and Supra Hex with the BM1368) cannot run WarpAxe. Since
+BM1366, Supra and Supra Hex with the BM1368) cannot run WarpAxe, nor can
+TinyChipHub's Zyber boards (8S, 8G, 8G+, 12G: one regulator for four
+voltage domains in series, no profile in WarpAxe). Since
 v0.1.47 the installer page recognises them from the settings their stock
 firmware keeps and stops before it writes anything, and the firmware
 names them on its first start and leaves their chips off.

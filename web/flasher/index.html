@@ -1310,11 +1310,17 @@ const UNSUPPORTED_STOCK = [
   ["hex", "Bitaxe Hex (6× BM1366)", ["302", "303"]],
   ["supra", "Bitaxe Supra (BM1368)", ["400", "401", "402", "403"]],
   ["suprahex", "Bitaxe Supra Hex (6× BM1368)", ["701", "702"]],
+  // TinyChipHub Zyber: by model only (its board versions overlap ESP-Miner's range).
+  ["zyber8s", "TinyChipHub Zyber8S (8× BM1368)", []],
+  ["zyber8g", "TinyChipHub Zyber8G (8× BM1370)", []],
+  ["zyber8gplus", "TinyChipHub Zyber8G+ (8× BM1370)", []],
+  ["zyber12g", "TinyChipHub Zyber12G (12× BM1370)", []],
 ];
 function unsupportedStock(k) {
   const model = (k.devicemodel || "").trim().toLowerCase(), version = (k.boardversion || "").trim();
   const f = UNSUPPORTED_STOCK.find(([m, , v]) => model === m || (version && v.includes(version)));
   if (f) return f[1];
+  if (model.startsWith("zyber")) return "TinyChipHub Zyber";
   const asic = (k.asicmodel || "").trim().toUpperCase();
   return ["BM1397", "BM1366", "BM1368"].includes(asic) ? `Bitaxe (${asic})` : null;
 }
@@ -1381,7 +1387,10 @@ async function stockBoard(loader) {
   if (!part || part.size > 0x20000) return null;
   const nvs = new Uint8Array(part.size);
   for (let a = 0; a < part.size; a += BLOCK) nvs.set(await readChecked(loader, part.offset + a, Math.min(BLOCK, part.size - a)), a);
-  return unsupportedStock(nvsStrings(nvs, "main"));
+  const k = nvsStrings(nvs, "main"), verdict = unsupportedStock(k);
+  // For a hardware test: what the check read and decided (DevTools console).
+  console.log("board check: nvs 0x" + part.offset.toString(16) + "+0x" + part.size.toString(16) + ", devicemodel=" + (k.devicemodel ?? "-") + ", asicmodel=" + (k.asicmodel ?? "-") + ", boardversion=" + (k.boardversion ?? "-") + " -> " + (verdict || "go on"));
+  return verdict;
 }
 async function backup(loader, target) {
   const size = loader.flashSizeBytes(await loader.detectFlashSize());

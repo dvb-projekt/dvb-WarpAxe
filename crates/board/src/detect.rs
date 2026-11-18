@@ -118,6 +118,17 @@ const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
         &["400", "401", "402", "403"],
     ),
     ("suprahex", "Bitaxe Supra Hex (6× BM1368)", &["701", "702"]),
+    // TinyChipHub's Zyber boards (ESP-Miner-Zyber, factory NVS files
+    // config-zyber*.cvs): one TPS546 drives four voltage domains in
+    // series, and the bus (TPS546, EMC2302, TMP1075) looks like a Supra
+    // Hex's. Matched by device model only: their board versions (1000,
+    // 1100, 1110 and 1200, which the 8G+ and the 12G share) lie in the
+    // range ESP-Miner numbers its own boards in (Naja Duo 1201, Gamma Hex
+    // 1300).
+    ("zyber8s", "TinyChipHub Zyber8S (8× BM1368)", &[]),
+    ("zyber8g", "TinyChipHub Zyber8G (8× BM1370)", &[]),
+    ("zyber8gplus", "TinyChipHub Zyber8G+ (8× BM1370)", &[]),
+    ("zyber12g", "TinyChipHub Zyber12G (12× BM1370)", &[]),
 ];
 
 /// A Bitaxe the stock firmware named (device model, board version or
@@ -136,6 +147,13 @@ pub fn from_stock_unsupported(
         .find(|(m, _, v)| model.eq_ignore_ascii_case(m) || v.contains(&version))
     {
         return Some(name);
+    }
+    // A Zyber model TinyChipHub adds later.
+    if model
+        .get(..5)
+        .is_some_and(|p| p.eq_ignore_ascii_case("zyber"))
+    {
+        return Some("TinyChipHub Zyber");
     }
     let asic = asicmodel.unwrap_or("").trim();
     [
@@ -443,6 +461,39 @@ mod tests {
             named((None, None, Some("2.2")), &one),
             Some("Bitaxe Max (BM1397)")
         );
+        // TinyChipHub Zyber: named by the model its factory NVS stores,
+        // also on the BM1370 boards; its board versions alone name nothing.
+        assert_eq!(
+            named((Some("zyber8g"), Some("BM1370"), Some("1100")), &hex),
+            Some("TinyChipHub Zyber8G (8× BM1370)")
+        );
+        assert_eq!(
+            named((Some("zyber8gplus"), Some("BM1370"), Some("1200")), &hex),
+            Some("TinyChipHub Zyber8G+ (8× BM1370)")
+        );
+        assert_eq!(
+            named((Some("zyber12g"), Some("BM1370"), Some("1200")), &hex),
+            Some("TinyChipHub Zyber12G (12× BM1370)")
+        );
+        assert_eq!(
+            named((Some("zyber8s"), Some("BM1368"), Some("1000")), &hex),
+            Some("TinyChipHub Zyber8S (8× BM1368)")
+        );
+        assert_eq!(
+            named((Some("Zyber16X"), Some("BM1370"), None), &hex),
+            Some("TinyChipHub Zyber")
+        );
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1370"), Some("1100")),
+            None
+        );
+        assert_eq!(from_stock_unsupported(Some("zyb"), None, None), None);
+        assert_eq!(
+            from_stock_unsupported(Some("ZYBER8G"), None, None),
+            Some("TinyChipHub Zyber8G (8× BM1370)")
+        );
+        // A multibyte character across byte 5: no panic, no match.
+        assert_eq!(from_stock_unsupported(Some("zybe€"), None, None), None);
         assert_eq!(
             named((Some("Hex"), Some("BM1366"), Some("303")), &hex),
             Some("Bitaxe Hex (6× BM1366)")
