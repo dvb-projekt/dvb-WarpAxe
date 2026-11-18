@@ -96,6 +96,55 @@ pub fn from_stock(
     None
 }
 
+/// The Bitaxe families AxeOS runs and WarpAxe does not: BM1397 (Max),
+/// BM1366 (Ultra, Hex) and BM1368 (Supra, Supra Hex). Their board
+/// versions, device models and chip names as ESP-Miner stores them
+/// (`device_config.h`, master 2026-11-18). On these boards the bus looks
+/// like a Gamma's (Supra, Ultra: TPS546 and EMC2101) or a Gamma Turbo's
+/// (Supra Hex, Hex: their EMC2302 answers at the EMC2103's address), so
+/// the stock keys are the only place that tells them apart before a chip
+/// is powered.
+const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
+    ("max", "Bitaxe Max (BM1397)", &["102"]),
+    (
+        "ultra",
+        "Bitaxe Ultra (BM1366)",
+        &["201", "202", "203", "204", "205", "207"],
+    ),
+    ("hex", "Bitaxe Hex (6× BM1366)", &["302", "303"]),
+    (
+        "supra",
+        "Bitaxe Supra (BM1368)",
+        &["400", "401", "402", "403"],
+    ),
+    ("suprahex", "Bitaxe Supra Hex (6× BM1368)", &["701", "702"]),
+];
+
+/// A Bitaxe the stock firmware named (device model, board version or
+/// chip) that WarpAxe cannot run: its name for the web UI. The chip
+/// alone still names it, so a board version ESP-Miner added after this
+/// list (a Supra Hex 703, reported 2026-11-18) is caught by its BM1368.
+pub fn from_stock_unsupported(
+    devicemodel: Option<&str>,
+    asicmodel: Option<&str>,
+    boardversion: Option<&str>,
+) -> Option<&'static str> {
+    let model = devicemodel.unwrap_or("").trim();
+    let version = boardversion.unwrap_or("").trim();
+    if let Some(&(_, name, _)) = UNSUPPORTED_STOCK
+        .iter()
+        .find(|(m, _, v)| model.eq_ignore_ascii_case(m) || v.contains(&version))
+    {
+        return Some(name);
+    }
+    match asicmodel.unwrap_or("").trim().to_ascii_uppercase().as_str() {
+        "BM1397" => Some("Bitaxe (BM1397)"),
+        "BM1366" => Some("Bitaxe (BM1366)"),
+        "BM1368" => Some("Bitaxe (BM1368)"),
+        _ => None,
+    }
+}
+
 /// Board versions the stock firmware stores for boards WarpAxe carries
 /// a profile for but has never run: offered, not taken.
 pub fn from_stock_choice(boardversion: Option<&str>) -> Option<&'static Profile> {
@@ -263,6 +312,11 @@ pub fn detect(
     nerd_bus: &[u8],
     vin_v: Option<f32>,
 ) -> Detection {
+    // A Bitaxe AxeOS runs and WarpAxe does not: named, nothing powered.
+    // Before the bus, which would take a Supra or an Ultra for a Gamma.
+    if let Some(m) = from_stock_unsupported(stock.0, stock.1, stock.2) {
+        return Detection::Unsupported(m, "board model stored by the stock firmware (AxeOS)");
+    }
     // The stock keys only ever name a tested board outright (the Bitaxe
     // Gamma); the bus takes the Nano, the Gaia and the Gamma on its own.
     if let Some(p) = from_stock(stock.0, stock.1, stock.2) {
@@ -343,6 +397,70 @@ mod tests {
     fn a_gamma_from_axeos_nvs_is_taken() {
         let d = detect((Some("gamma"), Some("BM1370"), Some("602")), &[], &[], None);
         assert!(matches!(d, Detection::Board(p, _) if p.name == "bitaxe-gamma"));
+    }
+
+    #[test]
+    fn bitaxes_on_other_chips_are_named_not_powered() {
+        // The bus a Supra Hex shows (TPS546, EMC2302 at the EMC2103's
+        // address, TMP1075, OLED) would offer a Gamma Turbo; a Supra's
+        // (TPS546, EMC2101) would be taken as a Gamma.
+        let hex = [addr::TPS546, addr::EMC2302, addr::TMP1075, addr::SSD1306];
+        let one = [addr::TPS546, addr::EMC2101, addr::SSD1306];
+        let named = |s: (Option<&str>, Option<&str>, Option<&str>), bus: &[u8]| match detect(
+            s,
+            bus,
+            &[],
+            Some(12.1),
+        ) {
+            Detection::Unsupported(m, _) => Some(m),
+            _ => None,
+        };
+        assert_eq!(
+            named((Some("SupraHex"), Some("BM1368"), Some("701")), &hex),
+            Some("Bitaxe Supra Hex (6× BM1368)")
+        );
+        // A board version ESP-Miner does not list yet: the chip names it.
+        assert_eq!(
+            named((None, Some("BM1368"), Some("703")), &hex),
+            Some("Bitaxe (BM1368)")
+        );
+        assert_eq!(
+            named((Some("supra"), None, None), &one),
+            Some("Bitaxe Supra (BM1368)")
+        );
+        assert_eq!(
+            named((None, None, Some("204")), &one),
+            Some("Bitaxe Ultra (BM1366)")
+        );
+        assert_eq!(
+            named((Some("Hex"), Some("BM1366"), Some("303")), &hex),
+            Some("Bitaxe Hex (6× BM1366)")
+        );
+        assert_eq!(
+            named((Some("max"), Some("BM1397"), Some("102")), &one),
+            Some("Bitaxe Max (BM1397)")
+        );
+        assert_eq!(
+            named((None, Some(" bm1366 "), None), &one),
+            Some("Bitaxe (BM1366)")
+        );
+        // The boards WarpAxe runs keep their way in.
+        assert!(
+            matches!(detect((Some("gamma"), Some("BM1370"), Some("601")), &one, &[], Some(5.1)), Detection::Board(p, _) if p.name == "bitaxe-gamma")
+        );
+        for v in ["650", "801", "1201", "1300", "800"] {
+            assert_eq!(
+                from_stock_unsupported(Some("x"), Some("BM1370"), Some(v)),
+                None,
+                "{v}"
+            );
+        }
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1373"), Some("1201")),
+            None
+        );
+        assert_eq!(from_stock_unsupported(None, None, None), None);
+        assert_eq!(from_stock_unsupported(Some(""), Some(""), Some("")), None);
     }
 
     #[test]
