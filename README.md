@@ -189,6 +189,11 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/web-chip-clock.png" alt="Dashboard with clock per chip: the Fans card reads Clock (base) and lists each chip's clock with the offset in yellow and who set it; the hash counters show each chip's clock under its name" width="760"><br>
+  <em>Clock per chip (since v0.1.47) — while any chip runs at a clock other than the chain's, the Fans card reads "Clock (base)" and lists every chip with its clock, the offset in yellow and who set it and when; the hash counters show each chip's clock under its name. Offsets here are example values on a NerdQAxe++.</em>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/web-swarm.png" alt="Swarm: the fleet's hashrate, power, efficiency and record difficulty, each miner's share, and one card per miner with sparkline and temperatures" width="760"><br>
   <em>Swarm — every miner on the network, WarpAxe or stock firmware, read by your browser (an Avalon by this miner, over the Avalon's cgminer API): the fleet's hashrate and each miner's share of it, sparklines, chip and regulator temperatures against their limits.</em>
 </p>
