@@ -242,7 +242,20 @@ impl Link {
         match self {
             Link::Tcp(s) => {
                 let mut r = s;
-                r.read(buf)
+                match r.read(buf) {
+                    // SO_RCVTIMEO ran out: lwIP says EAGAIN, which reads
+                    // "No more processes (os error 11)" on the Pool page.
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+                        ) =>
+                    {
+                        let d = s.read_timeout().ok().flatten().unwrap_or(READ_TIMEOUT);
+                        Err(silent_for(d))
+                    }
+                    r => r,
+                }
             }
             Link::Tls {
                 tls, fd, limit_s, ..
@@ -259,13 +272,21 @@ impl Link {
                         Err(e) => return Err(esp_io(e)),
                     }
                     if since.elapsed() > limit {
-                        return Err(io::ErrorKind::TimedOut.into());
+                        return Err(silent_for(limit));
                     }
                     wait(*fd, sys::POLLIN as i16, 1000);
                 }
             }
         }
     }
+}
+
+/// The read limit ran out: the pool sent nothing for `d`.
+fn silent_for(d: Duration) -> io::Error {
+    io::Error::new(
+        io::ErrorKind::TimedOut,
+        format!("no data from the pool for {} s", d.as_secs()),
+    )
 }
 
 /// Block until `fd` is ready for `events` or `ms` pass.
