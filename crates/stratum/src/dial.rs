@@ -82,16 +82,13 @@ pub fn interleave<T>(v6: Vec<T>, v4: Vec<T>) -> Vec<T> {
     }
 }
 
-/// Which family to leave out of this attempt: the one a session just
-/// brought no work over (`aside`, true = IPv6), but only while the name
-/// has addresses of the other family too. A pool reachable over one
-/// family only is always tried over that one. Returns true for IPv6,
-/// false for IPv4, `None` to try both.
-pub fn family_to_drop(aside: Option<bool>, has_v6: bool, has_v4: bool) -> Option<bool> {
-    match aside {
-        Some(v6) if has_v6 && has_v4 => Some(v6),
-        _ => None,
-    }
+/// Whether IPv4 goes first this time instead of IPv6. A session over
+/// IPv6 that brought no work (`silent_v6`) puts IPv4 first while the
+/// name has IPv4 addresses; IPv6 stays in the race behind it, so a
+/// broken IPv4 path still falls through to IPv6. Silence over IPv4
+/// changes nothing: IPv6 is first anyway, and IPv4 stays behind it.
+pub fn ipv4_first(silent_v6: bool, has_v6: bool, has_v4: bool) -> bool {
+    silent_v6 && has_v6 && has_v4
 }
 
 /// The wait before the next probe of the main pool, in seconds, after a
@@ -180,16 +177,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_family_is_set_aside_only_while_the_other_exists() {
-        // Silent over IPv6, the name has both: IPv4 only.
-        assert_eq!(family_to_drop(Some(true), true, true), Some(true));
-        assert_eq!(family_to_drop(Some(false), true, true), Some(false));
-        // Only one family: kept, whatever happened.
-        assert_eq!(family_to_drop(Some(true), true, false), None);
-        assert_eq!(family_to_drop(Some(false), false, true), None);
-        assert_eq!(family_to_drop(Some(true), false, true), None);
-        // Nothing set aside.
-        assert_eq!(family_to_drop(None, true, true), None);
+    fn ipv4_goes_first_only_after_silence_over_ipv6_with_both_families() {
+        assert!(ipv4_first(true, true, true));
+        // One family only: nothing to reorder.
+        assert!(!ipv4_first(true, true, false));
+        assert!(!ipv4_first(true, false, true));
+        // No silence over IPv6: IPv6 first as always.
+        assert!(!ipv4_first(false, true, true));
+        // The order this gives: IPv4 first, IPv6 still in the race.
+        assert_eq!(interleave(vec!["v4"], vec!["v6"]), vec!["v4", "v6"]);
     }
 
     #[test]

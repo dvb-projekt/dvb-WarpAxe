@@ -364,9 +364,10 @@ const SHORT_SESSION: Duration = Duration::from_secs(60);
 /// While on the fallback, how often the main pool is probed (seconds).
 /// The probe is a TCP connect; a pool that takes it and then sends no
 /// work sent the miner back for its three failed sessions every time.
-/// Now one failed session after a probe goes straight back to the
-/// fallback and doubles the wait, up to [`PRIMARY_PROBE_MAX`]; work from
-/// the main pool sets it back.
+/// Now a failed session after a probe goes straight back to the
+/// fallback and doubles the wait (5, 10, 20, 40 min, up to
+/// [`PRIMARY_PROBE_MAX`]); work from the main pool sets it back. A
+/// session silent over IPv6 gets one more try first, with IPv4 first.
 const PRIMARY_PROBE: u32 = 300;
 const PRIMARY_PROBE_MAX: u32 = 2400;
 static PROBE_EVERY_S: AtomicU32 = AtomicU32::new(PRIMARY_PROBE);
@@ -451,6 +452,8 @@ fn run() {
     let mut on_fallback = false;
     // Back on the main pool because the probe reached it, no work yet.
     let mut probing = false;
+    // That probe's second try, IPv4 first after silence over IPv6, used.
+    let mut probe_retried = false;
     std::thread::Builder::new()
         .stack_size(4096)
         .spawn(probe_primary)
@@ -560,6 +563,7 @@ fn run() {
             fails = 0;
             backoff = Duration::from_secs(3);
             probing = true;
+            probe_retried = false;
             continue;
         }
         // The address this session used (cleared below on an error).
@@ -581,14 +585,30 @@ fn run() {
         // length that brought no work at all (a pool that takes the
         // connection and then says nothing until the read times out).
         let no_work = state().jobs_received == jobs_before;
+        let used_ip = used_ip.parse::<std::net::IpAddr>().ok();
         if no_work && net_up {
-            // Next time the other family, if the name has one: the pool
-            // may be silent over this one only (`net::dial`).
-            if let Ok(ip) = used_ip.parse::<std::net::IpAddr>() {
-                crate::net::dial::no_work_over(&host, ip);
+            // Silent over IPv6: IPv4 first next time (`net::dial`).
+            if let Some(ip) = used_ip {
+                crate::net::dial::no_work_over(&host, port, ip);
             }
         }
-        if probing && fallback_ok && (started.elapsed() < SHORT_SESSION || no_work) {
+        let held = started.elapsed() >= SHORT_SESSION && !no_work;
+        if probing
+            && fallback_ok
+            && net_up
+            && !held
+            && !probe_retried
+            && no_work
+            && used_ip.is_some_and(|ip| ip.is_ipv6())
+        {
+            // Silent over IPv6 only, maybe: one more try right away with
+            // IPv4 first, before the fallback and the longer wait.
+            probe_retried = true;
+            log::warn!("stratum: main pool sent no work over IPv6, trying again with IPv4 first");
+            pause_unless_reconnect(Duration::from_secs(3), fallback_ok);
+            continue;
+        }
+        if probing && fallback_ok && net_up && !held {
             // The probe reached the main pool, the session did not hold:
             // back to the fallback that worked, and wait longer before
             // the next probe. Not an outage: the fallback mines.
@@ -605,6 +625,7 @@ fn run() {
                 "stratum: main pool took the connection but did not hold, back to the fallback; next check in {} min",
                 next / 60
             );
+            crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(1));
             continue;
         }
         if started.elapsed() < SHORT_SESSION || no_work {
@@ -678,9 +699,12 @@ static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
 /// pool; when it answers, end the fallback session so `run` goes back.
 fn probe_primary() {
     loop {
-        std::thread::sleep(Duration::from_secs(
-            PROBE_EVERY_S.load(Ordering::Relaxed) as u64
-        ));
+        // Read again while waiting: the stratum thread doubles the wait
+        // after a probe that did not hold, and sets it back on work.
+        let since = Instant::now();
+        while since.elapsed() < Duration::from_secs(PROBE_EVERY_S.load(Ordering::Relaxed) as u64) {
+            std::thread::sleep(Duration::from_secs(5));
+        }
         if !state().using_fallback {
             continue;
         }

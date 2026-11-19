@@ -20,7 +20,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::sys;
-use warpaxe_stratum::dial::{family_to_drop, interleave, pool_host, Race, Step};
+use warpaxe_stratum::dial::{host_port, interleave, ipv4_first, pool_host, Race, Step};
 
 /// Most addresses kept per family. lwIP's resolver keeps
 /// `CONFIG_LWIP_DNS_MAX_HOST_IP` per name (1 in this build), so in
@@ -33,29 +33,33 @@ const AAAA_SLOW: Duration = Duration::from_secs(2);
 /// Names to skip AAAA for, with when that ends (a few entries at most:
 /// the main and the fallback pool).
 static NO_AAAA: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
-/// A session over one family that brought no work (the pool took the
-/// connection and said nothing, or closed it before the first job) sets
-/// that family aside for this long, if the name has the other one too.
-/// Happy Eyeballs only sees the TCP handshake: a silent IPv6 front end
-/// wins every race, and IPv4 of the same pool was never tried.
-const FAMILY_SKIP: Duration = Duration::from_secs(5 * 60);
-/// Names with the family set aside (true = IPv6) and when that ends; one
-/// entry per name, the newest verdict wins.
-static SET_ASIDE: Mutex<Vec<(String, bool, Instant)>> = Mutex::new(Vec::new());
+/// A session over IPv6 that brought no work (the pool took the
+/// connection and said nothing, or closed it before the first job) puts
+/// IPv4 first for this pool for this long. Happy Eyeballs only sees the
+/// TCP handshake: a silent IPv6 front end won every race, and IPv4 of
+/// the same pool was never tried. IPv6 stays in the race behind IPv4, so
+/// the hour costs nothing where IPv6 is fine; it outlasts the longest
+/// wait between probes of the main pool (`stratum::PRIMARY_PROBE_MAX`).
+const V4_FIRST_FOR: Duration = Duration::from_secs(60 * 60);
+/// `host:port` of pools that were silent over IPv6, and until when IPv4
+/// goes first.
+static V4_FIRST: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
 
-/// The session to `host` over `ip` brought no work: try the other family
-/// for [`FAMILY_SKIP`] (`candidates`), where the name has one.
-pub fn no_work_over(host: &str, ip: IpAddr) {
-    let host = pool_host(host).to_string();
-    let v6 = ip.is_ipv6();
-    let mut g = SET_ASIDE.lock().unwrap();
-    g.retain(|(h, _, _)| *h != host);
-    g.push((host, v6, Instant::now() + FAMILY_SKIP));
+/// The session to `host:port` over `ip` brought no work. Over IPv6: IPv4
+/// first for [`V4_FIRST_FOR`] (`candidates`). Over IPv4: IPv6 goes first
+/// anyway; the IPv6 verdict is dropped, so the next try races as usual.
+pub fn no_work_over(host: &str, port: u16, ip: IpAddr) {
+    let key = host_port(pool_host(host), port);
+    let mut g = V4_FIRST.lock().unwrap();
+    g.retain(|(k, _)| *k != key);
+    if ip.is_ipv6() {
+        g.push((key, Instant::now() + V4_FIRST_FOR));
+    }
 }
 
-/// The pool settings changed: every family is tried again.
+/// The pool settings changed: IPv6 first again for every pool.
 pub fn forget_no_work() {
-    SET_ASIDE.lock().unwrap().clear();
+    V4_FIRST.lock().unwrap().clear();
 }
 
 /// One resolved address, as lwIP wants it for `connect`.
@@ -186,7 +190,7 @@ fn candidates(host: &str, port: u16) -> Vec<Cand> {
     if !literal.is_empty() {
         return literal;
     }
-    let mut v4 = lookup(host, port, sys::AF_INET, false);
+    let v4 = lookup(host, port, sys::AF_INET, false);
     let own = if crate::config::get().ipv6 {
         own_ipv6_soon()
     } else {
@@ -222,21 +226,15 @@ fn candidates(host: &str, port: u16) -> Vec<Cand> {
             v6.retain(|c| matches!(c.addr.ip(), IpAddr::V6(a) if is_ula(&a)));
         }
     }
-    let aside = {
-        let mut g = SET_ASIDE.lock().unwrap();
-        g.retain(|(_, _, until)| *until > now);
-        g.iter().find(|(h, _, _)| h == host).map(|(_, v6, _)| *v6)
+    let silent_v6 = {
+        let key = host_port(host, port);
+        let mut g = V4_FIRST.lock().unwrap();
+        g.retain(|(_, until)| *until > now);
+        g.iter().any(|(k, _)| *k == key)
     };
-    match family_to_drop(aside, !v6.is_empty(), !v4.is_empty()) {
-        Some(true) => {
-            log::info!("stratum: {host} sent no work over IPv6 a moment ago: IPv4 only for now");
-            v6.clear();
-        }
-        Some(false) => {
-            log::info!("stratum: {host} sent no work over IPv4 a moment ago: IPv6 only for now");
-            v4.clear();
-        }
-        None => {}
+    if ipv4_first(silent_v6, !v6.is_empty(), !v4.is_empty()) {
+        log::info!("stratum: {host} sent no work over IPv6 lately: IPv4 first");
+        return interleave(v4, v6);
     }
     interleave(v6, v4)
 }
