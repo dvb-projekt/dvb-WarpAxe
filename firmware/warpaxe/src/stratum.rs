@@ -361,8 +361,15 @@ pub fn start() {
 const FAILS_BEFORE_FALLBACK: u32 = 3;
 /// A session shorter than this counts as a failure too.
 const SHORT_SESSION: Duration = Duration::from_secs(60);
-/// While on the fallback, how often the main pool is probed.
-const PRIMARY_PROBE: Duration = Duration::from_secs(300);
+/// While on the fallback, how often the main pool is probed (seconds).
+/// The probe is a TCP connect; a pool that takes it and then sends no
+/// work sent the miner back for its three failed sessions every time.
+/// Now one failed session after a probe goes straight back to the
+/// fallback and doubles the wait, up to [`PRIMARY_PROBE_MAX`]; work from
+/// the main pool sets it back.
+const PRIMARY_PROBE: u32 = 300;
+const PRIMARY_PROBE_MAX: u32 = 2400;
+static PROBE_EVERY_S: AtomicU32 = AtomicU32::new(PRIMARY_PROBE);
 
 /// The live stream while on the fallback, so the probe thread can end
 /// that session once the main pool answers again.
@@ -442,6 +449,8 @@ fn run() {
     let mut backoff = Duration::from_secs(3);
     let mut fails: u32 = 0;
     let mut on_fallback = false;
+    // Back on the main pool because the probe reached it, no work yet.
+    let mut probing = false;
     std::thread::Builder::new()
         .stack_size(4096)
         .spawn(probe_primary)
@@ -453,6 +462,9 @@ fn run() {
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
+            probing = false;
+            PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+            crate::net::dial::forget_no_work();
         }
         let cfg = config::get();
         if cfg.stratum_url.is_empty() || cfg.stratum_user.is_empty() {
@@ -536,6 +548,9 @@ fn run() {
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
+            probing = false;
+            PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+            crate::net::dial::forget_no_work();
             continue;
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
@@ -544,8 +559,11 @@ fn run() {
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
+            probing = true;
             continue;
         }
+        // The address this session used (cleared below on an error).
+        let used_ip = state().pool_ip.clone();
         // Sessions only end with an error (a closed or broken
         // connection). One that ran for a while was a working pool: start
         // counting again. A connect failure or a session under a minute
@@ -563,6 +581,32 @@ fn run() {
         // length that brought no work at all (a pool that takes the
         // connection and then says nothing until the read times out).
         let no_work = state().jobs_received == jobs_before;
+        if no_work && net_up {
+            // Next time the other family, if the name has one: the pool
+            // may be silent over this one only (`net::dial`).
+            if let Ok(ip) = used_ip.parse::<std::net::IpAddr>() {
+                crate::net::dial::no_work_over(&host, ip);
+            }
+        }
+        if probing && fallback_ok && (started.elapsed() < SHORT_SESSION || no_work) {
+            // The probe reached the main pool, the session did not hold:
+            // back to the fallback that worked, and wait longer before
+            // the next probe. Not an outage: the fallback mines.
+            probing = false;
+            on_fallback = true;
+            fails = 0;
+            backoff = Duration::from_secs(3);
+            let next = warpaxe_stratum::dial::next_probe_s(
+                PROBE_EVERY_S.load(Ordering::Relaxed),
+                PRIMARY_PROBE_MAX,
+            );
+            PROBE_EVERY_S.store(next, Ordering::Relaxed);
+            log::warn!(
+                "stratum: main pool took the connection but did not hold, back to the fallback; next check in {} min",
+                next / 60
+            );
+            continue;
+        }
         if started.elapsed() < SHORT_SESSION || no_work {
             if CLOCK_UNSURE.swap(false, Ordering::Relaxed) {
                 log::warn!("stratum: the pool certificate failed against a clock NTP has not set yet: not counted towards the fallback");
@@ -604,6 +648,10 @@ fn run() {
         } else {
             fails = 0;
             backoff = Duration::from_secs(3);
+            if !on_fallback {
+                probing = false;
+                PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+            }
         }
     }
 }
@@ -630,7 +678,9 @@ static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
 /// pool; when it answers, end the fallback session so `run` goes back.
 fn probe_primary() {
     loop {
-        std::thread::sleep(PRIMARY_PROBE);
+        std::thread::sleep(Duration::from_secs(
+            PROBE_EVERY_S.load(Ordering::Relaxed) as u64
+        ));
         if !state().using_fallback {
             continue;
         }
@@ -689,6 +739,9 @@ fn session(
     }
     let pinned = tls && crate::tls_trust::pool_outcome().1;
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    // Until the first job the link waits `link::SETUP_TIMEOUT` for the
+    // pool, then the full `link::READ_TIMEOUT`.
+    let mut has_work = false;
     let ip = stream
         .peer()
         .map(|a| a.ip().to_string())
@@ -886,6 +939,10 @@ fn session(
                     );
                 }
                 publish(Feed::V1(s.clone(), prepared), clean);
+                if !has_work {
+                    has_work = true;
+                    stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                }
                 update(|st| {
                     st.last_job_id = job_id;
                     st.block_height = height;
@@ -1065,6 +1122,10 @@ fn session_v2(
     let stream = Arc::new(Link::connect(host, port, false, None)?);
 
     *CURRENT_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
+    // Until the first job the link waits `link::SETUP_TIMEOUT` for the
+    // pool, then the full `link::READ_TIMEOUT`.
+    let mut has_work = false;
+    let jobs_at_start = state().jobs_received;
     let ip = stream
         .peer()
         .map(|a| a.ip().to_string())
@@ -1207,6 +1268,10 @@ fn session_v2(
             }
             for ev in events {
                 on_v2_event(ev, user, &started)?;
+                if !has_work && state().jobs_received != jobs_at_start {
+                    has_work = true;
+                    stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                }
             }
         }
     }

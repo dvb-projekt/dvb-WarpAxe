@@ -82,6 +82,24 @@ pub fn interleave<T>(v6: Vec<T>, v4: Vec<T>) -> Vec<T> {
     }
 }
 
+/// Which family to leave out of this attempt: the one a session just
+/// brought no work over (`aside`, true = IPv6), but only while the name
+/// has addresses of the other family too. A pool reachable over one
+/// family only is always tried over that one. Returns true for IPv6,
+/// false for IPv4, `None` to try both.
+pub fn family_to_drop(aside: Option<bool>, has_v6: bool, has_v4: bool) -> Option<bool> {
+    match aside {
+        Some(v6) if has_v6 && has_v4 => Some(v6),
+        _ => None,
+    }
+}
+
+/// The wait before the next probe of the main pool, in seconds, after a
+/// probe whose session did not hold: doubled, at most `max`.
+pub fn next_probe_s(current: u32, max: u32) -> u32 {
+    current.saturating_mul(2).min(max)
+}
+
 /// What the dialer should do now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -160,6 +178,27 @@ impl Race {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_family_is_set_aside_only_while_the_other_exists() {
+        // Silent over IPv6, the name has both: IPv4 only.
+        assert_eq!(family_to_drop(Some(true), true, true), Some(true));
+        assert_eq!(family_to_drop(Some(false), true, true), Some(false));
+        // Only one family: kept, whatever happened.
+        assert_eq!(family_to_drop(Some(true), true, false), None);
+        assert_eq!(family_to_drop(Some(false), false, true), None);
+        assert_eq!(family_to_drop(Some(true), false, true), None);
+        // Nothing set aside.
+        assert_eq!(family_to_drop(None, true, true), None);
+    }
+
+    #[test]
+    fn probe_wait_doubles_up_to_the_cap() {
+        assert_eq!(next_probe_s(300, 2400), 600);
+        assert_eq!(next_probe_s(1200, 2400), 2400);
+        assert_eq!(next_probe_s(2400, 2400), 2400);
+        assert_eq!(next_probe_s(u32::MAX, 2400), 2400);
+    }
 
     #[test]
     fn brackets_and_spaces_go_names_stay() {

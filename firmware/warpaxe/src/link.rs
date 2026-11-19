@@ -11,6 +11,7 @@
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::os::fd::AsRawFd;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -21,8 +22,15 @@ use warpaxe_trust::pin::Pin;
 use crate::tls_trust::{self, Seen};
 
 /// No data from the pool for this long ends the session (as the plain
-/// socket's read timeout).
-const READ_TIMEOUT: Duration = Duration::from_secs(180);
+/// socket's read timeout), once the pool has sent work.
+pub const READ_TIMEOUT: Duration = Duration::from_secs(180);
+/// Until the first job, the pool gets this long between messages. A pool
+/// that takes the connection and then says nothing (a proxy whose backend
+/// is gone) used to hold the session for [`READ_TIMEOUT`], three times
+/// before the fallback; the subscribe answer and the first notify come
+/// within a second or two from a working pool. The stratum thread raises
+/// the limit with [`Link::set_read_timeout`] when the first job arrives.
+pub const SETUP_TIMEOUT: Duration = Duration::from_secs(30);
 /// A write that cannot go out for this long counts as a broken link.
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -32,6 +40,8 @@ pub enum Link {
         tls: Mutex<SendTls>,
         fd: i32,
         peer: SocketAddr,
+        /// The read limit in seconds (the plain socket keeps its own).
+        limit_s: AtomicU32,
     },
 }
 
@@ -89,7 +99,7 @@ impl Link {
                 "stratum: connected to {} ({addr})",
                 warpaxe_stratum::dial::host_port(host, port)
             );
-            s.set_read_timeout(Some(READ_TIMEOUT))?;
+            s.set_read_timeout(Some(SETUP_TIMEOUT))?;
             if let Err(e) = s.set_nodelay(true) {
                 log::warn!("stratum: nodelay not set: {e}");
             }
@@ -164,7 +174,21 @@ impl Link {
             tls: Mutex::new(SendTls(t)),
             fd,
             peer,
+            limit_s: AtomicU32::new(SETUP_TIMEOUT.as_secs() as u32),
         })
+    }
+
+    /// How long a read may wait for the pool: [`SETUP_TIMEOUT`] from the
+    /// connect, [`READ_TIMEOUT`] once the session has work.
+    pub fn set_read_timeout(&self, d: Duration) {
+        match self {
+            Link::Tcp(s) => {
+                if let Err(e) = s.set_read_timeout(Some(d)) {
+                    log::warn!("stratum: read timeout not set: {e}");
+                }
+            }
+            Link::Tls { limit_s, .. } => limit_s.store(d.as_secs() as u32, Ordering::Relaxed),
+        }
     }
 
     /// The pool address this link went to.
@@ -220,8 +244,11 @@ impl Link {
                 let mut r = s;
                 r.read(buf)
             }
-            Link::Tls { tls, fd, .. } => {
+            Link::Tls {
+                tls, fd, limit_s, ..
+            } => {
                 let since = Instant::now();
+                let limit = Duration::from_secs(limit_s.load(Ordering::Relaxed) as u64);
                 loop {
                     // Decrypted bytes may already wait inside mbedTLS with
                     // nothing left on the socket: try a read first.
@@ -231,7 +258,7 @@ impl Link {
                         Err(e) if is_want(&e) => {}
                         Err(e) => return Err(esp_io(e)),
                     }
-                    if since.elapsed() > READ_TIMEOUT {
+                    if since.elapsed() > limit {
                         return Err(io::ErrorKind::TimedOut.into());
                     }
                     wait(*fd, sys::POLLIN as i16, 1000);
