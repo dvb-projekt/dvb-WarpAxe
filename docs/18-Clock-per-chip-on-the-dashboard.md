@@ -18,8 +18,8 @@ Only while at least one chip has an offset other than 0:
   "Clock per chip", with who set the offsets and how long ago, then one
   line per chip: its clock, the offset in yellow for a chip that has one,
   and its temperature where the board measures one per chip
-  (`asicTemps` with one entry per chip, as on the Naja Duo; the
-  NerdQAxe++ has none). A chip with an offset has a yellow bar on its left.
+  (`asicTemps` with one entry per chip, as on the Naja Duo and the
+  Gamma Turbo, the boards with two chip diodes; the NerdQAxe++ has none). A chip with an offset has a yellow bar on its left.
 - **Hash counters.** Under "ASIC n" the chip's clock, yellow for a chip
   with an offset, so a slowed chip's hashrate and errors can be read
   against its clock.
