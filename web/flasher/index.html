@@ -1324,11 +1324,20 @@ const UNSUPPORTED_STOCK = [
   ["zyber8gplus", "TinyChipHub Zyber8G+ (8× BM1370)", []],
   ["zyber12g", "TinyChipHub Zyber12G (12× BM1370)", []],
 ];
+// A named model decides alone: one on the list stops, any other goes on
+// (the firmware then decides on the first start, where a board can still
+// be chosen by hand; the installer has no such way out). The board
+// version and the chip name only count when no model is stored, so a
+// firmware that reuses ESP-Miner's numbers for a board WarpAxe runs is
+// never stopped here.
 function unsupportedStock(k) {
   const model = (k.devicemodel || "").trim().toLowerCase(), version = (k.boardversion || "").trim();
-  const f = UNSUPPORTED_STOCK.find(([m, , v]) => model === m || (version && v.includes(version)));
-  if (f) return f[1];
+  const byModel = UNSUPPORTED_STOCK.find(([m]) => model === m);
+  if (byModel) return byModel[1];
   if (model.startsWith("zyber")) return "TinyChipHub Zyber";
+  if (model) return null;
+  const byVersion = version && UNSUPPORTED_STOCK.find(([, , v]) => v.includes(version));
+  if (byVersion) return byVersion[1];
   const asic = (k.asicmodel || "").trim().toUpperCase();
   return ["BM1397", "BM1366", "BM1368"].includes(asic) ? `Bitaxe (${asic})` : null;
 }
