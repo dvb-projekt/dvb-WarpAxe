@@ -137,6 +137,19 @@ pub fn start_netif() -> Result<(), EspError> {
         if netif.is_null() {
             return Err(EspError::from_infallible::<{ sys::ESP_ERR_NO_MEM }>());
         }
+        // The DHCP server offers no router: the host gets an address on
+        // the link and nothing else. ESP-IDF offers one by default
+        // (`dhcps_offer` 0xFF), and a Mac that ranked this link above its
+        // Wi-Fi then sent all its traffic into the miner and lost the
+        // internet (2026-11-20, Ethernet unplugged). DNS is off already.
+        let mut offer: u8 = 0;
+        sys::esp!(sys::esp_netif_dhcps_option(
+            netif,
+            sys::esp_netif_dhcp_option_mode_t_ESP_NETIF_OP_SET,
+            sys::esp_netif_dhcp_option_id_t_ESP_NETIF_ROUTER_SOLICITATION_ADDRESS,
+            (&mut offer as *mut u8).cast(),
+            1,
+        ))?;
         let drv = sys::esp_netif_driver_ifconfig_t {
             handle: netif as *mut c_void,
             transmit: Some(transmit),
