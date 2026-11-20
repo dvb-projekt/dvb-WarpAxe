@@ -343,6 +343,24 @@ pub mod detail {
         coded("pool_back", &[])
     }
 
+    /// The pool kept the connection and sent no new job for `secs`
+    /// seconds (a ckpool whose node is down pings instead): reconnecting.
+    pub fn pool_stale(secs: u64) -> Detail {
+        coded("pool_stale", &[("s", Value::from(secs))])
+    }
+
+    /// The main pool sent no new job for `secs` seconds again after the
+    /// reconnect: on the fallback.
+    pub fn pool_stale_fallback(secs: u64) -> Detail {
+        coded("pool_stale_fallback", &[("s", Value::from(secs))])
+    }
+
+    /// The fallback pool sent no new job for `secs` seconds either: back
+    /// to the main pool.
+    pub fn fallback_stale(secs: u64) -> Detail {
+        coded("fallback_stale", &[("s", Value::from(secs))])
+    }
+
     /// Neither the main nor the fallback pool answers: the chips are
     /// off until one does.
     pub fn pools_out() -> Detail {
@@ -668,6 +686,9 @@ pub const CODES: &[&str] = &[
     "block_unknown",
     "pool_fallback",
     "pool_back",
+    "pool_stale",
+    "pool_stale_fallback",
+    "fallback_stale",
     "pools_out",
     "pools_back",
     "pool_saved",
@@ -748,6 +769,15 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         ),
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
         "pool_back" => "main pool answers again, back from the fallback".into(),
+        "pool_stale" => format!("no new job from the pool for {} s, reconnecting", g("s")),
+        "pool_stale_fallback" => format!(
+            "main pool sent no new job for {} s, on the fallback",
+            g("s")
+        ),
+        "fallback_stale" => format!(
+            "fallback pool sent no new job for {} s either, back to the main pool",
+            g("s")
+        ),
         "pools_out" => "no pool answers, chips off until one does".into(),
         "pools_back" => format!("a pool answers again after {} s, chips back on", g("s")),
         "pool_saved" => format!("saved pool {} used", g("p")),
@@ -1121,6 +1151,18 @@ mod tests {
             ),
             (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
             (detail::pool_back(), "main pool answers again, back from the fallback"),
+            (
+                detail::pool_stale(600),
+                "no new job from the pool for 600 s, reconnecting",
+            ),
+            (
+                detail::pool_stale_fallback(300),
+                "main pool sent no new job for 300 s, on the fallback",
+            ),
+            (
+                detail::fallback_stale(600),
+                "fallback pool sent no new job for 600 s either, back to the main pool",
+            ),
             (detail::pools_out(), "no pool answers, chips off until one does"),
             (
                 detail::pools_back(125),

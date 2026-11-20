@@ -630,9 +630,11 @@ fn run() {
                         "stratum: {stale}, reconnecting; another {} min without a new job and the miner switches pools",
                         warpaxe_stratum::stale::RETRY_LIMIT_S / 60
                     );
+                    crate::events::record("pool", warpaxe_diag::events::detail::pool_stale(stale.secs));
                 }
                 Verdict::SwitchPool if on_fallback => {
                     log::warn!("stratum: {stale}, the fallback pool sends no new jobs either, back to the main pool");
+                    crate::events::record("pool", warpaxe_diag::events::detail::fallback_stale(stale.secs));
                     on_fallback = false;
                     probing = false;
                 }
@@ -649,7 +651,10 @@ fn run() {
                         "stratum: {stale}, the main pool sends no new jobs, switching to the fallback; next check in {} min",
                         next / 60
                     );
-                    crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(2));
+                    crate::events::record(
+                        "pool",
+                        warpaxe_diag::events::detail::pool_stale_fallback(stale.secs),
+                    );
                     on_fallback = true;
                     probing = false;
                 }
@@ -783,10 +788,18 @@ static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
 fn probe_primary() {
     loop {
         // Read again while waiting: the stratum thread doubles the wait
-        // after a probe that did not hold, and sets it back on work.
-        let since = Instant::now();
+        // after a probe that did not hold, and sets it back on work. The
+        // wait counts from the switch to the fallback: while the miner is
+        // on the main pool the clock starts over, so a probe that brought
+        // it back to a still stuck pool waits the full time again once it
+        // is on the fallback (the .42 test of 2026-11-20 saw 15 min
+        // instead of 20, counted from the probe before).
+        let mut since = Instant::now();
         while since.elapsed() < Duration::from_secs(PROBE_EVERY_S.load(Ordering::Relaxed) as u64) {
             std::thread::sleep(Duration::from_secs(5));
+            if !state().using_fallback {
+                since = Instant::now();
+            }
         }
         if !state().using_fallback {
             continue;
