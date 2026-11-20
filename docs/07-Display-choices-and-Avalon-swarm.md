@@ -169,7 +169,15 @@ On the card: model "Avalon Q", `160× A3197S`, the work mode as a badge,
 chip temperature with the hottest chip noted and a bar that ends at
 100 °C (the MM throttles by itself and runs its chips to 92 °C in Super;
 100 °C is WarpTune's failsafe line), the fans instead of the regulator
-gauge, power and J/TH, shares, best share. The fleet's hashrate, power,
+gauge, power and J/TH, shares, best share. Below the gauges, when the
+Avalon reports them (since 2026-11-20): why it stopped (`softOffReason`;
+a fault turns the status dot red, a pause by command or schedule stays
+neutral), a supply error (`psError`), its error bits by name (`mmErrors`,
+`boardErrors` per board), and a supply line with the rail's voltage and
+current, the chips' core voltage where the firmware reports it (Nano 3S
+SDK) and the supply's efficiency (`railPower` / `power`, only where
+`power` is the wall). A bit without a name in Canaan's tables shows as
+`bitN`. The fleet's hashrate, power,
 shares and record include it.
 
 Tests: `crates/avalon` parses the three replies recorded from the .43
