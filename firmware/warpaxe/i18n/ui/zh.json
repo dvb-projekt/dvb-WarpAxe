@@ -556,7 +556,7 @@
   "evd_pool_back": "主矿池恢复响应，已从备用矿池切回",
   "evd_pool_stale": "矿池 {s} 秒未发送新任务，正在重新连接",
   "evd_pool_stale_fallback": "主矿池 {s} 秒未发送新任务，已切换到备用矿池",
-  "evd_fallback_stale": "备用矿池也 {s} 秒未发送新任务，切回主矿池",
+  "evd_fallback_stale": "备用矿池也 {s} 秒未发送新任务，已切回主矿池",
   "evd_pools_out": "所有矿池均无响应，ASIC 已关闭，待有矿池响应后重新开启",
   "evd_pools_back": "{s} 秒后有矿池恢复响应，ASIC 已重新开启",
   "st_nopool": "无法连接任何矿池：ASIC 已关闭",

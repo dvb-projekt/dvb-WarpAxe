@@ -556,7 +556,7 @@
   "evd_pool_back": "メインプールが再び応答、フォールバックプールから復帰",
   "evd_pool_stale": "{s} 秒間プールから新しいジョブなし、再接続",
   "evd_pool_stale_fallback": "{s} 秒間メインプールから新しいジョブなし、フォールバックプールに切り替え",
-  "evd_fallback_stale": "フォールバックプールからも {s} 秒間新しいジョブなし、メインプールに戻る",
+  "evd_fallback_stale": "フォールバックプールからも {s} 秒間新しいジョブなし、メインプールに復帰",
   "evd_pools_out": "どのプールも応答なし、応答があるまでASIC を停止",
   "evd_pools_back": "{s} 秒後にプールが再び応答、ASIC を再開",
   "st_nopool": "プール応答なし：ASIC 停止",
