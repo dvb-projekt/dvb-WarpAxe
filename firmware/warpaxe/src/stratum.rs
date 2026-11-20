@@ -202,6 +202,9 @@ enum Feed {
 /// A share on its way to the pool.
 enum Outgoing {
     V1(Request),
+    /// A ready line for the V1 link (a pong), sent by the submit thread
+    /// so that the link has one writer.
+    Line(String),
     V2 {
         job_id: u32,
         extranonce2: Vec<u8>,
@@ -512,6 +515,7 @@ fn run() {
             crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(fails));
             on_fallback = true;
             fails = 0;
+            STALE.lock().unwrap().switched();
         }
         let (host, port, tls, pin, user, pass, v2) = if on_fallback {
             (
@@ -590,7 +594,9 @@ fn run() {
             backoff = Duration::from_secs(3);
             probing = true;
             probe_retried = false;
-            STALE.lock().unwrap().reset();
+            // A main pool left for sending no new jobs gets the short
+            // limit (`warpaxe_stratum::stale`).
+            STALE.lock().unwrap().back_to_main();
             continue;
         }
         // The address this session used (cleared below on an error).
@@ -617,7 +623,7 @@ fn run() {
             // ckpool whose node is down pings instead). Reconnect once;
             // if that brings no fresh work either, the other pool.
             use warpaxe_stratum::stale::Verdict;
-            let verdict = STALE.lock().unwrap().stale(fallback_ok);
+            let verdict = STALE.lock().unwrap().stale(fallback_ok, on_fallback);
             match verdict {
                 Verdict::Reconnect => {
                     log::warn!(
@@ -626,14 +632,22 @@ fn run() {
                     );
                 }
                 Verdict::SwitchPool if on_fallback => {
-                    log::warn!("stratum: the fallback pool sends no new jobs either, back to the main pool");
-                    crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+                    log::warn!("stratum: {stale}, the fallback pool sends no new jobs either, back to the main pool");
                     on_fallback = false;
                     probing = false;
                 }
                 Verdict::SwitchPool => {
+                    // The probe finds a stuck pool reachable over TCP: wait
+                    // longer before each next check (10, 20, 40 min), as
+                    // for a main pool that does not hold.
+                    let next = warpaxe_stratum::dial::next_probe_s(
+                        PROBE_EVERY_S.load(Ordering::Relaxed),
+                        PRIMARY_PROBE_MAX,
+                    );
+                    PROBE_EVERY_S.store(next, Ordering::Relaxed);
                     log::warn!(
-                        "stratum: the main pool sends no new jobs, switching to the fallback"
+                        "stratum: {stale}, the main pool sends no new jobs, switching to the fallback; next check in {} min",
+                        next / 60
                     );
                     crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(2));
                     on_fallback = true;
@@ -679,6 +693,7 @@ fn run() {
             probing = false;
             on_fallback = true;
             fails = 0;
+            STALE.lock().unwrap().switched();
             backoff = Duration::from_secs(3);
             let next = warpaxe_stratum::dial::next_probe_s(
                 PROBE_EVERY_S.load(Ordering::Relaxed),
@@ -709,6 +724,9 @@ fn run() {
                 // (`publish`). The main pool is tried again too, which
                 // the fallback's own backoff never did.
                 let (next_fallback, pause_s) = outage::next_probe(on_fallback, fallback_ok);
+                if next_fallback != on_fallback {
+                    STALE.lock().unwrap().switched();
+                }
                 on_fallback = next_fallback;
                 fails = 0;
                 if pause_s > 0 {
@@ -725,6 +743,7 @@ fn run() {
                 if fallback_ok && WATCH.lock().unwrap().alternate() {
                     on_fallback = !on_fallback;
                     fails = 0;
+                    STALE.lock().unwrap().switched();
                     backoff = backoff.min(Duration::from_secs(12));
                 }
                 pause_unless_reconnect(backoff, fallback_ok);
@@ -893,8 +912,15 @@ fn session(
         // It only sends on the link, never touches flash.
         diag::spawn_psram("submit", 6 * 1024, move || {
                 while let Ok(out) = rx.recv() {
-                    let Outgoing::V1(req) = out else {
-                        continue; // a share from before the protocol switch
+                    let req = match out {
+                        Outgoing::V1(req) => req,
+                        Outgoing::Line(l) => {
+                            if stream.send(l.as_bytes()).is_err() {
+                                break;
+                            }
+                            continue;
+                        }
+                        _ => continue, // a share from before the protocol switch
                     };
                     if let Some(job_id) = req.params.get(1).and_then(|v| v.as_str()) {
                         pending.lock().unwrap().insert(req.id, job_id.to_string());
@@ -918,7 +944,8 @@ fn session(
     // No new job for this long ends the session (`warpaxe_stratum::stale`).
     let stale_limit = STALE.lock().unwrap().limit_s();
     let mut last_job = Instant::now();
-    let mut jobs_here: u32 = 0;
+    let mut first_job: Option<Instant> = None;
+    let mut fresh_seen = false;
     let mut pings: u32 = 0;
     loop {
         let since_job = last_job.elapsed().as_secs();
@@ -928,6 +955,14 @@ fn session(
                 pings,
             }
             .into());
+        }
+        // The read timeout alone never ends a session whose pool pings
+        // and sends no job at all: a failed attempt after a minute.
+        if warpaxe_stratum::stale::no_first_job(has_work, started.elapsed().as_secs()) {
+            anyhow::bail!(
+                "no job from the pool {} s after connecting ({pings} pings)",
+                started.elapsed().as_secs()
+            );
         }
         line.clear();
         let n = match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
@@ -1045,10 +1080,21 @@ fn session(
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
                 }
                 last_job = Instant::now();
-                jobs_here = jobs_here.saturating_add(1);
-                if jobs_here == 2 {
-                    // Fresh work, not just the job a reconnect hands out.
-                    STALE.lock().unwrap().fresh();
+                match first_job {
+                    None => first_job = Some(last_job),
+                    Some(t)
+                        if !fresh_seen
+                            && warpaxe_stratum::stale::is_fresh(t.elapsed().as_secs()) =>
+                    {
+                        // Fresh work, not just the jobs a pool hands out
+                        // right after the connect.
+                        fresh_seen = true;
+                        STALE.lock().unwrap().fresh(fallback);
+                        if !fallback {
+                            PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+                        }
+                    }
+                    Some(_) => {}
                 }
                 update(|st| {
                     st.last_job_id = job_id;
@@ -1063,7 +1109,11 @@ fn session(
                 if pings == 1 {
                     log::info!("stratum: the pool sends mining.ping, answering with pong");
                 }
-                stream.send(warpaxe_stratum::pong_line(&id).as_bytes())?;
+                if warpaxe_stratum::needs_pong(&id) {
+                    if let Some(tx) = SUBMIT.lock().unwrap().as_ref() {
+                        let _ = tx.send(Outgoing::Line(warpaxe_stratum::pong_line(&id)));
+                    }
+                }
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
             Incoming::Unparsed(l) => {

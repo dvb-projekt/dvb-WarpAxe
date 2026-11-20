@@ -24,7 +24,7 @@ pub mod stale;
 
 pub use gate::WorkGate;
 pub use job::{Job, Prepared, Session};
-pub use message::{parse_line, pong_line, Incoming, Notify, Request, Response};
+pub use message::{needs_pong, parse_line, pong_line, Incoming, Notify, Request, Response};
 
 /// Bitcoin's double SHA-256.
 pub fn sha256d(data: &[u8]) -> [u8; 32] {

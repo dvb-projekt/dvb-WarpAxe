@@ -55,6 +55,12 @@ pub fn pong_line(id: &Value) -> String {
     s
 }
 
+/// Whether a ping wants an answer: one without an id (or with a null id)
+/// is a JSON-RPC notification and gets none.
+pub fn needs_pong(id: &Value) -> bool {
+    !id.is_null()
+}
+
 /// A response to one of our requests.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Response {
@@ -270,6 +276,15 @@ mod tests {
             panic!("not a ping");
         };
         assert_eq!(id, Value::Null);
+        assert!(!needs_pong(&id), "a ping without id is a notification");
+        let Incoming::Ping { id } = parse_line(r#"{"id":"p7","method":"mining.ping"}"#) else {
+            panic!("not a ping");
+        };
+        assert!(needs_pong(&id));
+        assert_eq!(
+            pong_line(&id),
+            "{\"error\":null,\"id\":\"p7\",\"result\":\"pong\"}\n"
+        );
     }
 
     #[test]
