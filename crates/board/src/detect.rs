@@ -135,16 +135,21 @@ const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
 /// chip) that WarpAxe cannot run: its name for the web UI. The chip
 /// alone still names it, so a board version ESP-Miner added after this
 /// list (a Supra Hex 703, reported 2026-11-18) is caught by its BM1368.
+///
+/// A stored device model decides alone: one on the list stops, any other
+/// goes on. The board version and the chip name only count when no model
+/// is stored, so a firmware that reuses ESP-Miner's numbers or chip names
+/// for a board WarpAxe runs is not refused. The same rule as the web
+/// installer's `unsupportedStock` (web/flasher/index.html).
 pub fn from_stock_unsupported(
     devicemodel: Option<&str>,
     asicmodel: Option<&str>,
     boardversion: Option<&str>,
 ) -> Option<&'static str> {
     let model = devicemodel.unwrap_or("").trim();
-    let version = boardversion.unwrap_or("").trim();
     if let Some(&(_, name, _)) = UNSUPPORTED_STOCK
         .iter()
-        .find(|(m, _, v)| model.eq_ignore_ascii_case(m) || v.contains(&version))
+        .find(|(m, _, _)| model.eq_ignore_ascii_case(m))
     {
         return Some(name);
     }
@@ -154,6 +159,16 @@ pub fn from_stock_unsupported(
         .is_some_and(|p| p.eq_ignore_ascii_case("zyber"))
     {
         return Some("TinyChipHub Zyber");
+    }
+    if !model.is_empty() {
+        return None;
+    }
+    let version = boardversion.unwrap_or("").trim();
+    if let Some(&(_, name, _)) = UNSUPPORTED_STOCK
+        .iter()
+        .find(|(_, _, v)| !version.is_empty() && v.contains(&version))
+    {
+        return Some(name);
     }
     let asic = asicmodel.unwrap_or("").trim();
     [
@@ -523,6 +538,59 @@ mod tests {
         );
         assert_eq!(from_stock_unsupported(None, None, None), None);
         assert_eq!(from_stock_unsupported(Some(""), Some(""), Some("")), None);
+    }
+
+    #[test]
+    fn a_stored_model_decides_alone() {
+        // Model stored and supported: board version and chip do not count.
+        assert_eq!(
+            from_stock_unsupported(Some("gamma"), Some("BM1368"), Some("401")),
+            None
+        );
+        assert_eq!(
+            from_stock_unsupported(Some(" GAMMA "), Some("BM1397"), Some("102")),
+            None
+        );
+        assert_eq!(
+            from_stock_unsupported(Some("someboard"), Some("BM1366"), Some("703")),
+            None
+        );
+        // Model stored and unsupported: refused, whatever else is stored.
+        assert_eq!(
+            from_stock_unsupported(Some("supra"), Some("BM1370"), Some("601")),
+            Some("Bitaxe Supra (BM1368)")
+        );
+        assert_eq!(
+            from_stock_unsupported(Some("Ultra"), None, None),
+            Some("Bitaxe Ultra (BM1366)")
+        );
+        assert_eq!(
+            from_stock_unsupported(Some("zyber20x"), Some("BM1370"), Some("601")),
+            Some("TinyChipHub Zyber")
+        );
+        // No model: an unsupported board version or chip still names it.
+        assert_eq!(
+            from_stock_unsupported(None, None, Some("702")),
+            Some("Bitaxe Supra Hex (6× BM1368)")
+        );
+        assert_eq!(
+            from_stock_unsupported(Some("  "), Some("BM1370"), Some(" 401 ")),
+            Some("Bitaxe Supra (BM1368)")
+        );
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1368"), Some("703")),
+            Some("Bitaxe (BM1368)")
+        );
+        assert_eq!(
+            from_stock_unsupported(Some(""), Some("bm1397"), None),
+            Some("Bitaxe (BM1397)")
+        );
+        // No model and nothing unsupported: goes on.
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1370"), Some("601")),
+            None
+        );
+        assert_eq!(from_stock_unsupported(Some(" "), None, Some(" ")), None);
     }
 
     #[test]
