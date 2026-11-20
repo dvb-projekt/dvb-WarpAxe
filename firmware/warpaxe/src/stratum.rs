@@ -249,6 +249,12 @@ pub fn state() -> StratumState {
     STATE.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// Whether the session in use is on the fallback pool, without cloning
+/// the whole state (the probe thread asks every 5 s on a 4 KB stack).
+fn using_fallback() -> bool {
+    STATE.lock().unwrap().as_ref().is_some_and(|s| s.using_fallback)
+}
+
 fn update(f: impl FnOnce(&mut StratumState)) {
     let mut g = STATE.lock().unwrap();
     let s = g.get_or_insert_with(StratumState::default);
@@ -797,11 +803,12 @@ fn probe_primary() {
         let mut since = Instant::now();
         while since.elapsed() < Duration::from_secs(PROBE_EVERY_S.load(Ordering::Relaxed) as u64) {
             std::thread::sleep(Duration::from_secs(5));
-            if !state().using_fallback {
+            if !using_fallback() {
                 since = Instant::now();
             }
         }
-        if !state().using_fallback {
+        // Only when the miner went back to the main pool in the last tick.
+        if !using_fallback() {
             continue;
         }
         let cfg = config::get();
