@@ -16,6 +16,11 @@
 //! fresh work and clears the strike; the jobs a pool hands out right after
 //! the connect do not count, since a stuck pool sends those too.
 //!
+//! Sv2 sessions use the same limits: Sv2 pools also refresh the job every
+//! 30 s to two minutes without a new block (Braiins and Blitzpool,
+//! measured over two hours with a 77 min block gap on 2026-11-20), and a
+//! stuck one keeps answering shares instead of pinging.
+//!
 //! A main pool left this way stays marked: when the probe brings the miner
 //! back from the fallback, it gets only the short limit, and the firmware
 //! waits longer before the next probe. Fresh work from it clears the mark.

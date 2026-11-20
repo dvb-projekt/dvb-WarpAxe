@@ -1208,17 +1208,18 @@ fn session_v2_on_psram(
     pool: V2Pool,
     fallback: bool,
 ) -> anyhow::Result<()> {
-    let (tx, rx) = channel::<Result<(), String>>();
+    // The error itself, not its text: `run` tells a stuck pool
+    // (`StaleJob`) from other ends by its type.
+    let (tx, rx) = channel::<anyhow::Result<()>>();
     let handle = diag::spawn_psram("sv2", 32 * 1024, move || {
         let r = session_v2(&host, port, &user, &pool, fallback);
-        let _ = tx.send(r.map_err(|e| e.to_string()));
+        let _ = tx.send(r);
     })
     .map_err(|e| anyhow::anyhow!("sv2 thread: {e}"))?;
     let result = rx.recv();
     let _ = handle.join();
     match result {
-        Ok(Ok(())) => Ok(()),
-        Ok(Err(e)) => anyhow::bail!("{e}"),
+        Ok(r) => r,
         Err(_) => anyhow::bail!("sv2 thread ended without a result"),
     }
 }
@@ -1419,7 +1420,32 @@ fn session_v2(
     let _drop_sender_on_exit = SenderGuard;
     let started = Instant::now();
     let mut buf = vec![0u8; 1024];
+    // No new job for this long ends the session, as on V1
+    // (`warpaxe_stratum::stale`). Sv2 pools refresh the job every 30 s to
+    // two minutes even without a new block (measured 2026-11-20 on
+    // Braiins and Blitzpool over two hours, a 77 min block gap included),
+    // so the V1 limits hold. A stuck pool keeps answering shares; the
+    // check runs whenever anything arrives, and a pool that sends nothing
+    // at all ends the session by the read timeout.
+    let stale_limit = STALE.lock().unwrap().limit_s();
+    let mut last_job = Instant::now();
+    let mut first_job: Option<Instant> = None;
+    let mut fresh_seen = false;
     loop {
+        let since_job = last_job.elapsed().as_secs();
+        if warpaxe_stratum::stale::is_stale(has_work, since_job, stale_limit) {
+            return Err(StaleJob {
+                secs: since_job,
+                pings: 0,
+            }
+            .into());
+        }
+        if warpaxe_stratum::stale::no_first_job(has_work, started.elapsed().as_secs()) {
+            anyhow::bail!(
+                "sv2: no job from the pool {} s after the channel opened",
+                started.elapsed().as_secs()
+            );
+        }
         let n = stream.recv(&mut buf)?;
         if n == 0 {
             anyhow::bail!("pool closed the connection");
@@ -1444,10 +1470,30 @@ fn session_v2(
                 send_frame(&stream, &transport, f)?;
             }
             for ev in events {
+                let job = matches!(ev, Event::Job(_));
                 on_v2_event(ev, user, &started)?;
                 if !has_work && state().jobs_received != jobs_at_start {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                }
+                if job {
+                    last_job = Instant::now();
+                    match first_job {
+                        None => first_job = Some(last_job),
+                        Some(t)
+                            if !fresh_seen
+                                && warpaxe_stratum::stale::is_fresh(t.elapsed().as_secs()) =>
+                        {
+                            // Fresh work, not just the jobs right after the
+                            // channel opened.
+                            fresh_seen = true;
+                            STALE.lock().unwrap().fresh(fallback);
+                            if !fallback {
+                                PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+                            }
+                        }
+                        Some(_) => {}
+                    }
                 }
             }
         }
