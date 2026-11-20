@@ -448,7 +448,7 @@
   "swe_overheat": "surchauffe",
   "swe_pool_inactive": "pool inactif",
   "swe_core_link": "liaison avec les puces coupée",
-  "swe_inlet_hot": "air d’entrée trop chaud",
+  "swe_inlet_out_of_range": "température d’entrée hors plage",
   "swe_ring_buffer_overflow": "débordement de tampon",
   "swe_hardware_mismatch": "matériel incompatible",
   "swe_hash_board_mcu": "contrôleur de la carte de hachage",

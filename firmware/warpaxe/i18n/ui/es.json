@@ -448,7 +448,7 @@
   "swe_overheat": "sobrecalentamiento",
   "swe_pool_inactive": "pool inactivo",
   "swe_core_link": "enlace con los chips caído",
-  "swe_inlet_hot": "aire de entrada demasiado caliente",
+  "swe_inlet_out_of_range": "temperatura de entrada fuera de rango",
   "swe_ring_buffer_overflow": "desbordamiento de búfer",
   "swe_hardware_mismatch": "hardware incompatible",
   "swe_hash_board_mcu": "controlador de la placa de hash",

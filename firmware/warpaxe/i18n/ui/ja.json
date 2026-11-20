@@ -448,7 +448,7 @@
   "swe_overheat": "過熱",
   "swe_pool_inactive": "プール非アクティブ",
   "swe_core_link": "チップとの接続断",
-  "swe_inlet_hot": "吸気温度が高すぎる",
+  "swe_inlet_out_of_range": "吸気温度が範囲外",
   "swe_ring_buffer_overflow": "バッファオーバーフロー",
   "swe_hardware_mismatch": "ハードウェア不一致",
   "swe_hash_board_mcu": "ハッシュボードコントローラー",

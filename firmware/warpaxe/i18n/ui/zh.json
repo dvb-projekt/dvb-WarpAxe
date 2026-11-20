@@ -448,7 +448,7 @@
   "swe_overheat": "过热",
   "swe_pool_inactive": "矿池未工作",
   "swe_core_link": "芯片连接中断",
-  "swe_inlet_hot": "进风温度过高",
+  "swe_inlet_out_of_range": "进风温度超出范围",
   "swe_ring_buffer_overflow": "缓冲区溢出",
   "swe_hardware_mismatch": "硬件不匹配",
   "swe_hash_board_mcu": "算力板控制器",

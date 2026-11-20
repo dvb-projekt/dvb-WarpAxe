@@ -764,7 +764,9 @@ pub fn mm_error_names(code: u32) -> Vec<String> {
             (5, "overheat"),
             (6, "pool_inactive"),
             (7, "core_link"),
-            (8, "inlet_hot"),
+            // Set below -30 or above 60 °C, so also for a missing
+            // reading (`env_temp_check` in `mm_miner/mmu/mmu.c`).
+            (8, "inlet_out_of_range"),
             (9, "ring_buffer_overflow"),
             (10, "hardware_mismatch"),
             (11, "hash_board_mcu"),
@@ -1178,7 +1180,7 @@ mod tests {
         assert_eq!(mm.board_temps_in, vec![Some(61.0)]);
         assert_eq!(mm.board_temps_out, vec![Some(63.0)]);
         assert_eq!(mm.mm_errcode, Some(256));
-        assert_eq!(mm_error_names(256), vec!["inlet_hot"]);
+        assert_eq!(mm_error_names(256), vec!["inlet_out_of_range"]);
         assert_eq!(mm.board_errcodes, vec![0]);
         assert_eq!(mm.soft_off, Some(0));
         assert_eq!(soft_off_reason(0, false), None);
