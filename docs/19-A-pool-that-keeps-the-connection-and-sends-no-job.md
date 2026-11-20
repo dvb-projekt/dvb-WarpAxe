@@ -16,8 +16,8 @@ that while its node gives it no new block template, "to keep [the
 miners] connected while bitcoind recovers" (`stratifier.c`,
 `broadcast_ping`). The pings are data, so the read timeout of
 `link::READ_TIMEOUT` (180 s) never ran out, and a fallback pool was set
-but never used. All four miners were on the same pool and dropped at
-once.
+but never used. All four miners were on the same pool and stalled at
+the same time.
 
 ## The rule
 
@@ -36,15 +36,21 @@ for Stratum V1, `session_v2` for Sv2).
    pool this switches to the fallback (event `pool_stale_fallback`); on
    the fallback it goes back to the main pool (event `fallback_stale`).
    Without a fallback the miner keeps reconnecting with the short limit.
+   A stuck fallback, too, is first reconnected after ten minutes, so
+   `fallback_stale` reports about 300 s. The seconds in the events are a
+   little over the limit: the check runs when something arrives (on V1
+   every ping, on Sv2 every frame).
 3. **A pool that sends no job at all** within a minute of the connect
    (`FIRST_JOB_S` = 60), even while it pings, ends the session as a
    failed attempt, like a pool that does not answer.
 4. **The main pool stays marked.** While on the fallback the probe
-   (`probe_primary`) checks the main pool after 10, 20, then 40 minutes,
-   counted from the switch (not from the probe before: the first device
-   test saw 15 minutes instead of 20). A marked main pool gets the short
-   limit straight away; still stuck, the miner is back on the fallback
-   after five minutes. Fresh work from the main pool clears the mark and
+   (`probe_primary`) checks the main pool after 10, 20, then every 40
+   minutes, counted from the switch (not from the probe before: the first
+   device test saw 15 minutes instead of 20); fresh work from the main
+   pool, a settings change or a session that held there starts again at
+   10. A marked main pool brought back by the probe gets the short limit
+   straight away; still stuck, the miner is back on the fallback after
+   five minutes. Back after `fallback_stale`, it gets the full 600 s. Fresh work from the main pool clears the mark and
    sets the probe interval back. Only then does the event log say
    "main pool answers again" (`pool_back`): that the probe reached the
    pool says nothing about one that was left for sending no jobs. A
@@ -88,12 +94,13 @@ to the channel's group (`crates/sv2/src/channel.rs`): it read
 accepted only its own channel id. Blitzpool sends the first job to the
 channel and every later job and every new block to group 2: v0.1.47
 hashed the first job and kept hashing it after the next block (the old
-client lost all five block changes and 153 of 154 jobs in two hours).
+client, run alongside, accepted 1 of 154 jobs and lost all five block
+changes it saw in two hours).
 Braiins sends the prev hash to group 0: no job ever started. WarpPool
-sends to the channel and was not affected.
+sends everything to the channel id, so v0.1.47 was not affected there.
 
 Jobs, prev hashes and targets sent to the group now count as the
-channel's own, group 0 included (ESP-Miner treats 0 as "no group" and
+channel's own, group 0 included (ESP-Miner reads 0 as "no group" (as of November 2026) and
 would drop Braiins' prev hash; with one channel per connection nothing
 else can come for it). A prev hash activates the future job of its own
 sender first, in case a pool counts job ids per channel and per group.
@@ -112,7 +119,7 @@ upstream WarpPool V1), fallback atlaspool:
 | First probe | 10 min after the switch | 10 min 0 s |
 | Marked main left again | after 300 s | 300 s |
 | Second probe | 20 min after that switch | 20 min 0 s |
-| No `pool_back` at the probe, `pool_back` with fresh work | | at the probe none; 1 s after the relay passed jobs again |
+| `pool_back` | none at the probe; with the first fresh job | none at the probe; 1 s after the relay passed jobs again |
 
 Then Sv2 at Blitzpool for an hour: nine blocks, each picked up at once
 (two of them 20 s apart), 751 shares accepted, none rejected, no false
