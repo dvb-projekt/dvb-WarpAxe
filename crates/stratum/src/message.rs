@@ -46,6 +46,15 @@ impl Request {
     }
 }
 
+/// The answer to a `mining.ping`, newline included: a JSON-RPC result
+/// "pong" with the ping's id, which is what ckpool looks for.
+pub fn pong_line(id: &Value) -> String {
+    let mut s = serde_json::to_string(&json!({"id": id, "result": "pong", "error": null}))
+        .unwrap_or_default();
+    s.push('\n');
+    s
+}
+
 /// A response to one of our requests.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Response {
@@ -66,6 +75,13 @@ pub enum Incoming {
     SetDifficulty(f64),
     /// `mining.set_version_mask`: the rolling mask as u32.
     SetVersionMask(u32),
+    /// `mining.ping`: answered with a pong carrying the same id. ckpool
+    /// sends it while its node gives it no new block template, to keep
+    /// the miners connected (2026-11-20: hours of pings, no new job).
+    Ping {
+        /// The ping's id, echoed in the pong.
+        id: Value,
+    },
     /// `client.reconnect`, `mining.set_extranonce`, anything else.
     Other {
         /// Method name as sent.
@@ -112,6 +128,9 @@ pub fn parse_line(line: &str) -> Incoming {
             {
                 Some(m) => Incoming::SetVersionMask(m),
                 None => Incoming::Unparsed(line.to_string()),
+            },
+            "mining.ping" => Incoming::Ping {
+                id: raw.id.unwrap_or(Value::Null),
             },
             _ => Incoming::Other { method, params },
         };
@@ -236,6 +255,22 @@ pub fn parse_subscribe_result(result: &Value) -> Option<(String, usize)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ping_is_answered_with_its_id() {
+        let ping = r#"{"params":[],"id":42,"method":"mining.ping"}"#;
+        let Incoming::Ping { id } = parse_line(ping) else {
+            panic!("not a ping");
+        };
+        assert_eq!(
+            pong_line(&id),
+            "{\"error\":null,\"id\":42,\"result\":\"pong\"}\n"
+        );
+        let Incoming::Ping { id } = parse_line(r#"{"method":"mining.ping","params":[]}"#) else {
+            panic!("not a ping");
+        };
+        assert_eq!(id, Value::Null);
+    }
 
     #[test]
     fn suggest_fraction_keeps_three_decimals() {

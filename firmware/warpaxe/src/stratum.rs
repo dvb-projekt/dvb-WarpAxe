@@ -370,6 +370,30 @@ const SHORT_SESSION: Duration = Duration::from_secs(60);
 /// session silent over IPv6 gets one more try first, with IPv4 first.
 const PRIMARY_PROBE: u32 = 300;
 const PRIMARY_PROBE_MAX: u32 = 2400;
+
+/// Strikes against a pool that keeps the connection and sends no new job
+/// (`warpaxe_stratum::stale`).
+static STALE: Mutex<warpaxe_stratum::stale::Watch> =
+    Mutex::new(warpaxe_stratum::stale::Watch::new());
+
+/// A session ended because the pool sent no new job for too long.
+#[derive(Debug)]
+struct StaleJob {
+    secs: u64,
+    pings: u32,
+}
+
+impl std::fmt::Display for StaleJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "no new job from the pool for {} s", self.secs)?;
+        if self.pings > 0 {
+            write!(f, " ({} pings meanwhile)", self.pings)?;
+        }
+        Ok(())
+    }
+}
+
+impl std::error::Error for StaleJob {}
 static PROBE_EVERY_S: AtomicU32 = AtomicU32::new(PRIMARY_PROBE);
 
 /// The live stream while on the fallback, so the probe thread can end
@@ -468,6 +492,7 @@ fn run() {
             probing = false;
             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
             crate::net::dial::forget_no_work();
+            STALE.lock().unwrap().reset();
         }
         let cfg = config::get();
         if cfg.stratum_url.is_empty() || cfg.stratum_user.is_empty() {
@@ -554,6 +579,7 @@ fn run() {
             probing = false;
             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
             crate::net::dial::forget_no_work();
+            STALE.lock().unwrap().reset();
             continue;
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
@@ -564,6 +590,7 @@ fn run() {
             backoff = Duration::from_secs(3);
             probing = true;
             probe_retried = false;
+            STALE.lock().unwrap().reset();
             continue;
         }
         // The address this session used (cleared below on an error).
@@ -580,6 +607,43 @@ fn run() {
                 s.pool_ip.clear();
                 s.reconnects += 1;
             });
+        }
+        if let Some(stale) = result
+            .as_ref()
+            .err()
+            .and_then(|e| e.downcast_ref::<StaleJob>())
+        {
+            // The pool kept the connection and stopped sending jobs (a
+            // ckpool whose node is down pings instead). Reconnect once;
+            // if that brings no fresh work either, the other pool.
+            use warpaxe_stratum::stale::Verdict;
+            let verdict = STALE.lock().unwrap().stale(fallback_ok);
+            match verdict {
+                Verdict::Reconnect => {
+                    log::warn!(
+                        "stratum: {stale}, reconnecting; another {} min without a new job and the miner switches pools",
+                        warpaxe_stratum::stale::RETRY_LIMIT_S / 60
+                    );
+                }
+                Verdict::SwitchPool if on_fallback => {
+                    log::warn!("stratum: the fallback pool sends no new jobs either, back to the main pool");
+                    crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+                    on_fallback = false;
+                    probing = false;
+                }
+                Verdict::SwitchPool => {
+                    log::warn!(
+                        "stratum: the main pool sends no new jobs, switching to the fallback"
+                    );
+                    crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(2));
+                    on_fallback = true;
+                    probing = false;
+                }
+            }
+            fails = 0;
+            backoff = Duration::from_secs(3);
+            pause_unless_reconnect(Duration::from_secs(3), fallback_ok);
+            continue;
         }
         // A failed attempt: a session under a minute, or one of any
         // length that brought no work at all (a pool that takes the
@@ -851,7 +915,20 @@ fn session(
     let mut sess: Option<Session> = None;
     let mut line = String::new();
     let started = Instant::now();
+    // No new job for this long ends the session (`warpaxe_stratum::stale`).
+    let stale_limit = STALE.lock().unwrap().limit_s();
+    let mut last_job = Instant::now();
+    let mut jobs_here: u32 = 0;
+    let mut pings: u32 = 0;
     loop {
+        let since_job = last_job.elapsed().as_secs();
+        if warpaxe_stratum::stale::is_stale(has_work, since_job, stale_limit) {
+            return Err(StaleJob {
+                secs: since_job,
+                pings,
+            }
+            .into());
+        }
         line.clear();
         let n = match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
             Ok(n) => n,
@@ -967,6 +1044,12 @@ fn session(
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
                 }
+                last_job = Instant::now();
+                jobs_here = jobs_here.saturating_add(1);
+                if jobs_here == 2 {
+                    // Fresh work, not just the job a reconnect hands out.
+                    STALE.lock().unwrap().fresh();
+                }
                 update(|st| {
                     st.last_job_id = job_id;
                     st.block_height = height;
@@ -974,6 +1057,13 @@ fn session(
                     st.scriptsig = tag;
                     set_payout(st, pay, user);
                 });
+            }
+            Incoming::Ping { id } => {
+                pings = pings.saturating_add(1);
+                if pings == 1 {
+                    log::info!("stratum: the pool sends mining.ping, answering with pong");
+                }
+                stream.send(warpaxe_stratum::pong_line(&id).as_bytes())?;
             }
             Incoming::Other { method, params } => log::info!("stratum: {method} {params}"),
             Incoming::Unparsed(l) => {
