@@ -389,9 +389,11 @@ impl Client {
     /// channels sends new jobs and new blocks to the group only
     /// (2026-11-20: Blitzpool the first job to the channel, every later
     /// one to group 2; Braiins the prev hash to group 0), and a client
-    /// that drops those hashes an old job or never starts. Targets are
-    /// taken from the group too, as ESP-Miner does; the extranonce prefix
-    /// stays per channel.
+    /// that drops those hashes an old job or never starts. Group 0 is a
+    /// group like any other (ESP-Miner reads 0 as "no group" and would
+    /// drop Braiins' prev hash); with one channel per connection nothing
+    /// else can come for it. Targets are taken from the group too, as
+    /// ESP-Miner does; the extranonce prefix stays per channel.
     fn ours(&self, id: u32) -> bool {
         id == self.channel_id || id == self.group_channel_id
     }
@@ -430,11 +432,21 @@ impl Client {
                     return Ok(());
                 }
                 self.prev = Some((s.prev_hash, s.nbits, s.min_ntime));
-                match self.future.iter().position(|j| j.job_id == s.job_id) {
+                // Job ids belong to the channel or group they were sent
+                // to; a pool may count them apart. The same id from the
+                // same sender first, any sender's only after.
+                let at = self
+                    .future
+                    .iter()
+                    .position(|j| j.channel_id == s.channel_id && j.job_id == s.job_id)
+                    .or_else(|| self.future.iter().position(|j| j.job_id == s.job_id));
+                match at {
                     Some(i) => {
                         let j = self.future.remove(i);
-                        // Older future jobs were for a block that is gone.
-                        self.future.retain(|f| f.job_id > s.job_id);
+                        // Older future jobs from the same sender were for a
+                        // block that is gone.
+                        self.future
+                            .retain(|f| f.channel_id != j.channel_id || f.job_id > s.job_id);
                         ev.push(Event::Job(self.template(
                             &j,
                             s.prev_hash,
@@ -750,6 +762,62 @@ mod tests {
         assert!(matches!(&ev[0], Event::Job(t) if t.job_id == 7), "{ev:?}");
         let ev = c.handle(&to(3, 8, Some(1_700_000_090)), &mut out).unwrap();
         assert!(matches!(&ev[0], Event::Warn(_)), "{ev:?}");
+    }
+
+    #[test]
+    fn a_prev_hash_picks_the_job_of_its_own_sender_when_ids_collide() {
+        // Channel 1 in group 2, opened by hand (the `open` helper puts
+        // channel 7 in group 7).
+        let mut c = Client::new(cfg());
+        let mut out = Vec::new();
+        c.handle(&setup_success(), &mut out).unwrap();
+        let mut t = [0u8; 32];
+        t[26] = 0xFF;
+        t[27] = 0xFF;
+        let mut w = Writer::new();
+        w.u32(1).u32(1).u256(&t).u16(4);
+        w.b0_255(&[1, 2, 3, 4]).unwrap();
+        w.u32(2);
+        let open = Frame::new(msg::OPEN_EXTENDED_MINING_CHANNEL_SUCCESS, w.finish());
+        c.handle(&open, &mut out).unwrap();
+        let future = |channel_id: u32, prefix: u8| {
+            NewExtendedMiningJob {
+                channel_id,
+                job_id: 1,
+                min_ntime: None,
+                version: 0x2000_0000,
+                version_rolling_allowed: true,
+                merkle_path: vec![],
+                coinbase_tx_prefix: vec![prefix],
+                coinbase_tx_suffix: vec![9],
+            }
+            .frame()
+        };
+        // Job 1 for the channel, then job 1 for the group, both future.
+        c.handle(&future(1, 0xA1), &mut out).unwrap();
+        c.handle(&future(2, 0xB2), &mut out).unwrap();
+        let block = SetNewPrevHash {
+            channel_id: 2,
+            job_id: 1,
+            prev_hash: [0xCD; 32],
+            min_ntime: 1_700_000_000,
+            nbits: 0x1703_0000,
+        }
+        .frame();
+        let ev = c.handle(&block, &mut out).unwrap();
+        let Event::Job(t) = &ev[0] else {
+            panic!("{ev:?}")
+        };
+        assert_eq!(
+            t.coinbase_prefix,
+            vec![0xB2],
+            "the group's job 1, not the channel's"
+        );
+        assert_eq!(
+            t.extranonce_prefix,
+            vec![1, 2, 3, 4],
+            "the channel's own prefix"
+        );
     }
 
     #[test]
