@@ -668,25 +668,29 @@ pub struct Mm {
     /// supply as the MM polls it (Canaan's `Avalon_mm`,
     /// `mm_miner/mmu/mmu.c`). The seventh field is the draw at the wall,
     /// what the Avalon's own LCD shows (840 W at 54 TH/s in Eco); on the
-    /// SDK firmware it is the supply's output, volts × amps
-    /// (`app/core_stats.c`).
+    /// SDK firmware it is the DC-DC converter's input, volts × amps
+    /// (`app/core_stats.c`, `hal/platform/linux/psu_dcdc_pd.c`).
     pub power_w: Option<f64>,
     /// `PS` field 0: the supply's error code, 0 = none.
     pub ps_error: Option<u32>,
     /// `PS` field 1: the supply's 12 V auxiliary output, V (10 mV units);
     /// `None` on the SDK firmware, which leaves it 0.
     pub ps_vin_v: Option<f64>,
-    /// `PS` field 2: the hash boards' supply rail, V (10 mV units; mV on
-    /// the SDK firmware).
+    /// `PS` field 2: the hash boards' supply rail, V (10 mV units); on
+    /// the SDK firmware the DC-DC converter's input (USB-PD, ~28 V), mV.
     pub rail_v: Option<f64>,
-    /// `PS` field 3: the rail's current, A.
+    /// `PS` field 3: the rail's current, A (whole amps on the SDK).
     pub rail_a: Option<f64>,
     /// `PS` field 4: the supply's DC output, W; `None` on the SDK
     /// firmware, which leaves it 0.
     pub rail_w: Option<f64>,
-    /// `PS` field 5: the rail voltage the MM asks for, V (units as field
-    /// 2).
+    /// `PS` field 5 on `Avalon_mm`: the rail voltage the MM asks of the
+    /// supply, V (10 mV units).
     pub rail_set_v: Option<f64>,
+    /// `PS` field 5 on the SDK firmware: the DC-DC converter's output
+    /// command, the chips' core rail, mV (`3600 ± 26` per step, inside
+    /// the board's 2.4–4.0 V window). Shown as `coreVoltage`.
+    pub core_set_mv: Option<f64>,
     /// `OTemp`: the control board, °C (the Nano 3S).
     pub temp_outlet_c: Option<f64>,
     /// `HBITemp`: each hash board's inlet, °C.
@@ -940,10 +944,12 @@ pub fn parse_estats(estats: &Value) -> Mm {
     if mm.error_percent.is_none() {
         mm.error_percent = dh_spd;
     }
-    if ps.len() >= 7 {
+    // The SDK leaves all of PS at 0 while it has no supply reading.
+    let no_reading = mm.sdk && ps.len() >= 7 && ps[2] == 0.0 && ps[6] == 0.0;
+    if ps.len() >= 7 && !no_reading {
         // Rail volts: 10 mV counts on `Avalon_mm`, mV on the SDK. A value
         // above 60 V in 10 mV counts is mV whatever the flag says (a
-        // Nano 3S rail reads 28000).
+        // Nano 3S input reads 28000).
         let volts = |v: f64| {
             if mm.sdk || v > 6000.0 {
                 v / 1000.0
@@ -951,14 +957,19 @@ pub fn parse_estats(estats: &Value) -> Mm {
                 v / 100.0
             }
         };
+        // The SDK leaves the fields it does not fill at 0.
         let set = |v: f64| (!mm.sdk || v != 0.0).then_some(v);
         mm.ps_error = Some(ps[0] as u32);
         mm.ps_vin_v = set(ps[1]).map(|v| v / 100.0);
-        mm.rail_v = Some(volts(ps[2]));
-        mm.rail_a = Some(ps[3]);
+        mm.rail_v = set(ps[2]).map(volts);
+        mm.rail_a = set(ps[3]);
         mm.rail_w = set(ps[4]);
-        mm.rail_set_v = Some(volts(ps[5]));
-        mm.power_w = Some(ps[6]);
+        if mm.sdk {
+            mm.core_set_mv = set(ps[5]);
+        } else {
+            mm.rail_set_v = Some(volts(ps[5]));
+        }
+        mm.power_w = set(ps[6]);
     }
     mm
 }
@@ -1006,7 +1017,8 @@ pub fn work_mode_name(index: u8) -> &'static str {
 /// The three replies as one AxeOS-like document: the fields a swarm
 /// card reads under AxeOS's names, the Avalon's own under their own,
 /// and `cgminer` as the marker. A value the Avalon does not report is
-/// `null`, never 0: it has no regulator temperature, no core voltage and
+/// `null`, never 0: it has no regulator temperature, no core voltage
+/// (except the set point a Nano 3S on the SDK reports) and
 /// no shutdown temperature WarpAxe could know.
 pub fn translate(raw: &Raw) -> Value {
     let s = raw
@@ -1063,7 +1075,7 @@ pub fn translate(raw: &Raw) -> Value {
         "overheat_temp": null, "vrTemp": null, "vrOverheatTemp": null, "hasVr": false, "hasFan": true,
         "fanrpm": mm.fan_rpm.first(), "fanRpms": mm.fan_rpm, "fanspeed": mm.fan_pct,
         "frequency": mm.freq_mhz.map(f64::round), "frequencyActual": mm.freq_mhz.map(f64::round),
-        "coreVoltage": null, "coreVoltageActual": null,
+        "coreVoltage": mm.core_set_mv, "coreVoltageActual": null,
         "workMode": mm.work_mode.map(work_mode_name), "workModeIndex": mm.work_mode,
         "workLevel": mm.work_level, "modePowerCapW": mm.mode_power_cap_w,
         "sharesAccepted": sf("Accepted"), "sharesRejected": sf("Rejected"), "sharesStale": sf("Stale"),
@@ -1203,7 +1215,7 @@ mod tests {
                 "Sysinfo": {"Ver": "Nano3s-25021401_56abae7", "DNA": "020100004d8b4c01",
                     "SYSTEMSTATU": "Work: In Work, Hash Board: 1", "Elapsed": 120,
                     "ITemp": -273, "OTemp": 45, "Fan1": 2100, "FanR": 38,
-                    "PS": [0, 0, 28000, 5, 0, 28100, 140], "SoftOFF": 7, "ECMM": 0},
+                    "PS": [0, 0, 28000, 5, 0, 2800, 140], "SoftOFF": 7, "ECMM": 0},
                 "Hashinfo": {"DH": 1.25, "TMax": 70, "TAvg": 64, "TarT": 65,
                     "GHSspd": 6012.5, "GHSavg": 5980.1, "Freq": 450.0,
                     "MTmax": [70], "TA": 10, "Core": "A3197S", "ECHU": [4],
@@ -1220,7 +1232,8 @@ mod tests {
         assert!(mm.sdk);
         assert_eq!(mm.power_w, Some(140.0));
         assert_eq!(mm.rail_v, Some(28.0));
-        assert_eq!(mm.rail_set_v, Some(28.1));
+        assert_eq!(mm.rail_set_v, None);
+        assert_eq!(mm.core_set_mv, Some(2800.0));
         assert_eq!(mm.rail_a, Some(5.0));
         assert_eq!(mm.ps_vin_v, None);
         assert_eq!(mm.rail_w, None);
@@ -1245,6 +1258,7 @@ mod tests {
         assert_eq!(t["boardErrors"], json!([["comm"]]));
         assert_eq!(t["mmErrors"], json!([]));
         assert_eq!(t["softOffReason"], "low_hashrate");
+        assert_eq!(t["coreVoltage"], 2800.0);
         assert!(t["psVoltage"].is_null());
     }
 
@@ -1262,6 +1276,14 @@ mod tests {
         assert!(!odd.sdk);
         assert_eq!(odd.rail_v, Some(28.0));
         assert_eq!(odd.ps_vin_v, Some(12.0));
+        // The SDK without a supply reading: nulls, not zeros.
+        let none =
+            parse_estats(&json!({"STATS": [{"MM ID0:Summary": "PVer[1.0] PS[0 0 0 0 0 0 0]"}]}));
+        assert_eq!(
+            (none.power_w, none.rail_v, none.rail_a, none.ps_error),
+            (None, None, None, None)
+        );
+        assert_eq!(none.core_set_mv, None);
     }
 
     #[test]
