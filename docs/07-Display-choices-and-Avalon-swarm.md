@@ -177,7 +177,11 @@ neutral), a supply error (`psError`), its error bits by name (`mmErrors`,
 current, the chips' core voltage where the firmware reports it (Nano 3S
 SDK) and the supply's efficiency (`railPower` / `power`, only where
 `power` is the wall). A bit without a name in Canaan's tables shows as
-`bitN`. The fleet's hashrate, power,
+`bitN`. An error bit shows only once it was set in two reads in a row
+(the card reads every 30 s by default): some come and go within one
+read, as the Q's bit 8 did in 2 of 8 recorded reads, at 71 and at
+110 °C chips, most likely from a single bad inlet-sensor reading. The
+stop reason and a supply error are states and show at once. The fleet's hashrate, power,
 shares and record include it.
 
 Tests: `crates/avalon` parses the three replies recorded from the .43

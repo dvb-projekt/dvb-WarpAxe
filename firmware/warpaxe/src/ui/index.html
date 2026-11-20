@@ -1590,7 +1590,7 @@ function render() {
 /* ---------- swarm ---------- */
 // The list lives on this miner (/api/v1/swarm); every miner's state comes
 // straight from it to the browser, as on AxeOS. Read-only: no remote writes.
-const sw = {members: [], max: 32, data: {}, found: [], scan: null, filter: "", every: 30, last: 0, busy: {}, hist: {}, sort: "hash", addOpen: false};
+const sw = {members: [], max: 32, data: {}, errPrev: {}, found: [], scan: null, filter: "", every: 30, last: 0, busy: {}, hist: {}, sort: "hash", addOpen: false};
 // 30 s by default: some stock web servers (ForgeOS on the BitForge Nano) time
 // out when a tuner polls them as well.
 try { sw.every = Math.min(120, Math.max(10, Number(localStorage.getItem("swEvery")) || 30)); } catch (e) {}
@@ -1615,7 +1615,8 @@ async function swarmPoll() {
   if (route !== "swarm") return;
   sw.last = Date.now();
   // One request per miner at a time, no retries.
-  await Promise.all(sw.members.filter(a => !sw.busy[a]).map(async a => { sw.busy[a] = true; if (swIsCg(a) && route === "swarm") render(); try { sw.data[a] = await minerInfo(a); } catch (e) { sw.data[a] = null; } finally { sw.busy[a] = false; } }));
+  // An Avalon's error bits of the read before, for swCgState (a bit shows once it is set in two reads in a row).
+  await Promise.all(sw.members.filter(a => !sw.busy[a]).map(async a => { sw.busy[a] = true; if (swIsCg(a) && route === "swarm") render(); const prev = sw.data[a]; try { sw.data[a] = await minerInfo(a); } catch (e) { sw.data[a] = null; } finally { sw.errPrev[a] = prev ? swCgErrs(prev) : []; sw.busy[a] = false; } }));
   // Hashrate history for the sparklines, kept in the browser only (60 points).
   for (const [a, j] of [[location.host, info], ...sw.members.map(a => [a, sw.data[a]])]) { const h = sw.hist[a] || (sw.hist[a] = []); h.push(j ? j.hashRate : null); if (h.length > 60) h.shift(); }
   if (route === "swarm") render();
@@ -1687,11 +1688,16 @@ function swGauge(label, v, limit, suffix = "") {
   const f = Math.min(1, v / limit), col = f > .9 ? "var(--err)" : f > .8 ? "linear-gradient(90deg,var(--ok),var(--warn))" : "var(--ok)";
   return `<div>${label} ${nf(v, 1)} °C${suffix}<div class="swt"><div style="width:${Math.round(f * 100)}%;background:${col}"></div></div></div>`;
 }
+// An Avalon's error bits as keys: "m:<name>" for the MM, "b<board>:<name>" per hash board.
+const swCgErrs = j => [...(j.mmErrors || []).map(e => "m:" + e), ...(j.boardErrors || []).flatMap((b, i) => (b || []).map(e => `b${i + 1}:${e}`))];
 // What an Avalon's MM reports beyond the AxeOS fields (crates/avalon): why it stopped, its error bits, its supply.
-// Names come from Canaan's tables; a bit without a name shows as "bitN".
-function swCgState(j) {
+// Names come from Canaan's tables; a bit without a name shows as "bitN". An error bit shows only when the read before
+// had it too: some come and go within one read (the Q's bit 8 in 2 of 8 recorded reads, at 71 and at 110 °C, from a
+// single bad sensor reading); a stop reason and a supply error are states and show at once.
+function swCgState(j, prev) {
   const n = k => T.en["swe_" + k] ? t("swe_" + k) : k.replace(/^(hb|so)_/, "");
-  const errs = [...(j.mmErrors || []).map(n), ...(j.boardErrors || []).flatMap((b, i) => (b || []).map(e => `${t("sw_board")} ${i + 1}: ${n("hb_" + e)}`))];
+  const errs = swCgErrs(j).filter(k => prev.includes(k)).map(k => { const [w, e] = [k.slice(0, k.indexOf(":")), k.slice(k.indexOf(":") + 1)];
+    return w === "m" ? n(e) : `${t("sw_board")} ${w.slice(1)}: ${n("hb_" + e)}`; });
   const paused = j.softOffReason === "api";
   const lines = [];
   if (j.softOffReason) lines.push(`<div class="${paused ? "mute" : "warn"}">${t("sw_stopped")}: ${esc(n("so_" + j.softOffReason))}</div>`);
@@ -1720,7 +1726,7 @@ function swStation(addr, j, self, record) {
     <div class="swsub">${self ? t("sw_this") : esc(host)} · ${esc(fw)} · ${esc(chips)}${cg ? " · " + t("sw_via") : ""}</div></div>${icons}</div>
     <div style="display:flex;justify-content:space-between;align-items:baseline"><div class="swhr num">${cpu ? nf(j.hashRate * 1e6, 1) : hru(j.hashRate).v}<small>${cpu ? "kH/s" : hru(j.hashRate).u}</small></div><span class="dim" style="font-size:12px">${upt(j.uptimeSeconds)}</span></div>
     ${swSpark(sw.hist[addr] || [], c)}
-    <div class="swg">${swGauge(cpu ? "ESP32-S3" : t("sw_chip"), j.temp, tLimit, tMax)}${second}</div>${cg ? swCgState(j) : ""}
+    <div class="swg">${swGauge(cpu ? "ESP32-S3" : t("sw_chip"), j.temp, tLimit, tMax)}${second}</div>${cg ? swCgState(j, sw.errPrev[addr] || []) : ""}
     <div class="swfoot"><span>${cpu || w == null ? "" : `${nf(w, 1)} W${eff == null ? "" : " · " + nf(eff, 1) + " J/TH"}`}</span><span>${nf(j.sharesAccepted)} / <span class="${j.sharesRejected ? "warn" : ""}">${nf(j.sharesRejected)}</span></span><span title="${t("sw_best")}" style="${isRec ? "color:var(--btc)" : ""}">${swBest(best)}</span></div></div>`;
 }
 function swarmPage() {
