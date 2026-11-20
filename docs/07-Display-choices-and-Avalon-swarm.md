@@ -142,18 +142,25 @@ one stores `cgminer:<ip>`, and a member already on the list is not shown
 again.
 
 Field meanings, checked on the Avalon Q (MM 25052801, cgminer 4.11.1,
-API 3.7) on 2026-10-18 and against WarpTune's Avalon client:
+API 3.7) on 2026-10-18 and against WarpTune's Avalon client, and on
+2026-11-20 against Canaan's own sources: `Avalon_mm` (the K230 firmware
+of the Avalon line, `driver-avalon.c` and `mm_miner`, BUSL-1.1, read
+only) and the Nano 3S SDK `canaan_sdk_for_linux` (`mc_api_estats.c`,
+MIT). No code is taken from either; only what the fields mean.
 
 | Source | Field | Used as |
 |---|---|---|
 | `estats` → `MM ID0:Summary` | `GHSspd`, `GHSavg` | `hashRate_now`, `hashRate_avg_mm` (GH/s) |
-| | `PS[0 1208 2295 34 792 2296 840]` | the last field is the draw as the Avalon's own LCD shows it (840 W at 54 TH/s in Eco) → `power`; field 2 is a bus voltage ×100 mV (12.08 V) → `psVoltage`; the first two fields describe a small auxiliary bus, not the mining power |
-| | `TMax`, `TAvg`, `TarT`, `ITemp` | `tempMax`, `temp`, `tempTarget`, `tempInlet` (°C) |
+| | `PS[0 1208 2295 34 792 2296 840]` | the supply as the MM polls it over I²C, by position: 0 the supply's error code → `psError`; 1 its 12 V auxiliary output in 10 mV (12.08 V) → `psVoltage`; 2 the hash boards' rail in 10 mV (22.95 V) → `railVoltage`; 3 the rail's current in A → `railCurrent`; 4 the DC output in W → `railPower`; 5 the rail voltage asked for in 10 mV → `railVoltageSet`; 6 the draw at the wall, what the Avalon's own LCD shows (840 W at 54 TH/s in Eco) → `power`. Until 2026-11-20 fields 0–5 were misread as an auxiliary bus |
+| | `TMax`, `TAvg`, `TarT`, `ITemp`, `OTemp` | `tempMax`, `temp`, `tempTarget`, `tempInlet`, `tempBoard` (°C); −273 is the MM's "no reading" (`ASIC_TEMP_NONE`; a Nano 3S has no inlet sensor and always sends it) and becomes `null`, here and in every list below |
+| | `HBITemp`, `HBOTemp`, `MTmax` | `boardTempsIn`, `boardTempsOut`, `boardTempsMax`, one value per hash board |
+| | `ECMM`, `ECHU`, `SoftOFF` | `mmErrorCode` with `mmErrors` (bit 1 `lan_damaged`, 2 `power`, 3 `fan`, 4 `ip_lost`, 5 `overheat`, 6 `pool_inactive`, 7 `core_link`, 8 `inlet_hot`, 11 `hash_board_mcu`), `boardErrorCodes` with `boardErrors` per board (bit 1 `enum`, 2 `comm`, 3 `mcu`), `softOffCode` with `softOffReason` (`null` for 0, else `power_fault`, `hash_fault`, `chip_overheat`, `api`, `fan_error`, `lan_damaged`, `hash_board_mcu`, `hardware_error`, `overheat_at_start`). The .43 sent `ECMM[256]`, `inlet_hot` by Canaan's table, at a 33 °C inlet; whether the Q's firmware uses the same table is not confirmed |
 | | `Fan1`–`Fan4`, `FanR` | `fanRpms`, `fanrpm` (the first), `fanspeed` (%) |
 | | `WORKMODE`, `WORKLEVEL`, `MPO` | `workMode`/`workModeIndex`, `workLevel`, `modePowerCapW` |
-| | `DH[3.501%]` | `errorPercentage` (the device's hardware-error share) |
+| | `DH[3.501%]` | `errorPercentage` (the device's hardware-error share); `DHspd` where a firmware sends no `DH` (`Avalon_mm`'s cgminer) |
 | | `Core`, `TA`, `Ver`, `DNA` | `ASICModel`, `asicCount` (or the length of `PVT_T0`), `version` ("MM 25052801") and `deviceModel` ("Avalon Q" from the letter before the dash), `dna` |
-| `estats` → `HBinfo` | `PVT_T0[…]` | `chipTemps`, one value per chip |
+| `estats` → `HBinfo` | `PVT_T0[…]`, `PVT_T1[…]`, … | `chipTemps`, one value per chip in board order, `null` for a chip without a reading |
+| `estats`, JSON form | `MMID0Summary` → `Sysinfo`, `Hashinfo`; `HBinfo` → `HB_0_Info`, … | the same keys as numbers and arrays instead of one token string: what a Nano 3S on Canaan's newer SDK answers to a JSON request. Both forms are read; `MM ID1…` / `MMID1…` (a second module) are left out |
 | `summary` | `MHS 5m` / `1m` / `15m` / `av` | `hashRate` (the five-minute mean, nearest AxeOS's ten minutes), `hashRate_1m`, `hashRate_15m`, `hashRate_av` |
 | | `Elapsed`, `Accepted`, `Rejected`, `Stale`, `Hardware Errors`, `Device Rejected%`, `Best Share`, `Found Blocks` | `uptimeSeconds`, `sharesAccepted`, `sharesRejected`, `sharesStale`, `hardwareErrors`, `deviceRejectedPercent`, `bestDiff` = `bestSessionDiff` (cgminer keeps one figure, since it started), `blockFound` |
 | `pools` | the pool with `Stratum Active`, else the first: `URL`, `User`, `Status`, `Stratum Difficulty`, `Current Block Height`, `Priority` | `stratumURL`/`stratumPort`/`activePool`, `stratumUser`, `stratumConnected`, `poolDifficulty`, `blockHeight`, `isUsingFallbackStratum` |
