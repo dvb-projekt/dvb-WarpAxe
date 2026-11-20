@@ -87,12 +87,16 @@ impl Watch {
         }
     }
 
-    /// The pool sent fresh work. On the main pool this clears the mark.
-    pub fn fresh(&mut self, on_fallback: bool) {
+    /// The pool sent fresh work. On the main pool this clears the mark;
+    /// true when it did, so the firmware reports the main pool back only
+    /// now, not when the probe merely reached it.
+    pub fn fresh(&mut self, on_fallback: bool) -> bool {
         self.strikes = 0;
+        let was_stuck = !on_fallback && self.main_stuck;
         if !on_fallback {
             self.main_stuck = false;
         }
+        was_stuck
     }
 
     /// Whether the main pool was left for sending no new jobs and has not
@@ -169,13 +173,14 @@ mod tests {
         w.stale(true, false);
         w.stale(true, false);
         assert!(w.main_stuck());
-        w.fresh(true);
+        assert!(!w.fresh(true));
         assert!(
             w.main_stuck(),
             "fresh work on the fallback says nothing about the main"
         );
-        w.fresh(false);
+        assert!(w.fresh(false), "the mark was cleared: the main is back");
         assert!(!w.main_stuck());
+        assert!(!w.fresh(false), "only once");
         assert_eq!(w.limit_s(), LIMIT_S);
     }
 

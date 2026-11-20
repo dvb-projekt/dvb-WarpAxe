@@ -593,8 +593,14 @@ fn run() {
             continue;
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
-            log::warn!("stratum: main pool answers again, leaving the fallback");
-            crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+            if STALE.lock().unwrap().main_stuck() {
+                // Left for sending no new jobs: reachable says nothing yet.
+                // The event comes with its first fresh job (`session`).
+                log::warn!("stratum: main pool reachable again, checking whether it sends new jobs");
+            } else {
+                log::warn!("stratum: main pool answers again, leaving the fallback");
+                crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+            }
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
@@ -1109,7 +1115,9 @@ fn session(
                         // Fresh work, not just the jobs a pool hands out
                         // right after the connect.
                         fresh_seen = true;
-                        STALE.lock().unwrap().fresh(fallback);
+                        if STALE.lock().unwrap().fresh(fallback) {
+                            crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+                        }
                         if !fallback {
                             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
                         }
@@ -1494,7 +1502,12 @@ fn session_v2(
                             // Fresh work, not just the jobs right after the
                             // channel opened.
                             fresh_seen = true;
-                            STALE.lock().unwrap().fresh(fallback);
+                            if STALE.lock().unwrap().fresh(fallback) {
+                                crate::events::record(
+                                    "pool",
+                                    warpaxe_diag::events::detail::pool_back(),
+                                );
+                            }
                             if !fallback {
                                 PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
                             }
