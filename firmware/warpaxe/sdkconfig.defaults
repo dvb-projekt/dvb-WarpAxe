@@ -125,3 +125,10 @@ CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 # overflow hook, the devkit's hash loop) calls none.
 CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y
 CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
+# mDNS: its task (4 KB stack) and every record and packet it allocates in
+# PSRAM instead of explicitly internal RAM. It runs on the network only
+# (lwIP callbacks, its own task, an esp_timer that posts to its queue)
+# and touches no flash. On .41 with the W5500 HAT the internal heap ran
+# dry and mDNS allocations were among those that failed (2026-11-21).
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
