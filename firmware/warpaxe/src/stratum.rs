@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::io::BufReader;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::sync::mpsc::{channel, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -425,11 +425,23 @@ static CURRENT_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
 /// Set by `reconnect`: the session that ends next did so on purpose, so
 /// `run` neither counts a failure nor waits for the backoff.
 static RECONNECT: AtomicBool = AtomicBool::new(false);
-/// Set with `RECONNECT` by `move_session`: the session only changes the
-/// interface it leaves from (the Ethernet cable came or went). `run`
-/// then keeps the pool it was on, the fallback, the stuck-pool mark and
-/// the probe's wait; a settings change (`reconnect`) clears it.
-static KEEP_POOL: AtomicBool = AtomicBool::new(false);
+/// What the pending `RECONNECT` asks for: `MOVE` from `move_session`
+/// (the session only changes the interface it leaves from; `run` keeps
+/// the pool, the fallback, the stuck-pool mark and the probe's wait),
+/// `FULL` from a settings change. Raised with `fetch_max` before
+/// `RECONNECT` is set and taken with `swap` after it is cleared, so a
+/// settings change that meets a cable move always gets its full reset.
+static RECONNECT_KIND: AtomicU8 = AtomicU8::new(0);
+const MOVE: u8 = 1;
+const FULL: u8 = 2;
+
+/// Take a `RECONNECT` that is pending: `None` if none is, else whether
+/// it asks for the full reset of a settings change.
+fn take_reconnect() -> Option<bool> {
+    RECONNECT
+        .swap(false, Ordering::Relaxed)
+        .then(|| RECONNECT_KIND.swap(0, Ordering::Relaxed) != MOVE)
+}
 
 /// A pool key the TLS check refused (no public authority, and not the
 /// confirmed key), per slot (main, fallback), in RAM only: the Pool page
@@ -494,7 +506,7 @@ pub fn reconnect() {
 /// The same for another reason. Not counted in `reconnects`, which
 /// counts sessions that ended with an error.
 pub fn reconnect_because(why: &str) {
-    KEEP_POOL.store(false, Ordering::Relaxed);
+    RECONNECT_KIND.fetch_max(FULL, Ordering::Relaxed);
     RECONNECT.store(true, Ordering::Relaxed);
     if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
         log::info!("stratum: {why}, reconnecting");
@@ -510,9 +522,7 @@ pub fn reconnect_because(why: &str) {
 /// fallback because its main pool is stuck stays on the fallback. A
 /// settings change already pending keeps its full reset.
 pub fn move_session(why: &str) {
-    if !RECONNECT.load(Ordering::Relaxed) {
-        KEEP_POOL.store(true, Ordering::Relaxed);
-    }
+    RECONNECT_KIND.fetch_max(MOVE, Ordering::Relaxed);
     RECONNECT.store(true, Ordering::Relaxed);
     if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
         log::info!("stratum: {why}, reconnecting to the same pool");
@@ -540,7 +550,7 @@ fn run() {
     loop {
         // A change that came while no session was up (connecting, or in
         // the backoff) applies now: this pass reads the new config.
-        if RECONNECT.swap(false, Ordering::Relaxed) && !KEEP_POOL.swap(false, Ordering::Relaxed) {
+        if take_reconnect() == Some(true) {
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
@@ -631,9 +641,9 @@ fn run() {
         };
         *FALLBACK_STREAM.lock().unwrap() = None;
         *CURRENT_STREAM.lock().unwrap() = None;
-        if RECONNECT.swap(false, Ordering::Relaxed) {
+        if let Some(full) = take_reconnect() {
             update(|s| s.connected = false);
-            if KEEP_POOL.swap(false, Ordering::Relaxed) {
+            if !full {
                 // Moved between the cable and Wi-Fi: the same pool again
                 // at once, nothing counted, nothing forgotten.
                 backoff = Duration::from_secs(3);
