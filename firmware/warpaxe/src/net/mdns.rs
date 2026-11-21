@@ -3,7 +3,7 @@
 //! subtype and the TXT items `board`, `family`, `asic`, `asic_count` and
 //! `fw_version`, so tools that find Bitaxes that way find this one too.
 //!
-//! Started once the station has an address. A name already taken on the
+//! Started once the station or the Ethernet link has an address. A name already taken on the
 //! network is renamed by the mDNS component itself (`name-2`);
 //! [`hostname`] reports the name actually announced.
 
@@ -40,14 +40,16 @@ pub fn label(hostname: &str) -> String {
     }
 }
 
-/// Starts mDNS on a thread of its own once Wi-Fi has an address. The
-/// thread waits on a PSRAM stack (docs/20): it touches no flash, and with
-/// no Wi-Fi it may wait for good. The component's own task and its
-/// records are in PSRAM too (`CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM`,
-/// `CONFIG_MDNS_MEMORY_ALLOC_SPIRAM`).
+/// Starts mDNS on a thread of its own once Wi-Fi or Ethernet has an
+/// address. The mDNS component itself answers on every interface it
+/// knows (its predefined station and `ETH_DEF` netifs), so a cable that
+/// comes later is announced too. The thread waits on a PSRAM stack
+/// (docs/20): it touches no flash, and without a network it may wait for
+/// good. The component's own task and its records are in PSRAM too
+/// (`CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM`, `CONFIG_MDNS_MEMORY_ALLOC_SPIRAM`).
 pub fn start(hostname: String) {
     crate::diag::spawn_psram("mdns", 4096, move || {
-        while !super::state().wifi_connected {
+        while super::state().lan_ip().is_none() {
             std::thread::sleep(std::time::Duration::from_secs(2));
         }
         if let Err(e) = announce(&label(&hostname)) {

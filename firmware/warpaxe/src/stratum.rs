@@ -106,6 +106,11 @@ pub struct StratumState {
     /// That address is a Bitcoin one (amounts in BTC).
     pub coinbase_bitcoin: bool,
     pub connected: bool,
+    /// The interface address the current (or last) session left from:
+    /// Ethernet's or Wi-Fi's. `net::eth` moves a session that runs over
+    /// Wi-Fi onto the cable once the cable has settled, and ends one
+    /// bound to the cable when the cable goes.
+    pub local_ip: Option<String>,
     pub subscribed: bool,
     pub authorized: bool,
     /// The running TLS session's certificate was accepted by the pool's
@@ -478,10 +483,19 @@ fn pin_of(stored: &str) -> Option<Pin> {
 /// seconds instead of at the next reboot (Oliver renamed a worker on
 /// 2026-10-08 and the pool saw it hours later, at an OTA reboot).
 pub fn reconnect() {
+    reconnect_because("pool settings changed");
+}
+
+/// The same for another reason (`net::eth` moves the session between the
+/// cable and Wi-Fi). Not counted in `reconnects`, which counts sessions
+/// that ended with an error.
+pub fn reconnect_because(why: &str) {
     RECONNECT.store(true, Ordering::Relaxed);
     if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
-        log::info!("stratum: pool settings changed, reconnecting");
+        log::info!("stratum: {why}, reconnecting");
         s.shutdown();
+    } else {
+        log::info!("stratum: {why}, the next session takes it into account");
     }
 }
 
@@ -573,6 +587,7 @@ fn run() {
             s.tls_pinned = false;
             s.sv2 = sv2;
             s.connected = false;
+            s.local_ip = None;
             s.subscribed = false;
             s.authorized = false;
             s.pool_ip.clear();
@@ -632,6 +647,7 @@ fn run() {
                 s.last_error = e.to_string();
                 s.connected = false;
                 s.pool_ip.clear();
+                s.local_ip = None;
                 s.reconnects += 1;
             });
         }
@@ -899,9 +915,11 @@ fn session(
         *FALLBACK_STREAM.lock().unwrap() = Some(Arc::clone(&stream));
     }
     let mut reader = BufReader::new(LinkReader(&stream));
+    let local_ip = stream.local_ip();
     update(|s| {
         s.connected = true;
         s.tls_pinned = pinned;
+        s.local_ip = local_ip;
         s.last_error.clear();
     });
     {
@@ -1364,8 +1382,10 @@ fn session_v2(
         }
     );
     let transport = Arc::new(Mutex::new(transport));
+    let local_ip = stream.local_ip();
     update(|s| {
         s.connected = true;
+        s.local_ip = local_ip;
         s.last_error.clear();
     });
 

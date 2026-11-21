@@ -244,6 +244,16 @@ pub struct Profile {
     /// it is used to (the NerdNOS's GPIO12, WantClue `_reset`; see
     /// [`NERDNOS`]). `None` on every other board.
     pub stock_reset_pulse: Option<u8>,
+    /// The pins a W5500 Ethernet HAT ("NerdHat", Bitronics NERDETH rev
+    /// 1.1) sits on, if the board has the header for it ([`EthPins`]);
+    /// `None` on every other board. NerdOS v1.1.1 supports the HAT on
+    /// the NerdQAxe family (`NerdQaxePlus::getEthPins`), the NerdOctaxe
+    /// up to rev 3.3 (`NerdOctaxeGamma::getEthPins`) and the NerdAxe
+    /// Gaia over its interposer (`NerdaxeGaia::getEthPins`). The firmware
+    /// starts Ethernet only when a W5500 answers on these pins at boot
+    /// (`net/eth.rs`); without the HAT the pins are never driven beyond
+    /// that one read.
+    pub ethernet: Option<EthPins>,
     /// A power estimate for a board without any power reading
     /// ([`PowerEstimate`]); `None` where the regulator reports power.
     pub power_estimate: Option<PowerEstimate>,
@@ -266,6 +276,71 @@ pub struct Profile {
     /// nonce counts on the device agree with the hash counters.
     pub silent_chip_restart: bool,
 }
+
+/// Where a W5500 Ethernet HAT connects: the SPI lines and chip select
+/// as ESP GPIOs, and the reset and interrupt lines where a board wires
+/// them. Without `rst` the HAT resets itself by an RC network at power-on
+/// and the firmware resets the chip over SPI (MR.RST) at every start;
+/// without `int` the driver polls the chip (NerdOS: every millisecond).
+/// NerdOS `EthPins` (`main/boards/board.h`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EthPins {
+    /// SPI clock GPIO.
+    pub sclk: u8,
+    /// SPI MOSI GPIO (ESP to W5500).
+    pub mosi: u8,
+    /// SPI MISO GPIO (W5500 to ESP).
+    pub miso: u8,
+    /// Chip select GPIO.
+    pub cs: u8,
+    /// W5500 reset GPIO, if wired.
+    pub rst: Option<u8>,
+    /// W5500 interrupt GPIO, if wired.
+    pub int: Option<u8>,
+}
+
+impl EthPins {
+    /// Every GPIO the HAT uses, for the collision checks.
+    pub fn gpios(&self) -> [Option<u8>; 6] {
+        [
+            Some(self.sclk),
+            Some(self.mosi),
+            Some(self.miso),
+            Some(self.cs),
+            self.rst,
+            self.int,
+        ]
+    }
+}
+
+/// The NerdHat on the NerdQAxe family's header (NerdQAxe+, NerdQAxe++,
+/// NerdOctaxe up to rev 3.3): NerdOS v1.1.1 `kHatPins` in
+/// `nerdqaxeplus.cpp`. No reset line (an RC network on the HAT) and no
+/// interrupt line: NerdOS leaves the driver's defaults of GPIO13 and
+/// GPIO11 unused on every board (`GPIO_NUM_NC`), and so does WarpAxe.
+pub const NERDHAT_QAXE: EthPins = EthPins {
+    sclk: 2,
+    mosi: 12,
+    miso: 16,
+    cs: 21,
+    rst: None,
+    int: None,
+};
+
+/// The NerdHat on the NerdAxe Gaia's interposer: NerdOS v1.1.1
+/// `kEthPins` in `nerdaxegaia.cpp` (SCLK on JP2 2-3, MOSI on JP3 2-3).
+/// Not the QAxe pins: on the Gaia GPIO2 is /VDD, GPIO12 the LDO enable,
+/// GPIO13 PMB_ALRT and GPIO11 PGOOD, and SPI traffic on any of them
+/// would switch or upset the power rails. Also no reset and no interrupt
+/// line.
+pub const NERDHAT_GAIA: EthPins = EthPins {
+    sclk: 10,
+    mosi: 3,
+    miso: 16,
+    cs: 21,
+    rst: None,
+    int: None,
+};
 
 /// A power figure for a board that measures none: `base_w` for the
 /// controller, display and regulator losses plus `per_ghz_w` per GHz of
@@ -415,6 +490,21 @@ impl Profile {
     /// firmware can see, whatever is blowing in the case.
     pub fn has_fan(&self) -> bool {
         !matches!(self.thermal, Thermal::None | Thermal::Ntc(_))
+    }
+
+    /// The pins to look for a W5500 HAT on, or `None` when Ethernet is
+    /// not to be tried: a board without the header, or a board whose
+    /// TMP451 temperature multiplexer shares the HAT's SCLK and MOSI
+    /// (`tmp451_mux`: the NerdOctaxe from rev 3.4, where GPIO2/12 are the
+    /// mux selects A0/A1; NerdOS `NerdOctaxeGamma::getEthPins`). SPI
+    /// traffic there would switch the mux, so the HAT is not even probed.
+    /// The Gaia's pins are others, so a mux reading never blocks them.
+    pub fn ethernet_pins(&self, tmp451_mux: bool) -> Option<EthPins> {
+        let pins = self.ethernet?;
+        if tmp451_mux && pins == NERDHAT_QAXE {
+            return None;
+        }
+        Some(pins)
     }
 
     /// The profile for a board name from the config; `None` for a
@@ -567,6 +657,7 @@ pub const BITAXE_GAMMA: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    ethernet: None,
     power_estimate: None,
 };
 
@@ -795,6 +886,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    ethernet: None,
     power_estimate: None,
 };
 
@@ -849,6 +941,7 @@ pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    ethernet: None,
     power_estimate: None,
 };
 
@@ -915,6 +1008,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    ethernet: None,
     power_estimate: None,
 };
 
@@ -986,6 +1080,8 @@ pub const NERDAXE_GAIA: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    // The NerdHat over the Gaia's interposer (NerdOS v1.1.1, PR #724).
+    ethernet: Some(NERDHAT_GAIA),
     power_estimate: None,
 };
 
@@ -1044,6 +1140,9 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     stock_reset_pulse: None,
     small_cores: 0,
     silent_chip_restart: true,
+    // The NerdHat on the family's header (NerdOS v1.1.1, PR #731); the
+    // Rev 7 and the NerdOctaxe inherit it, the NerdQX below does not.
+    ethernet: Some(NERDHAT_QAXE),
     power_estimate: None,
 };
 
@@ -1149,6 +1248,10 @@ pub const Q1370: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    // NerdOS v1.1.1 drives a W5500 on the QAxe pins here too (`nerdqx.h`,
+    // no HAT when the TMP451 mux is fitted); not part of WarpAxe's first
+    // Ethernet round, which covers the boards that have run here.
+    ethernet: None,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -1189,6 +1292,10 @@ pub const Q1373: Profile = Profile {
     abs_max_frequency_mhz: 0,
     abs_min_core_mv: 0,
     abs_max_core_mv: 0,
+    // NerdOS v1.1.1 drives a W5500 on the QAxe pins here too (`nerdqx.h`,
+    // no HAT when the TMP451 mux is fitted); not part of WarpAxe's first
+    // Ethernet round, which covers the boards that have run here.
+    ethernet: None,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -1273,6 +1380,7 @@ pub const NERDNOS: Profile = Profile {
     // Nothing on the board measures power.
     small_cores: 0,
     silent_chip_restart: true,
+    ethernet: None,
     power_estimate: Some(PowerEstimate {
         base_w: 1.5,
         per_ghz_w: 21.7,
@@ -1981,5 +2089,127 @@ mod tests {
         assert_eq!(gamma.stored_chip_stop_fix(0), None, "0 = the default");
         let qx = Profile::by_name("nerdqaxe-plusplus").unwrap();
         assert_eq!(qx.stored_chip_stop_fix(90), None);
+    }
+
+    /// Every GPIO a profile drives or reads itself, for the HAT collision
+    /// check: the chain UART and reset, the I²C pair, the regulator's
+    /// enable and LDO lines on the ESP, the regulator-detect pin, the chip
+    /// power enable and the NerdNOS's stock reset pulse.
+    fn own_gpios(p: &Profile) -> Vec<u8> {
+        let mut v = vec![p.uart_tx, p.uart_rx];
+        v.extend(p.asic_reset);
+        if let Some(i2c) = p.i2c {
+            v.extend([i2c.sda, i2c.scl]);
+        }
+        match p.vr {
+            Vr::Tps5364x {
+                enable,
+                ldo_enable,
+                via_expander: false,
+                alt,
+                ..
+            } => {
+                v.push(enable);
+                v.extend(ldo_enable);
+                v.extend(alt.map(|a| a.pin));
+            }
+            Vr::Tps546Nerd {
+                enable, ldo_enable, ..
+            } => {
+                v.extend(enable);
+                v.extend(ldo_enable);
+            }
+            _ => {}
+        }
+        v.extend(p.asic_enable.map(|a| a.pin));
+        v.extend(p.stock_reset_pulse);
+        v
+    }
+
+    #[test]
+    fn the_nerdhat_sits_on_four_boards_and_on_nerdos_pins() {
+        // NerdOS v1.1.1: `kHatPins` (nerdqaxeplus.cpp) and `kEthPins`
+        // (nerdaxegaia.cpp), both without RST and IRQ.
+        assert_eq!(
+            NERDQAXE_PLUSPLUS.ethernet,
+            Some(EthPins {
+                sclk: 2,
+                mosi: 12,
+                miso: 16,
+                cs: 21,
+                rst: None,
+                int: None
+            })
+        );
+        assert_eq!(NERDQAXE_PLUSPLUS_REV7.ethernet, Some(NERDHAT_QAXE));
+        assert_eq!(NERDOCTAXE_GAMMA.ethernet, Some(NERDHAT_QAXE));
+        assert_eq!(
+            NERDAXE_GAIA.ethernet,
+            Some(EthPins {
+                sclk: 10,
+                mosi: 3,
+                miso: 16,
+                cs: 21,
+                rst: None,
+                int: None
+            })
+        );
+        let with_hat = [
+            "nerdqaxe-plusplus",
+            "nerdqaxe-plusplus-rev7",
+            "nerdoctaxe-gamma",
+            "nerdaxe-gaia",
+        ];
+        for p in ALL {
+            assert_eq!(
+                p.ethernet.is_some(),
+                with_hat.contains(&p.name),
+                "{}",
+                p.name
+            );
+        }
+        for u in [
+            &UNDETECTED,
+            &UNDETECTED_LCD,
+            &UNDETECTED_LCD_FLIPPED,
+            &UNDETECTED_OLED_BITAXE,
+        ] {
+            assert!(u.ethernet.is_none(), "{}", u.name);
+        }
+    }
+
+    #[test]
+    fn the_nerdhat_pins_touch_nothing_the_board_drives() {
+        for p in ALL {
+            let Some(e) = p.ethernet else { continue };
+            let own = own_gpios(p);
+            for g in e.gpios().into_iter().flatten() {
+                assert!(!own.contains(&g), "{}: GPIO{g} is used twice", p.name);
+            }
+            // No reset or interrupt line on any board (an RC network on
+            // the HAT, and the chip is polled).
+            assert_eq!((e.rst, e.int), (None, None), "{}", p.name);
+        }
+        // The Gaia's danger pins (NerdOS nerdaxegaia.cpp: /VDD, LDO_EN,
+        // PMB_ALRT, PGOOD) are not among its HAT pins; its LDO enable is
+        // one of them and shows up in the own-pin list above.
+        let gaia = NERDAXE_GAIA.ethernet.unwrap();
+        for g in [2, 12, 13, 11] {
+            assert!(!gaia.gpios().contains(&Some(g)), "Gaia GPIO{g}");
+        }
+        assert!(own_gpios(&NERDAXE_GAIA).contains(&12));
+    }
+
+    #[test]
+    fn a_tmp451_mux_blocks_the_hat_on_the_qaxe_pins_only() {
+        // The NerdOctaxe from rev 3.4: GPIO2/12 are the mux selects.
+        assert_eq!(NERDOCTAXE_GAMMA.ethernet_pins(false), Some(NERDHAT_QAXE));
+        assert_eq!(NERDOCTAXE_GAMMA.ethernet_pins(true), None);
+        assert_eq!(NERDQAXE_PLUSPLUS.ethernet_pins(true), None);
+        // The Gaia's pins are others.
+        assert_eq!(NERDAXE_GAIA.ethernet_pins(true), Some(NERDHAT_GAIA));
+        // A board without the header never gets pins.
+        assert_eq!(BITAXE_GAMMA.ethernet_pins(false), None);
+        assert_eq!(Q1373.ethernet_pins(false), None);
     }
 }

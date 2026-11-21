@@ -144,10 +144,10 @@ pub fn scan_start() -> (u16, Value) {
         }
     }
     let Some(own) = crate::net::state()
-        .wifi_ip
+        .lan_ip()
         .and_then(|ip| ip.parse::<std::net::Ipv4Addr>().ok())
     else {
-        return (400, json!({"error": "no Wi-Fi address to search from"}));
+        return (400, json!({"error": "no LAN address (Ethernet or Wi-Fi) to search from"}));
     };
     if !is_private(own) {
         return (

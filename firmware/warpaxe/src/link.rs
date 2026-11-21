@@ -199,6 +199,31 @@ impl Link {
         }
     }
 
+    /// The interface address this connection leaves from (IPv4), for the
+    /// Ethernet/Wi-Fi hand-over in `net::eth`: a session bound to the
+    /// cable's address dies with the cable.
+    pub fn local_ip(&self) -> Option<String> {
+        let fd = match self {
+            Link::Tcp(s) => s.as_raw_fd(),
+            Link::Tls { fd, .. } => *fd,
+        };
+        let mut addr: sys::sockaddr_in = unsafe { core::mem::zeroed() };
+        let mut len = core::mem::size_of::<sys::sockaddr_in>() as sys::socklen_t;
+        // SAFETY: out-parameters of the size lwIP expects for an IPv4 socket.
+        let rc = unsafe {
+            sys::lwip_getsockname(
+                fd,
+                &mut addr as *mut sys::sockaddr_in as *mut sys::sockaddr,
+                &mut len,
+            )
+        };
+        if rc != 0 || u32::from(addr.sin_family) != sys::AF_INET {
+            return None;
+        }
+        let b = addr.sin_addr.s_addr.to_ne_bytes();
+        Some(format!("{}.{}.{}.{}", b[0], b[1], b[2], b[3]))
+    }
+
     /// End the connection from another thread; a blocked read returns.
     pub fn shutdown(&self) {
         let fd = match self {

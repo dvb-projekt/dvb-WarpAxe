@@ -1,7 +1,8 @@
 //! Wi-Fi: the station when the config has a network, and the setup
 //! hotspot when it has none or the network cannot be reached after boot
-//! (`warpaxe_board::setup`). Runs on its own thread; the rest of the
-//! firmware sees the station as one more interface in `net::state()`.
+//! (`warpaxe_board::setup`) and no Ethernet link stands in (`eth.rs`).
+//! Runs on its own thread; the rest of the firmware sees the station as
+//! one more interface in `net::state()`.
 //!
 //! The hotspot is WPA2 with a password made at boot and shown only on the
 //! device display. While it is up, a small DNS responder sends every name
@@ -145,7 +146,29 @@ fn run(
         }
         was_connected = connected;
 
-        match hotspot.tick(has_ssid, t0.elapsed().as_secs() as u32, connected) {
+        // Ethernet counts as the connection the hotspot would stand in
+        // for: with a cable the hotspot never opens, and one that is open
+        // closes once the cable has held for a minute, with or without a
+        // network in the config.
+        let n = super::state();
+        let eth = n.eth_connected;
+        // While the HAT's probe and link are still coming (the first
+        // seconds of a boot), a board without a network in the settings
+        // waits rather than opening the hotspot for a minute and closing
+        // it again once the cable has an address. A fitted HAT counts as
+        // a configured network from then on: with no cable the hotspot
+        // opens after the usual three minutes, not at once.
+        let eth_fitted = n.eth_fitted == Some(true);
+        let action = if !has_ssid && (n.eth_probing || (eth_fitted && n.eth_link && !eth)) {
+            Action::Keep
+        } else {
+            hotspot.tick(
+                has_ssid || eth || eth_fitted,
+                t0.elapsed().as_secs() as u32,
+                connected || eth,
+            )
+        };
+        match action {
             Action::Open => {
                 let _ = wifi.stop();
                 match wifi
