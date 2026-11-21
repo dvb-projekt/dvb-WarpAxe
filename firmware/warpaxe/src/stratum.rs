@@ -1038,14 +1038,15 @@ fn session(
     let mut sess: Option<Session> = None;
     let mut line = String::new();
     let started = Instant::now();
-    // No new job for this long ends the session (`warpaxe_stratum::stale`).
-    let stale_limit = STALE.lock().unwrap().limit_s();
+    // No new job for this long ends the session (`warpaxe_stratum::stale`);
+    // read each pass, since the first refresh from the pool shortens it.
     let mut last_job = Instant::now();
     let mut first_job: Option<Instant> = None;
     let mut fresh_seen = false;
     let mut pings: u32 = 0;
     loop {
         let since_job = last_job.elapsed().as_secs();
+        let stale_limit = STALE.lock().unwrap().limit_s();
         if warpaxe_stratum::stale::is_stale(has_work, since_job, stale_limit) {
             return Err(StaleJob {
                 secs: since_job,
@@ -1172,6 +1173,10 @@ fn session(
                     );
                 }
                 publish(Feed::V1(s.clone(), prepared), clean);
+                if !clean {
+                    // New work on the same block: this pool refreshes.
+                    STALE.lock().unwrap().refresh();
+                }
                 if !has_work {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
@@ -1515,7 +1520,11 @@ fn session_v2(
     // so the V1 limits hold. A stuck pool keeps answering shares; the
     // check runs whenever anything arrives, and a pool that sends nothing
     // at all ends the session by the read timeout.
-    let stale_limit = STALE.lock().unwrap().limit_s();
+    let stale_limit = {
+        let mut w = STALE.lock().unwrap();
+        w.refresh();
+        w.limit_s()
+    };
     let mut last_job = Instant::now();
     let mut first_job: Option<Instant> = None;
     let mut fresh_seen = false;

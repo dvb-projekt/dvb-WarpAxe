@@ -142,7 +142,11 @@ const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
 /// list (a Supra Hex 703, reported 2026-11-18) is caught by its BM1368.
 ///
 /// A stored device model decides alone: one on the list stops, any other
-/// goes on. The board version and the chip name only count when no model
+/// goes on.
+/// A board that gets past this as a Gamma while it carries another chip
+/// is still stopped on its first start: it powers up cautiously and the
+/// chip id refuses the choice (`choice::FirstStart::WrongChip`) before the
+/// full voltage. The board version and the chip name only count when no model
 /// is stored, so a firmware that reuses ESP-Miner's numbers or chip names
 /// for a board WarpAxe runs is not refused. The same rule as the web
 /// installer's `unsupportedStock` (web/flasher/index.html).

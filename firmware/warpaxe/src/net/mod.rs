@@ -33,6 +33,10 @@ pub struct NetState {
     pub eth_link: bool,
     /// Ethernet has an address (DHCP done).
     pub eth_connected: bool,
+    /// The link is up and still waiting for its first address; false once
+    /// a link went [`eth::NO_ADDRESS`] without one (no DHCP server on the
+    /// cable), until an address comes.
+    pub eth_waiting: bool,
     pub eth_ip: Option<String>,
     /// The W5500's MAC, as the driver set it (the ESP's efuse Ethernet
     /// address, `ESP_MAC_ETH`).
@@ -93,6 +97,7 @@ static STATE: Mutex<NetState> = Mutex::new(NetState {
     eth_fitted: None,
     eth_link: false,
     eth_connected: false,
+    eth_waiting: false,
     eth_ip: None,
     eth_mac: None,
     eth_speed_mbit: None,

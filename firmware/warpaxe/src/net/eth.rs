@@ -57,7 +57,7 @@ const ROUTE_PRIORITY: u32 = 110;
 /// not, so a link that never gets a lease would otherwise hold the route
 /// away from a working Wi-Fi after one Wi-Fi flap. Stopping takes the
 /// netif down (the route moves), starting retries DHCP.
-const NO_ADDRESS: Duration = Duration::from_secs(60);
+pub const NO_ADDRESS: Duration = Duration::from_secs(60);
 /// Ethernet holds an address this long before a pool session that runs
 /// over Wi-Fi is moved onto it. A cable that comes and goes within the
 /// time causes no reconnect of its own; the session that was on the
@@ -275,6 +275,9 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
     let mut moved = false;
     // When the link came up without an address yet (NO_ADDRESS).
     let mut link_since: Option<Instant> = None;
+    // A link went NO_ADDRESS without an address (no DHCP server on the
+    // cable): the setup hotspot no longer waits for it.
+    let mut dhcp_failed = false;
     loop {
         let link = eth.is_connected().unwrap_or(false);
         let now_ip = if link {
@@ -342,7 +345,11 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 }
                 link_since = None;
                 was_link = false;
+                dhcp_failed = true;
             }
+        }
+        if ip.is_some() {
+            dhcp_failed = false;
         }
         let (speed, duplex) = if link {
             link_params(&eth)
@@ -352,6 +359,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         super::set_eth(|s| {
             s.eth_link = link;
             s.eth_connected = ip.is_some();
+            s.eth_waiting = link && ip.is_none() && !dhcp_failed;
             s.eth_ip = ip.clone();
             s.eth_speed_mbit = speed;
             s.eth_full_duplex = duplex;

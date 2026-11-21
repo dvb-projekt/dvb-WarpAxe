@@ -157,9 +157,11 @@ fn run(
         // waits rather than opening the hotspot for a minute and closing
         // it again once the cable has an address. A fitted HAT counts as
         // a configured network from then on: with no cable the hotspot
-        // opens after the usual three minutes, not at once.
+        // opens after the usual three minutes, not at once. A cable on
+        // which no address comes (no DHCP server) stops holding it back
+        // after `eth::NO_ADDRESS`.
         let eth_fitted = n.eth_fitted == Some(true);
-        let action = if !has_ssid && (n.eth_probing || (eth_fitted && n.eth_link && !eth)) {
+        let action = if !has_ssid && (n.eth_probing || (eth_fitted && n.eth_waiting)) {
             Action::Keep
         } else {
             hotspot.tick(

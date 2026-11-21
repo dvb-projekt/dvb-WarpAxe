@@ -872,20 +872,22 @@ fn read_body(
     // firmware (OTA upload on .41, 2026-11-20). So: one allocation of the
     // announced size, and every growth as try_reserve, so that no room
     // ends this request with an error instead of a panic. `max` still
-    // bounds what is kept.
-    let announced = req
+    // bounds what is kept. The announced size is reserved only once the
+    // first bytes are in, so a header alone holds no memory.
+    let mut announced = req
         .header("Content-Length")
         .and_then(|v| v.trim().parse::<usize>().ok())
         .map(|n| n.min(max.saturating_add(1)));
     let mut body = Vec::new();
-    if let Some(n) = announced {
-        body.try_reserve_exact(n).map_err(|_| no_room(n))?;
-    }
     let mut buf = [0u8; 512];
     loop {
         let n = req.read(&mut buf)?;
         if n == 0 {
             break;
+        }
+        if let Some(size) = announced.take() {
+            body.try_reserve_exact(size.max(n))
+                .map_err(|_| no_room(size))?;
         }
         body.try_reserve(n).map_err(|_| no_room(body.len() + n))?;
         body.extend_from_slice(&buf[..n]);

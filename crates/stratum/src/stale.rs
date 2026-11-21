@@ -21,12 +21,23 @@
 //! measured over two hours with a 77 min block gap on 2026-11-20), and a
 //! stuck one keeps answering shares instead of pinging.
 //!
+//! Not every pool refreshes the job between blocks: a quiet solo pool, a
+//! testnet or a small proxy may send `mining.notify` only on a new block,
+//! and a block gap of ten minutes or more is common. The short limits
+//! therefore hold only for a pool that has been seen to refresh: a V1 job
+//! without `clean_jobs` (the same block, new work). Until one comes from
+//! the pool in use, a session gets [`BLOCK_ONLY_LIMIT_S`], which only an
+//! unusual block gap reaches. Sv2 sessions count as refreshing (see above).
+//!
 //! A main pool left this way stays marked: when the probe brings the miner
 //! back from the fallback, it gets only the short limit, and the firmware
 //! waits longer before the next probe. Fresh work from it clears the mark.
 
 /// No new job for this long ends a session that has had work (seconds).
 pub const LIMIT_S: u64 = 600;
+/// The limit while the pool in use has not been seen to refresh the job
+/// between blocks (seconds): only a new block brings it a job.
+pub const BLOCK_ONLY_LIMIT_S: u64 = 3600;
 /// The limit after such an end, and for a main pool marked stuck (seconds).
 pub const RETRY_LIMIT_S: u64 = 300;
 /// A job this long after the session's first one is fresh work (seconds).
@@ -51,6 +62,8 @@ pub enum Verdict {
 pub struct Watch {
     strikes: u8,
     main_stuck: bool,
+    /// The pool in use has sent a job without a new block.
+    refreshing: bool,
 }
 
 impl Watch {
@@ -59,12 +72,15 @@ impl Watch {
         Self {
             strikes: 0,
             main_stuck: false,
+            refreshing: false,
         }
     }
 
     /// The limit for the next session (seconds).
     pub fn limit_s(&self) -> u64 {
-        if self.strikes == 0 {
+        if !self.refreshing {
+            BLOCK_ONLY_LIMIT_S
+        } else if self.strikes == 0 {
             LIMIT_S
         } else {
             RETRY_LIMIT_S
@@ -77,6 +93,8 @@ impl Watch {
     pub fn stale(&mut self, other_pool: bool, on_fallback: bool) -> Verdict {
         if self.strikes >= 1 && other_pool {
             self.strikes = 0;
+            // The other pool has yet to show that it refreshes.
+            self.refreshing = false;
             if !on_fallback {
                 self.main_stuck = true;
             }
@@ -99,6 +117,12 @@ impl Watch {
         was_stuck
     }
 
+    /// The pool in use sent a job without a new block (V1: `clean_jobs`
+    /// false), or speaks Sv2: from now on the short limits apply to it.
+    pub fn refresh(&mut self) {
+        self.refreshing = true;
+    }
+
     /// Whether the main pool was left for sending no new jobs and has not
     /// sent fresh work since.
     pub fn main_stuck(&self) -> bool {
@@ -109,12 +133,15 @@ impl Watch {
     /// gets the short limit straight away.
     pub fn back_to_main(&mut self) {
         self.strikes = u8::from(self.main_stuck);
+        // A main pool marked stuck had refreshed before it stopped.
+        self.refreshing = self.main_stuck;
     }
 
     /// The pool was switched for another reason (failures, an outage):
     /// the other pool starts with the full limit. The mark stays.
     pub fn switched(&mut self) {
         self.strikes = 0;
+        self.refreshing = false;
     }
 
     /// Settings changed: everything starts over.
@@ -149,11 +176,15 @@ mod tests {
     #[test]
     fn first_stale_end_reconnects_second_switches() {
         let mut w = Watch::default();
+        w.refresh();
         assert_eq!(w.limit_s(), LIMIT_S);
         assert_eq!(w.stale(true, false), Verdict::Reconnect);
         assert_eq!(w.limit_s(), RETRY_LIMIT_S);
         assert_eq!(w.stale(true, false), Verdict::SwitchPool);
-        // The other pool starts with the full limit; the main is marked.
+        // The other pool starts with the full limit once it refreshes;
+        // the main is marked.
+        assert_eq!(w.limit_s(), BLOCK_ONLY_LIMIT_S);
+        w.refresh();
         assert_eq!(w.limit_s(), LIMIT_S);
         assert!(w.main_stuck());
     }
@@ -161,6 +192,7 @@ mod tests {
     #[test]
     fn without_another_pool_it_keeps_reconnecting() {
         let mut w = Watch::default();
+        w.refresh();
         assert_eq!(w.stale(false, false), Verdict::Reconnect);
         assert_eq!(w.stale(false, false), Verdict::Reconnect);
         assert_eq!(w.limit_s(), RETRY_LIMIT_S);
@@ -181,6 +213,7 @@ mod tests {
         assert!(w.fresh(false), "the mark was cleared: the main is back");
         assert!(!w.main_stuck());
         assert!(!w.fresh(false), "only once");
+        w.refresh();
         assert_eq!(w.limit_s(), LIMIT_S);
     }
 
@@ -195,17 +228,34 @@ mod tests {
         assert_eq!(w.stale(true, false), Verdict::SwitchPool);
         let mut healthy = Watch::default();
         healthy.back_to_main();
+        assert_eq!(healthy.limit_s(), BLOCK_ONLY_LIMIT_S);
+        healthy.refresh();
         assert_eq!(healthy.limit_s(), LIMIT_S);
     }
 
     #[test]
     fn a_switch_for_other_reasons_gives_the_full_limit() {
         let mut w = Watch::default();
+        w.refresh();
         w.stale(true, false);
         w.switched();
+        assert_eq!(w.limit_s(), BLOCK_ONLY_LIMIT_S);
+        w.refresh();
         assert_eq!(w.limit_s(), LIMIT_S);
         w.reset();
         assert!(!w.main_stuck());
+    }
+
+    #[test]
+    fn a_pool_that_sends_jobs_only_on_blocks_gets_the_long_limit() {
+        let mut w = Watch::default();
+        assert_eq!(w.limit_s(), BLOCK_ONLY_LIMIT_S);
+        // A long block gap ends the session once; still no refresh seen.
+        assert_eq!(w.stale(true, false), Verdict::Reconnect);
+        assert_eq!(w.limit_s(), BLOCK_ONLY_LIMIT_S);
+        // One refresh, and the short limits hold (here: after a strike).
+        w.refresh();
+        assert_eq!(w.limit_s(), RETRY_LIMIT_S);
     }
 
     #[test]
