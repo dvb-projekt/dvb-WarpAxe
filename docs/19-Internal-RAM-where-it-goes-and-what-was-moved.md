@@ -160,10 +160,36 @@ of this branch only, never .43, not .40/.47:
 4. `warpaxe.local` resolves, the swarm page finds the miner (commit 5).
 5. Online update and an upload update under that heap; config saves
    (pool page, fan) while the pool runs (commits 3, 6, 7: flash writes
-   with Wi-Fi traffic). The writer's "stack never used" line answers the
+   with Wi-Fi traffic), once with Wi-Fi modem sleep on (the default off
+   the devkit): the Wi-Fi blob's power-save state (`g_pm`) now sits in
+   PSRAM, and only the blob knows whether its interrupt reads it while
+   a flash write has the cache off. The writer's "stack never used" line answers the
    main-task question above.
 6. The Ethernet build on top of this branch on .41 with HAT and cable:
    the same numbers as the 2026-11-21 test.
 
 If one of commits 6 or 7 misbehaves, drop it alone; the others do not
 depend on it.
+
+## Audit (second agent, read-only, 2026-11-21)
+
+No critical, high or medium finding in the seven commits. Clean by
+reading: the log ring (no access before the block exists, ISR callers
+skipped, the ring was never in a core dump), the IRAM options (the
+project installs no IRAM interrupt; Kconfig itself turns
+`SPI_MASTER_ISR_IN_IRAM` off with the heap in flash), the Stratum
+call graph on PSRAM (nothing reaches `nvs_*`, `esp_partition_*`,
+`esp_ota_*`; ESP-IDF asserts `esp_task_stack_is_sane_cache_disabled()`
+on any flash operation from a PSRAM stack, reads included), mDNS (the
+TCB stays internal, the stack check accepts PSRAM with
+`SPIRAM_ALLOW_STACK_EXTERNAL_MEMORY`).
+
+- **Low, open:** commit 7's residual risk, the Wi-Fi interrupt and the
+  blob's sleep state in PSRAM (device test point 5).
+- **Fixed** (`e519c1d`): comment nits (wpa_supplicant's `.bss` moves
+  too; the SPI caveat is enforced by Kconfig; the hash loops' files).
+- **Fixed** (`b07e43d`): `spawn_psram` now gives the FreeRTOS task the
+  thread's name, so a panic says "stratum" rather than "pthread".
+
+IRAM figures here are `.iram0.vectors + .iram0.text`; the segment in the
+image also holds `.iram0.text_end` padding.
