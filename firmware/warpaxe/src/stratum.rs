@@ -350,10 +350,16 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
     }
 }
 
+/// The V1 session thread and its fallback probe run on PSRAM stacks like
+/// the sv2 session (docs/19): neither writes flash. Config is read from
+/// RAM, events are only queued (`events::record`; the store is
+/// `events::flush` on an internal stack), a confirmed TLS key is written
+/// by the HTTP handler, and TLS memory comes from PSRAM anyway. Without
+/// PSRAM for the stack, one from internal RAM as before.
 pub fn start() {
-    std::thread::Builder::new()
-        .stack_size(12 * 1024)
-        .spawn(run)
+    const STACK: usize = 12 * 1024;
+    diag::spawn_psram("stratum", STACK, run)
+        .or_else(|_| std::thread::Builder::new().stack_size(STACK).spawn(run))
         .expect("stratum thread");
 }
 
@@ -454,10 +460,13 @@ fn run() {
     let mut probing = false;
     // That probe's second try, IPv4 first after silence over IPv6, used.
     let mut probe_retried = false;
-    std::thread::Builder::new()
-        .stack_size(4096)
-        .spawn(probe_primary)
-        .ok();
+    // PSRAM like this thread (see `start`): a TCP connect, no flash.
+    if diag::spawn_psram("probe", 4096, probe_primary).is_err() {
+        std::thread::Builder::new()
+            .stack_size(4096)
+            .spawn(probe_primary)
+            .ok();
+    }
     loop {
         // A change that came while no session was up (connecting, or in
         // the backoff) applies now: this pass reads the new config.
