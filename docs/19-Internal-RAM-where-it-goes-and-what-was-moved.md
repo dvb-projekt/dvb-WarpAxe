@@ -229,5 +229,45 @@ At the end of boot (`heap:` log line): .46 157 KB free, largest piece
   fallback probe did not run (no fallback switch). The writer's
   "stack never used" line was lost with the ring at the restart; read
   it after the next update.
-- Not tested: the Ethernet build on top (merge with f58f70b), an
-  online (click) update, V1 pools.
+
+### Second round (same day): the rest of the fleet, V1, Ethernet, the click update
+
+Oliver's OK in this session for .44, .45 and .41 and for the
+`read_body` fix (`a5c4e96`: the upload body in one allocation of its
+Content-Length, `try_reserve` instead of an abort; the doubling Vec
+had crashed an upload on .41 on 2026-11-20). Images `a5c4e968d`
+(branch) and `e8216e7f1` (test merge of this branch into
+`test/ethernet-on-main` 05c709c, branch
+`claude/internal-ram-eth-test-c24e8f`, for .41 only; the one conflict
+was `net/mdns.rs`: `lan_ip()` and `spawn_psram` together).
+
+| Miner | Firmware | Window (UTC) | free min / mean / max | largest piece | Shares |
+|---|---|---|---|---|---|
+| .44 Nano | v0.1.47 | 11:34–12:06 | 36,999 / 40,550 / 41,639 | 20,480 | rej 0 |
+| .44 | a5c4e968d | 12:08–12:43 | 112,603 / 122,444 / 130,295 | 31,744 | 132 acc, 0 rej |
+| .45 Gaia | v0.1.47 | 11:34–12:08 | 19,295 / 24,367 / 28,183 | 18,432 | rej 0 |
+| .45 | a5c4e968d | 12:09–12:43 | 93,251 / 105,904 / 108,599 | 31,744 | 136 acc, 0 rej |
+| .41 NerdQAxe++, HAT, no cable | v0.1.47 (does not drive the HAT) | 11:34–12:12 | 11,803 / 22,908 / 26,243 | 4,608–7,680 | rej 0 |
+| .41, HAT **and cable** | e8216e7f1 (Ethernet + this branch) | 12:13–12:43 | 85,719 / 99,375 / 104,223 | 31,744 | 149 acc, 0 rej |
+
+For .41 the reference of the Ethernet test that morning (05c709c,
+Ethernet + f58f70b only): with cable 10–21 KB free, largest piece
+~7 KB. With this branch on top: ~99 KB free, 31 KB in one piece.
+Link 100 Mbit/s full duplex, the default route over the cable, mDNS
+`nerdqaxe.local` on it.
+
+- **V1 and the fallback probe (.46):** main pool port set to a closed
+  one; after three failed connects the V1 fallback (192.168.178.3:3333)
+  took over, subscribed, authorized, 12 minutes, 23 shares, 0 rejected,
+  the probe running every 300 s on its PSRAM stack; port set back, Sv2
+  again.
+- **The `read_body` fix (.46):** an upload received by the fixed code
+  (`ota: … handed to the writer (129 KB internal free, largest piece
+  31 KB)`), written, restarted, marked valid.
+- **Click update (.41):** e8216e7f1 installed the published v0.1.47 by
+  itself over the cable: download, signature verified, write, restart
+  "no crash reset", marked valid at chain ready. That was also .41's
+  way back; it runs v0.1.47 again (39 s up: 24 KB free, 19 KB largest).
+- Still not seen: the writer's "stack never used" line (lost with the
+  RAM log ring at every restart; it needs the USB console or a log
+  that survives).
