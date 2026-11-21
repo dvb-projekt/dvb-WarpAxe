@@ -66,6 +66,18 @@ Why ten minutes: pools send a fresh job at least every minute or so
 one means the pool is stuck, and it is short enough that a stuck pool
 costs little.
 
+That holds only for a pool that refreshes the job between blocks. A
+quiet solo pool, a testnet or a small proxy may send `mining.notify`
+only on a new block, and ten minutes between blocks is common. So the
+short limits apply once the pool in use has sent one V1 job without
+`clean_jobs` (the same block, new work); until then a session gets an
+hour (`BLOCK_ONLY_LIMIT_S`), which only an unusual block gap reaches.
+After a switch the other pool has to show it again; a main pool marked
+stuck had refreshed before, so it keeps the short limit when the probe
+brings the miner back. Sv2 sessions count as refreshing (next section).
+Found by the v0.1.48 release audit; Rockem's pool refreshed every 30 s
+before it stopped, so his case is caught as before.
+
 ## Sv2
 
 Sv2 sessions use the same rule. Sv2 lets the miner roll the time
