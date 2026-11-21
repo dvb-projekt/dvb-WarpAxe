@@ -508,7 +508,11 @@ pub fn core_hist() -> Vec<CoreHist> {
 static NONCE_ADDRESS_BITS: Mutex<[u32; 256]> = Mutex::new([0; 256]);
 
 fn address_seen(nonce: u32) {
-    let bits = ((nonce >> 17) & 0xFF) as usize;
+    // `nonce` is the wire bytes read little endian (what goes into the
+    // header); the chip's fields are in the big-endian reading, as in
+    // `JobResult::parse`. Without the swap this counted bits 9..15 and
+    // bit 0 of that reading: evenly spread on any board.
+    let bits = ((nonce.swap_bytes() >> 17) & 0xFF) as usize;
     let mut g = NONCE_ADDRESS_BITS.lock().unwrap();
     g[bits] = g[bits].saturating_add(1);
 }
