@@ -93,6 +93,7 @@
   "imp_fallback": "pool de secours",
   "imp_hostname": "nom d’hôte",
   "bd_title": "Quelle est cette carte ?",
+  "bd_tdisplay_only": "Rien n’a répondu sur les bus du mineur, mais la flash contient les réglages d’un NerdMiner. Cela correspond à la LilyGO T-Display-S3, la carte NerdMiner sans puce de minage. Une carte avec une puce de minage que WarpAxe ne connaît pas (une NMAxe, par exemple) se présente de la même façon : ne choisissez la T-Display-S3 que si votre carte n’a pas de puce de minage.",
   "bd_some": "WarpAxe n’a pas pu identifier la carte avec certitude. Les ASIC restent coupés tant que vous ne l’avez pas choisie ; seules les cartes compatibles sont listées.",
   "bd_none": "WarpAxe n’a reconnu aucune de ses cartes sur cet appareil. Les ASIC restent coupés tant que vous n’en avez pas choisi une.",
   "bd_imported": "Repris du firmware précédent : {w}.",

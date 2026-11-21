@@ -93,6 +93,7 @@
   "imp_fallback": "pool di riserva",
   "imp_hostname": "hostname",
   "bd_title": "Di quale scheda si tratta?",
+  "bd_tdisplay_only": "Sui bus del miner non ha risposto nulla, ma nella flash ci sono le impostazioni di un NerdMiner. Questo corrisponde alla LilyGO T-Display-S3, la scheda NerdMiner senza chip di mining. Una scheda con un chip di mining che WarpAxe non conosce (per esempio una NMAxe) appare allo stesso modo: scegli la T-Display-S3 solo se la tua scheda non ha un chip di mining.",
   "bd_some": "WarpAxe non ha riconosciuto la scheda con certezza. Gli ASIC restano spenti finché non la scegli; sono elencate solo le schede compatibili.",
   "bd_none": "WarpAxe non ha riconosciuto nessuna delle sue schede su questo dispositivo. Gli ASIC restano spenti finché non ne scegli una.",
   "bd_imported": "Impostazioni riprese dal firmware precedente: {w}.",

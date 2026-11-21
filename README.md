@@ -975,9 +975,11 @@ voltage domains in series, no profile in WarpAxe). Since
 v0.1.47 the installer page recognises them from the settings their stock
 firmware keeps and stops before it writes anything, and the firmware
 names them on its first start and leaves their chips off. Since v0.1.48
-the same goes for the StarMiner, a Gamma fed with 12 V: the Gamma
-profile sets its regulator up for 5 V, which then shuts off. A StarMiner
-profile is being tested. Boards whose firmware keeps none of AxeOS's
+the same goes for the StarMiner (board version 601a), a Gamma fed with
+12 V: the Gamma profile sets its regulator up for 5 V, which then shuts
+off. A StarMiner already set up as a Gamma under an earlier version
+keeps that choice; set it back by hand. A StarMiner profile is being
+tested. Boards whose firmware keeps none of AxeOS's
 settings (an NMAxe with NMMiner, for one) are not recognised by the
 installer: check the list above before you flash.
 

@@ -571,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn a_starminer_is_named_by_its_model_or_its_board_version() {
+    fn a_starminer_is_named_by_its_board_version() {
         // As its factory settings store it (config-601a.cvs).
         assert_eq!(
             from_stock_unsupported(Some("gamma"), Some("BM1370"), Some("601a")),

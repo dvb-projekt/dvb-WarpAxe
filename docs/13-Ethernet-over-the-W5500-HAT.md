@@ -100,8 +100,9 @@ In `main.rs`, after the USB netif and before Wi-Fi (`set_step("ETHERNET")`):
      HAT's RC reset only works at power-on. ESP-IDF's own driver resets and
      verifies the chip once more when it is installed;
    - the driver: `EthDriver::new_spi_with_event_source` with
-     `SpiEthChipset::W5500`, polling every millisecond where there is no
-     interrupt pin (NerdOS `poll_period_ms = 1`; the chip buffers 16 KB),
+     `SpiEthChipset::W5500`, polling every 5 ms where there is no
+     interrupt pin (NerdOS polls every 1 ms; the chip buffers 16 KB and
+     the 2 MHz SPI bus, about 250 KB/s, is the limit either way),
      and the ESP's efuse Ethernet MAC (`ESP_MAC_ETH`, distinct from the
      Wi-Fi station's and the USB link's) written to the chip. ESP-IDF
      sets a MAC on its own only for the internal EMAC; a SPI MAC keeps
@@ -217,7 +218,7 @@ NerdQAxe++ and the Octaxe rev 3.1 follow with the same list.
    network: the hotspot opens after three minutes as before). Mine for an
    hour and compare the hashrate and error rate with the previous image.
 2. **HAT fitted, no cable**: `eth: W5500 found on SCLK 10 / MOSI 3 / MISO
-   16 / CS 21, reset over SPI; polled every 1 ms`, `eth: started, MAC
+   16 / CS 21, reset over SPI; polled every 5 ms`, `eth: started, MAC
    xx:…` (the efuse Ethernet MAC, not the Wi-Fi one), `ethStatus: "No
    link"`. The LDO (GPIO12) and the core rail behave as without the HAT:
    watch the regulator's input voltage and `power_fault` on the dashboard
@@ -270,7 +271,7 @@ NerdQAxe++ and the Octaxe rev 3.1 follow with the same list.
    at the time). Install an update over the cable once.
 9. **Soak**: a day with the cable in, then a day on Wi-Fi with the HAT
    fitted; hashrate, error rate and `freeHeapInternal` compared with the
-   image before. The 1 ms poll task costs some CPU; watch for any change
+   image before. The 5 ms poll task costs a little CPU; watch for any change
    in the chain's job pace (`jobInterval` is unaffected by design, but the
    figures will show).
 10. **The Octaxe rev 3.1**: steps 1–3 and 5; the log must not say

@@ -229,12 +229,15 @@ impl<I: I2c> Emc2101<I> {
         bus.write(ADDR, &[REG_CONFIG, cfg[0]]).map_err(Error::Bus)?;
         bus.write(ADDR, &[CTF_REG_21, CTF_REG_21_VALUE])
             .map_err(Error::Bus)?;
-        if let Some(i) = self.cfg.ideality {
-            let nc = if i == 0x24 { 0x08 } else { i };
-            bus.write(ADDR, &[CTF_REG_NC, nc]).map_err(Error::Bus)?;
+        // Only the BM1370 tuning has a known CTF2301B value (the fork's
+        // NC 0x08 for ideality 0x24, beta 0x00): its NC and beta tables are
+        // not the EMC2101's, so any other value is left at the part's own
+        // default rather than written raw.
+        if self.cfg.ideality == Some(0x24) {
+            bus.write(ADDR, &[CTF_REG_NC, 0x08]).map_err(Error::Bus)?;
         }
-        if let Some(b) = self.cfg.beta {
-            bus.write(ADDR, &[CTF_REG_BETA, b]).map_err(Error::Bus)?;
+        if self.cfg.beta == Some(0x00) {
+            bus.write(ADDR, &[CTF_REG_BETA, 0x00]).map_err(Error::Bus)?;
         }
         self.state = State::Ctf(bus);
         Ok(())

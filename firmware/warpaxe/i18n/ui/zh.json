@@ -93,6 +93,7 @@
   "imp_fallback": "备用矿池",
   "imp_hostname": "主机名",
   "bd_title": "这是哪块板卡？",
+  "bd_tdisplay_only": "矿机的总线上没有任何应答，但闪存中存有 NerdMiner 的设置。这符合 LilyGO T-Display-S3，即不带挖矿芯片的 NerdMiner 板卡。带有 WarpAxe 无法识别的挖矿芯片的板卡（例如 NMAxe）看起来也一样：只有当你的板卡没有挖矿芯片时，才选择 T-Display-S3。",
   "bd_some": "WarpAxe 无法确定板卡型号。在你选择之前 ASIC 保持关闭；下方只列出匹配的板卡。",
   "bd_none": "WarpAxe 未能在此设备上识别出任何已知板卡。在你选择之前 ASIC 保持关闭。",
   "bd_imported": "沿用自之前的固件：{w}。",

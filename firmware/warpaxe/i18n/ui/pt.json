@@ -93,6 +93,7 @@
   "imp_fallback": "pool reserva",
   "imp_hostname": "hostname",
   "bd_title": "Que placa é esta?",
+  "bd_tdisplay_only": "Nada respondeu nos barramentos do minerador, mas a flash tem as configurações de um NerdMiner. Isso corresponde à LilyGO T-Display-S3, a placa do NerdMiner sem chip de mineração. Uma placa com um chip de mineração que o WarpAxe não conhece (uma NMAxe, por exemplo) parece igual: escolha a T-Display-S3 só se a sua placa não tiver chip de mineração.",
   "bd_some": "O WarpAxe não conseguiu identificar a placa com certeza. Os ASICs ficam desligados até você escolher; só aparecem as placas compatíveis.",
   "bd_none": "O WarpAxe não reconheceu neste dispositivo nenhuma das placas que ele suporta. Os ASICs ficam desligados até você escolher uma.",
   "bd_imported": "Importado do firmware anterior: {w}.",
