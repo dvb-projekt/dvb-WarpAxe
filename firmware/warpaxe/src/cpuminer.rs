@@ -26,8 +26,8 @@
 //! below they resume.
 //!
 //! First start: [`import_nerdminer`] takes the Wi-Fi and the wallet a
-//! NerdMiner left in flash (see `warpaxe_cpuminer::nerdminer`); finding
-//! its config.json is what makes a bare board the devkit (board.rs).
+//! NerdMiner left in flash (see `warpaxe_cpuminer::nerdminer`); the
+//! devkit itself is then picked by hand (board.rs).
 
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};

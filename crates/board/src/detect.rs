@@ -313,8 +313,11 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8], vin_v: Option<f32>) -> Detec
 /// together exist on no other board: that is the NerdNOS, taken outright
 /// (2026-10-08; before, it was offered first and chosen by hand). The
 /// thermistor alone still only offers it: nothing may drive a chip's
-/// reset line on a guess. A bare board with NerdMiner's settings becomes
-/// the devkit as before; without any sign the choice is open.
+/// reset line on a guess. A bare board with NerdMiner's settings is
+/// offered as the devkit, not taken: an NMAxe (a BM1366 board on NMMiner,
+/// a NerdMiner fork) looks the same from here, and taken as the devkit it
+/// hashed on the ESP32-S3 with its ASIC idle (2026-11-21). Without any
+/// sign the choice is open.
 pub fn bare_board(
     nerdminer_settings: bool,
     thermistor: bool,
@@ -335,9 +338,9 @@ pub fn bare_board(
             &[&NERDNOS, &T_DISPLAY_S3_DEVKIT],
             "a thermistor divider on GPIO2: the NerdNOS, or a T-Display-S3",
         ),
-        (false, true) => Detection::Board(
-            &T_DISPLAY_S3_DEVKIT,
-            "nothing answered, a NerdMiner's settings in flash: the T-Display-S3 devkit",
+        (false, true) => Detection::Choose(
+            &[&T_DISPLAY_S3_DEVKIT],
+            "nothing answered, a NerdMiner's settings in flash: a T-Display-S3, or a board WarpAxe does not know (an NMAxe looks the same)",
         ),
         (false, false) => Detection::Choose(&[], "no known chips answered"),
     }
@@ -429,9 +432,10 @@ mod tests {
             bare_board(false, true, Some(0)),
             Detection::Choose(..)
         ));
-        assert!(
-            matches!(bare_board(true, false, None), Detection::Board(p, _) if p.name == "t-display-s3")
-        );
+        assert!(matches!(
+            bare_board(true, false, None),
+            Detection::Choose(..)
+        ));
     }
 
     use super::*;
@@ -792,12 +796,17 @@ mod tests {
     }
 
     /// A thermistor on GPIO2 puts the NerdNOS first in the choice, never
-    /// takes it; NerdMiner's settings alone still make the devkit.
+    /// takes it; NerdMiner's settings alone only offer the devkit (an
+    /// NMAxe on NMMiner looks the same).
     #[test]
-    fn a_bare_t_display_is_the_devkit_a_thermistor_offers_the_nerdnos() {
-        assert!(
-            matches!(bare_board(true, false, None), Detection::Board(p, _) if p.name == "t-display-s3")
-        );
+    fn a_bare_t_display_is_offered_as_the_devkit_a_thermistor_offers_the_nerdnos() {
+        match bare_board(true, false, None) {
+            Detection::Choose(c, _) => assert_eq!(
+                c.iter().map(|p| p.name).collect::<Vec<_>>(),
+                ["t-display-s3"]
+            ),
+            d => panic!("{d:?}"),
+        }
         for settings in [true, false] {
             match bare_board(settings, true, None) {
                 Detection::Choose(c, _) => assert_eq!(

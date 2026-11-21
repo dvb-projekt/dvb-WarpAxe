@@ -3553,13 +3553,13 @@ fn first_start(i2c0: &mut I2C0) -> &'static Profile {
         Detection::Choose(c, why) => {
             // Nothing on either bus and no stock firmware keys: possibly a
             // bare T-Display-S3 (the NerdMiner devkit). What a NerdMiner
-            // left in flash decides: its config.json found means the board
-            // becomes the devkit, hashing on the CPU, with its wallet and
-            // the Wi-Fi library's station taken over (the Wi-Fi only with
-            // the wallet). Without it the owner chooses in the web
-            // UI, where t-display-s3 is on offer; a board with chips whose
-            // bus is dead must not quietly turn into a CPU miner. A board
-            // with a boardModel in NVS never gets here (init_bus).
+            // left in flash is taken over: its config.json's wallet and the
+            // Wi-Fi library's station (the Wi-Fi only with the wallet).
+            // The board itself is chosen by the owner in the web UI, where
+            // t-display-s3 is on offer: a board with chips whose bus is
+            // dead must not quietly turn into a CPU miner (an NMAxe on
+            // NMMiner did, 2026-11-21). A board with a boardModel in NVS
+            // never gets here (init_bus).
             let mut imported = imported;
             let mut c = c;
             let mut why = why;

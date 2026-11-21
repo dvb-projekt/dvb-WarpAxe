@@ -1002,12 +1002,13 @@ published: a release lists the boards it was tested on in
 
 - Installed with the same image and the same web flasher as every other
   board. On the first start a board on which nothing answers on the I²C
-  bus and that still holds a NerdMiner's settings becomes the
-  T-Display-S3: Wi-Fi from the ESP's Wi-Fi storage and the wallet from
-  NerdMiner's `config.json` are taken over, the worker is
-  `<wallet>.WarpMiner`, the pool is WarpPool (Stratum V1, a share
-  difficulty of 0.005, about 40 shares an hour). Without NerdMiner's
-  settings it is offered in the board choice, never taken on its own.
+  bus and that still holds a NerdMiner's settings keeps them: Wi-Fi from
+  the ESP's Wi-Fi storage and the wallet from NerdMiner's `config.json`
+  are taken over, the worker is `<wallet>.WarpMiner`, the pool is
+  WarpPool (Stratum V1, a share difficulty of 0.005, about 40 shares an
+  hour). The board itself is picked by hand under "Which board is this?"
+  (since v0.1.48: an NMAxe on NMMiner looks the same from the bus and
+  would otherwise hash on its ESP32-S3 with its ASIC idle).
 - Stratum V2 works too: WarpPool from v1.37.1 recognises the board by its
   agent string (`warpaxe-cpu/… (nerdminer-class)`) and opens its channel
   at the same small difficulty. Other Sv2 pools may start a channel far
