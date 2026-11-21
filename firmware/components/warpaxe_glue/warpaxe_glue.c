@@ -8,6 +8,7 @@
 #include "esp_flash.h"
 #include "esp_partition.h"
 #include "esp_attr.h"
+#include "esp_heap_caps.h"
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -259,9 +260,18 @@ void wa_reboot_to_bootloader(void)
  * are kept for good in front of the ring: the ring alone lost them to
  * the ~40 httpd handler registrations within two seconds (2026-10-08). */
 #define WA_BOOT_LINES 40
-static char s_boot[WA_BOOT_LINES][WA_LOG_COLS];
+/* The ring is 20 KB: it lives in PSRAM, taken once in
+ * wa_log_capture_start (docs/19). Every access runs on a task with the
+ * cache on (the vprintf hook and wa_tu_printf skip interrupt context), and
+ * no line is stored before the ring exists. */
+typedef struct {
+    char boot[WA_BOOT_LINES][WA_LOG_COLS];
+    char lines[WA_LOG_LINES][WA_LOG_COLS];
+} wa_log_ring_t;
+static wa_log_ring_t *s_ring = NULL;
+#define s_boot (s_ring->boot)
+#define s_lines (s_ring->lines)
 static int s_boot_count = 0;
-static char s_lines[WA_LOG_LINES][WA_LOG_COLS];
 static int s_head = 0;
 static int s_count = 0;
 static vprintf_like_t s_prev = NULL;
@@ -286,7 +296,7 @@ static void wa_push_line(const char *buf, int n)
         if (o > 0 && strstr(line, "Registered Httpd server handler")) {
             return;
         }
-        if (o > 0) {
+        if (o > 0 && s_ring) {
             portENTER_CRITICAL_SAFE(&s_mux);
             if (s_boot_count < WA_BOOT_LINES) {
                 memcpy(s_boot[s_boot_count++], line, sizeof line);
@@ -361,17 +371,27 @@ int wa_tu_printf(const char *fmt, ...)
 
 void wa_log_capture_start(void)
 {
+    if (!s_ring) {
+        s_ring = heap_caps_calloc(1, sizeof *s_ring, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!s_ring) {
+            ESP_LOGW(TAG, "no PSRAM for the log ring: lines go to the console only");
+        }
+    }
     s_prev = esp_log_set_vprintf(wa_vprintf);
 }
 
 int wa_log_count(void)
 {
-    return s_boot_count + s_count;
+    return s_ring ? s_boot_count + s_count : 0;
 }
 
 void wa_log_line(int i, char *buf, size_t n)
 {
     if (n == 0) return;
+    if (!s_ring) {
+        buf[0] = 0;
+        return;
+    }
     portENTER_CRITICAL_SAFE(&s_mux);
     if (i < s_boot_count) {
         strncpy(buf, s_boot[i], n - 1);
