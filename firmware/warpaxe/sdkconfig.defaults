@@ -132,3 +132,9 @@ CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
 # dry and mDNS allocations were among those that failed (2026-11-21).
 CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
 CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+# The heap allocator in flash (6,656 bytes). Espressif: safe unless an ISR
+# calls heap functions or CONFIG_SPI_MASTER_ISR_IN_IRAM is on. Main has
+# no SPI master user (the displays are i80), so that ISR is never
+# installed; the Ethernet build turns it off (f58f70b). Our ISRs (the
+# i80 frame callback, warpaxe_glue.c) allocate nothing.
+CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
