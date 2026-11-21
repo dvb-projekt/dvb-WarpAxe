@@ -122,7 +122,8 @@ CONFIG_ESP_WIFI_RX_IRAM_OPT=n
 # 1,280 bytes); their ...FromISR halves and the scheduler stay in IRAM.
 # Espressif: safe in every configuration as long as no ISR calls the task
 # variants. Our only IRAM code (warpaxe_glue.c: last words, the stack
-# overflow hook, the devkit's hash loop) calls none.
+# overflow hook; warpaxe_cpuhash.c and warpaxe_shabench.c: the devkit's
+# hash loops) calls none.
 CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y
 CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
 # mDNS: its task (4 KB stack) and every record and packet it allocates in
@@ -133,14 +134,15 @@ CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
 CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
 CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
 # The heap allocator in flash (6,656 bytes). Espressif: safe unless an ISR
-# calls heap functions or CONFIG_SPI_MASTER_ISR_IN_IRAM is on. Main has
-# no SPI master user (the displays are i80), so that ISR is never
-# installed; the Ethernet build turns it off (f58f70b). Our ISRs (the
-# i80 frame callback, warpaxe_glue.c) allocate nothing.
+# calls heap functions. Kconfig turns CONFIG_SPI_MASTER_ISR_IN_IRAM off
+# with it (that option depends on !HEAP_PLACE_FUNCTION_INTO_FLASH), which
+# is what the Ethernet build wants anyway (f58f70b). We install no IRAM
+# interrupt; the i80 frame callback allocates nothing.
 CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
-# The .bss of lwIP and the Wi-Fi libraries (net80211, pp) in PSRAM:
-# 14,304 bytes (ESP-IDF moves those libraries' .bss by itself with this
-# option; nothing of ours is marked EXT_RAM_BSS_ATTR). ESP-Miner and
+# The .bss of lwIP, the Wi-Fi libraries (net80211, pp) and
+# wpa_supplicant in PSRAM: 14,308 bytes (ESP-IDF moves those libraries'
+# .bss by itself with this option; nothing of ours is marked
+# EXT_RAM_BSS_ATTR). ESP-Miner and
 # NerdOS both ship it ("saves about 14kB internal RAM", NerdOS
 # sdkconfig.defaults; ESP-Miner #1280).
 CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
