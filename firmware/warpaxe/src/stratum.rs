@@ -645,20 +645,25 @@ fn run() {
             update(|s| s.connected = false);
             if !full {
                 // Moved between the cable and Wi-Fi: the same pool again
-                // at once, nothing counted, nothing forgotten.
+                // at once, nothing counted, nothing forgotten. A probe
+                // that reached the main pool meanwhile still takes the
+                // miner back (below), not some later session's end.
                 backoff = Duration::from_secs(3);
+                if !(on_fallback && BACK_TO_PRIMARY.load(Ordering::Relaxed)) {
+                    continue;
+                }
+            } else {
+                // Ended on purpose after a settings change: straight back
+                // in with the new settings, main pool first.
+                on_fallback = false;
+                fails = 0;
+                backoff = Duration::from_secs(3);
+                probing = false;
+                PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+                crate::net::dial::forget_no_work();
+                STALE.lock().unwrap().reset();
                 continue;
             }
-            // Ended on purpose after a settings change: straight back in
-            // with the new settings, main pool first.
-            on_fallback = false;
-            fails = 0;
-            backoff = Duration::from_secs(3);
-            probing = false;
-            PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
-            crate::net::dial::forget_no_work();
-            STALE.lock().unwrap().reset();
-            continue;
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
             if STALE.lock().unwrap().main_stuck() {

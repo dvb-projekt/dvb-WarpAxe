@@ -34,9 +34,11 @@ use warpaxe_board::EthPins;
 
 /// SPI clock, as NerdOS runs the HAT (long wires on a header).
 const SPI_HZ: u32 = 2_000_000;
-/// Without an interrupt line the driver asks the chip this often
-/// (NerdOS: `poll_period_ms = 1`; the chip buffers 16 KB of frames).
-const POLL: Duration = Duration::from_millis(1);
+/// Without an interrupt line the driver asks the chip this often.
+/// NerdOS polls every 1 ms; a miner's traffic is a few KB a second, and
+/// the chip buffers 16 KB of frames, so 5 ms still takes about 3 MB/s
+/// (an update download) and wakes the driver a fifth as often.
+const POLL: Duration = Duration::from_millis(5);
 /// W5500 common-register addresses and the control byte: block select
 /// 0 (common), read 0x00 / write 0x04, variable data length.
 const REG_MR: u16 = 0x0000;
@@ -278,6 +280,10 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
     // A link went NO_ADDRESS without an address (no DHCP server on the
     // cable): the setup hotspot no longer waits for it.
     let mut dhcp_failed = false;
+    // Since when the cable has been waiting for an address, across link
+    // flaps (which restart `link_since`): a link that keeps dropping must
+    // not hold the hotspot back for good either.
+    let mut waiting_since: Option<Instant> = None;
     loop {
         let link = eth.is_connected().unwrap_or(false);
         let now_ip = if link {
@@ -350,6 +356,12 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         }
         if ip.is_some() {
             dhcp_failed = false;
+            waiting_since = None;
+        } else if link {
+            let since = *waiting_since.get_or_insert_with(Instant::now);
+            if since.elapsed() >= NO_ADDRESS {
+                dhcp_failed = true;
+            }
         }
         let (speed, duplex) = if link {
             link_params(&eth)
@@ -369,9 +381,10 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         if let (Some(a), Some(t)) = (&ip, ip_since) {
             if !moved && t.elapsed() >= SETTLE {
                 let st = crate::stratum::state();
-                // `local_ip` is IPv4 only (`Link::local_ip`): a session over
-                // IPv6 is left where it is rather than moved blind; its
-                // next session leaves by the route of the moment.
+                // `local_ip` is IPv4 only (`Link::local_ip`). A session over
+                // IPv6 runs on Wi-Fi in any case: only the station gets an
+                // IPv6 address (net/wifi.rs), the cable none, so a cable
+                // that comes or goes never concerns it.
                 if st.connected && st.local_ip.as_deref().is_some_and(|l| l != a.as_str()) {
                     crate::stratum::move_session(&format!(
                         "the pool session runs over {} and the Ethernet cable has held {a} for {} s: moving it",

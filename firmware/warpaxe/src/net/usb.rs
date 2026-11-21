@@ -159,7 +159,11 @@ pub fn start_netif() -> Result<(), EspError> {
             transmit_wrap: Some(transmit_wrap),
             driver_free_rx_buffer: Some(free_rx),
         };
-        sys::esp!(sys::esp_netif_set_driver_config(netif, &drv))?;
+        if let Err(e) = sys::esp!(sys::esp_netif_set_driver_config(netif, &drv)) {
+            // Not left behind half set up.
+            sys::esp_netif_destroy(netif);
+            return Err(e);
+        }
         NETIF = netif;
         sys::esp_netif_action_start(netif as *mut c_void, null_mut(), 0, null_mut());
         sys::esp_netif_action_connected(netif as *mut c_void, null_mut(), 0, null_mut());
