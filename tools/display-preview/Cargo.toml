@@ -13,5 +13,6 @@ publish = false
 [dependencies]
 warpaxe-board = { path = "../../crates/board" }
 warpaxe-displaycfg = { path = "../../crates/displaycfg" }
+warpaxe-stratum = { path = "../../crates/stratum" }
 esp-idf-svc = { path = "esp-stub", package = "esp-stub" }
 log = "0.4"
