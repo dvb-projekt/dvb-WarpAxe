@@ -138,3 +138,9 @@ CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
 # installed; the Ethernet build turns it off (f58f70b). Our ISRs (the
 # i80 frame callback, warpaxe_glue.c) allocate nothing.
 CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
+# The .bss of lwIP and the Wi-Fi libraries (net80211, pp) in PSRAM:
+# 14,304 bytes (ESP-IDF moves those libraries' .bss by itself with this
+# option; nothing of ours is marked EXT_RAM_BSS_ATTR). ESP-Miner and
+# NerdOS both ship it ("saves about 14kB internal RAM", NerdOS
+# sdkconfig.defaults; ESP-Miner #1280).
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y
