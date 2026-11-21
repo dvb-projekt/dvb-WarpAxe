@@ -118,11 +118,6 @@ const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
         &["400", "401", "402", "403"],
     ),
     ("suprahex", "Bitaxe Supra Hex (6× BM1368)", &["701", "702"]),
-    // The StarMiner (github.com/awxhw/StarMiner): a Gamma fed with 12 V.
-    // Its fork stores "GammaV2" and "601a"; on the bus it looks like a
-    // Gamma, and the Gamma profile sets the regulator up for 5 V, which
-    // then shuts off at 12 V. Kept off until a StarMiner profile is in.
-    ("gammav2", "StarMiner (Bitaxe Gamma for 12 V)", &["601a"]),
     // TinyChipHub's Zyber boards (ESP-Miner-Zyber, factory NVS files
     // config-zyber*.cvs): one TPS546 drives four voltage domains in
     // series, and the bus (TPS546, EMC2302, TMP1075) looks like a Supra
@@ -155,6 +150,15 @@ pub fn from_stock_unsupported(
     asicmodel: Option<&str>,
     boardversion: Option<&str>,
 ) -> Option<&'static str> {
+    // Board versions no board WarpAxe runs stores, named whatever the
+    // model says: the StarMiner's fork stores "gamma" with "601a".
+    let version = boardversion.unwrap_or("").trim();
+    if let Some(&(_, name)) = UNSUPPORTED_VERSION
+        .iter()
+        .find(|(v, _)| version.eq_ignore_ascii_case(v))
+    {
+        return Some(name);
+    }
     let model = devicemodel.unwrap_or("").trim();
     if let Some(&(_, name, _)) = UNSUPPORTED_STOCK
         .iter()
@@ -189,6 +193,16 @@ pub fn from_stock_unsupported(
     .find(|(chip, _)| asic.eq_ignore_ascii_case(chip))
     .map(|&(_, name)| name)
 }
+
+/// Board versions that name a board WarpAxe cannot run yet whatever
+/// device model sits next to them. The StarMiner
+/// (github.com/awxhw/StarMiner, `config-601a.cvs`): a Gamma fed with
+/// 12 V that stores device model "gamma" and board version "601a"; on
+/// the bus it looks like a Gamma, and the Gamma profile sets the
+/// regulator up for 5 V, which then shuts off at 12 V. Kept off until a
+/// StarMiner profile is in (feat/starminer). The same list as the web
+/// installer's `UNSUPPORTED_VERSION`.
+const UNSUPPORTED_VERSION: &[(&str, &str)] = &[("601a", "StarMiner (Bitaxe Gamma for 12 V)")];
 
 /// Board versions the stock firmware stores for boards WarpAxe carries
 /// a profile for but has never run: offered, not taken.
@@ -555,8 +569,13 @@ mod tests {
 
     #[test]
     fn a_starminer_is_named_by_its_model_or_its_board_version() {
+        // As its factory settings store it (config-601a.cvs).
         assert_eq!(
-            from_stock_unsupported(Some("GammaV2"), Some("BM1370"), Some("601a")),
+            from_stock_unsupported(Some("gamma"), Some("BM1370"), Some("601a")),
+            Some("StarMiner (Bitaxe Gamma for 12 V)")
+        );
+        assert_eq!(
+            from_stock_unsupported(Some("GammaV2"), Some("BM1370"), Some("601A")),
             Some("StarMiner (Bitaxe Gamma for 12 V)")
         );
         assert_eq!(

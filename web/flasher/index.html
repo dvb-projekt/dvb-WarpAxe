@@ -1318,9 +1318,6 @@ const UNSUPPORTED_STOCK = [
   ["hex", "Bitaxe Hex (6× BM1366)", ["302", "303"]],
   ["supra", "Bitaxe Supra (BM1368)", ["400", "401", "402", "403"]],
   ["suprahex", "Bitaxe Supra Hex (6× BM1368)", ["701", "702"]],
-  // The StarMiner: a Gamma fed with 12 V ("GammaV2", "601a"); the Gamma
-  // profile sets its regulator up for 5 V, which shuts off at 12 V.
-  ["gammav2", "StarMiner (Bitaxe Gamma for 12 V)", ["601a"]],
   // TinyChipHub Zyber: by model only (its board versions overlap ESP-Miner's range).
   ["zyber8s", "TinyChipHub Zyber8S (8× BM1368)", []],
   ["zyber8g", "TinyChipHub Zyber8G (8× BM1370)", []],
@@ -1333,8 +1330,15 @@ const UNSUPPORTED_STOCK = [
 // version and the chip name only count when no model is stored, so a
 // firmware that reuses ESP-Miner's numbers for a board WarpAxe runs is
 // never stopped here.
+// Board versions no board WarpAxe runs stores, stopped whatever the model
+// says: the StarMiner (a Gamma fed with 12 V) stores "gamma" with "601a",
+// and the Gamma profile sets its regulator up for 5 V. The same list as
+// crates/board/src/detect.rs UNSUPPORTED_VERSION.
+const UNSUPPORTED_VERSION = [["601a", "StarMiner (Bitaxe Gamma for 12 V)"]];
 function unsupportedStock(k) {
   const model = (k.devicemodel || "").trim().toLowerCase(), version = (k.boardversion || "").trim();
+  const always = UNSUPPORTED_VERSION.find(([v]) => v === version.toLowerCase());
+  if (always) return always[1];
   const byModel = UNSUPPORTED_STOCK.find(([m]) => model === m);
   if (byModel) return byModel[1];
   if (model.startsWith("zyber")) return "TinyChipHub Zyber";
