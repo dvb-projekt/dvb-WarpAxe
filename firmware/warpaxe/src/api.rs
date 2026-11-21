@@ -843,19 +843,41 @@ fn read_body(
     req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection<'_>>,
     max: usize,
 ) -> Result<Vec<u8>, EspIOError> {
+    // The whole body is held at once (an update image is 2.8 MB). A Vec
+    // that grows by doubling went 2 -> 4 MB at the copy, with both in
+    // PSRAM for a moment, and an allocation failure there aborted the
+    // firmware (OTA upload on .41, 2026-11-20). So: one allocation of the
+    // announced size, and every growth as try_reserve, so that no room
+    // ends this request with an error instead of a panic. `max` still
+    // bounds what is kept.
+    let announced = req
+        .header("Content-Length")
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .map(|n| n.min(max.saturating_add(1)));
     let mut body = Vec::new();
+    if let Some(n) = announced {
+        body.try_reserve_exact(n).map_err(|_| no_room(n))?;
+    }
     let mut buf = [0u8; 512];
     loop {
         let n = req.read(&mut buf)?;
         if n == 0 {
             break;
         }
+        body.try_reserve(n).map_err(|_| no_room(body.len() + n))?;
         body.extend_from_slice(&buf[..n]);
         if body.len() > max {
             break;
         }
     }
     Ok(body)
+}
+
+/// A request body that does not fit the free memory, as the read error
+/// the handlers already report.
+fn no_room(bytes: usize) -> EspIOError {
+    log::warn!("api: no room for a {bytes}-byte request body");
+    EspIOError(esp_idf_svc::sys::EspError::from_infallible::<{ esp_idf_svc::sys::ESP_ERR_NO_MEM }>())
 }
 
 /// `key=` from a request's query string: hex with `0x`, else decimal.

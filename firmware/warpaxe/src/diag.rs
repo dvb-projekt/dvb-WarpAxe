@@ -497,10 +497,15 @@ pub fn spawn_psram<F>(
 where
     F: FnOnce() + Send + 'static,
 {
+    // The FreeRTOS task gets the name too (Builder's name stays in Rust),
+    // so a panic or core dump says "stratum" rather than "pthread".
+    // FreeRTOS copies it at creation; the CString outlives the spawn.
+    let task_name = std::ffi::CString::new(name).unwrap_or_default();
     unsafe {
         let mut cfg = sys::esp_pthread_get_default_config();
         cfg.stack_size = stack;
         cfg.stack_alloc_caps = sys::MALLOC_CAP_8BIT | sys::MALLOC_CAP_SPIRAM;
+        cfg.thread_name = task_name.as_ptr();
         sys::esp_pthread_set_cfg(&cfg);
     }
     let r = std::thread::Builder::new()

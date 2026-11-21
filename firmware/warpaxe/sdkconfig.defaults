@@ -109,3 +109,40 @@ CONFIG_MBEDTLS_HAVE_TIME_DATE=y
 # makes the bootloader start the previous app instead. The bootloader must
 # be reflashed over USB once for this to take effect (an OTA never touches it).
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# Internal RAM (docs/19). On the ESP32-S3 IRAM and DRAM share the same
+# SRAM: every byte of code placed in IRAM is a byte less of internal heap.
+# The Wi-Fi blob's hot paths stay in flash (7,168 + 9,728 bytes): Wi-Fi
+# throughput falls, which a miner's few KB/s of Stratum never feel; the
+# Wi-Fi interrupt itself is in IRAM either way. Espressif's own list of
+# IRAM savings (api-guides/performance/ram-usage).
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+# FreeRTOS' and the ring buffer's task-side functions in flash (8,960 +
+# 1,280 bytes); their ...FromISR halves and the scheduler stay in IRAM.
+# Espressif: safe in every configuration as long as no ISR calls the task
+# variants. Our only IRAM code (warpaxe_glue.c: last words, the stack
+# overflow hook; warpaxe_cpuhash.c and warpaxe_shabench.c: the devkit's
+# hash loops) calls none.
+CONFIG_FREERTOS_PLACE_FUNCTIONS_INTO_FLASH=y
+CONFIG_RINGBUF_PLACE_FUNCTIONS_INTO_FLASH=y
+# mDNS: its task (4 KB stack) and every record and packet it allocates in
+# PSRAM instead of explicitly internal RAM. It runs on the network only
+# (lwIP callbacks, its own task, an esp_timer that posts to its queue)
+# and touches no flash. On .41 with the W5500 HAT the internal heap ran
+# dry and mDNS allocations were among those that failed (2026-11-21).
+CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM=y
+CONFIG_MDNS_MEMORY_ALLOC_SPIRAM=y
+# The heap allocator in flash (6,656 bytes). Espressif: safe unless an ISR
+# calls heap functions. Kconfig turns CONFIG_SPI_MASTER_ISR_IN_IRAM off
+# with it (that option depends on !HEAP_PLACE_FUNCTION_INTO_FLASH), which
+# is what the Ethernet build wants anyway (f58f70b). We install no IRAM
+# interrupt; the i80 frame callback allocates nothing.
+CONFIG_HEAP_PLACE_FUNCTION_INTO_FLASH=y
+# The .bss of lwIP, the Wi-Fi libraries (net80211, pp) and
+# wpa_supplicant in PSRAM: 14,308 bytes (ESP-IDF moves those libraries'
+# .bss by itself with this option; nothing of ours is marked
+# EXT_RAM_BSS_ATTR). ESP-Miner and
+# NerdOS both ship it ("saves about 14kB internal RAM", NerdOS
+# sdkconfig.defaults; ESP-Miner #1280).
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

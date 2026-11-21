@@ -40,19 +40,21 @@ pub fn label(hostname: &str) -> String {
     }
 }
 
-/// Starts mDNS on a thread of its own once Wi-Fi has an address.
+/// Starts mDNS on a thread of its own once Wi-Fi has an address. The
+/// thread waits on a PSRAM stack (docs/19): it touches no flash, and with
+/// no Wi-Fi it may wait for good. The component's own task and its
+/// records are in PSRAM too (`CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM`,
+/// `CONFIG_MDNS_MEMORY_ALLOC_SPIRAM`).
 pub fn start(hostname: String) {
-    std::thread::Builder::new()
-        .stack_size(4096)
-        .spawn(move || {
-            while !super::state().wifi_connected {
-                std::thread::sleep(std::time::Duration::from_secs(2));
-            }
-            if let Err(e) = announce(&label(&hostname)) {
-                log::warn!("mdns: not announced: {e}");
-            }
-        })
-        .expect("mdns thread");
+    crate::diag::spawn_psram("mdns", 4096, move || {
+        while !super::state().wifi_connected {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+        if let Err(e) = announce(&label(&hostname)) {
+            log::warn!("mdns: not announced: {e}");
+        }
+    })
+    .expect("mdns thread");
 }
 
 fn announce(host: &str) -> Result<(), sys::EspError> {
