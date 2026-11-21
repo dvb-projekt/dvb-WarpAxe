@@ -41,7 +41,7 @@ pub fn label(hostname: &str) -> String {
 }
 
 /// Starts mDNS on a thread of its own once Wi-Fi has an address. The
-/// thread waits on a PSRAM stack (docs/19): it touches no flash, and with
+/// thread waits on a PSRAM stack (docs/20): it touches no flash, and with
 /// no Wi-Fi it may wait for good. The component's own task and its
 /// records are in PSRAM too (`CONFIG_MDNS_TASK_CREATE_FROM_SPIRAM`,
 /// `CONFIG_MDNS_MEMORY_ALLOC_SPIRAM`).

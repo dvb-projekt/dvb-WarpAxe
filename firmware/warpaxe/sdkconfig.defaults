@@ -110,7 +110,7 @@ CONFIG_MBEDTLS_HAVE_TIME_DATE=y
 # be reflashed over USB once for this to take effect (an OTA never touches it).
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
 
-# Internal RAM (docs/19). On the ESP32-S3 IRAM and DRAM share the same
+# Internal RAM (docs/20). On the ESP32-S3 IRAM and DRAM share the same
 # SRAM: every byte of code placed in IRAM is a byte less of internal heap.
 # The Wi-Fi blob's hot paths stay in flash (7,168 + 9,728 bytes): Wi-Fi
 # throughput falls, which a miner's few KB/s of Stratum never feel; the

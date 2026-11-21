@@ -360,7 +360,7 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
 }
 
 /// The V1 session thread and its fallback probe run on PSRAM stacks like
-/// the sv2 session (docs/19): neither writes flash. Config is read from
+/// the sv2 session (docs/20): neither writes flash. Config is read from
 /// RAM, events are only queued (`events::record`; the store is
 /// `events::flush` on an internal stack), a confirmed TLS key is written
 /// by the HTTP handler, and TLS memory comes from PSRAM anyway. Without

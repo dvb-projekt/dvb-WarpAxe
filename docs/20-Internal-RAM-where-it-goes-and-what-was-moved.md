@@ -1,6 +1,6 @@
 # Internal RAM: where it goes and what was moved
 
-Written 2026-11-21 on branch `claude/internal-ram-c24e8f` (from main
+Numbered 20 at the merge (docs/19 is the stuck-pool note). Written 2026-11-21 on branch `claude/internal-ram-c24e8f` (from main
 `93f880b`, v0.1.47 + two commits), on a handover from dvb-WarpAxe #2
 after the W5500 Ethernet HAT test on .41. The static numbers are measured on the build; the device test on .46
 and .42 (2026-11-21) is at the end.

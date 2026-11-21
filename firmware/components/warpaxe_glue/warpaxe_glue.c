@@ -261,7 +261,7 @@ void wa_reboot_to_bootloader(void)
  * the ~40 httpd handler registrations within two seconds (2026-10-08). */
 #define WA_BOOT_LINES 40
 /* The ring is 20 KB: it lives in PSRAM, taken once in
- * wa_log_capture_start (docs/19). Every access runs on a task with the
+ * wa_log_capture_start (docs/20). Every access runs on a task with the
  * cache on (the vprintf hook and wa_tu_printf skip interrupt context), and
  * no line is stored before the ring exists. */
 typedef struct {
