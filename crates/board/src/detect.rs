@@ -118,6 +118,11 @@ const UNSUPPORTED_STOCK: &[(&str, &str, &[&str])] = &[
         &["400", "401", "402", "403"],
     ),
     ("suprahex", "Bitaxe Supra Hex (6× BM1368)", &["701", "702"]),
+    // The StarMiner (github.com/awxhw/StarMiner): a Gamma fed with 12 V.
+    // Its fork stores "GammaV2" and "601a"; on the bus it looks like a
+    // Gamma, and the Gamma profile sets the regulator up for 5 V, which
+    // then shuts off at 12 V. Kept off until a StarMiner profile is in.
+    ("gammav2", "StarMiner (Bitaxe Gamma for 12 V)", &["601a"]),
     // TinyChipHub's Zyber boards (ESP-Miner-Zyber, factory NVS files
     // config-zyber*.cvs): one TPS546 drives four voltage domains in
     // series, and the bus (TPS546, EMC2302, TMP1075) looks like a Supra
@@ -538,6 +543,27 @@ mod tests {
         );
         assert_eq!(from_stock_unsupported(None, None, None), None);
         assert_eq!(from_stock_unsupported(Some(""), Some(""), Some("")), None);
+    }
+
+    #[test]
+    fn a_starminer_is_named_by_its_model_or_its_board_version() {
+        assert_eq!(
+            from_stock_unsupported(Some("GammaV2"), Some("BM1370"), Some("601a")),
+            Some("StarMiner (Bitaxe Gamma for 12 V)")
+        );
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1370"), Some("601a")),
+            Some("StarMiner (Bitaxe Gamma for 12 V)")
+        );
+        // A Gamma's own numbers stay a Gamma.
+        assert_eq!(
+            from_stock_unsupported(Some("Gamma"), Some("BM1370"), Some("601")),
+            None
+        );
+        assert_eq!(
+            from_stock_unsupported(None, Some("BM1370"), Some("601")),
+            None
+        );
     }
 
     #[test]
