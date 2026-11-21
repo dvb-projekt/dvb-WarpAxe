@@ -704,12 +704,16 @@ fn run() {
             // ckpool whose node is down pings instead). Reconnect once;
             // if that brings no fresh work either, the other pool.
             use warpaxe_stratum::stale::Verdict;
-            let verdict = STALE.lock().unwrap().stale(fallback_ok, on_fallback);
+            let (verdict, next_limit) = {
+                let mut w = STALE.lock().unwrap();
+                let v = w.stale(fallback_ok, on_fallback);
+                (v, w.limit_s())
+            };
             match verdict {
                 Verdict::Reconnect => {
                     log::warn!(
                         "stratum: {stale}, reconnecting; another {} min without a new job and the miner switches pools",
-                        warpaxe_stratum::stale::RETRY_LIMIT_S / 60
+                        next_limit / 60
                     );
                     crate::events::record("pool", warpaxe_diag::events::detail::pool_stale(stale.secs));
                 }
@@ -1173,8 +1177,12 @@ fn session(
                     );
                 }
                 publish(Feed::V1(s.clone(), prepared), clean);
-                if !clean {
-                    // New work on the same block: this pool refreshes.
+                if !clean
+                    && first_job
+                        .is_some_and(|t| warpaxe_stratum::stale::is_fresh(t.elapsed().as_secs()))
+                {
+                    // New work on the same block, not the jobs handed out
+                    // right after the connect: this pool refreshes.
                     STALE.lock().unwrap().refresh();
                 }
                 if !has_work {
