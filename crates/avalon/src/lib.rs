@@ -660,13 +660,52 @@ pub struct Mm {
     pub fan_rpm: Vec<u32>,
     /// `FanR`: the fans' duty, %.
     pub fan_pct: Option<f64>,
-    /// `PS[type vin×100mV iin_mA ? vout×100mV iout_mA watts]`: the
-    /// last field is the miner's draw as its own LCD shows it (840 W at
-    /// 54 TH/s in Eco); the first two give a small auxiliary bus
-    /// (12.08 V × 2.3 A), not the mining power.
+    /// Whether the MM runs Canaan's Linux SDK firmware (the Nano 3S on
+    /// `canaan_sdk_for_linux`): it answers in the JSON form or sends a
+    /// `PVer` token. It fills `PS` and numbers `SoftOFF` differently.
+    pub sdk: bool,
+    /// `PS[err aux rail_v rail_a rail_w rail_set power]`, the power
+    /// supply as the MM polls it (Canaan's `Avalon_mm`,
+    /// `mm_miner/mmu/mmu.c`). The seventh field is the draw at the wall,
+    /// what the Avalon's own LCD shows (840 W at 54 TH/s in Eco); on the
+    /// SDK firmware it is the DC-DC converter's input, volts × amps
+    /// (`app/core_stats.c`, `hal/platform/linux/psu_dcdc_pd.c`).
     pub power_w: Option<f64>,
-    /// The second `PS` field: a bus voltage, V.
+    /// `PS` field 0: the supply's error code, 0 = none.
+    pub ps_error: Option<u32>,
+    /// `PS` field 1: the supply's 12 V auxiliary output, V (10 mV units);
+    /// `None` on the SDK firmware, which leaves it 0.
     pub ps_vin_v: Option<f64>,
+    /// `PS` field 2: the hash boards' supply rail, V (10 mV units); on
+    /// the SDK firmware the DC-DC converter's input (USB-PD, ~28 V), mV.
+    pub rail_v: Option<f64>,
+    /// `PS` field 3: the rail's current, A (whole amps on the SDK).
+    pub rail_a: Option<f64>,
+    /// `PS` field 4: the supply's DC output, W; `None` on the SDK
+    /// firmware, which leaves it 0.
+    pub rail_w: Option<f64>,
+    /// `PS` field 5 on `Avalon_mm`: the rail voltage the MM asks of the
+    /// supply, V (10 mV units).
+    pub rail_set_v: Option<f64>,
+    /// `PS` field 5 on the SDK firmware: the DC-DC converter's output
+    /// command, the chips' core rail, mV (`3600 ± 26` per step, inside
+    /// the board's 2.4–4.0 V window). Shown as `coreVoltage`.
+    pub core_set_mv: Option<f64>,
+    /// `OTemp`: the control board, °C (the Nano 3S).
+    pub temp_outlet_c: Option<f64>,
+    /// `HBITemp`: each hash board's inlet, °C.
+    pub board_temps_in: Vec<Option<f64>>,
+    /// `HBOTemp`: each hash board's outlet, °C.
+    pub board_temps_out: Vec<Option<f64>>,
+    /// `MTmax`: each hash board's hottest chip, °C.
+    pub board_temps_max: Vec<Option<f64>>,
+    /// `ECMM`: the MM's error bits (see [`mm_error_names`]).
+    pub mm_errcode: Option<u32>,
+    /// `ECHU`: each hash board's error bits (see [`board_error_names`]).
+    pub board_errcodes: Vec<u32>,
+    /// `SoftOFF`: why the MM stopped hashing, 0 = it did not (see
+    /// [`soft_off_reason`]).
+    pub soft_off: Option<u8>,
     /// `GHSspd`: the last seconds' rate, GH/s, noisy.
     pub ghs_now: Option<f64>,
     /// `GHSavg`: the mean since the MM started, GH/s.
@@ -679,7 +718,8 @@ pub struct Mm {
     pub work_level: Option<u8>,
     /// `MPO`: the mode's power cap, W.
     pub mode_power_cap_w: Option<f64>,
-    /// `DH[3.501%]`: the device's hardware-error share of its work.
+    /// `DH[3.501%]`: the device's hardware-error share of its work;
+    /// `DHspd` where a firmware sends no `DH` (Canaan's `Avalon_mm`).
     pub error_percent: Option<f64>,
     /// `Core[A3197S]`: the chip.
     pub chip_name: String,
@@ -687,73 +727,251 @@ pub struct Mm {
     pub chip_count: Option<u32>,
     /// `SYSTEMSTATU[Work: In Work, Hash Board: 1]`.
     pub system_status: String,
-    /// `PVT_T0`: every chip's temperature, °C.
-    pub chip_temps: Vec<f64>,
+    /// `PVT_T0`, `PVT_T1`, …: every chip's temperature, °C, in board
+    /// order; `None` where the chip gave no reading.
+    pub chip_temps: Vec<Option<f64>>,
 }
+
+/// How the MM says "no reading" for a temperature (`ASIC_TEMP_NONE` in
+/// Canaan's Nano 3S SDK, set for chips that did not answer and for the
+/// inlet sensor a Nano 3S does not have).
+pub const NO_READING: f64 = -273.0;
 
 fn num(v: &str) -> Option<f64> {
     v.trim().trim_end_matches('%').parse().ok()
 }
 
-/// The string values of the first `STATS` object, token by token: the
-/// first MM module (`MM ID0:Summary`, `HBinfo`). An Avalon with several
-/// modules would carry `MM ID1…` beside it; those are left out rather
-/// than overwrite the first one's values.
-pub fn parse_estats(estats: &Value) -> Mm {
-    let mut mm = Mm::default();
-    let Some(stats) = estats.get("STATS").and_then(Value::as_array) else {
-        return mm;
+/// A temperature, `None` for the MM's "no reading".
+fn temp(v: &str) -> Option<f64> {
+    num(v).filter(|t| *t > NO_READING)
+}
+
+fn temps(v: &str) -> Vec<Option<f64>> {
+    v.split_whitespace().map(temp).collect()
+}
+
+/// The names of the bits set in `ECMM` (`mm_miner/mmu/mmu_interior.h`
+/// in Canaan's `Avalon_mm`, `common/proto/mc_errcode.h` in the Nano 3S
+/// SDK, which adds bits 9, 10 and 13); an unknown bit as `bit<N>`.
+pub fn mm_error_names(code: u32) -> Vec<String> {
+    bit_names(
+        code,
+        &[
+            (1, "lan_damaged"),
+            (2, "power"),
+            (3, "fan"),
+            (4, "ip_lost"),
+            (5, "overheat"),
+            (6, "pool_inactive"),
+            (7, "core_link"),
+            // Set below -30 or above 60 °C, so also for a missing
+            // reading (`env_temp_check` in `mm_miner/mmu/mmu.c`).
+            (8, "inlet_out_of_range"),
+            (9, "ring_buffer_overflow"),
+            (10, "hardware_mismatch"),
+            (11, "hash_board_mcu"),
+            (13, "aging_failed"),
+        ],
+    )
+}
+
+/// The names of the bits set in one board's `ECHU` value.
+pub fn board_error_names(code: u32) -> Vec<String> {
+    bit_names(code, &[(1, "enum"), (2, "comm"), (3, "mcu"), (4, "lost")])
+}
+
+fn bit_names(code: u32, names: &[(u32, &str)]) -> Vec<String> {
+    (0..32)
+        .filter(|b| code & (1 << b) != 0)
+        .map(|b| {
+            names
+                .iter()
+                .find(|(n, _)| *n == b)
+                .map_or_else(|| format!("bit{b}"), |(_, name)| (*name).to_string())
+        })
+        .collect()
+}
+
+/// Why the MM stopped hashing; `None` for 0, the MM did not stop.
+/// `Avalon_mm`'s `softoff_rsn` and the SDK's `mc_softoff_rsn`
+/// (`common/proto/miner_ipc.h`) agree up to 6; the SDK inserts
+/// `low_hashrate` at 7, so the rest move up by one.
+pub fn soft_off_reason(code: u8, sdk: bool) -> Option<&'static str> {
+    let code = match (sdk, code) {
+        (_, 0) => return None,
+        (true, 7) => return Some("low_hashrate"),
+        (true, 11) => return Some("calibration_failed"),
+        (true, c) if c > 7 => c - 1,
+        (_, c) => c,
     };
-    for obj in stats.iter().filter_map(Value::as_object).take(1) {
-        for (k, text) in obj.iter() {
-            let Some(text) = text.as_str() else {
-                continue;
-            };
-            if k.starts_with("MM ID") && !k.starts_with("MM ID0") {
-                continue;
-            }
-            for (key, value) in mm_tokens(text) {
-                match key {
-                    "Ver" => mm.version = value.to_string(),
-                    "DNA" => mm.dna = value.to_string(),
-                    "STATE" => mm.state = value.trim().parse().ok(),
-                    "Elapsed" => mm.elapsed_s = value.trim().parse().ok(),
-                    "TMax" => mm.temp_max_c = num(value),
-                    "TAvg" => mm.temp_avg_c = num(value),
-                    "TarT" => mm.temp_target_c = num(value),
-                    "ITemp" => mm.temp_inlet_c = num(value),
-                    "FanR" => mm.fan_pct = num(value),
-                    "Fan1" | "Fan2" | "Fan3" | "Fan4" => {
-                        if let Some(rpm) = num(value) {
-                            mm.fan_rpm.push(rpm as u32);
-                        }
-                    }
-                    "PS" => {
-                        let f: Vec<f64> = value.split_whitespace().filter_map(num).collect();
-                        if let Some(w) = f.last().filter(|_| f.len() >= 7) {
-                            mm.power_w = Some(*w);
-                        }
-                        if let Some(v) = f.get(1) {
-                            mm.ps_vin_v = Some(v / 100.0);
-                        }
-                    }
-                    "GHSspd" => mm.ghs_now = num(value),
-                    "GHSavg" => mm.ghs_avg = num(value),
-                    "Freq" => mm.freq_mhz = num(value),
-                    "WORKMODE" => mm.work_mode = value.trim().parse().ok(),
-                    "WORKLEVEL" => mm.work_level = value.trim().parse().ok(),
-                    "MPO" => mm.mode_power_cap_w = num(value),
-                    "DH" => mm.error_percent = num(value),
-                    "Core" => mm.chip_name = value.trim().to_string(),
-                    "TA" => mm.chip_count = value.trim().parse().ok(),
-                    "SYSTEMSTATU" => mm.system_status = value.trim().to_string(),
-                    "PVT_T0" => {
-                        mm.chip_temps = value.split_whitespace().filter_map(num).collect();
-                    }
-                    _ => {}
+    Some(match code {
+        1 => "power_fault",
+        2 => "hash_fault",
+        3 => "chip_overheat",
+        4 => "api",
+        5 => "fan_error",
+        6 => "lan_damaged",
+        7 => "hash_board_mcu",
+        8 => "hardware_error",
+        9 => "overheat_at_start",
+        _ => "unknown",
+    })
+}
+
+/// A JSON value as the text a `Key[Value]` token would carry: arrays
+/// as their items with spaces between.
+fn as_token(v: &Value) -> Option<String> {
+    match v {
+        Value::String(s) => Some(s.clone()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(u8::from(*b).to_string()),
+        Value::Array(a) => Some(a.iter().filter_map(as_token).collect::<Vec<_>>().join(" ")),
+        _ => None,
+    }
+}
+
+/// The key/value pairs of the first MM module, from either form of
+/// `estats`: the token strings of the Avalon Q (`MM ID0:Summary` and
+/// `HBinfo` as one string each) or the objects a Nano 3S on Canaan's
+/// newer SDK sends for a JSON request (`MMID0Summary` with `Sysinfo`
+/// and `Hashinfo`, `HBinfo` with `HB_0_Info`, …). The flag says whether
+/// the JSON form was seen.
+fn estats_pairs(estats: &Value) -> (Vec<(String, String)>, bool) {
+    let mut out = Vec::new();
+    let mut json_form = false;
+    let Some(obj) = estats
+        .get("STATS")
+        .and_then(Value::as_array)
+        .and_then(|a| a.first())
+        .and_then(Value::as_object)
+    else {
+        return (out, json_form);
+    };
+    for (k, v) in obj {
+        let other_module = (k.starts_with("MM ID") && !k.starts_with("MM ID0"))
+            || (k.starts_with("MMID") && !k.starts_with("MMID0"));
+        if other_module {
+            continue;
+        }
+        match v {
+            Value::String(text) => {
+                for (key, value) in mm_tokens(text) {
+                    out.push((key.to_string(), value.to_string()));
                 }
             }
+            Value::Object(o) if k.starts_with("MMID0") || k == "HBinfo" => {
+                json_form = true;
+                // One level of sections (`Sysinfo`, `HB_0_Info`), or the
+                // values right here.
+                for (sk, sv) in o {
+                    match sv {
+                        Value::Object(section) => {
+                            for (key, value) in section {
+                                if let Some(t) = as_token(value) {
+                                    out.push((key.clone(), t));
+                                }
+                            }
+                        }
+                        other => {
+                            if let Some(t) = as_token(other) {
+                                out.push((sk.clone(), t));
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
+    }
+    (out, json_form)
+}
+
+/// What the first MM module (`MM ID0` / `MMID0`) reports. An Avalon
+/// with several modules would carry `MM ID1…` beside it; those are left
+/// out rather than overwrite the first one's values.
+pub fn parse_estats(estats: &Value) -> Mm {
+    let mut mm = Mm::default();
+    let mut dh_spd = None;
+    let mut ps: Vec<f64> = Vec::new();
+    let (pairs, json_form) = estats_pairs(estats);
+    mm.sdk = json_form;
+    for (key, value) in pairs {
+        let value = value.as_str();
+        match key.as_str() {
+            "Ver" => mm.version = value.to_string(),
+            "DNA" => mm.dna = value.to_string(),
+            "STATE" => mm.state = value.trim().parse().ok(),
+            "Elapsed" => mm.elapsed_s = value.trim().parse().ok(),
+            "TMax" => mm.temp_max_c = temp(value),
+            "TAvg" => mm.temp_avg_c = temp(value),
+            "TarT" => mm.temp_target_c = temp(value),
+            "ITemp" => mm.temp_inlet_c = temp(value),
+            "OTemp" => mm.temp_outlet_c = temp(value),
+            "HBITemp" => mm.board_temps_in = temps(value),
+            "HBOTemp" => mm.board_temps_out = temps(value),
+            "MTmax" => mm.board_temps_max = temps(value),
+            "FanR" => mm.fan_pct = num(value),
+            "Fan1" | "Fan2" | "Fan3" | "Fan4" => {
+                if let Some(rpm) = num(value) {
+                    mm.fan_rpm.push(rpm as u32);
+                }
+            }
+            "PS" => ps = value.split_whitespace().filter_map(num).collect(),
+            "PVer" => mm.sdk = true,
+            "GHSspd" => mm.ghs_now = num(value),
+            "GHSavg" => mm.ghs_avg = num(value),
+            "Freq" => mm.freq_mhz = num(value),
+            "WORKMODE" => mm.work_mode = value.trim().parse().ok(),
+            "WORKLEVEL" => mm.work_level = value.trim().parse().ok(),
+            "MPO" => mm.mode_power_cap_w = num(value),
+            "DH" => mm.error_percent = num(value),
+            "DHspd" => dh_spd = num(value),
+            "Core" => mm.chip_name = value.trim().to_string(),
+            "TA" => mm.chip_count = value.trim().parse().ok(),
+            "SYSTEMSTATU" => mm.system_status = value.trim().to_string(),
+            "ECMM" => mm.mm_errcode = value.trim().parse().ok(),
+            "ECHU" => {
+                mm.board_errcodes = value
+                    .split_whitespace()
+                    .filter_map(|c| c.parse().ok())
+                    .collect();
+            }
+            "SoftOFF" => mm.soft_off = value.trim().parse().ok(),
+            k if k.starts_with("PVT_T") && k[5..].chars().all(|c| c.is_ascii_digit()) => {
+                mm.chip_temps.extend(temps(value));
+            }
+            _ => {}
+        }
+    }
+    if mm.error_percent.is_none() {
+        mm.error_percent = dh_spd;
+    }
+    // The SDK leaves all of PS at 0 while it has no supply reading.
+    let no_reading = mm.sdk && ps.len() >= 7 && ps[2] == 0.0 && ps[6] == 0.0;
+    if ps.len() >= 7 && !no_reading {
+        // Rail volts: 10 mV counts on `Avalon_mm`, mV on the SDK. A value
+        // above 60 V in 10 mV counts is mV whatever the flag says (a
+        // Nano 3S input reads 28000).
+        let volts = |v: f64| {
+            if mm.sdk || v > 6000.0 {
+                v / 1000.0
+            } else {
+                v / 100.0
+            }
+        };
+        // The SDK leaves the fields it does not fill at 0.
+        let set = |v: f64| (!mm.sdk || v != 0.0).then_some(v);
+        mm.ps_error = Some(ps[0] as u32);
+        mm.ps_vin_v = set(ps[1]).map(|v| v / 100.0);
+        mm.rail_v = set(ps[2]).map(volts);
+        mm.rail_a = set(ps[3]);
+        mm.rail_w = set(ps[4]);
+        if mm.sdk {
+            mm.core_set_mv = set(ps[5]);
+        } else {
+            mm.rail_set_v = Some(volts(ps[5]));
+        }
+        mm.power_w = set(ps[6]);
     }
     mm
 }
@@ -801,7 +1019,8 @@ pub fn work_mode_name(index: u8) -> &'static str {
 /// The three replies as one AxeOS-like document: the fields a swarm
 /// card reads under AxeOS's names, the Avalon's own under their own,
 /// and `cgminer` as the marker. A value the Avalon does not report is
-/// `null`, never 0: it has no regulator temperature, no core voltage and
+/// `null`, never 0: it has no regulator temperature, no core voltage
+/// (except the set point a Nano 3S on the SDK reports) and
 /// no shutdown temperature WarpAxe could know.
 pub fn translate(raw: &Raw) -> Value {
     let s = raw
@@ -836,7 +1055,7 @@ pub fn translate(raw: &Raw) -> Value {
     let hashing = mm.ghs_now.is_some_and(|g| g > 0.0);
     let alive = pf("Status").as_str() == Some("Alive");
     let best = sf("Best Share");
-    json!({
+    let mut v = json!({
         "cgminer": { "api": api, "commands": &COMMANDS[..3], "host": pf("URL") },
         "deviceModel": model, "boardVersion": model, "boardName": model, "hostname": model,
         "ASICModel": mm.chip_name, "asicCount": chip_count,
@@ -849,12 +1068,16 @@ pub fn translate(raw: &Raw) -> Value {
         "hashRate": ghs("MHS 5m"), "hashRate_now": mm.ghs_now, "hashRate_1m": ghs("MHS 1m"),
         "hashRate_15m": ghs("MHS 15m"), "hashRate_av": ghs("MHS av"), "hashRate_avg_mm": mm.ghs_avg,
         "power": mm.power_w, "powerEstimated": false, "psVoltage": mm.ps_vin_v,
+        "psError": mm.ps_error, "railVoltage": mm.rail_v, "railVoltageSet": mm.rail_set_v,
+        "railCurrent": mm.rail_a, "railPower": mm.rail_w,
         "temp": mm.temp_avg_c, "tempMax": mm.temp_max_c, "tempTarget": mm.temp_target_c, "tempInlet": mm.temp_inlet_c,
+        "tempBoard": mm.temp_outlet_c, "boardTempsIn": mm.board_temps_in,
+        "boardTempsOut": mm.board_temps_out, "boardTempsMax": mm.board_temps_max,
         "chipTemps": mm.chip_temps,
         "overheat_temp": null, "vrTemp": null, "vrOverheatTemp": null, "hasVr": false, "hasFan": true,
         "fanrpm": mm.fan_rpm.first(), "fanRpms": mm.fan_rpm, "fanspeed": mm.fan_pct,
         "frequency": mm.freq_mhz.map(f64::round), "frequencyActual": mm.freq_mhz.map(f64::round),
-        "coreVoltage": null, "coreVoltageActual": null,
+        "coreVoltage": mm.core_set_mv, "coreVoltageActual": null,
         "workMode": mm.work_mode.map(work_mode_name), "workModeIndex": mm.work_mode,
         "workLevel": mm.work_level, "modePowerCapW": mm.mode_power_cap_w,
         "sharesAccepted": sf("Accepted"), "sharesRejected": sf("Rejected"), "sharesStale": sf("Stale"),
@@ -868,7 +1091,26 @@ pub fn translate(raw: &Raw) -> Value {
         "activePool": url, "stratumConnected": alive,
         "isUsingFallbackStratum": u8::from(pf("Priority").as_u64().unwrap_or(0) > 0),
         "poolDifficulty": pf("Stratum Difficulty"), "blockHeight": pf("Current Block Height"),
-    })
+    });
+    // The MM's own error state, beside the document above (the `json!`
+    // above is near the macro's recursion limit).
+    let board_errors: Vec<Vec<String>> = mm
+        .board_errcodes
+        .iter()
+        .map(|c| board_error_names(*c))
+        .collect();
+    let extra = json!({
+        "mmErrorCode": mm.mm_errcode,
+        "mmErrors": mm.mm_errcode.map(mm_error_names),
+        "boardErrorCodes": mm.board_errcodes,
+        "boardErrors": board_errors,
+        "softOffCode": mm.soft_off,
+        "softOffReason": mm.soft_off.and_then(|c| soft_off_reason(c, mm.sdk)),
+    });
+    if let (Some(doc), Value::Object(more)) = (v.as_object_mut(), extra) {
+        doc.extend(more);
+    }
+    v
 }
 
 #[cfg(test)]
@@ -925,8 +1167,151 @@ mod tests {
         assert_eq!(mm.chip_name, "A3197S");
         assert_eq!(mm.chip_count, Some(160));
         assert_eq!(mm.chip_temps.len(), 160);
-        assert_eq!(mm.chip_temps[0], 55.0);
-        assert_eq!(mm.chip_temps[159], 57.0);
+        assert_eq!(mm.chip_temps[0], Some(55.0));
+        assert_eq!(mm.chip_temps[159], Some(57.0));
+        // PS[0 1208 2295 34 792 2296 840]: no supply error, 12.08 V aux,
+        // a 22.95 V rail at 34 A, 792 W out, 22.96 V asked, 840 W in.
+        assert_eq!(mm.ps_error, Some(0));
+        assert_eq!(mm.rail_v, Some(22.95));
+        assert_eq!(mm.rail_a, Some(34.0));
+        assert_eq!(mm.rail_w, Some(792.0));
+        assert_eq!(mm.rail_set_v, Some(22.96));
+        assert_eq!(mm.temp_inlet_c, Some(33.0));
+        assert_eq!(mm.board_temps_in, vec![Some(61.0)]);
+        assert_eq!(mm.board_temps_out, vec![Some(63.0)]);
+        assert_eq!(mm.mm_errcode, Some(256));
+        assert_eq!(mm_error_names(256), vec!["inlet_out_of_range"]);
+        assert_eq!(mm.board_errcodes, vec![0]);
+        assert_eq!(mm.soft_off, Some(0));
+        assert_eq!(soft_off_reason(0, false), None);
+        assert!(!mm.sdk);
+    }
+
+    #[test]
+    fn no_reading_is_none_not_minus_273() {
+        let v = json!({"STATS": [{"MM ID0:Summary": "ITemp[-273] OTemp[41] TMax[-273] TAvg[60] HBITemp[-273 50]",
+            "HBinfo": "'HB0':{PVT_T0[ 55 -273  60]}"}]});
+        let mm = parse_estats(&v);
+        assert_eq!(mm.temp_inlet_c, None);
+        assert_eq!(mm.temp_outlet_c, Some(41.0));
+        assert_eq!(mm.temp_max_c, None);
+        assert_eq!(mm.temp_avg_c, Some(60.0));
+        assert_eq!(mm.board_temps_in, vec![None, Some(50.0)]);
+        assert_eq!(mm.chip_temps, vec![Some(55.0), None, Some(60.0)]);
+        let t = translate(&Raw {
+            summary: json!({}),
+            estats: v,
+            pools: json!({}),
+        });
+        assert!(t["tempInlet"].is_null());
+        assert_eq!(t["chipTemps"], json!([55.0, null, 60.0]));
+        assert_eq!(t["asicCount"], 3);
+    }
+
+    #[test]
+    fn the_json_form_of_a_nano_3s_reads_like_the_token_form() {
+        // The shape Canaan's Nano 3S SDK (`mc_api_estats.c`) sends for a
+        // JSON request: numbers and arrays instead of token strings.
+        let v = json!({"STATS": [{"STATS": 0, "ID": "AVALON0", "Elapsed": 120,
+            "MMID0Summary": {
+                "Sysinfo": {"Ver": "Nano3s-25021401_56abae7", "DNA": "020100004d8b4c01",
+                    "SYSTEMSTATU": "Work: In Work, Hash Board: 1", "Elapsed": 120,
+                    "ITemp": -273, "OTemp": 45, "Fan1": 2100, "FanR": 38,
+                    "PS": [0, 0, 28000, 5, 0, 2800, 140], "SoftOFF": 7, "ECMM": 0},
+                "Hashinfo": {"DH": 1.25, "TMax": 70, "TAvg": 64, "TarT": 65,
+                    "GHSspd": 6012.5, "GHSavg": 5980.1, "Freq": 450.0,
+                    "MTmax": [70], "TA": 10, "Core": "A3197S", "ECHU": [4],
+                    "WORKMODE": 1, "WORKLEVEL": 0, "MPO": 140}},
+            "HBinfo": {"HB_0_Info": {"PVT_T0": [60, 62, -273, 61], "PVT_V0": [300, 301, 0, 299]}},
+            "MMID1Summary": {"Hashinfo": {"TAvg": 99}}}]});
+        let mm = parse_estats(&v);
+        assert_eq!(mm.version, "Nano3s-25021401_56abae7");
+        assert_eq!(mm.temp_inlet_c, None);
+        assert_eq!(mm.temp_outlet_c, Some(45.0));
+        assert_eq!(mm.temp_avg_c, Some(64.0));
+        assert_eq!(mm.fan_rpm, vec![2100]);
+        // The SDK's PS: mV, fields 1 and 4 left 0.
+        assert!(mm.sdk);
+        assert_eq!(mm.power_w, Some(140.0));
+        assert_eq!(mm.rail_v, Some(28.0));
+        assert_eq!(mm.rail_set_v, None);
+        assert_eq!(mm.core_set_mv, Some(2800.0));
+        assert_eq!(mm.rail_a, Some(5.0));
+        assert_eq!(mm.ps_vin_v, None);
+        assert_eq!(mm.rail_w, None);
+        assert_eq!(mm.ghs_now, Some(6012.5));
+        assert_eq!(mm.error_percent, Some(1.25));
+        assert_eq!(mm.chip_name, "A3197S");
+        assert_eq!(mm.chip_count, Some(10));
+        assert_eq!(mm.work_mode, Some(1));
+        assert_eq!(mm.board_temps_max, vec![Some(70.0)]);
+        assert_eq!(mm.board_errcodes, vec![4]);
+        assert_eq!(board_error_names(4), vec!["comm"]);
+        assert_eq!(
+            mm.chip_temps,
+            vec![Some(60.0), Some(62.0), None, Some(61.0)]
+        );
+        let t = translate(&Raw {
+            summary: json!({}),
+            estats: v,
+            pools: json!({}),
+        });
+        assert_eq!(t["deviceModel"], "Avalon Nano3s");
+        assert_eq!(t["boardErrors"], json!([["comm"]]));
+        assert_eq!(t["mmErrors"], json!([]));
+        assert_eq!(t["softOffReason"], "low_hashrate");
+        assert_eq!(t["coreVoltage"], 2800.0);
+        assert!(t["psVoltage"].is_null());
+    }
+
+    #[test]
+    fn the_sdk_token_form_is_known_by_pver_and_read_in_mv() {
+        let mm = parse_estats(&json!({"STATS": [{"MM ID0:Summary":
+            "Ver[Nano3s-1] LVer[1] FW[Release] PVer[1.0] PS[0 0 28000 5 0 28000 140] SoftOFF[10]"}]}));
+        assert!(mm.sdk);
+        assert_eq!(mm.rail_v, Some(28.0));
+        assert_eq!(mm.ps_vin_v, None);
+        // A rail in mV without any SDK mark is still not read as 280 V.
+        let odd = parse_estats(
+            &json!({"STATS": [{"MM ID0:Summary": "PS[0 1200 28000 5 140 28000 150]"}]}),
+        );
+        assert!(!odd.sdk);
+        assert_eq!(odd.rail_v, Some(28.0));
+        assert_eq!(odd.ps_vin_v, Some(12.0));
+        // The SDK without a supply reading: nulls, not zeros.
+        let none =
+            parse_estats(&json!({"STATS": [{"MM ID0:Summary": "PVer[1.0] PS[0 0 0 0 0 0 0]"}]}));
+        assert_eq!(
+            (none.power_w, none.rail_v, none.rail_a, none.ps_error),
+            (None, None, None, None)
+        );
+        assert_eq!(none.core_set_mv, None);
+    }
+
+    #[test]
+    fn dhspd_stands_in_for_a_missing_dh_and_error_bits_are_named() {
+        let mm = parse_estats(
+            &json!({"STATS": [{"MM ID0:Summary": "DHspd[2.500%] SoftOFF[3] ECMM[72]"}]}),
+        );
+        assert_eq!(mm.error_percent, Some(2.5));
+        let both =
+            parse_estats(&json!({"STATS": [{"MM ID0:Summary": "DH[1.000%] DHspd[2.500%]"}]}));
+        assert_eq!(both.error_percent, Some(1.0));
+        assert_eq!(soft_off_reason(3, false), Some("chip_overheat"));
+        assert_eq!(soft_off_reason(42, false), Some("unknown"));
+        // The SDK inserts low_hashrate at 7 and moves the rest up.
+        assert_eq!(soft_off_reason(7, false), Some("hash_board_mcu"));
+        assert_eq!(soft_off_reason(7, true), Some("low_hashrate"));
+        assert_eq!(soft_off_reason(8, true), Some("hash_board_mcu"));
+        assert_eq!(soft_off_reason(10, true), Some("overheat_at_start"));
+        assert_eq!(soft_off_reason(11, true), Some("calibration_failed"));
+        assert_eq!(soft_off_reason(6, true), Some("lan_damaged"));
+        assert_eq!(board_error_names(16), vec!["lost"]);
+        assert_eq!(mm_error_names(1 << 13), vec!["aging_failed"]);
+        // 72 = bits 3 and 6.
+        assert_eq!(mm_error_names(72), vec!["fan", "pool_inactive"]);
+        assert_eq!(mm_error_names(1 << 20), vec!["bit20"]);
+        assert_eq!(mm_error_names(0), Vec::<String>::new());
     }
 
     #[test]
