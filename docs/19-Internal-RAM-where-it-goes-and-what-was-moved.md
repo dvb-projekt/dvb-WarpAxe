@@ -2,9 +2,8 @@
 
 Written 2026-11-21 on branch `claude/internal-ram-c24e8f` (from main
 `93f880b`, v0.1.47 + two commits), on a handover from dvb-WarpAxe #2
-after the W5500 Ethernet HAT test on .41. **Draft: nothing here ran on
-a device.** The static numbers are measured on the build; the runtime
-gains are argued and wait for the device test at the end.
+after the W5500 Ethernet HAT test on .41. The static numbers are measured on the build; the device test on .46
+and .42 (2026-11-21) is at the end.
 
 ## Why
 
@@ -193,3 +192,42 @@ TCB stays internal, the stack check accepts PSRAM with
 
 IRAM figures here are `.iram0.vectors + .iram0.text`; the segment in the
 image also holds `.iram0.text_end` padding.
+
+## Device test (.46 and .42, 2026-11-21)
+
+Oliver's OK in this session for .46 and .42; Warppool #2 paused and
+logged; images by OTA upload of the clean build `5a052c952`. Heap log
+once a minute (`freeHeapInternal` / `largestFreeInternal`, samples
+after 120 s up):
+
+| Miner | Firmware | Window (UTC) | free min / mean / max | largest piece | Shares |
+|---|---|---|---|---|---|
+| .46 NerdNOS (modem sleep on) | v0.1.47 | 09:45–10:21 | 21,819 / 32,162 / 38,011 | 18,432 | rej 0 |
+| .46 | 5a052c952 | 10:22–11:10 | 88,703 / 117,782 / 122,519 | 31,744 | 83 acc, 0 rej |
+| .42 Gamma | v0.1.47 | 09:45–10:35 | 33,187 / 43,091 / 45,683 | 25,600–26,624 | rej 0 |
+| .42 | 5a052c952 | 10:36–11:10 | 96,871 / 123,646 / 128,307 | 31,744 | 150 acc, 0 rej |
+
+At the end of boot (`heap:` log line): .46 157 KB free, largest piece
+64 KB; .42 163 KB, 72 KB.
+
+- **Free internal heap about +80 KB** in the mean on both boards, the
+  minimum +55–65 KB. The largest piece rises 18 → 31 KB on .46 and
+  26 → 31 KB on .42 and then stays put, like docs/09's 20 KB on
+  v0.1.31: the holes are still cut at boot, only the room around them
+  is larger. The 32 KB piece now fits a 16 KB stack twice.
+- **Modem sleep (.46):** 12 config saves (`displayStartPage` back and
+  forth, NVS writes) with Wi-Fi traffic, and an upload update of the
+  same image written by the new writer while `/api/system/info` was
+  polled every second (50 of 50 answered before the restart): written,
+  restarted "no crash reset", marked valid at chain ready. No reset in
+  48 minutes.
+- **mDNS:** "mDNS task will be created from SPIRAM", `nerdnos.local`
+  resolves (IPv4 and IPv6). The log page shows the boot lines and the
+  ring.
+- Both pools are Sv2 here, so the V1 *session* code did not run; the
+  stratum thread that hosts the sv2 session did (on PSRAM). The
+  fallback probe did not run (no fallback switch). The writer's
+  "stack never used" line was lost with the ring at the restart; read
+  it after the next update.
+- Not tested: the Ethernet build on top (merge with f58f70b), an
+  online (click) update, V1 pools.
