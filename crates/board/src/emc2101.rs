@@ -174,20 +174,23 @@ impl<I: I2c> Emc2101<I> {
         };
         // The part first, before anything is written: with a wrong board
         // choice another chip may sit at this address (as up to v0.1.45).
+        // The CTF2301B first, by its own registers, as the StarMiner's
+        // fork tells the two apart (an EMC2101 reads its manufacturer,
+        // 0x5D, and revision there): what it answers at 0xFD is unknown.
+        let mut chip = [0u8];
+        let mut mfg = [0u8];
+        bus.write_read(ADDR, &[REG_CTF_CHIP_ID], &mut chip)
+            .map_err(Error::Bus)?;
+        bus.write_read(ADDR, &[REG_CTF_MFG_ID], &mut mfg)
+            .map_err(Error::Bus)?;
+        if (chip[0], mfg[0]) == (CTF_CHIP_ID, CTF_MFG_ID) {
+            return self.init_ctf(bus);
+        }
         let mut id = [0u8];
         bus.write_read(ADDR, &[REG_PRODUCT_ID], &mut id)
             .map_err(Error::Bus)?;
         if !PRODUCT_IDS.contains(&id[0]) {
-            let mut chip = [0u8];
-            let mut mfg = [0u8];
-            bus.write_read(ADDR, &[REG_CTF_CHIP_ID], &mut chip)
-                .map_err(Error::Bus)?;
-            bus.write_read(ADDR, &[REG_CTF_MFG_ID], &mut mfg)
-                .map_err(Error::Bus)?;
-            if (chip[0], mfg[0]) != (CTF_CHIP_ID, CTF_MFG_ID) {
-                return Err(Error::WrongDevice);
-            }
-            return self.init_ctf(bus);
+            return Err(Error::WrongDevice);
         }
         bus.write(ADDR, &[REG_CONFIG, CONFIG]).map_err(Error::Bus)?;
         bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG])
@@ -327,6 +330,8 @@ mod tests {
     /// crate's steps (which find nothing to change), then the diode.
     fn init_script(ideality: u8) -> Vec<Tx> {
         vec![
+            get(0xFE, 0x5D), // not a CTF2301B: SMSC's manufacturer id
+            get(0xFF, 0x02),
             get(0xFD, 0x16), // product id, before any write
             put(0x03, 0x04), // Configuration: ALT_TCH only
             put(0x4A, 0x23), // Fan Config: PROG, 360 kHz, TACH_M 11
@@ -366,7 +371,7 @@ mod tests {
     fn wrong_part_id_is_an_error_and_nothing_works_after() {
         // Nothing is written to a part that is not an EMC2101 (or a
         // CTF2301B).
-        let script = vec![get(0xFD, 0x00), get(0xFE, 0x00), get(0xFF, 0x00)];
+        let script = vec![get(0xFE, 0x00), get(0xFF, 0x00), get(0xFD, 0x00)];
         let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
         assert_eq!(s.init(), Err(Error::WrongDevice));
         assert_eq!(s.fan_rpm(), Err(Error::WrongDevice));
@@ -379,9 +384,8 @@ mod tests {
     #[test]
     fn a_ctf2301b_gets_its_fan_output_switched_on() {
         let script = vec![
-            get(0xFD, 0x00), // not an EMC2101 product id
             get(0xFE, 0x41), // CTF2301B chip id
-            get(0xFF, 0x59), // and manufacturer id
+            get(0xFF, 0x59), // and manufacturer id: nothing else read
             put(0x03, 0x04),
             put(0x4A, 0x23),
             get(0x03, 0x04),
@@ -411,7 +415,7 @@ mod tests {
     /// Neither an EMC2101 nor a CTF2301B: nothing written.
     #[test]
     fn another_part_is_still_refused() {
-        let script = vec![get(0xFD, 0x00), get(0xFE, 0x5D), get(0xFF, 0x01)];
+        let script = vec![get(0xFE, 0x5D), get(0xFF, 0x01), get(0xFD, 0x00)];
         let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
         assert_eq!(s.init(), Err(Error::WrongDevice));
     }

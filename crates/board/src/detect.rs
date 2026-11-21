@@ -377,7 +377,10 @@ pub fn detect(
     // A Bitaxe AxeOS runs and WarpAxe does not: named, nothing powered.
     // Before the bus, which would take a Supra or an Ultra for a Gamma.
     if let Some(m) = from_stock_unsupported(stock.0, stock.1, stock.2) {
-        return Detection::Unsupported(m, "board model stored by the stock firmware (AxeOS)");
+        return Detection::Unsupported(
+            m,
+            "board model or version stored by the stock firmware (AxeOS)",
+        );
     }
     // The stock keys only ever name a tested board outright (the Bitaxe
     // Gamma); the bus takes the Nano, the Gaia and the Gamma on its own.
