@@ -425,6 +425,11 @@ static CURRENT_STREAM: Mutex<Option<Arc<Link>>> = Mutex::new(None);
 /// Set by `reconnect`: the session that ends next did so on purpose, so
 /// `run` neither counts a failure nor waits for the backoff.
 static RECONNECT: AtomicBool = AtomicBool::new(false);
+/// Set with `RECONNECT` by `move_session`: the session only changes the
+/// interface it leaves from (the Ethernet cable came or went). `run`
+/// then keeps the pool it was on, the fallback, the stuck-pool mark and
+/// the probe's wait; a settings change (`reconnect`) clears it.
+static KEEP_POOL: AtomicBool = AtomicBool::new(false);
 
 /// A pool key the TLS check refused (no public authority, and not the
 /// confirmed key), per slot (main, fallback), in RAM only: the Pool page
@@ -486,13 +491,31 @@ pub fn reconnect() {
     reconnect_because("pool settings changed");
 }
 
-/// The same for another reason (`net::eth` moves the session between the
-/// cable and Wi-Fi). Not counted in `reconnects`, which counts sessions
-/// that ended with an error.
+/// The same for another reason. Not counted in `reconnects`, which
+/// counts sessions that ended with an error.
 pub fn reconnect_because(why: &str) {
+    KEEP_POOL.store(false, Ordering::Relaxed);
     RECONNECT.store(true, Ordering::Relaxed);
     if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
         log::info!("stratum: {why}, reconnecting");
+        s.shutdown();
+    } else {
+        log::info!("stratum: {why}, the next session takes it into account");
+    }
+}
+
+/// End the running session so the next one leaves over the interface
+/// that now carries the default route (`net::eth`: the cable came or
+/// went). Unlike `reconnect` the pool choice stays: a miner on the
+/// fallback because its main pool is stuck stays on the fallback. A
+/// settings change already pending keeps its full reset.
+pub fn move_session(why: &str) {
+    if !RECONNECT.load(Ordering::Relaxed) {
+        KEEP_POOL.store(true, Ordering::Relaxed);
+    }
+    RECONNECT.store(true, Ordering::Relaxed);
+    if let Some(s) = CURRENT_STREAM.lock().unwrap().as_ref() {
+        log::info!("stratum: {why}, reconnecting to the same pool");
         s.shutdown();
     } else {
         log::info!("stratum: {why}, the next session takes it into account");
@@ -517,7 +540,7 @@ fn run() {
     loop {
         // A change that came while no session was up (connecting, or in
         // the backoff) applies now: this pass reads the new config.
-        if RECONNECT.swap(false, Ordering::Relaxed) {
+        if RECONNECT.swap(false, Ordering::Relaxed) && !KEEP_POOL.swap(false, Ordering::Relaxed) {
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
@@ -579,7 +602,12 @@ fn run() {
         // Without a network a pool cannot answer: such an attempt says
         // nothing about the pool and does not count towards the
         // fallback (a cold boot whose Wi-Fi took a minute switched to it).
-        let net_up = crate::net::state().wifi_connected;
+        // Wi-Fi or the Ethernet cable with an address: a board on the
+        // cable alone has no Wi-Fi at all.
+        let net_up = {
+            let n = crate::net::state();
+            n.wifi_connected || n.eth_ip.is_some()
+        };
         update(|s| {
             s.pool = pool.clone();
             s.using_fallback = on_fallback;
@@ -604,9 +632,15 @@ fn run() {
         *FALLBACK_STREAM.lock().unwrap() = None;
         *CURRENT_STREAM.lock().unwrap() = None;
         if RECONNECT.swap(false, Ordering::Relaxed) {
+            update(|s| s.connected = false);
+            if KEEP_POOL.swap(false, Ordering::Relaxed) {
+                // Moved between the cable and Wi-Fi: the same pool again
+                // at once, nothing counted, nothing forgotten.
+                backoff = Duration::from_secs(3);
+                continue;
+            }
             // Ended on purpose after a settings change: straight back in
             // with the new settings, main pool first.
-            update(|s| s.connected = false);
             on_fallback = false;
             fails = 0;
             backoff = Duration::from_secs(3);
@@ -756,7 +790,7 @@ fn run() {
                 if !on_fallback && net_up {
                     fails += 1;
                 } else if !net_up {
-                    log::info!("stratum: no Wi-Fi yet: not counted towards the fallback");
+                    log::info!("stratum: no network yet: not counted towards the fallback");
                 }
                 pools(|w, now| w.failed(now, on_fallback, fallback_ok));
             }

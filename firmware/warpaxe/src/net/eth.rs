@@ -315,7 +315,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                     // that one is left alone.
                     let st = crate::stratum::state();
                     if st.connected && st.local_ip == ip {
-                        crate::stratum::reconnect_because(
+                        crate::stratum::move_session(
                             "the pool session was on the Ethernet cable, which is gone",
                         );
                     }
@@ -361,8 +361,11 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         if let (Some(a), Some(t)) = (&ip, ip_since) {
             if !moved && t.elapsed() >= SETTLE {
                 let st = crate::stratum::state();
-                if st.connected && st.local_ip.as_deref() != Some(a.as_str()) {
-                    crate::stratum::reconnect_because(&format!(
+                // `local_ip` is IPv4 only (`Link::local_ip`): a session over
+                // IPv6 is left where it is rather than moved blind; its
+                // next session leaves by the route of the moment.
+                if st.connected && st.local_ip.as_deref().is_some_and(|l| l != a.as_str()) {
+                    crate::stratum::move_session(&format!(
                         "the pool session runs over {} and the Ethernet cable has held {a} for {} s: moving it",
                         st.local_ip.as_deref().unwrap_or("?"),
                         SETTLE.as_secs()
