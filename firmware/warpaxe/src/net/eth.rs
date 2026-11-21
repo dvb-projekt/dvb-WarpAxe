@@ -68,9 +68,14 @@ const SETTLE: Duration = Duration::from_secs(30);
 /// Look for the HAT on `pins` and run the link on its own thread. Called
 /// once `esp_netif_init` has run and the board is known; the caller has
 /// made sure the pins are free (`board::ethernet_pins`).
+///
+/// The thread's stack lives in PSRAM: it writes no flash, and its 8 KB
+/// in the internal RAM, next to the W5500 driver's own receive task,
+/// left the .41 with 832 bytes as its largest free internal block
+/// (mDNS, DNS, I2C and the web server then failed their allocations).
 pub fn start(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) {
     super::set_eth(|s| s.eth_probing = true);
-    if let Err(e) = std::thread::Builder::new().stack_size(8192).spawn(move || {
+    if let Err(e) = crate::diag::spawn_psram("eth", 8192, move || {
         run(spi, sysloop, pins, hostname);
         super::set_eth(|s| s.eth_probing = false);
     }) {
