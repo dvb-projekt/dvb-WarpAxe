@@ -242,7 +242,8 @@ keep away from flash, NVS and esp_ota_*.
 3. **Display orientation** on the carrier: unknown; the flip setting covers it.
 4. **Detection**: on the first start the NTC divider on GPIO2 (WantClue's
    pin) offers `nerdnos` first (never taken); a bare T-Display-S3 with
-   NerdMiner's settings stays the devkit. If the .46's NTC does not sit on
+   NerdMiner's settings is offered as the devkit (since v0.1.48 never
+   taken on its own: an NMAxe on NMMiner looks the same). If the .46's NTC does not sit on
    GPIO2 after all, the board can still be chosen by hand.
 5. **Board revision**: the .46 is assumed to be the revision WantClue's
    `nerdnos.h` describes (see "Two board revisions"); the published KiCad
