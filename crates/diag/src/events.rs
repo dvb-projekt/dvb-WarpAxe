@@ -23,6 +23,12 @@ pub const MAX_BYTES: usize = 3200;
 /// A push identical to the last event within this many seconds of
 /// uptime is dropped.
 pub const COALESCE_S: u64 = 60;
+/// Codes whose event replaces the newest one when that has the same
+/// code, instead of adding one: a tuner that sets the clock per chip
+/// through the API again and again keeps one entry with its latest
+/// offsets, not a ring full of them. The change by hand (`chip_clocks`)
+/// always adds one.
+pub const REPLACE_NEWEST: &[&str] = &["chip_clocks_api"];
 /// An event's detail is cut to this many characters.
 pub const MAX_DETAIL: usize = 48;
 /// A coded event is trimmed to at most this many stored bytes where it
@@ -932,6 +938,12 @@ impl Ring {
                 return false;
             }
         }
+        if let Some(last) = self.events.last_mut() {
+            if REPLACE_NEWEST.contains(&e.c.as_str()) && last.c == e.c {
+                *last = e;
+                return true;
+            }
+        }
         self.events.push(e);
         while self.events.len() > CAPACITY {
             self.events.remove(0);
@@ -974,6 +986,49 @@ mod tests {
         let back = Ring::from_json(&s);
         assert_eq!(back, r);
         assert_eq!(back.last().map(|e| e.k.as_str()), Some("overheat"));
+    }
+
+    #[test]
+    fn a_clock_change_through_the_api_replaces_the_newest_one_of_its_kind() {
+        let api = |u: u64, o: &[i16]| {
+            Event::new(1_760_000_000 + u, u, "chain", detail::chip_clocks(o, false))
+        };
+        let hand = |u: u64, o: &[i16]| {
+            Event::new(1_760_000_000 + u, u, "chain", detail::chip_clocks(o, true))
+        };
+        let mut r = Ring::new();
+        assert!(r.push(ev(5, "boot", "power-on")));
+        assert!(r.push(api(700, &[0, -10])));
+        // The next API change replaces it: time and offsets the newest.
+        assert!(r.push(api(1400, &[0, -20, -5])));
+        assert_eq!(r.events().len(), 2);
+        let last = r.last().unwrap();
+        assert_eq!((last.t, last.u), (1_760_001_400, 1400));
+        assert_eq!(last.p.get("o").and_then(|o| o.as_str()), Some("1:-20 2:-5"));
+        assert_eq!(r.events()[0].k, "boot");
+        // The same change within a minute is still no write.
+        assert!(!r.push(api(1420, &[0, -20, -5])));
+        // Another event in between: the next API change is added.
+        assert!(r.push(ev(2000, "pool", "fallback")));
+        assert!(r.push(api(2700, &[-5])));
+        assert_eq!(r.events().len(), 4);
+        // Changes by hand are always added, and never replaced by an API one.
+        assert!(r.push(hand(3000, &[-5])));
+        assert!(r.push(hand(3100, &[-10])));
+        assert_eq!(r.events().len(), 6);
+        assert!(r.push(api(3800, &[])));
+        assert_eq!(r.events().len(), 7);
+        assert_eq!(r.events()[5].c, "chip_clocks");
+        // The replaced entry survives the stored string.
+        assert!(r.push(api(4500, &[-15])));
+        assert_eq!(r.events().len(), 7);
+        assert_eq!(Ring::from_json(&r.to_json()), r);
+        // A ring of API changes alone stays one entry.
+        let mut only = Ring::new();
+        for k in 0..100u64 {
+            assert!(only.push(api(k * 700, &[-(k as i16 % 25)])));
+        }
+        assert_eq!(only.events().len(), 1);
     }
 
     #[test]
