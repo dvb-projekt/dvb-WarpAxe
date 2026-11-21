@@ -35,9 +35,10 @@ use warpaxe_board::EthPins;
 /// SPI clock, as NerdOS runs the HAT (long wires on a header).
 const SPI_HZ: u32 = 2_000_000;
 /// Without an interrupt line the driver asks the chip this often.
-/// NerdOS polls every 1 ms; a miner's traffic is a few KB a second, and
-/// the chip buffers 16 KB of frames, so 5 ms still takes about 3 MB/s
-/// (an update download) and wakes the driver a fifth as often.
+/// NerdOS polls every 1 ms; a miner's traffic is a few KB a second, the
+/// chip buffers 16 KB of frames and the receive task drains them all on
+/// each wake-up, and the 2 MHz SPI bus (about 250 KB/s) is the limit
+/// either way: 5 ms wakes the driver a fifth as often.
 const POLL: Duration = Duration::from_millis(5);
 /// W5500 common-register addresses and the control byte: block select
 /// 0 (common), read 0x00 / write 0x04, variable data length.
@@ -284,6 +285,9 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
     // flaps (which restart `link_since`): a link that keeps dropping must
     // not hold the hotspot back for good either.
     let mut waiting_since: Option<Instant> = None;
+    // Since when the link has been down: a cable out for a while starts
+    // its wait for an address afresh.
+    let mut down_since: Option<Instant> = None;
     loop {
         let link = eth.is_connected().unwrap_or(false);
         let now_ip = if link {
@@ -353,6 +357,12 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 was_link = false;
                 dhcp_failed = true;
             }
+        }
+        if link {
+            down_since = None;
+        } else if down_since.get_or_insert_with(Instant::now).elapsed() >= Duration::from_secs(10) {
+            waiting_since = None;
+            dhcp_failed = false;
         }
         if ip.is_some() {
             dhcp_failed = false;
