@@ -696,7 +696,7 @@
   "tf_12h": "12 horas (AM/PM)",
   "don_h": "Apoya el desarrollo",
   "don_s": "Voluntario · WarpAxe no cobra ninguna comisión sobre tu hashrate",
-  "don_body": "WarpAxe es software libre y mina al 100 % para ti: sin comisión para el desarrollador ni ninguna parte de tu hashrate. Es un proyecto personal e independiente, no pertenece a OSMU ni a ningún fabricante, y nadie lo financia. Si te gusta el firmware, una pequeña donación será bienvenida.",
+  "don_body": "WarpAxe es software libre y mina al 100 % para ti: sin comisión para el desarrollador y sin quedarse con ninguna parte de tu hashrate. Es un proyecto personal e independiente, no pertenece a OSMU ni a ningún fabricante, y nadie lo financia. Si te gusta el firmware, una pequeña donación es bienvenida.",
   "don_copy": "Copiar",
   "don_copied": "Dirección copiada",
   "don_copy_no": "Este navegador no permite copiar aquí: selecciona la dirección y cópiala tú.",
