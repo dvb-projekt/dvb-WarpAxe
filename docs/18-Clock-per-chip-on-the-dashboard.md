@@ -42,13 +42,21 @@ which the dashboard has.
 A PATCH that changes `chipFreqOffsets` can say who it comes from in
 `chipFreqOffsetsBy`: `"manual"` (the web UI sends it), `"warptune"`
 (WarpTune). Anything else, or nothing, counts as `"api"`. The firmware
-stores the source with the time (NVS key `chipoffset`, five bytes: source,
-then seconds since 1970) and reports both in `/api/system/info`:
+stores the source with the time (NVS key `chipoffset`: source, seconds
+since 1970, and since v0.1.49 a checksum of the offsets it belongs to)
+and reports both in `/api/system/info`. An image from before the
+checksum changes the offsets without touching that record; after a
+downgrade and an update back, a record whose checksum does not fit the
+offsets in force reads as unknown (null), not as an old "who and when".
+A record from v0.1.47 or v0.1.48, without a checksum, is taken as is.
 
 | Field | Meaning |
 |---|---|
 | `chipFreqOffsetsBy` | `"manual"`, `"warptune"` or `"api"`; null for offsets from before v0.1.47 |
 | `chipFreqOffsetsAt` | seconds since 1970 of the last change; null when the clock was not set then, or before v0.1.47 |
+
+A change of board (`boardModel`) drops the offsets without an event:
+the board change is the news, not "turned off through the API".
 
 A change by hand or through the API also goes into the event log
 (`chip_clocks`, `chip_clocks_api`, with the chips that have an offset as

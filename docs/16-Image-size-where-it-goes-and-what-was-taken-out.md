@@ -351,6 +351,13 @@ formatter and is not affected:
 | `invalid buffer alignment: %zu`, `buffer not aligned to %zu` (gdma) | a programming error in a driver | Last argument, nothing shifts. |
 | `%s:%s:%016llx`, `…:%016llx:%s:%s`, `cnonce="%016llx"` (esp_http_client digest auth) | HTTP digest auth | Linked but unreachable: `CONFIG_ESP_HTTP_CLIENT_ENABLE_DIGEST_AUTH` is off. With it on, the `%s` after would crash. |
 
+`tools/check-printf.py` repeats this search on the image and fails on a
+broken spec with a `%s` after it that is not one of the digest-auth
+lines above; `tools/release-firmware.sh` runs it on every release image
+(CI builds no ESP image). `--all` lists the harmless hits too; since the
+Ethernet driver it also finds `got 0x%02hhx` (W5500 version mismatch,
+last argument, nothing shifts).
+
 esp_http_server's `%zu` lines switch to `PRIu32` by themselves under
 nano (`NEWLIB_NANO_COMPAT_FORMAT`, `esp_httpd_priv.h`) and are gone
 from the list on the nano build. Four more hits are machine code that

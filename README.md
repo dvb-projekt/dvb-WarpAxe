@@ -753,7 +753,11 @@ back at any time with `GET /api/v1/display/frame`.
   clock, on chips without an error counter such as the BM1397),
   `minerStackFree` (since v0.1.44: the least stack the mining loop has
   had to spare since boot, of its 12 KB; its driver and policies live in
-  PSRAM), `vinIdle`, `vinLoad`, `vinSag` and `psuSagWarning` (since
+  PSRAM), `probeStackFree` (since v0.1.49: the same for the 4 KB stack of
+  the thread that probes the main pool while the miner is on the
+  fallback; 0 until its first probe), `duplicateHWNonces` (since v0.1.49,
+  ESP-Miner's name: nonces the chain driver dropped as repeats),
+  `vinIdle`, `vinLoad`, `vinSag` and `psuSagWarning` (since
   v0.1.45: the input voltage with the chips off, under load as the median
   of the last minute, the drop between them, and a warning once the drop
   reaches 8 % of the nominal input for a full minute, gone again under

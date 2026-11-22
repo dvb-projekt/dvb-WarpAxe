@@ -555,6 +555,7 @@ fn run() {
             fails = 0;
             backoff = Duration::from_secs(3);
             probing = false;
+            BACK_UNREPORTED.store(false, Ordering::Relaxed);
             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
             crate::net::dial::forget_no_work();
             STALE.lock().unwrap().reset();
@@ -635,12 +636,24 @@ fn run() {
         // Only this session's verdict counts (a `continue` above could
         // have left the last one's flag standing).
         CLOCK_UNSURE.store(false, Ordering::Relaxed);
+        // The probe's word is for the fallback session it ended, and is
+        // taken right after it (below). One left standing (a settings
+        // change ended that session first) must not end the next
+        // fallback session at once. The probe sets it only while a
+        // fallback session's link is registered, which none is here.
+        BACK_TO_PRIMARY.store(false, Ordering::Relaxed);
         let result = match v2 {
             Some(v2) => session_v2_on_psram(host.clone(), port, user.clone(), v2, on_fallback),
             None => session(&host, port, tls, pin, &user, &pass, on_fallback),
         };
         *FALLBACK_STREAM.lock().unwrap() = None;
         *CURRENT_STREAM.lock().unwrap() = None;
+        // The network as the session ends: one lost during it is not the
+        // pool's fault either (`net_up` was read before the connect).
+        let net_up = net_up && {
+            let n = crate::net::state();
+            n.wifi_connected || n.eth_ip.is_some()
+        };
         if let Some(full) = take_reconnect() {
             update(|s| s.connected = false);
             if !full {
@@ -659,6 +672,7 @@ fn run() {
                 fails = 0;
                 backoff = Duration::from_secs(3);
                 probing = false;
+                BACK_UNREPORTED.store(false, Ordering::Relaxed);
                 PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
                 crate::net::dial::forget_no_work();
                 STALE.lock().unwrap().reset();
@@ -666,13 +680,16 @@ fn run() {
             }
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
+            // Reported once the main pool sends work (`session`), so a
+            // probe whose session brings none leaves no pair of events.
+            BACK_UNREPORTED.store(true, Ordering::Relaxed);
             if STALE.lock().unwrap().main_stuck() {
                 // Left for sending no new jobs: reachable says nothing yet.
                 // The event comes with its first fresh job (`session`).
                 log::warn!("stratum: main pool reachable again, checking whether it sends new jobs");
             } else {
+                // Reachable over TCP: the event comes with its first job.
                 log::warn!("stratum: main pool answers again, leaving the fallback");
-                crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
             }
             on_fallback = false;
             fails = 0;
@@ -747,6 +764,8 @@ fn run() {
                     );
                     on_fallback = true;
                     probing = false;
+                    // Never reported back (no fresh job): nothing to wait for.
+                    BACK_UNREPORTED.store(false, Ordering::Relaxed);
                 }
             }
             fails = 0;
@@ -766,6 +785,20 @@ fn run() {
             }
         }
         let held = started.elapsed() >= SHORT_SESSION && !no_work;
+        if probing && (on_fallback || !net_up) {
+            // The probe's session ended without a network, or the pool
+            // choice moved on to the fallback since (the outage's rounds,
+            // the alternation): neither says anything about the main
+            // pool the probe reached. Counted as an ordinary failure.
+            probing = false;
+            // A return still pending stays pending when only the network
+            // went: the miner retries the main pool, and its first job
+            // there records the return (review 2026-11-22). Dropped when
+            // the choice has moved to the fallback.
+            if on_fallback {
+                BACK_UNREPORTED.store(false, Ordering::Relaxed);
+            }
+        }
         if probing
             && fallback_ok
             && net_up
@@ -773,9 +806,12 @@ fn run() {
             && !probe_retried
             && no_work
             && used_ip.is_some_and(|ip| ip.is_ipv6())
+            && crate::net::dial::has_ipv4(&host, port)
         {
             // Silent over IPv6 only, maybe: one more try right away with
-            // IPv4 first, before the fallback and the longer wait.
+            // IPv4 first, before the fallback and the longer wait. Only
+            // for a name with an A record: without one the retry would
+            // go over IPv6 again.
             probe_retried = true;
             log::warn!("stratum: main pool sent no work over IPv6, trying again with IPv4 first");
             pause_unless_reconnect(Duration::from_secs(3), fallback_ok);
@@ -799,7 +835,12 @@ fn run() {
                 "stratum: main pool took the connection but did not hold, back to the fallback; next check in {} min",
                 next / 60
             );
-            crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(1));
+            // Recorded only when the return was: a probe whose session
+            // brought no job leaves the event log as it was (the miner
+            // never mined on the main pool), not "back" and "fallback".
+            if !BACK_UNREPORTED.swap(false, Ordering::Relaxed) {
+                crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(1));
+            }
             continue;
         }
         if started.elapsed() < SHORT_SESSION || no_work {
@@ -872,6 +913,32 @@ fn pause_unless_reconnect(d: Duration, has_fallback: bool) {
 }
 
 static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
+/// The probe took the miner back to the main pool and `pool_back` is not
+/// recorded yet: it comes with that pool's first job (`session`), or,
+/// for a main pool left as stuck, with its first fresh job.
+static BACK_UNREPORTED: AtomicBool = AtomicBool::new(false);
+
+/// The session on the main pool has its first job: the return the probe
+/// started goes into the event log now, unless the pool was left as
+/// stuck (then fresh work is the proof, `Watch::fresh`).
+fn report_back_with_work(fallback: bool) {
+    if !fallback
+        && !STALE.lock().unwrap().main_stuck()
+        && BACK_UNREPORTED.swap(false, Ordering::Relaxed)
+    {
+        crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+    }
+}
+
+/// The least stack the probe thread (4 KB, `run`) has had to spare since
+/// boot, bytes, read after each probe's connect (DNS and the race are its
+/// deepest calls); 0 until the first probe. `probeStackFree` in the API.
+static PROBE_STACK_FREE: AtomicU32 = AtomicU32::new(0);
+
+/// The least stack the probe thread has had to spare, bytes.
+pub fn probe_stack_free() -> u32 {
+    PROBE_STACK_FREE.load(Ordering::Relaxed)
+}
 
 /// While on the fallback: every few minutes, try a TCP connect to the main
 /// pool; when it answers, end the fallback session so `run` goes back.
@@ -900,6 +967,8 @@ fn probe_primary() {
         let reachable =
             crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5))
                 .is_ok();
+        // The high-water mark only falls, so the newest reading is the least.
+        PROBE_STACK_FREE.store(diag::stack_unused(), Ordering::Relaxed);
         if reachable {
             if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
                 BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
@@ -1053,6 +1122,10 @@ fn session(
     let mut first_job: Option<Instant> = None;
     let mut fresh_seen = false;
     let mut pings: u32 = 0;
+    // A notify that came before the subscribe answer (it needs the
+    // extranonce from there), kept and read again right after it.
+    let mut early: Option<String> = None;
+    let mut replay: Option<String> = None;
     loop {
         let since_job = last_job.elapsed().as_secs();
         let stale_limit = STALE.lock().unwrap().limit_s();
@@ -1072,13 +1145,18 @@ fn session(
             );
         }
         line.clear();
-        let n = match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
-            Ok(n) => n,
-            Err(e) if line::is_too_long(&e) => {
-                update(|s| s.lines_too_long += 1);
-                anyhow::bail!("{e}: the pool sent a line too long to keep, reconnecting");
+        let n = if let Some(l) = replay.take() {
+            line.push_str(&l);
+            line.len()
+        } else {
+            match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
+                Ok(n) => n,
+                Err(e) if line::is_too_long(&e) => {
+                    update(|s| s.lines_too_long += 1);
+                    anyhow::bail!("{e}: the pool sent a line too long to keep, reconnecting");
+                }
+                Err(e) => return Err(e.into()),
             }
-            Err(e) => return Err(e.into()),
         };
         if n == 0 {
             anyhow::bail!("pool closed the connection");
@@ -1114,6 +1192,7 @@ fn session(
                             st.extranonce2_size = s.extranonce2_size;
                         });
                         sess = Some(s);
+                        replay = early.take();
                     }
                     None => anyhow::bail!("subscribe: unexpected result {}", r.result),
                 },
@@ -1156,7 +1235,17 @@ fn session(
             }
             Incoming::Notify(n) => {
                 let Some(s) = sess.as_ref() else {
-                    log::warn!("stratum: notify before subscribe, ignored");
+                    // Work all the same: kept, and taken as the first job
+                    // once the subscribe answer brings the extranonce. The
+                    // setup limit stays until then, so a pool that sends a
+                    // notify and never answers the subscribe is still left
+                    // after 30 s (review 2026-11-22).
+                    if Prepared::new(n).is_some() {
+                        log::info!("stratum: notify before the subscribe answer, kept for it");
+                        early = Some(line.clone());
+                    } else {
+                        log::warn!("stratum: notify before subscribe with a field that is not hex, ignored");
+                    }
                     continue;
                 };
                 let clean = n.clean_jobs;
@@ -1193,6 +1282,7 @@ fn session(
                 if !has_work {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                    report_back_with_work(fallback);
                 }
                 last_job = Instant::now();
                 match first_job {
@@ -1205,6 +1295,7 @@ fn session(
                         // right after the connect.
                         fresh_seen = true;
                         if STALE.lock().unwrap().fresh(fallback) {
+                            BACK_UNREPORTED.store(false, Ordering::Relaxed);
                             crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
                         }
                         if !fallback {
@@ -1585,6 +1676,7 @@ fn session_v2(
                 if !has_work && state().jobs_received != jobs_at_start {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                    report_back_with_work(fallback);
                 }
                 if job {
                     last_job = Instant::now();
@@ -1598,6 +1690,7 @@ fn session_v2(
                             // channel opened.
                             fresh_seen = true;
                             if STALE.lock().unwrap().fresh(fallback) {
+                                BACK_UNREPORTED.store(false, Ordering::Relaxed);
                                 crate::events::record(
                                     "pool",
                                     warpaxe_diag::events::detail::pool_back(),

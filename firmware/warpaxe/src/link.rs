@@ -270,15 +270,23 @@ impl Link {
                 match r.read(buf) {
                     // SO_RCVTIMEO ran out: lwIP says EAGAIN, which reads
                     // "No more processes (os error 11)" on the Pool page.
-                    Err(e)
-                        if matches!(
-                            e.kind(),
-                            io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
-                        ) =>
-                    {
-                        let d = s.read_timeout().ok().flatten().unwrap_or(READ_TIMEOUT);
-                        Err(silent_for(d))
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                        Err(match s.read_timeout() {
+                            Ok(Some(d)) => silent_for(d),
+                            // The limit cannot be read back: say so, not
+                            // a number that may be the other limit.
+                            _ => io::Error::new(
+                                io::ErrorKind::TimedOut,
+                                "no data from the pool within the read limit",
+                            ),
+                        })
                     }
+                    // ETIMEDOUT: TCP itself gave up on the pool (no
+                    // acknowledgement), which is not a silent pool.
+                    Err(e) if e.kind() == io::ErrorKind::TimedOut => Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        format!("the connection to the pool timed out ({e})"),
+                    )),
                     r => r,
                 }
             }

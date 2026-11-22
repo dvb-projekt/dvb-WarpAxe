@@ -57,6 +57,13 @@ pub fn no_work_over(host: &str, port: u16, ip: IpAddr) {
     }
 }
 
+/// Whether `host` has an IPv4 address (an A record, or is an IPv4
+/// literal): only then can "IPv4 first" change anything. lwIP answers
+/// a name it resolved a moment ago from its cache.
+pub fn has_ipv4(host: &str, port: u16) -> bool {
+    !lookup(pool_host(host), port, sys::AF_INET, false).is_empty()
+}
+
 /// The pool settings changed: IPv6 first again for every pool.
 pub fn forget_no_work() {
     V4_FIRST.lock().unwrap().clear();
