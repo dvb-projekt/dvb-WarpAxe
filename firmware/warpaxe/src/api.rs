@@ -622,15 +622,18 @@ fn chip_offsets_refuse(
 /// events; WarpTune keeps its own journal, and the patch record has
 /// every change with its sender).
 fn store_chip_offsets(v: &serde_json::Value) {
+    // Another board: the offsets go with the old one, without an event
+    // (it would read "turned off through the API").
+    let board_change = other_board(v);
     let new = match patched_offsets(v) {
-        _ if other_board(v) => config::ChipOffsets::NONE,
+        _ if board_change => config::ChipOffsets::NONE,
         Some(Ok(list)) => list,
         _ => return,
     };
     let by = config::OffsetsBy::from_patch(v.get("chipFreqOffsetsBy").and_then(|b| b.as_str()));
     if config::set_chip_offsets(new, by) {
         miner::request_chip_offsets();
-        if by != config::OffsetsBy::WarpTune && api_event_due(by) {
+        if !board_change && by != config::OffsetsBy::WarpTune && api_event_due(by) {
             crate::events::record(
                 "chain",
                 warpaxe_diag::events::detail::chip_clocks(

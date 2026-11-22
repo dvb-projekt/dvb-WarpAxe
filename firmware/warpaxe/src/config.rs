@@ -401,7 +401,8 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     }
     let mut buf = [0u8; OffsetsSet::BYTES];
     if let Ok(Some(bytes)) = nvs.get_raw(CHIP_OFFSETS_SET_KEY, &mut buf) {
-        *CHIP_OFFSETS_SET.lock().unwrap() = OffsetsSet::from_bytes(bytes);
+        let sum = CHIP_OFFSETS.lock().unwrap().sum();
+        *CHIP_OFFSETS_SET.lock().unwrap() = OffsetsSet::from_bytes(bytes, sum);
     }
     // Read once here, on the main task: a thread whose stack is in PSRAM must
     // not touch flash (the cache is off while it reads), and the update
@@ -694,6 +695,15 @@ impl ChipOffsets {
         &self.mhz[..self.len.min(self.mhz.len())]
     }
 
+    /// A checksum of the stored form (FNV-1a), kept with who set them
+    /// ([`OffsetsSet`]): an older image that changed the offsets without
+    /// knowing that record leaves one that no longer fits them.
+    fn sum(&self) -> u32 {
+        self.bytes().iter().fold(0x811c_9dc5u32, |h, &b| {
+            (h ^ u32::from(b)).wrapping_mul(0x0100_0193)
+        })
+    }
+
     /// As stored: the count, then every entry in two bytes.
     fn bytes(&self) -> [u8; CHIP_OFFSETS_BYTES] {
         let mut out = [0u8; CHIP_OFFSETS_BYTES];
@@ -751,7 +761,7 @@ pub fn set_chip_offsets(new: ChipOffsets, by: OffsetsBy) -> bool {
         if nvs.set_raw(CHIP_OFFSETS_KEY, &new.bytes()).is_err() {
             log::warn!("config: storing the clock offsets failed");
         }
-        if nvs.set_raw(CHIP_OFFSETS_SET_KEY, &set.bytes()).is_err() {
+        if nvs.set_raw(CHIP_OFFSETS_SET_KEY, &set.bytes(new.sum())).is_err() {
             log::warn!("config: storing who set the clock offsets failed");
         }
     }
@@ -807,27 +817,41 @@ pub struct OffsetsSet {
 }
 
 impl OffsetsSet {
-    const BYTES: usize = 5;
+    /// Who, when and the offsets' checksum; v0.1.47 and v0.1.48 stored
+    /// the first [`Self::BYTES_V1`] alone.
+    const BYTES: usize = 9;
+    const BYTES_V1: usize = 5;
     /// Nothing stored: offsets from before v0.1.47, or none ever set.
     const UNKNOWN: Self = Self {
         by: OffsetsBy::Unknown,
         unix: 0,
     };
 
-    /// As stored: who (0 api, 1 manual, 2 warptune), then the time, LE.
-    fn bytes(&self) -> [u8; Self::BYTES] {
+    /// As stored: who (0 api, 1 manual, 2 warptune), the time, then the
+    /// checksum of the offsets set ([`ChipOffsets::sum`]), LE.
+    fn bytes(&self, sum: u32) -> [u8; Self::BYTES] {
         let [a, b, c, d] = self.unix.to_le_bytes();
+        let [s0, s1, s2, s3] = sum.to_le_bytes();
         let by = match self.by {
             OffsetsBy::Unknown => 0xFF,
             OffsetsBy::Api => 0,
             OffsetsBy::Manual => 1,
             OffsetsBy::WarpTune => 2,
         };
-        [by, a, b, c, d]
+        [by, a, b, c, d, s0, s1, s2, s3]
     }
 
-    fn from_bytes(b: &[u8]) -> Self {
-        let Ok(&[by, a, b2, c, d]) = <&[u8; Self::BYTES]>::try_from(b) else {
+    /// From the stored record, against `sum`, the checksum of the
+    /// offsets in force: a record made for other offsets (they were
+    /// changed by an image from before the checksum, after a downgrade)
+    /// is unknown. A record without a checksum is taken as it is.
+    fn from_bytes(b: &[u8], sum: u32) -> Self {
+        let b = match b.len() {
+            Self::BYTES_V1 => b,
+            Self::BYTES if b[5..9] == sum.to_le_bytes() => &b[..Self::BYTES_V1],
+            _ => return Self::UNKNOWN,
+        };
+        let Ok(&[by, a, b2, c, d]) = <&[u8; Self::BYTES_V1]>::try_from(b) else {
             return Self::UNKNOWN;
         };
         let by = match by {
