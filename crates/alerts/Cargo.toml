@@ -1,0 +1,14 @@
+[package]
+name = "warpaxe-alerts"
+description = "Discord notifications without the network: which webhook URLs are taken, what each message says, the JSON body, and when a message goes out (coalescing, the pause after a refusal, one retry). No I/O; host-tested, the firmware sends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -1884,6 +1884,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "warpaxe-alerts",
  "warpaxe-avalon",
  "warpaxe-board",
  "warpaxe-chain",
@@ -1898,6 +1899,14 @@ dependencies = [
  "warpaxe-sv2",
  "warpaxe-trust",
  "zopfli",
+]
+
+[[package]]
+name = "warpaxe-alerts"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

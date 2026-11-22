@@ -42,6 +42,9 @@ pub fn init() {
 /// `Detail::from` one short line of text.
 pub fn record(kind: &'static str, detail: Detail) {
     log::info!("event: {kind}: {}", detail.text());
+    // A switch between main and fallback pool is also a Discord message
+    // (RAM only here; the alerts thread sends).
+    crate::alerts::on_event(&detail);
     PENDING.lock().unwrap().push(Event::new(
         clock::unix_now().unwrap_or(0),
         diag::uptime_s(),

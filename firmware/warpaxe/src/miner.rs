@@ -411,10 +411,12 @@ pub fn block_found(height: u64, hash: &[u8; 32], prev: &[u8; 32]) -> bool {
         return false;
     }
     log::warn!("miner: BLOCK FOUND at height {height} (hash {hex})");
+    let coin = config::get().coin_ticker;
     crate::events::record(
         "block",
-        warpaxe_diag::events::detail::block_found(height, &config::get().coin_ticker),
+        warpaxe_diag::events::detail::block_found(height, &coin),
     );
+    crate::alerts::block(height, hash_difficulty(hash), coin);
     // The watch looks at the newest work again, with this block in
     // hand (the CPU miner finds on another thread than it watches on).
     *WATCHED_TIP.lock().unwrap() = None;

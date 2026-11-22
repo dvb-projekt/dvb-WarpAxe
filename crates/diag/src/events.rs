@@ -181,6 +181,13 @@ impl Detail {
     pub fn code(&self) -> &'static str {
         self.c
     }
+
+    /// A whole-number value by its name (`n`, `s`, `h`, …), for what
+    /// follows an event beside the log (the Discord message of a pool
+    /// switch).
+    pub fn number(&self, name: &str) -> Option<u64> {
+        self.p.get(name).and_then(Value::as_u64)
+    }
 }
 
 impl From<String> for Detail {
@@ -1001,6 +1008,16 @@ mod tests {
 
     fn ev(u: u64, k: &str, d: &str) -> Event {
         Event::new(1_760_000_000 + u, u, k, Detail::from(d))
+    }
+
+    #[test]
+    fn a_detail_gives_its_numbers_by_name() {
+        assert_eq!(detail::pool_fallback(3).number("n"), Some(3));
+        assert_eq!(detail::fallback_stale(600).number("s"), Some(600));
+        assert_eq!(detail::pool_back().number("n"), None);
+        assert_eq!(detail::block_found(54110, "FIX").number("h"), Some(54110));
+        assert_eq!(detail::block_found(54110, "FIX").number("coin"), None);
+        assert_eq!(Detail::from("plain").number("n"), None);
     }
 
     #[test]
