@@ -165,9 +165,10 @@ target directory).
   probe or a fresh link's DHCP is still pending. So with a cable the
   hotspot never opens, with or without a network in the settings; a HAT
   without a cable and no network in the settings opens it after the
-  usual three minutes, not at once; a cable pulled later with no network
-  in the settings opens it at once; a hotspot that is open closes a
-  minute after the cable has an address. Wi-Fi keeps trying its
+  usual three minutes, not at once; a cable pulled later does not open
+  it (the HAT counts as a configured network and the boot has been
+  connected, so it is treated like a router outage); a hotspot that is
+  open closes a minute after the cable has an address. Wi-Fi keeps trying its
   configured network meanwhile.
 - **mDNS** starts once Wi-Fi or Ethernet has an address and announces on
   both; the mDNS component handles the `ETH_DEF` netif on its own
@@ -266,9 +267,10 @@ NerdQAxe++ and the Octaxe rev 3.1 follow with the same list.
    wrong one) and restart with the cable in. No hotspot opens, not even
    briefly in the first seconds (watch the display for three minutes and
    the log for `setup hotspot`); the pool connects over the cable; the
-   web UI works on the Ethernet address. Then pull the cable: with no
-   Wi-Fi network the hotspot opens at once and closes a minute after the
-   cable is back. Then restart with the HAT fitted, no cable and no
+   web UI works on the Ethernet address. Then pull the cable: the
+   hotspot stays closed (the boot was connected; corrected 2026-11-22
+   against `net/wifi.rs` and `Hotspot::tick`, the earlier text said it
+   opens at once). Then restart with the HAT fitted, no cable and no
    network in the settings: the hotspot opens after three minutes, as on
    a board without the HAT.
 8. **Update and price**: run an online update check (System tab) and
