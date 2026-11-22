@@ -792,9 +792,12 @@ fn run() {
             && !probe_retried
             && no_work
             && used_ip.is_some_and(|ip| ip.is_ipv6())
+            && crate::net::dial::has_ipv4(&host, port)
         {
             // Silent over IPv6 only, maybe: one more try right away with
-            // IPv4 first, before the fallback and the longer wait.
+            // IPv4 first, before the fallback and the longer wait. Only
+            // for a name with an A record: without one the retry would
+            // go over IPv6 again.
             probe_retried = true;
             log::warn!("stratum: main pool sent no work over IPv6, trying again with IPv4 first");
             pause_unless_reconnect(Duration::from_secs(3), fallback_ok);
