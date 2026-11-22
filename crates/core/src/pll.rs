@@ -91,6 +91,15 @@ impl PllSpec {
         }
     }
 
+    /// BM1368 as `bm1368.c` drives it: fb 144–235, otherwise the BM1370's
+    /// rules (`BM1368_send_hash_frequency`, ESP-Miner v2.15.4).
+    pub const fn bm1368() -> Self {
+        PllSpec {
+            fb: 144..=235,
+            ..Self::bm1370()
+        }
+    }
+
     /// The window `test_pll.c` exercises (fb 60–200, matches BM1366).
     pub const fn bm1366() -> Self {
         PllSpec {
