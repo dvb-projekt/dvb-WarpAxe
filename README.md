@@ -77,6 +77,7 @@ move fast; corrections welcome.
 | Pool on a self-signed certificate over TLS (WarpPool on Umbrel) | yes: "TLS (Custom CA)", the certificate is uploaded | no (TLS on or off, checked against the built-in bundle only) | over the API only: a TLS mode with a pasted certificate (`stratumCert`); its entry on the Pool page is commented out in the source | yes: the miner shows the fingerprint of the pool's key, one click on the Pool page trusts it; a pool whose own certificate changes its key never connects until confirmed again |
 | TLS trust store after the eMudhra incident (October 2026) | curl's pinned extract of 2026-10-20 since v2.15.4 (not yet on the main branch) | curl's pinned extract of 2026-10-20 since v1.1.1; a cross-signed copy of one of its roots accepted since v1.1.2 | ESP-IDF's bundle without the eMudhra/emSign roots since v1.8; certificate dates checked (TLS waits up to 15 s for NTP, no connection without a clock) | curl's pinned extract of 2026-10-20 since v0.1.40, checked in the release build; since v0.1.41 without the last eMudhra root `emSign Root CA - G1` (117 roots left), and certificate dates checked once NTP has set the clock (TLS waits up to 15 s for it in the first five minutes; without a clock Stratum V1 over TLS connects with the dates unchecked, Stratum V2 with "require authentication" waits for the clock) |
 | Fallback pool, back to the main pool on its own | yes | yes (plus dual-pool mode) | yes (plus dual-pool mode) | yes |
+| Discord notifications | not checked | yes: block found, best difficulty, its no-share restart, coinbase check; IP and MAC address in every message | not checked | yes: block found, best difficulty (one per ten minutes), fallback pool and back, restart after a crash; hostname and event only, the webhook never shown back; NerdOS's settings taken over ([`docs/22`](docs/22-Discord-notifications.md)) |
 | IPv6 for pool connections | an IPv6 address from the router (SLAAC); a pool name with both A and AAAA records goes over IPv4 (issue #1472); IPv6 first with IPv4 fallback is PR #2105, on hold | not checked | not checked | yes, since v0.1.46: IPv6 first, IPv4 at most a quarter second later (Happy Eyeballs), IPv6 literals with or without brackets, a switch on the Network page; over IPv6 the web UI answers only the local network ([`docs/17`](docs/17-IPv6-for-pool-connections.md)) |
 | Chips switched off while no pool is reachable | yes: once every configured pool has failed its retries (core voltage 0, held in reset, fans at 30 %); a pool is probed every 30 s and mining resumes when one answers | not found (with no share answer for an hour, the watchdog restarts the miner) | yes since v1.8: after three failed attempts on each pool (core voltage 0, held in reset); a pool is probed every 30 s, the chips are set up again when one answers; `poolsUnavailable` in the API and a notice on the dashboard | yes since v0.1.42: after two failed attempts on each configured pool and a minute (core voltage 0, held in reset, fans at their lowest duty); both pools are probed in turn every 30 s, the chips are set up again when one sends work; `poolsUnavailable` in the API, a notice on the dashboard and the display; not while a self-test runs |
 | Update: miner fetches the release itself | no (download, then upload) | yes (from GitHub) | yes (from GitHub) | yes (from the release page, install on a click) |
@@ -662,6 +663,16 @@ back at any time with `GET /api/v1/display/frame`.
   System; the starfield background of dvb-WarpPool. The browser tab names
   the miner ("NerdAxe Gaia · WarpAxe"), so several open tabs tell their
   miners apart.
+- **Discord notifications** (Settings → Notifications): a message to a
+  Discord webhook when a block is found, on a new all-time best
+  difficulty (at most one per ten minutes), when the miner moves to the
+  fallback pool or back, and after a restart that a crash caused; each
+  switch on its own, a test button and the last send's result. Only
+  Discord's own https webhook URLs are taken; the URL holds a token and
+  is never shown back, logged or put in the diagnostics file. One
+  thread on a PSRAM stack sends, at most one retry, Discord's
+  `retry_after` respected; NerdOS's webhook and switches are taken over
+  on the first start ([`docs/22`](docs/22-Discord-notifications.md)).
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
   /api/system`, `/api/system/asic`, `/api/v2/settings`, NerdOS's
   `/api/v2/dashboard` (its `performance` object: hash rates and, per chip,
@@ -671,7 +682,9 @@ back at any time with `GET /api/v1/display/frame`.
   60–3600 s, 600 without a value, 0 ends it; RAM only, reported as
   `externalRegulator {active, expires_in_s}`), overheat and best-difficulty reset, the self-test (`POST`/`GET`/
   `DELETE /api/v1/selftest`), the diagnostics file (`GET
-  /api/v1/diagnostics`), the event log (`GET /api/v1/events`), Wi-Fi scan, display frame /
+  /api/v1/diagnostics`), the event log (`GET /api/v1/events`), a Discord
+  test message (`POST /api/v1/alerts/test`; `discordWebhookSet` and
+  `discordLastResult` in `/api/system/info`), Wi-Fi scan, display frame /
   key / demo, online update, download mode for the web flasher, the swarm
   list (`/api/v1/swarm`), an Avalon read for it
   (`/api/v1/swarm/cgminer?host=`) and the search for one
@@ -1178,6 +1191,7 @@ and merged there.
 | `crates/inflate` | a small DEFLATE decoder: the boot screen's pictures are in the image packed and unpacked into the frame buffer when drawn ([docs/16](docs/16-Image-size-where-it-goes-and-what-was-taken-out.md)) — `no_std`, host-tested against the raw pictures |
 | `crates/jsonval` | serde_json's `json!` with each entry's code out of line: the API documents have several hundred keys, and the stock macro spends about 140 bytes of the image on each — host-tested against the original |
 | `crates/diag` | the diagnostics file's privacy rules (passwords never, addresses and the Wi-Fi name masked, every section scrubbed) and the event log's ring — host-tested |
+| `crates/alerts` | Discord notifications without the network: which webhook URLs are taken, the messages and their JSON, coalescing, the one retry and `retry_after` — host-tested |
 | `crates/avalon` | read-only cgminer API client for an Avalon (`summary`, `estats`, `pools`), translated to an AxeOS-like document |
 | `crates/cpuminer` | SHA-256 hashing without an ASIC for the T-Display-S3, NerdMiner settings import |
 | `crates/displaycfg` | the display's page, cockpit and slide names, defaults and PATCH checks |
@@ -1248,7 +1262,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
   — why the weakest chip sets a board's voltage, the offset per chip and
   its limits, the ramp that never takes a chip above its own clock, what
   follows a chip's clock, what the devices said on 2026-11-12, and the
-  device tests still to run.
+  device tests still to run;
+- [`docs/22-Discord-notifications.md`](docs/22-Discord-notifications.md)
+  — the Discord messages: setting up a webhook, what each message says
+  and when it is sent, how it is sent without holding anything up, the
+  API fields, what leaves the miner and what never does.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;
