@@ -327,6 +327,9 @@ pub fn system_info() -> serde_json::Value {
     // bytes (0 in its first second): the margin behind
     // `miner::STACK_BYTES`, to be read after an hour of mining.
     v["minerStackFree"] = json!(miner::stack_free());
+    // Nonces the chain driver dropped as repeats of one it had just
+    // counted (ESP-Miner's name). 0 on the devkit, which has no chain.
+    v["duplicateHWNonces"] = json!(m.duplicates);
     // WarpTune's heartbeat (`POST /api/v1/regulator`): active while its
     // time to live runs. Always present.
     v["externalRegulator"] = crate::regulator::json();
