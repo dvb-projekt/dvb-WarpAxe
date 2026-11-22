@@ -37,7 +37,9 @@ SPEC = re.compile(
     rb"(?P<len>hh|ll|h|l|L|j|z|t|q)?(?P<conv>[diouxXcspnfFeEgGaA%])"
 )
 BROKEN_LEN = {b"hh", b"ll", b"j", b"z", b"t", b"q"}
-PRINTABLE = re.compile(rb"[\x20-\x7e\t]{%d,}" % MIN_LEN)
+# Line breaks included: a format string with a "\n" between a bad
+# spec and a later %s must not be split in two and missed.
+PRINTABLE = re.compile(rb"[\x20-\x7e\t\r\n]{%d,}" % MIN_LEN)
 
 
 def broken(spec):

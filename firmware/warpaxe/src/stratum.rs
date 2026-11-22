@@ -791,7 +791,13 @@ fn run() {
             // the alternation): neither says anything about the main
             // pool the probe reached. Counted as an ordinary failure.
             probing = false;
-            BACK_UNREPORTED.store(false, Ordering::Relaxed);
+            // A return still pending stays pending when only the network
+            // went: the miner retries the main pool, and its first job
+            // there records the return (review 2026-11-22). Dropped when
+            // the choice has moved to the fallback.
+            if on_fallback {
+                BACK_UNREPORTED.store(false, Ordering::Relaxed);
+            }
         }
         if probing
             && fallback_ok
@@ -1229,12 +1235,13 @@ fn session(
             }
             Incoming::Notify(n) => {
                 let Some(s) = sess.as_ref() else {
-                    // Work all the same: the pool answers, so the setup
-                    // limit gives way now, and the job is taken once the
-                    // subscribe answer brings the extranonce.
+                    // Work all the same: kept, and taken as the first job
+                    // once the subscribe answer brings the extranonce. The
+                    // setup limit stays until then, so a pool that sends a
+                    // notify and never answers the subscribe is still left
+                    // after 30 s (review 2026-11-22).
                     if Prepared::new(n).is_some() {
                         log::info!("stratum: notify before the subscribe answer, kept for it");
-                        stream.set_read_timeout(crate::link::READ_TIMEOUT);
                         early = Some(line.clone());
                     } else {
                         log::warn!("stratum: notify before subscribe with a field that is not hex, ignored");
