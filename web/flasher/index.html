@@ -307,6 +307,7 @@ const T = {
     st_chip: "Connected: {chip}. Loading the firmware…",
     st_wrongchip: "This is not an ESP32-S3 ({chip}). Nothing was written.",
     st_unsup: "This miner is a {m}, which WarpAxe cannot run. Nothing was written; its firmware stays as it was.",
+    st_chkerr: "Could not read the miner's flash to check which board it is: {e}. Nothing was written to the miner. If it stays dark, take it off power completely (power supply and USB cable).",
     st_nodl: "No answer from the miner. Put it into download mode and try again: if it already runs WarpAxe, use System → Download mode in its web UI (or open http://<miner>/bootloader); otherwise hold BOOT, press RST, release BOOT.",
     st_write: "Writing… {p}%",
     st_restart: "Written and checked. Restarting the miner…",
@@ -423,6 +424,7 @@ const T = {
     st_chip: "Verbunden: {chip}. Lade die Firmware …",
     st_wrongchip: "Das ist kein ESP32-S3 ({chip}). Es wurde nichts geschrieben.",
     st_unsup: "Dieser Miner ist ein {m}, den WarpAxe nicht betreiben kann. Es wurde nichts geschrieben; seine Firmware bleibt, wie sie war.",
+    st_chkerr: "Der Flash-Speicher des Miners ließ sich für die Prüfung des Boards nicht lesen: {e}. Auf den Miner wurde nichts geschrieben. Bleibt er dunkel, nimm ihn ganz vom Strom (Netzteil und USB-Kabel).",
     st_nodl: "Keine Antwort vom Miner. Versetze ihn in den Download-Modus und versuche es erneut: Läuft bereits WarpAxe, geht das über System → Download-Modus in seiner Weboberfläche (oder öffne http://<miner>/bootloader); sonst halte BOOT, drücke RST, lass BOOT los.",
     st_write: "Schreibe … {p} %",
     st_restart: "Geschrieben und geprüft. Starte den Miner neu …",
@@ -539,6 +541,7 @@ const T = {
     st_chip: "Conectado: {chip}. Cargando el firmware…",
     st_wrongchip: "Esto no es un ESP32-S3 ({chip}). No se ha escrito nada.",
     st_unsup: "Este minero es un {m}, que WarpAxe no admite. No se ha escrito nada; su firmware sigue como estaba.",
+    st_chkerr: "No se pudo leer la flash del minero para comprobar qué placa es: {e}. No se ha escrito nada en el minero. Si sigue apagado, desconéctalo por completo de la corriente (fuente de alimentación y cable USB).",
     st_nodl: "El minero no responde. Ponlo en modo de descarga y vuelve a intentarlo: si ya ejecuta WarpAxe, usa Sistema → Modo de descarga en su interfaz web (o abre http://<minero>/bootloader); si no, mantén pulsado BOOT, pulsa RST y suelta BOOT.",
     st_write: "Flasheando… {p} %",
     st_restart: "Escrito y verificado. Reiniciando el minero…",
@@ -655,6 +658,7 @@ const T = {
     st_chip: "Connecté : {chip}. Chargement du firmware…",
     st_wrongchip: "Ce n’est pas un ESP32-S3 ({chip}). Rien n’a été écrit.",
     st_unsup: "Ce mineur est un {m}, que WarpAxe ne prend pas en charge. Rien n’a été écrit ; son firmware reste tel quel.",
+    st_chkerr: "Impossible de lire la flash du mineur pour vérifier de quelle carte il s’agit : {e}. Rien n’a été écrit sur le mineur. Si son écran reste noir, coupez-le complètement de l’alimentation (bloc d’alimentation et câble USB).",
     st_nodl: "Pas de réponse du mineur. Passez-le en mode téléchargement et réessayez : s’il tourne déjà sous WarpAxe, utilisez Système → Mode téléchargement dans son interface web (ou ouvrez http://<mineur>/bootloader) ; sinon maintenez BOOT, appuyez sur RST, relâchez BOOT.",
     st_write: "Flashage… {p} %",
     st_restart: "Écrit et vérifié. Redémarrage du mineur…",
@@ -770,6 +774,7 @@ const T = {
     st_chip: "Connesso: {chip}. Caricamento del firmware…",
     st_wrongchip: "Questo non è un ESP32-S3 ({chip}). Non è stato scritto nulla.",
     st_unsup: "Questo miner è un {m}, che WarpAxe non può far funzionare. Non è stato scritto nulla; il suo firmware resta com’era.",
+    st_chkerr: "Impossibile leggere la flash del miner per verificare di quale scheda si tratta: {e}. Sul miner non è stato scritto nulla. Se resta spento, scollegalo completamente dall’alimentazione (alimentatore e cavo USB).",
     st_nodl: "Nessuna risposta dal miner. Mettilo in modalità download e riprova: se esegue già WarpAxe, usa Sistema → Modalità download nella sua interfaccia web (o apri http://<miner>/bootloader); altrimenti tieni premuto BOOT, premi RST, rilascia BOOT.",
     st_write: "Scrittura… {p}%",
     st_restart: "Scritto e verificato. Riavvio del miner…",
@@ -885,6 +890,7 @@ const T = {
     st_chip: "Conectado: {chip}. Carregando o firmware…",
     st_wrongchip: "Isto não é um ESP32-S3 ({chip}). Nada foi gravado.",
     st_unsup: "Este minerador é um {m}, que o WarpAxe não consegue rodar. Nada foi gravado; o firmware dele continua como estava.",
+    st_chkerr: "Não foi possível ler a flash do minerador para verificar qual é a placa: {e}. Nada foi gravado no minerador. Se ele continuar apagado, desligue-o totalmente da energia (fonte e cabo USB).",
     st_nodl: "O minerador não respondeu. Coloque-o em modo de download e tente de novo: se ele já roda o WarpAxe, use Sistema → Modo de download na interface web dele (ou abra http://<minerador>/bootloader); senão, segure BOOT, aperte RST e solte BOOT.",
     st_write: "Gravando… {p}%",
     st_restart: "Gravado e verificado. Reiniciando o minerador…",
@@ -1000,6 +1006,7 @@ const T = {
     st_chip: "接続しました：{chip}。ファームウェアを読み込んでいます…",
     st_wrongchip: "ESP32-S3 ではありません（{chip}）。何も書き込んでいません。",
     st_unsup: "このマイナーは {m} で、WarpAxe では動かせません。何も書き込んでいません。ファームウェアは元のままです。",
+    st_chkerr: "ボードを確認するためにマイナーのフラッシュを読み取れませんでした：{e}。マイナーには何も書き込んでいません。画面が消えたままの場合は、電源アダプターと USB ケーブルの両方を抜いて、完全に電源を切ってください。",
     st_nodl: "マイナーから応答がありません。ダウンロードモードにして、もう一度お試しください。すでに WarpAxe が動作している場合は、Web UI の「システム」→「ダウンロードモード」を使ってください（または http://<miner>/bootloader を開いてください）。それ以外の場合は、BOOT を押したまま RST を押し、BOOT を離してください。",
     st_write: "書き込み中… {p}%",
     st_restart: "書き込みと検証が完了しました。マイナーを再起動しています…",
@@ -1115,6 +1122,7 @@ const T = {
     st_chip: "已连接：{chip}。正在加载固件…",
     st_wrongchip: "这不是 ESP32-S3（{chip}）。未写入任何内容。",
     st_unsup: "这台矿机是 {m}，WarpAxe 无法运行它。未写入任何内容，其固件保持原样。",
+    st_chkerr: "无法读取矿机的闪存来检查主板型号：{e}。没有向矿机写入任何内容。如果矿机一直黑屏，请将它完全断电（电源和 USB 线都拔掉）。",
     st_nodl: "矿机没有响应。请让它进入下载模式后重试：如果它已经在运行 WarpAxe，请在其网页界面中使用“系统”→“下载模式”（或打开 http://<miner>/bootloader）；否则请按住 BOOT，按一下 RST，再松开 BOOT。",
     st_write: "正在刷写… {p}%",
     st_restart: "已写入并校验。正在重启矿机…",
@@ -1472,6 +1480,7 @@ async function install(port, target) {
   $("go2").hidden = true;
   const transport = new Transport(port, DIAG.trace);
   let stage = "connect";
+  let saved = null;
   try {
     st("st_connect");
     const loader = new ESPLoader({ transport, baudrate: DIAG.baud, romBaudrate: 115200, serialOptions: SERIAL });
@@ -1499,13 +1508,13 @@ async function install(port, target) {
       st("st_unsup", { m: other }, "err");
       return;
     }
-    let saved = null;
     if (target) {
       stage = "backup";
       saved = await backup(loader, target);
       if (DIAG.only) {
         // ?backuponly: diagnosis, read the flash and restart, write nothing
-        stage = "restart";
+        // (its own stage: a failed restart must not read "installed")
+        stage = "bkonly";
         st("st_bkonly", { f: saved.name, mb: saved.mb });
         await restartChip(loader);
         st("st_bkonly", { f: saved.name, mb: saved.mb }, "ok");
@@ -1549,6 +1558,8 @@ async function install(port, target) {
   } catch (e) {
     const msg = (e && e.message) || String(e);
     if (stage === "restart") st("st_done", { v: version }, "ok");
+    else if (stage === "bkonly") st("st_bkonly", { f: saved.name, mb: saved.mb }, "ok");
+    else if (stage === "check") st("st_chkerr", { e: msg }, "err");
     else if (stage === "nodl") st("st_nodl", {}, "err");
     else if (stage === "backup" || stage === "load") st(stage === "backup" ? "st_bkerr" : "st_loaderr", { e: msg }, "err");
     else st("st_error", { e: msg }, "err");
