@@ -693,5 +693,13 @@
   "clockFormat": "Format de l’heure",
   "tf_auto": "Automatique (selon le fuseau horaire)",
   "tf_24h": "24 heures",
-  "tf_12h": "12 heures (AM/PM)"
+  "tf_12h": "12 heures (AM/PM)",
+  "don_h": "Soutenir le développement",
+  "don_s": "Facultatif · WarpAxe ne prélève aucuns frais sur votre hashrate",
+  "don_body": "WarpAxe est un logiciel libre et mine à 100 % pour vous : pas de frais de développeur, aucune part de votre hashrate. C’est un projet personnel indépendant, qui ne fait partie ni d’OSMU ni d’aucun fabricant, et que personne ne finance. Si le firmware vous plaît, un petit don est le bienvenu.",
+  "don_copy": "Copier",
+  "don_copied": "Adresse copiée",
+  "don_copy_no": "Ce navigateur n’autorise pas la copie ici : sélectionnez l’adresse et copiez-la vous-même.",
+  "don_oc": "On-chain",
+  "don_note": "Les QR codes et les adresses sont intégrés au firmware. Votre mineur ne télécharge rien pour cela."
 }

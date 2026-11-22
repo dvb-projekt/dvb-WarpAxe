@@ -693,5 +693,13 @@
   "clockFormat": "Formato da hora",
   "tf_auto": "Automático (pelo fuso horário)",
   "tf_24h": "24 horas",
-  "tf_12h": "12 horas (AM/PM)"
+  "tf_12h": "12 horas (AM/PM)",
+  "don_h": "Apoie o desenvolvimento",
+  "don_s": "Opcional · O WarpAxe não cobra taxa sobre o seu hashrate",
+  "don_body": "O WarpAxe é software livre e minera 100% para você: sem taxa de desenvolvedor, sem ficar com nenhuma parte do seu hashrate. É um projeto pessoal independente, não faz parte do grupo OSMU nem de nenhum fabricante, e ninguém o financia. Se você gosta do firmware, uma pequena doação é bem-vinda.",
+  "don_copy": "Copiar",
+  "don_copied": "Endereço copiado",
+  "don_copy_no": "Este navegador não permite copiar aqui: selecione o endereço e copie você mesmo.",
+  "don_oc": "On-chain",
+  "don_note": "Os códigos QR e os endereços estão embutidos no firmware. Seu minerador não baixa nada para isso."
 }
