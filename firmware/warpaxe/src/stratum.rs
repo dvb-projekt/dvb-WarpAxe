@@ -555,6 +555,7 @@ fn run() {
             fails = 0;
             backoff = Duration::from_secs(3);
             probing = false;
+            BACK_UNREPORTED.store(false, Ordering::Relaxed);
             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
             crate::net::dial::forget_no_work();
             STALE.lock().unwrap().reset();
@@ -671,6 +672,7 @@ fn run() {
                 fails = 0;
                 backoff = Duration::from_secs(3);
                 probing = false;
+                BACK_UNREPORTED.store(false, Ordering::Relaxed);
                 PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
                 crate::net::dial::forget_no_work();
                 STALE.lock().unwrap().reset();
@@ -678,13 +680,16 @@ fn run() {
             }
         }
         if on_fallback && BACK_TO_PRIMARY.swap(false, Ordering::Relaxed) {
+            // Reported once the main pool sends work (`session`), so a
+            // probe whose session brings none leaves no pair of events.
+            BACK_UNREPORTED.store(true, Ordering::Relaxed);
             if STALE.lock().unwrap().main_stuck() {
                 // Left for sending no new jobs: reachable says nothing yet.
                 // The event comes with its first fresh job (`session`).
                 log::warn!("stratum: main pool reachable again, checking whether it sends new jobs");
             } else {
+                // Reachable over TCP: the event comes with its first job.
                 log::warn!("stratum: main pool answers again, leaving the fallback");
-                crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
             }
             on_fallback = false;
             fails = 0;
@@ -759,6 +764,8 @@ fn run() {
                     );
                     on_fallback = true;
                     probing = false;
+                    // Never reported back (no fresh job): nothing to wait for.
+                    BACK_UNREPORTED.store(false, Ordering::Relaxed);
                 }
             }
             fails = 0;
@@ -784,6 +791,7 @@ fn run() {
             // the alternation): neither says anything about the main
             // pool the probe reached. Counted as an ordinary failure.
             probing = false;
+            BACK_UNREPORTED.store(false, Ordering::Relaxed);
         }
         if probing
             && fallback_ok
@@ -821,7 +829,12 @@ fn run() {
                 "stratum: main pool took the connection but did not hold, back to the fallback; next check in {} min",
                 next / 60
             );
-            crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(1));
+            // Recorded only when the return was: a probe whose session
+            // brought no job leaves the event log as it was (the miner
+            // never mined on the main pool), not "back" and "fallback".
+            if !BACK_UNREPORTED.swap(false, Ordering::Relaxed) {
+                crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(1));
+            }
             continue;
         }
         if started.elapsed() < SHORT_SESSION || no_work {
@@ -894,6 +907,22 @@ fn pause_unless_reconnect(d: Duration, has_fallback: bool) {
 }
 
 static BACK_TO_PRIMARY: AtomicBool = AtomicBool::new(false);
+/// The probe took the miner back to the main pool and `pool_back` is not
+/// recorded yet: it comes with that pool's first job (`session`), or,
+/// for a main pool left as stuck, with its first fresh job.
+static BACK_UNREPORTED: AtomicBool = AtomicBool::new(false);
+
+/// The session on the main pool has its first job: the return the probe
+/// started goes into the event log now, unless the pool was left as
+/// stuck (then fresh work is the proof, `Watch::fresh`).
+fn report_back_with_work(fallback: bool) {
+    if !fallback
+        && !STALE.lock().unwrap().main_stuck()
+        && BACK_UNREPORTED.swap(false, Ordering::Relaxed)
+    {
+        crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
+    }
+}
 
 /// While on the fallback: every few minutes, try a TCP connect to the main
 /// pool; when it answers, end the fallback session so `run` goes back.
@@ -1215,6 +1244,7 @@ fn session(
                 if !has_work {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                    report_back_with_work(fallback);
                 }
                 last_job = Instant::now();
                 match first_job {
@@ -1227,6 +1257,7 @@ fn session(
                         // right after the connect.
                         fresh_seen = true;
                         if STALE.lock().unwrap().fresh(fallback) {
+                            BACK_UNREPORTED.store(false, Ordering::Relaxed);
                             crate::events::record("pool", warpaxe_diag::events::detail::pool_back());
                         }
                         if !fallback {
@@ -1607,6 +1638,7 @@ fn session_v2(
                 if !has_work && state().jobs_received != jobs_at_start {
                     has_work = true;
                     stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                    report_back_with_work(fallback);
                 }
                 if job {
                     last_job = Instant::now();
@@ -1620,6 +1652,7 @@ fn session_v2(
                             // channel opened.
                             fresh_seen = true;
                             if STALE.lock().unwrap().fresh(fallback) {
+                                BACK_UNREPORTED.store(false, Ordering::Relaxed);
                                 crate::events::record(
                                     "pool",
                                     warpaxe_diag::events::detail::pool_back(),
