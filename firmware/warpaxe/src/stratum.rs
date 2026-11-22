@@ -635,12 +635,24 @@ fn run() {
         // Only this session's verdict counts (a `continue` above could
         // have left the last one's flag standing).
         CLOCK_UNSURE.store(false, Ordering::Relaxed);
+        // The probe's word is for the fallback session it ended, and is
+        // taken right after it (below). One left standing (a settings
+        // change ended that session first) must not end the next
+        // fallback session at once. The probe sets it only while a
+        // fallback session's link is registered, which none is here.
+        BACK_TO_PRIMARY.store(false, Ordering::Relaxed);
         let result = match v2 {
             Some(v2) => session_v2_on_psram(host.clone(), port, user.clone(), v2, on_fallback),
             None => session(&host, port, tls, pin, &user, &pass, on_fallback),
         };
         *FALLBACK_STREAM.lock().unwrap() = None;
         *CURRENT_STREAM.lock().unwrap() = None;
+        // The network as the session ends: one lost during it is not the
+        // pool's fault either (`net_up` was read before the connect).
+        let net_up = net_up && {
+            let n = crate::net::state();
+            n.wifi_connected || n.eth_ip.is_some()
+        };
         if let Some(full) = take_reconnect() {
             update(|s| s.connected = false);
             if !full {
@@ -766,6 +778,13 @@ fn run() {
             }
         }
         let held = started.elapsed() >= SHORT_SESSION && !no_work;
+        if probing && (on_fallback || !net_up) {
+            // The probe's session ended without a network, or the pool
+            // choice moved on to the fallback since (the outage's rounds,
+            // the alternation): neither says anything about the main
+            // pool the probe reached. Counted as an ordinary failure.
+            probing = false;
+        }
         if probing
             && fallback_ok
             && net_up
