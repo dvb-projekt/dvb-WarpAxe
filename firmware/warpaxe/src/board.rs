@@ -41,6 +41,7 @@ use warpaxe_board::warm_boot;
 use warpaxe_board::i2c::{ErrorKind, ErrorType, NoAcknowledgeSource, Operation};
 use warpaxe_board::{Asic, I2c, Profile, Thermal as ThermalKind, Vr};
 use warpaxe_core::chip::{
+    bm1368::{BM1368, BM1368_NERD},
     bm1370::{BM1370, BM1370_NERD},
     bm1373::{BM1373, BM1373_ESP, BM1373_ESP_1M},
     bm1397::BM1397,
@@ -339,6 +340,12 @@ pub fn chip() -> &'static ChipProfile {
         // fallbacks have arrived at (`BM1373_INITS`).
         Asic::Bm1373 => &bm1373_ladder()[usize::from(chip_init_rung())],
         Asic::Bm1397 => &BM1397,
+        // Only the NerdQAxe+ carries it: NerdOS's init, as on the
+        // NerdQAxe++.
+        Asic::Bm1368 => match profile().vr {
+            Vr::Tps5364x { .. } | Vr::Tps546Nerd { .. } => &BM1368_NERD,
+            _ => &BM1368,
+        },
     }
 }
 

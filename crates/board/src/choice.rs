@@ -226,9 +226,9 @@ pub fn needs(p: &Profile) -> Needs {
         Thermal::None | Thermal::Ntc(_) => push(&mut n.absent, Part::Pca9544),
     }
     // The one fact the profile does not carry: NerdOS fits the
-    // NerdQAxe++ with the TPS53647 only; a TPS53667 means the Octaxe
-    // (or a Q1373).
-    n.no_tps53667 = p.name == "nerdqaxe-plusplus";
+    // NerdQAxe++ and the NerdQAxe+ with the TPS53647 only; a TPS53667
+    // means the Octaxe (or a Q1373).
+    n.no_tps53667 = p.name == "nerdqaxe-plusplus" || p.name == "nerdqaxe-plus";
     n
 }
 
@@ -607,6 +607,18 @@ mod tests {
                 false,
                 "",
             ),
+            // The NerdQAxe+ is the NerdQAxe++'s carrier with BM1368: the
+            // same bus, the same regulator code (two phases instead of
+            // three). Only the chip id tells it apart.
+            r(
+                &NERDQAXE_PLUS,
+                &[],
+                &[E2103, TMP, TMP2, T5364],
+                None,
+                Some(tps53647::DEVICE_CODE),
+                false,
+                "",
+            ),
             r(
                 &NERDQAXE_PLUSPLUS_REV7,
                 &[],
@@ -689,6 +701,10 @@ mod tests {
         ("bitaxe-gamma-hex", "bitaxe-naja-duo"),
         ("nerdqaxe-plusplus", "nerdoctaxe-gamma"),
         ("nerdoctaxe-gamma", "nerdqaxe-plusplus"),
+        ("nerdqaxe-plus", "nerdqaxe-plusplus"),
+        ("nerdqaxe-plusplus", "nerdqaxe-plus"),
+        ("nerdqaxe-plus", "nerdoctaxe-gamma"),
+        ("nerdoctaxe-gamma", "nerdqaxe-plus"),
         ("q1370", "q1373"),
         ("q1373", "q1370"),
         ("t-display-s3", "nerdnos"),
@@ -960,7 +976,11 @@ mod tests {
         );
         assert_eq!(
             names("nerdqaxe-plusplus"),
-            ["nerdqaxe-plusplus", "nerdoctaxe-gamma"]
+            ["nerdqaxe-plusplus", "nerdoctaxe-gamma", "nerdqaxe-plus"]
+        );
+        assert_eq!(
+            names("nerdqaxe-plus"),
+            ["nerdqaxe-plusplus", "nerdoctaxe-gamma", "nerdqaxe-plus"]
         );
         assert_eq!(names("nerdqaxe-plusplus-rev7"), ["nerdqaxe-plusplus-rev7"]);
         assert_eq!(names("q1370"), ["q1370", "q1373"]);

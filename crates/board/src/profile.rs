@@ -22,6 +22,9 @@ pub enum Asic {
     Bm1373,
     /// BM1397 (NerdNOS, Bitaxe Max).
     Bm1397,
+    /// BM1368 (NerdQAxe+; Bitaxe Supra and Supra Hex, which WarpAxe has
+    /// no profile for).
+    Bm1368,
 }
 
 /// The core-voltage regulator.
@@ -1146,6 +1149,40 @@ pub const NERDQAXE_PLUSPLUS: Profile = Profile {
     power_estimate: None,
 };
 
+/// NerdQAxe+: the NerdQAxe++'s carrier with four BM1368 and the
+/// TPS53647 on two phases (60 A, fault 55 A). NerdOS v1.1.2
+/// `main/boards/nerdqaxeplus.cpp` (the NerdQAxe++ is the same class with
+/// BM1370, `NerdQaxePlus2 : NerdQaxePlus`): the same pins, sensors, fans,
+/// display and NerdHat header; 490 MHz / 1250 mV, brought up at 1250 mV,
+/// 70 W (`maxPin`), the option lists, job interval 1200 ms. Profile only:
+/// never run under WarpAxe.
+///
+/// The chip temperature: NerdOS takes the hotter of the TMP1075 and the
+/// BM1368's own diode reading (register 0xB4, `asic_result_task.cpp`)
+/// and adds nothing; WarpAxe does not read the BM1368's diode, so it
+/// keeps the NerdQAxe++'s TMP1075 + 10 °C, which stands in for the chip
+/// on the same carrier.
+pub const NERDQAXE_PLUS: Profile = Profile {
+    name: "nerdqaxe-plus",
+    model: "NerdQAxe+",
+    asic: Asic::Bm1368,
+    vr: Vr::Tps5364x {
+        regulator: tps53647::Config::NERDQAXE_PLUS,
+        enable: 10,
+        ldo_enable: Some(13),
+        via_expander: false,
+        alt: None,
+    },
+    default_frequency_mhz: 490,
+    default_core_mv: 1250,
+    init_core_mv: 1250,
+    max_power_w: 70,
+    job_interval_ms: 1200,
+    frequency_options: &[400, 425, 450, 475, 490, 500, 525, 550, 575],
+    voltage_options: &[1100, 1150, 1200, 1250, 1300, 1350],
+    ..NERDQAXE_PLUSPLUS
+};
+
 /// NerdQAxe++ Rev 7: four BM1370 in two series voltage domains on one
 /// TPS546 (NerdOS `Rev7TPS546`, VOUT = 2 × core), the Rev 6 carrier
 /// pins (enable GPIO10, LDO GPIO13), 1200 mV default, 120 W, fan target
@@ -1489,6 +1526,8 @@ pub const ALL: &[Profile] = &[
     NERDQAXE_PLUSPLUS,
     NERDQAXE_PLUSPLUS_REV7,
     NERDOCTAXE_GAMMA,
+    // After the NerdQAxe++ and the Octaxe it looks like: offered last.
+    NERDQAXE_PLUS,
     Q1370,
     Q1373,
 ];
@@ -1621,6 +1660,9 @@ mod tests {
         for (name, ms) in [
             ("nerdqaxe-plusplus", 500),
             ("nerdqaxe-plusplus-rev7", 500),
+            // NerdOS v1.1.2 `nerdqaxeplus.cpp`: 1200 ms (the NerdQAxe++
+            // class sets its own 500).
+            ("nerdqaxe-plus", 1200),
             ("nerdoctaxe-gamma", 500),
             ("q1370", 500),
             ("q1373", 500),
@@ -2017,10 +2059,17 @@ mod tests {
         assert_eq!(Q1373.asic, Asic::Bm1373);
         assert_eq!(NERDAXE_GAIA.asic, Asic::Bm1373);
         assert_eq!(NERDNOS.asic, Asic::Bm1397);
+        assert_eq!(NERDQAXE_PLUS.asic, Asic::Bm1368);
+        assert_eq!(NERDQAXE_PLUS.tps53647().unwrap().phases, 2);
+        assert_eq!(NERDQAXE_PLUS.thermal, Thermal::Tmp1075Emc2302);
         assert!(ALL
             .iter()
-            .filter(|p| p.asic != Asic::Bm1373 && p.asic != Asic::Bm1397)
+            .filter(|p| p.asic != Asic::Bm1373 && p.asic != Asic::Bm1397 && p.asic != Asic::Bm1368)
             .all(|p| p.asic == Asic::Bm1370));
+        assert!(ALL
+            .iter()
+            .filter(|p| p.asic == Asic::Bm1368)
+            .all(|p| p.name == "nerdqaxe-plus"));
     }
 
     #[test]
@@ -2127,7 +2176,7 @@ mod tests {
     }
 
     #[test]
-    fn the_nerdhat_sits_on_four_boards_and_on_nerdos_pins() {
+    fn the_nerdhat_sits_on_five_boards_and_on_nerdos_pins() {
         // NerdOS v1.1.1: `kHatPins` (nerdqaxeplus.cpp) and `kEthPins`
         // (nerdaxegaia.cpp), both without RST and IRQ.
         assert_eq!(
@@ -2155,6 +2204,7 @@ mod tests {
             })
         );
         let with_hat = [
+            "nerdqaxe-plus",
             "nerdqaxe-plusplus",
             "nerdqaxe-plusplus-rev7",
             "nerdoctaxe-gamma",

@@ -5,7 +5,8 @@ use std::collections::VecDeque;
 use std::convert::Infallible;
 
 use warpaxe_chain::{Chain, Config, Error, Event, InitError, Phase, Uart, Work};
-use warpaxe_core::chip::bm1370::BM1370;
+use warpaxe_core::chip::bm1368::{BM1368, BM1368_NERD};
+use warpaxe_core::chip::bm1370::{BM1370, BM1370_NERD};
 use warpaxe_core::chip::bm1373::{BM1373, BM1373_ESP, BM1373_ESP_1M};
 use warpaxe_core::chip::bm1397::BM1397;
 use warpaxe_core::chip::ChipProfile;
@@ -719,6 +720,77 @@ fn a_bm1373_chain_reads_by_broadcast_and_a_single_chip_directly() {
     assert!(b.drv.monitor().chips()[0].total.ghs > 0.0);
 }
 
+/// Four BM1368 as the NerdQAxe+ carries them, under both inits: the
+/// chips enumerate at 0/64/128/192, take the hash counting number the
+/// init says (NerdOS's fixed 0x15A4, ESP-Miner's computed one), switch to
+/// 1 MBaud after the ramp with the host, and every chip's nonces come
+/// back attributed to it. No hardware has run this yet: it checks that
+/// the profile and the driver agree with each other and with the
+/// simulator's model of the chip, not that a BM1368 agrees.
+#[test]
+fn four_bm1368_enumerate_switch_after_the_ramp_and_hash_under_both_inits() {
+    for (profile, hcn) in [(&BM1368_NERD, Some(0x0000_15A4)), (&BM1368, None)] {
+        let config = Config {
+            expected_chips: 4,
+            difficulty: 32,
+            ..Config::for_profile(profile)
+        };
+        let mut b = Bench::with(profile, 4, config);
+        b.run_until_ready(30_000);
+        let name = profile.init_source;
+        assert_eq!(b.drv.chip_count(), 4, "{name}");
+        assert!(
+            b.has(|e| matches!(
+                e,
+                Event::ChipFound {
+                    chip_id: 0x1368,
+                    ..
+                }
+            )),
+            "{name}"
+        );
+        let addrs: Vec<u8> = b.drv.chips().iter().map(|c| c.address).collect();
+        assert_eq!(addrs, vec![0, 64, 128, 192], "{name}");
+        assert_eq!(
+            b.uart.host_baud, 1_000_000,
+            "{name}: host followed after the ramp"
+        );
+        assert_eq!(b.uart.lost_to_baud, 0, "{name}");
+        assert_eq!(b.uart.sim.totals().violations, 0, "{name}");
+        assert_eq!(b.drv.stats().decoder.crc_failures, 0, "{name}");
+        let f = b.drv.frequency_hz();
+        for (i, chip) in b.uart.sim.chips().iter().enumerate() {
+            assert_eq!(chip.baud(), 1_000_000, "{name} chip {i}");
+            assert_eq!(chip.frequency_hz(), u64::from(f), "{name} chip {i}");
+            assert_eq!(
+                chip.register(reg::VERSION_ROLLING),
+                0x9000_FFFF,
+                "{name} chip {i}"
+            );
+            let want = hcn
+                .unwrap_or_else(|| warpaxe_core::regs::hash_counting_number(f, BM1368.cores, 4, 0));
+            assert_eq!(
+                chip.register(reg::HASH_COUNTING_NUMBER),
+                want,
+                "{name} chip {i}"
+            );
+        }
+        b.mine_ms(10_000);
+        let sim_nonces = u64::from(b.uart.sim.totals().nonces);
+        assert!(sim_nonces > 100, "{name}: {sim_nonces}");
+        assert_eq!(
+            b.count(|e| matches!(e, Event::Nonce(_))) as u64,
+            sim_nonces,
+            "{name}"
+        );
+        assert_eq!(b.drv.stats().unknown_chip, 0, "{name}");
+        for i in 0..4u8 {
+            let n = b.count(|e| matches!(e, Event::Nonce(f) if f.chip == i));
+            assert!(n > 20, "{name} chip {i}: {n}");
+        }
+    }
+}
+
 /// The BM1397 path end to end against the simulator: the chip answers
 /// the id read with nine bytes, the init is WantClue's register list,
 /// the clock is written with the PLL0 divider first and the gekko word,
@@ -1225,7 +1297,13 @@ mod board_choice {
     /// NoChips). Either way the verdict refuses the choice.
     #[test]
     fn a_chip_of_another_type_refuses_the_choice() {
-        for (driver, chips) in [(&BM1370, &BM1373), (&BM1373, &BM1370)] {
+        for (driver, chips) in [
+            (&BM1370, &BM1373),
+            (&BM1373, &BM1370),
+            // A NerdQAxe+ chosen as a NerdQAxe++ (and back): the same bus.
+            (&BM1370_NERD, &BM1368_NERD),
+            (&BM1368_NERD, &BM1370_NERD),
+        ] {
             let mut drv = Chain::new(driver, Config::for_profile(driver));
             drv.start(0);
             let mut b = Bench {

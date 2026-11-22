@@ -13,8 +13,8 @@
 
 use crate::profile::{
     Profile, BITAXE_GAMMA, BITAXE_GAMMA_DUO, BITAXE_GAMMA_HEX, BITAXE_GAMMA_TURBO, BITAXE_NAJA_DUO,
-    BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDNOS, NERDOCTAXE_GAMMA, NERDQAXE_PLUSPLUS,
-    NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373, T_DISPLAY_S3_DEVKIT,
+    BITFORGE_NANO, NERDAXE_GAIA, NERDAXE_GAMMA, NERDNOS, NERDOCTAXE_GAMMA, NERDQAXE_PLUS,
+    NERDQAXE_PLUSPLUS, NERDQAXE_PLUSPLUS_REV7, Q1370, Q1373, T_DISPLAY_S3_DEVKIT,
 };
 
 /// I²C addresses the probe asks for.
@@ -297,10 +297,13 @@ pub fn from_bus(bitaxe_bus: &[u8], nerd_bus: &[u8], vin_v: Option<f32>) -> Detec
         }
         // (the Bitaxe Color boards share this address with their EMC2103,
         // but carry no TMP1075: see below)
-        // NerdOS treats the NerdOctaxe as a NerdQAxe++ with more chips; the
-        // regulator does not tell the variant. One click decides.
+        // NerdOS treats the NerdOctaxe as a NerdQAxe++ with more chips, and
+        // the NerdQAxe+ as a NerdQAxe++ with BM1368; the bus does not tell
+        // them apart (NerdOS stores no model either: one image per board).
+        // One click decides; a wrong one is refused by the chip id on the
+        // cautious first start.
         return Detection::Choose(
-            &[&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA],
+            &[&NERDQAXE_PLUSPLUS, &NERDOCTAXE_GAMMA, &NERDQAXE_PLUS],
             "EMC2302 and TMP1075 on the Nerd bus",
         );
     }
@@ -672,7 +675,7 @@ mod tests {
             Detection::Choose(c, _) => {
                 assert_eq!(
                     c.iter().map(|p| p.name).collect::<Vec<_>>(),
-                    ["nerdqaxe-plusplus", "nerdoctaxe-gamma"]
+                    ["nerdqaxe-plusplus", "nerdoctaxe-gamma", "nerdqaxe-plus"]
                 );
             }
             d => panic!("{d:?}"),
@@ -694,7 +697,7 @@ mod tests {
             &[addr::EMC2302, addr::TMP1075, addr::TPS5364X],
             None,
         ) {
-            Detection::Choose(c, _) => assert_eq!(c.len(), 2),
+            Detection::Choose(c, _) => assert_eq!(c.len(), 3),
             d => panic!("{d:?}"),
         }
         match detect(NONE, &[], &[addr::TPS546, addr::EMC2101], None) {
