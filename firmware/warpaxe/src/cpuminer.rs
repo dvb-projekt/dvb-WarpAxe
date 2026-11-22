@@ -685,15 +685,17 @@ fn found(job: &CpuJob, nonce: u32, hash: [u8; 32], from_hw: bool) {
     });
     if diff >= want {
         let age_n = st.jobs_received.saturating_sub(job.seq);
-        stratum::submit(&job.job, job.job.ntime, nonce, 0);
-        log::info!(
-            "cpu miner: share diff {diff:.3} (want {want:.3}), nonce {nonce:08x}, job age {age_n}"
-        );
-        miner::update_state(|s| {
-            s.shares_sent += 1;
-            s.submit_age_hist[(age_n as usize).min(3)] += 1;
-            s.last_submit_age = format!("{age_n} notifies");
-        });
+        let block = warpaxe_stratum::block::meets_target(&hash, job.job.nbits);
+        if stratum::submit(&job.job, job.job.ntime, nonce, 0, block) {
+            log::info!(
+                "cpu miner: share diff {diff:.3} (want {want:.3}), nonce {nonce:08x}, job age {age_n}"
+            );
+            miner::update_state(|s| {
+                s.shares_sent += 1;
+                s.submit_age_hist[(age_n as usize).min(3)] += 1;
+                s.last_submit_age = format!("{age_n} notifies");
+            });
+        }
     } else {
         miner::update_state(|s| s.low_diff += 1);
     }

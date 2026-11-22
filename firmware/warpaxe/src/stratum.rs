@@ -301,8 +301,12 @@ pub fn next_job() -> Option<(Job, u64, u64)> {
     }?;
     {
         let mut ids = SESSION_JOBS.lock().unwrap();
-        if ids.back() != Some(&job.job_id) && !ids.contains(&job.job_id) {
-            if ids.len() >= SESSION_JOBS_MAX {
+        if ids.back() != Some(&job.job_id) {
+            // A pool that sends an earlier id again moves it to the back,
+            // so the cap drops the ids not used for longest.
+            if let Some(i) = ids.iter().position(|id| *id == job.job_id) {
+                ids.remove(i);
+            } else if ids.len() >= SESSION_JOBS_MAX {
                 ids.pop_front();
             }
             ids.push_back(job.job_id.clone());
@@ -346,18 +350,21 @@ fn publish(feed: Feed, clean: bool) {
 }
 
 /// Queue a share. Silently dropped when no session is up.
-pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
-    if !SESSION_JOBS.lock().unwrap().contains(&job.job_id) {
+pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32, block: bool) -> bool {
+    // A block candidate always goes out: a pool that kept the job (same
+    // extranonce1 after a quick reconnect) may still take it, and a
+    // stale reject costs nothing next to a block lost.
+    if !block && !SESSION_JOBS.lock().unwrap().contains(&job.job_id) {
         let n = OLD_SESSION_SHARES.fetch_add(1, Ordering::Relaxed) + 1;
         log::info!(
             "stratum: share for job {} from an earlier session dropped, not sent ({n} so far)",
             job.job_id
         );
-        return;
+        return false;
     }
     let out = if state().sv2 {
         let Ok(job_id) = job.job_id.parse::<u32>() else {
-            return;
+            return false;
         };
         Outgoing::V2 {
             job_id,
@@ -390,8 +397,10 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
     if let Some(tx) = SUBMIT.lock().unwrap().as_ref() {
         if tx.send(out).is_ok() {
             update(|s| s.shares_sent += 1);
+            return true;
         }
     }
+    false
 }
 
 /// The V1 session thread and its fallback probe run on PSRAM stacks like

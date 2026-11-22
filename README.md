@@ -758,9 +758,10 @@ back at any time with `GET /api/v1/display/frame`.
   fallback; 0 until its first probe), `duplicateHWNonces` (since v0.1.49,
   ESP-Miner's name: nonces the chain driver dropped as repeats),
   `sharesDroppedOldSession` (since v0.1.49: shares the chips found on an
-  earlier pool session's work after a reconnect or a pool switch, dropped
-  instead of being sent to the new pool, which would only reject them as
-  stale),
+  earlier pool session's work after a reconnect or a pool switch, or
+  while no session is up, dropped instead of being sent to the new pool,
+  which would only reject them as stale; a block candidate is always
+  sent),
   `vinIdle`, `vinLoad`, `vinSag` and `psuSagWarning` (since
   v0.1.45: the input voltage with the chips off, under load as the median
   of the last minute, the drop between them, and a warning once the drop
