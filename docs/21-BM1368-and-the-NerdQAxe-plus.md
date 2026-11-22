@@ -69,7 +69,8 @@ The NerdQAxe++ profile with: BM1368 ×4, TPS53647 on two phases (60 A,
 fault 55 A: `tps53647::Config::NERDQAXE_PLUS`, already there), 490 MHz /
 1250 mV, brought up at 1250 mV, 70 W (`m_maxPin`), NerdOS's option lists
 (400–575 MHz, 1100–1350 mV), absolute limits 800 MHz / 1050–1400 mV,
-job interval 1200 ms. Pins, I²C, enable GPIO10, LDO GPIO13, reset GPIO1,
+job interval 1200 ms, a silent chip reported but not restarted (see
+below). Pins, I²C, enable GPIO10, LDO GPIO13, reset GPIO1,
 TMP1075 + EMC2302, fan target 55 °C, stop 70 °C, the ST7789 display and
 the NerdHat pins are the NerdQAxe++'s, as in NerdOS, where the NerdQAxe++
 inherits all of them from the NerdQAxe+.
@@ -93,8 +94,11 @@ siblings (1200 mV for a NerdQAxe+ picked on a NerdQAxe++).
 
 The NerdQAxe+'s CAN extension carries an FXL6408 at 0x43, the address
 the NerdQX's expander answers at: a NerdQAxe+ with the CAN extension
-fitted is offered the NerdQX instead, and its chip id then refuses it.
-Pick the NerdQAxe+ by hand there.
+fitted is offered the NerdQX instead, its chip id refuses that, and a
+hand pick of the NerdQAxe+ is refused by the bus check too (an FXL6408
+belongs to no NerdQAxe in `choice::needs`). The NerdQAxe++ has had the
+same limit all along. Take the CAN extension off for the first start;
+once the board is verified, the bus check is not run again.
 
 ## Open, for the first board
 
@@ -107,8 +111,12 @@ Pick the NerdQAxe+ by hand there.
    difference) suggests either works; duplicates would show it.
 3. **Chip diode.** Reading 0xB4 would give the real chip temperature
    NerdOS stops on; until then the +10 °C stand-in.
-4. **Per-chip clock.** `single_chip_clock` is assumed as on the BM1370,
-   not measured.
+4. **Per-chip clock.** `single_chip_clock` is `false` until measured:
+   write one chip's PLL, read the register back from all four, watch
+   whose counter follows. Then `true`, and the per-chip offsets open.
+5. **Silent-chip restart.** `silent_chip_restart` is `false` on the
+   NerdQAxe+ (report only) until the per-chip nonce counts on a board
+   agree with its hash counters, as for the Naja Duo.
 
 ## Not done
 

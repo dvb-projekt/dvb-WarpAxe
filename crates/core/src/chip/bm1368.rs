@@ -212,9 +212,12 @@ pub const BM1368: ChipProfile = ChipProfile {
     fast_uart: (FAST_UART_1M, FAST_UART_1M_BAUD),
     pll_prewrite: None,
     broadcast_reads: false,
-    // Not measured on a BM1368: a write addressed to one chip is taken
-    // to reach that chip alone, as on the BM1370 it is closest to.
-    single_chip_clock: true,
+    // Not measured on a BM1368: until a board has shown that a write
+    // addressed to one chip reaches that chip alone (register read back,
+    // its counter following its clock, as on the BM1370 and BM1373),
+    // every chip runs at the chain's clock and the API offers no
+    // per-chip offsets.
+    single_chip_clock: false,
     init_source: "ESP-Miner",
     init_chain: INIT_CHAIN,
     init_per_chip: INIT_PER_CHIP,

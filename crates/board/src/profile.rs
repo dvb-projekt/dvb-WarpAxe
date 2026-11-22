@@ -1180,6 +1180,10 @@ pub const NERDQAXE_PLUS: Profile = Profile {
     job_interval_ms: 1200,
     frequency_options: &[400, 425, 450, 475, 490, 500, 525, 550, 575],
     voltage_options: &[1100, 1150, 1200, 1250, 1300, 1350],
+    // Reports a silent chip, restarts nothing, until a board has shown
+    // that the BM1368's nonces land on the chip that found them (as for
+    // the Naja Duo; see the field).
+    silent_chip_restart: false,
     ..NERDQAXE_PLUSPLUS
 };
 
@@ -1602,7 +1606,13 @@ mod tests {
                 continue;
             }
             assert_eq!(p.small_cores, 0, "{}", p.name);
-            assert!(p.silent_chip_restart, "{}", p.name);
+            // The NerdQAxe+ (never run, BM1368) only reports too.
+            assert_eq!(
+                p.silent_chip_restart,
+                p.name != NERDQAXE_PLUS.name,
+                "{}",
+                p.name
+            );
         }
         assert_eq!(NERDAXE_GAIA.small_cores, 0);
         assert_eq!(NERDAXE_GAIA.fan_target_c, 65.0);
@@ -2060,6 +2070,7 @@ mod tests {
         assert_eq!(NERDAXE_GAIA.asic, Asic::Bm1373);
         assert_eq!(NERDNOS.asic, Asic::Bm1397);
         assert_eq!(NERDQAXE_PLUS.asic, Asic::Bm1368);
+        assert!(!NERDQAXE_PLUS.silent_chip_restart, "never run: report only");
         assert_eq!(NERDQAXE_PLUS.tps53647().unwrap().phases, 2);
         assert_eq!(NERDQAXE_PLUS.thermal, Thermal::Tmp1075Emc2302);
         assert!(ALL
