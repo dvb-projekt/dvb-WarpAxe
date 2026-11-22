@@ -2009,14 +2009,7 @@ fn emc2101_thermal(profile: &'static Profile, bus: &SharedI2c) -> Option<Thermal
     let mut thermal = profile.emc2101().map(|c| Emc2101::new(bus.clone(), c));
     if let Some(t) = thermal.as_mut() {
         match t.init().and_then(|()| t.set_fan_percent(100)) {
-            Ok(()) => log::info!(
-                "board: {} up, fan 100 %",
-                if t.is_ctf2301b() {
-                    "CTF2301B (EMC2101-compatible)"
-                } else {
-                    "EMC2101"
-                }
-            ),
+            Ok(()) => log::info!("board: EMC2101 up, fan 100 %"),
             Err(e) => {
                 log::error!("board: EMC2101 init failed: {e:?}");
                 update(|s| {

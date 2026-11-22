@@ -199,8 +199,8 @@ pub fn from_stock_unsupported(
 /// (github.com/awxhw/StarMiner, `config-601a.cvs`): a Gamma fed with
 /// 12 V that stores device model "gamma" and board version "601a"; on
 /// the bus it looks like a Gamma, and the Gamma profile sets the
-/// regulator up for 5 V, which then shuts off at 12 V. Kept off until a
-/// StarMiner profile is in (feat/starminer). The same list as the web
+/// regulator up for 5 V, which then shuts off at 12 V. WarpAxe has no
+/// StarMiner profile, so it stays off. The same list as the web
 /// installer's `UNSUPPORTED_VERSION`.
 const UNSUPPORTED_VERSION: &[(&str, &str)] = &[("601a", "StarMiner (Bitaxe Gamma for 12 V)")];
 

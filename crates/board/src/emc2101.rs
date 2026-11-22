@@ -6,16 +6,6 @@
 //! Apache-2.0); this module holds what is board-specific: the diode
 //! tuning per board, the fan as a percentage, and an open or shorted
 //! diode as a fault instead of a temperature.
-//!
-//! The CTF2301B (Sensylink) sits in the EMC2101's place on some boards,
-//! the StarMiner among them: the same address and, in its compatibility
-//! mode, the same temperature, tach and fan-setting registers, but its
-//! own ID registers, its own diode-tuning registers, and a fan output
-//! that stays off until three registers are set. The StarMiner's
-//! ESP-Miner fork (github.com/awxhw/StarMiner, `main/thermal/EMC2101.c`)
-//! tells the two apart by 0xFE/0xFF and runs that sequence; without it
-//! the fan never turned under WarpAxe (2026-11-21). The CTF2301B is
-//! driven here directly, the `emc2101` crate refusing its ID.
 
 use bounded_integer::BoundedU8;
 use emc2101::{BetaCompensation, PwmClock, EMC2101};
@@ -42,33 +32,6 @@ const REG_CONFIG: u8 = 0x03;
 /// Product ID register; EMC2101 0x16, EMC2101-R 0x28 (the crate's own list).
 const REG_PRODUCT_ID: u8 = 0xFD;
 const PRODUCT_IDS: [u8; 2] = [0x16, 0x28];
-/// CTF2301B chip and manufacturer ID registers and their values (the
-/// StarMiner fork's `EMC2101.h`).
-const REG_CTF_CHIP_ID: u8 = 0xFE;
-const REG_CTF_MFG_ID: u8 = 0xFF;
-const CTF_CHIP_ID: u8 = 0x41;
-const CTF_MFG_ID: u8 = 0x59;
-/// CTF2301B: the registers its fan output needs (the fork's init, run
-/// as it runs it: Configuration bit 1 set, 0x19 = 0x7F, Configuration
-/// back, 0x21 = 0x02).
-const CTF_CONFIG_UNLOCK: u8 = 0x02;
-const CTF_REG_19: u8 = 0x19;
-const CTF_REG_19_VALUE: u8 = 0x7F;
-const CTF_REG_21: u8 = 0x21;
-const CTF_REG_21_VALUE: u8 = 0x02;
-/// CTF2301B diode tuning: beta and NC (ideality) registers. Its NC table
-/// differs: the BM1370's EMC2101 ideality 0x24 (1.0319) is NC 0x08
-/// (1.0356), the closest; any other value is written as given, as the
-/// fork does.
-const CTF_REG_BETA: u8 = 0x30;
-const CTF_REG_NC: u8 = 0x34;
-/// Registers both parts share in compatibility mode.
-const REG_INTERNAL_TEMP: u8 = 0x00;
-const REG_EXT_TEMP_MSB: u8 = 0x01;
-const REG_EXT_TEMP_LSB: u8 = 0x10;
-const REG_TACH_LSB: u8 = 0x46;
-const REG_TACH_MSB: u8 = 0x47;
-const REG_FAN_SETTING: u8 = 0x4C;
 /// Fan Configuration (§6.16) as the init leaves it: PROG (fan setting
 /// written directly), 360 kHz base clock, not inverted, TACH_M 11
 /// (ignored at 360 kHz, Note 6.2). With PROG set here the crate's
@@ -129,8 +92,6 @@ enum State<I: I2c> {
     Bus(I),
     /// The crate's driver, after a successful init.
     Ready(EMC2101<I>),
-    /// A CTF2301B, after a successful init: driven register by register.
-    Ctf(I),
     /// An init failed (or ran once already); the bus is gone with it.
     Failed,
 }
@@ -174,18 +135,6 @@ impl<I: I2c> Emc2101<I> {
         };
         // The part first, before anything is written: with a wrong board
         // choice another chip may sit at this address (as up to v0.1.45).
-        // The CTF2301B first, by its own registers, as the StarMiner's
-        // fork tells the two apart (an EMC2101 reads its manufacturer,
-        // 0x5D, and revision there): what it answers at 0xFD is unknown.
-        let mut chip = [0u8];
-        let mut mfg = [0u8];
-        bus.write_read(ADDR, &[REG_CTF_CHIP_ID], &mut chip)
-            .map_err(Error::Bus)?;
-        bus.write_read(ADDR, &[REG_CTF_MFG_ID], &mut mfg)
-            .map_err(Error::Bus)?;
-        if (chip[0], mfg[0]) == (CTF_CHIP_ID, CTF_MFG_ID) {
-            return self.init_ctf(bus);
-        }
         let mut id = [0u8];
         bus.write_read(ADDR, &[REG_PRODUCT_ID], &mut id)
             .map_err(Error::Bus)?;
@@ -212,42 +161,6 @@ impl<I: I2c> Emc2101<I> {
         Ok(())
     }
 
-    /// The CTF2301B's init: Configuration and Fan Configuration as for
-    /// the EMC2101, then the fan output switched on, then the diode
-    /// tuning in its own registers.
-    fn init_ctf(&mut self, mut bus: I) -> Result<(), Error<I::Error>> {
-        bus.write(ADDR, &[REG_CONFIG, CONFIG]).map_err(Error::Bus)?;
-        bus.write(ADDR, &[REG_FAN_CONFIG, FAN_CONFIG])
-            .map_err(Error::Bus)?;
-        let mut cfg = [0u8];
-        bus.write_read(ADDR, &[REG_CONFIG], &mut cfg)
-            .map_err(Error::Bus)?;
-        bus.write(ADDR, &[REG_CONFIG, cfg[0] | CTF_CONFIG_UNLOCK])
-            .map_err(Error::Bus)?;
-        bus.write(ADDR, &[CTF_REG_19, CTF_REG_19_VALUE])
-            .map_err(Error::Bus)?;
-        bus.write(ADDR, &[REG_CONFIG, cfg[0]]).map_err(Error::Bus)?;
-        bus.write(ADDR, &[CTF_REG_21, CTF_REG_21_VALUE])
-            .map_err(Error::Bus)?;
-        // Only the BM1370 tuning has a known CTF2301B value (the fork's
-        // NC 0x08 for ideality 0x24, beta 0x00): its NC and beta tables are
-        // not the EMC2101's, so any other value is left at the part's own
-        // default rather than written raw.
-        if self.cfg.ideality == Some(0x24) {
-            bus.write(ADDR, &[CTF_REG_NC, 0x08]).map_err(Error::Bus)?;
-        }
-        if self.cfg.beta == Some(0x00) {
-            bus.write(ADDR, &[CTF_REG_BETA, 0x00]).map_err(Error::Bus)?;
-        }
-        self.state = State::Ctf(bus);
-        Ok(())
-    }
-
-    /// Whether the part found at init is a CTF2301B.
-    pub fn is_ctf2301b(&self) -> bool {
-        matches!(self.state, State::Ctf(_))
-    }
-
     fn dev(&mut self) -> Result<&mut EMC2101<I>, Error<I::Error>> {
         match &mut self.state {
             State::Ready(dev) => Ok(dev),
@@ -255,20 +168,9 @@ impl<I: I2c> Emc2101<I> {
         }
     }
 
-    fn ctf_read(bus: &mut I, reg: u8) -> Result<u8, Error<I::Error>> {
-        let mut v = [0u8];
-        bus.write_read(ADDR, &[reg], &mut v).map_err(Error::Bus)?;
-        Ok(v[0])
-    }
-
     /// Fan duty, 0–100 %, onto the 64 fan steps.
     pub fn set_fan_percent(&mut self, percent: u8) -> Result<(), Error<I::Error>> {
         let step = (u16::from(percent.min(100)) * FAN_STEPS / 100) as u8;
-        if let State::Ctf(bus) = &mut self.state {
-            return bus
-                .write(ADDR, &[REG_FAN_SETTING, step])
-                .map_err(Error::Bus);
-        }
         let step = BoundedU8::new(step).ok_or(Error::OutOfRange)?;
         self.dev()?.set_fan_power(step).map_err(map)?;
         Ok(())
@@ -276,32 +178,13 @@ impl<I: I2c> Emc2101<I> {
 
     /// Fan speed from the tach input; 0 when the fan does not turn.
     pub fn fan_rpm(&mut self) -> Result<u16, Error<I::Error>> {
-        if let State::Ctf(bus) = &mut self.state {
-            // LSB first: it latches the MSB (as on the EMC2101).
-            let lsb = Self::ctf_read(bus, REG_TACH_LSB)?;
-            let msb = Self::ctf_read(bus, REG_TACH_MSB)?;
-            let count = u16::from_be_bytes([msb, lsb]);
-            return Ok(if count == 0 || count == 0xFFFF {
-                0
-            } else {
-                (5_400_000 / u32::from(count)).min(u32::from(u16::MAX)) as u16
-            });
-        }
         self.dev()?.fan_rpm().map_err(map)
     }
 
     /// The diode temperature, °C, with the board offset applied. An open
     /// or shorted diode is a fault, not a value.
     pub fn external_temp_c(&mut self) -> Result<f32, Error<I::Error>> {
-        let c = if let State::Ctf(bus) = &mut self.state {
-            // MSB first: it latches the LSB. 11 bits, eighths of a degree.
-            let msb = Self::ctf_read(bus, REG_EXT_TEMP_MSB)?;
-            let lsb = Self::ctf_read(bus, REG_EXT_TEMP_LSB)?;
-            let raw = i16::from_be_bytes([msb, lsb]) >> 5;
-            f32::from(raw) / 8.0
-        } else {
-            self.dev()?.temp_external_precise().map_err(map)?
-        };
+        let c = self.dev()?.temp_external_precise().map_err(map)?;
         if c >= FAULT_FROM_C {
             return Err(Error::SensorFault);
         }
@@ -310,9 +193,6 @@ impl<I: I2c> Emc2101<I> {
 
     /// The controller's own die temperature, °C.
     pub fn internal_temp_c(&mut self) -> Result<i8, Error<I::Error>> {
-        if let State::Ctf(bus) = &mut self.state {
-            return Ok(Self::ctf_read(bus, REG_INTERNAL_TEMP)? as i8);
-        }
         self.dev()?.temp_internal().map_err(map)
     }
 }
@@ -333,8 +213,6 @@ mod tests {
     /// crate's steps (which find nothing to change), then the diode.
     fn init_script(ideality: u8) -> Vec<Tx> {
         vec![
-            get(0xFE, 0x5D), // not a CTF2301B: SMSC's manufacturer id
-            get(0xFF, 0x02),
             get(0xFD, 0x16), // product id, before any write
             put(0x03, 0x04), // Configuration: ALT_TCH only
             put(0x4A, 0x23), // Fan Config: PROG, 360 kHz, TACH_M 11
@@ -372,55 +250,11 @@ mod tests {
 
     #[test]
     fn wrong_part_id_is_an_error_and_nothing_works_after() {
-        // Nothing is written to a part that is not an EMC2101 (or a
-        // CTF2301B).
-        let script = vec![get(0xFE, 0x00), get(0xFF, 0x00), get(0xFD, 0x00)];
+        // Nothing is written to a part that is not an EMC2101.
+        let script = vec![get(0xFD, 0x00)];
         let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
         assert_eq!(s.init(), Err(Error::WrongDevice));
         assert_eq!(s.fan_rpm(), Err(Error::WrongDevice));
-    }
-
-    /// A CTF2301B: told apart by 0xFE/0xFF, its fan output switched on
-    /// as the StarMiner's firmware does it, its own diode registers (NC
-    /// 0x08 for the BM1370's 0x24), then fan, tach and temperature on the
-    /// shared registers.
-    #[test]
-    fn a_ctf2301b_gets_its_fan_output_switched_on() {
-        let script = vec![
-            get(0xFE, 0x41), // CTF2301B chip id
-            get(0xFF, 0x59), // and manufacturer id: nothing else read
-            put(0x03, 0x04),
-            put(0x4A, 0x23),
-            get(0x03, 0x04),
-            put(0x03, 0x06),
-            put(0x19, 0x7F),
-            put(0x03, 0x04),
-            put(0x21, 0x02),
-            put(0x34, 0x08),
-            put(0x30, 0x00),
-            put(0x4C, 63),
-            get(0x46, 0xD0),
-            get(0x47, 0x07), // 2000 counts
-            get(0x01, 0x3A),
-            get(0x10, 0x20), // 58.125 °C
-            get(0x46, 0xFF),
-            get(0x47, 0xFF), // stalled
-        ];
-        let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
-        s.init().unwrap();
-        assert!(s.is_ctf2301b());
-        s.set_fan_percent(100).unwrap();
-        assert_eq!(s.fan_rpm().unwrap(), 2700);
-        assert!((s.external_temp_c().unwrap() - 58.125).abs() < 1e-6);
-        assert_eq!(s.fan_rpm().unwrap(), 0);
-    }
-
-    /// Neither an EMC2101 nor a CTF2301B: nothing written.
-    #[test]
-    fn another_part_is_still_refused() {
-        let script = vec![get(0xFE, 0x5D), get(0xFF, 0x01), get(0xFD, 0x00)];
-        let mut s = Emc2101::new(Bus::new(script), Config::BM1370_DIODE);
-        assert_eq!(s.init(), Err(Error::WrongDevice));
     }
 
     #[test]
