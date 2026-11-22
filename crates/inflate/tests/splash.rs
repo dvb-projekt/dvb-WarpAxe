@@ -41,14 +41,14 @@ fn size_from_name(name: &str) -> usize {
 }
 
 #[test]
-fn the_lcd_frame_and_all_eight_marks_are_packed() {
+fn the_lcd_frame_and_all_nine_marks_are_packed() {
     let names: Vec<String> = pictures()
         .iter()
         .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(names.len(), 9, "{names:?}");
+    assert_eq!(names.len(), 10, "{names:?}");
     assert!(names.contains(&"lcd_320x170.rgb565.z".to_string()));
-    assert_eq!(names.iter().filter(|n| n.starts_with("mark_")).count(), 8);
+    assert_eq!(names.iter().filter(|n| n.starts_with("mark_")).count(), 9);
 }
 
 #[test]
