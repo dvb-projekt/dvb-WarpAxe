@@ -478,8 +478,8 @@ back at any time with `GET /api/v1/display/frame`.
   when neither has a connection, and a pool session moves between the two
   once, not on every flap of the cable. Not on a NerdOctaxe from rev 3.4
   (its TMP451 multiplexer shares the HAT's pins; the firmware checks the
-  bus first). Built after NerdOS, not yet run on a HAT
-  ([`docs/13`](docs/13-Ethernet-over-the-W5500-HAT.md)).
+  bus first). Built after NerdOS; runs on a NerdQAxe++ with the HAT
+  since 2026-11-21 ([`docs/13`](docs/13-Ethernet-over-the-W5500-HAT.md)).
 - Regulators: TPS546 (Bitaxe boards, NerdAxe Gamma and Gaia, NerdQAxe++
   Rev 7, BitForge Nano), TPS53647/TPS53667 (NerdQAxe++, NerdOctaxe,
   NerdQX); the core current and the regulator's warning line in the API

@@ -2070,7 +2070,8 @@ mod tests {
         assert_eq!(NERDAXE_GAIA.asic, Asic::Bm1373);
         assert_eq!(NERDNOS.asic, Asic::Bm1397);
         assert_eq!(NERDQAXE_PLUS.asic, Asic::Bm1368);
-        assert!(!NERDQAXE_PLUS.silent_chip_restart, "never run: report only");
+        // Never run: report only.
+        const { assert!(!NERDQAXE_PLUS.silent_chip_restart) };
         assert_eq!(NERDQAXE_PLUS.tps53647().unwrap().phases, 2);
         assert_eq!(NERDQAXE_PLUS.thermal, Thermal::Tmp1075Emc2302);
         assert!(ALL
