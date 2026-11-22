@@ -1104,6 +1104,10 @@ fn session(
     let mut first_job: Option<Instant> = None;
     let mut fresh_seen = false;
     let mut pings: u32 = 0;
+    // A notify that came before the subscribe answer (it needs the
+    // extranonce from there), kept and read again right after it.
+    let mut early: Option<String> = None;
+    let mut replay: Option<String> = None;
     loop {
         let since_job = last_job.elapsed().as_secs();
         let stale_limit = STALE.lock().unwrap().limit_s();
@@ -1123,13 +1127,18 @@ fn session(
             );
         }
         line.clear();
-        let n = match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
-            Ok(n) => n,
-            Err(e) if line::is_too_long(&e) => {
-                update(|s| s.lines_too_long += 1);
-                anyhow::bail!("{e}: the pool sent a line too long to keep, reconnecting");
+        let n = if let Some(l) = replay.take() {
+            line.push_str(&l);
+            line.len()
+        } else {
+            match line::read_line(&mut reader, &mut line, line::MAX_LINE) {
+                Ok(n) => n,
+                Err(e) if line::is_too_long(&e) => {
+                    update(|s| s.lines_too_long += 1);
+                    anyhow::bail!("{e}: the pool sent a line too long to keep, reconnecting");
+                }
+                Err(e) => return Err(e.into()),
             }
-            Err(e) => return Err(e.into()),
         };
         if n == 0 {
             anyhow::bail!("pool closed the connection");
@@ -1165,6 +1174,7 @@ fn session(
                             st.extranonce2_size = s.extranonce2_size;
                         });
                         sess = Some(s);
+                        replay = early.take();
                     }
                     None => anyhow::bail!("subscribe: unexpected result {}", r.result),
                 },
@@ -1207,7 +1217,16 @@ fn session(
             }
             Incoming::Notify(n) => {
                 let Some(s) = sess.as_ref() else {
-                    log::warn!("stratum: notify before subscribe, ignored");
+                    // Work all the same: the pool answers, so the setup
+                    // limit gives way now, and the job is taken once the
+                    // subscribe answer brings the extranonce.
+                    if Prepared::new(n).is_some() {
+                        log::info!("stratum: notify before the subscribe answer, kept for it");
+                        stream.set_read_timeout(crate::link::READ_TIMEOUT);
+                        early = Some(line.clone());
+                    } else {
+                        log::warn!("stratum: notify before subscribe with a field that is not hex, ignored");
+                    }
                     continue;
                 };
                 let clean = n.clean_jobs;
