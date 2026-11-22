@@ -713,13 +713,13 @@
   "dw_cleared": "已删除 Webhook。",
   "alertBlockFound": "发现区块",
   "alertBestDiff": "新的最佳难度",
-  "ab_s": "最多每 10 分钟一条消息",
-  "alertPoolSwitch": "切换到备用矿池及切回",
+  "ab_s": "每 10 分钟最多一条消息",
+  "alertPoolSwitch": "切换到备用矿池或切回主矿池",
   "alertCrash": "崩溃后重启",
   "dw_test": "发送测试消息",
   "dw_test_q": "测试消息已加入队列，几秒内应出现在 Discord 中。",
   "dw_w_test": "测试消息",
-  "dw_ok": "上一条消息已于 {d} 前送达（{w}）",
+  "dw_ok": "上一条消息 {d} 前已送达（{w}）",
   "dw_fail": "上一条消息 {d} 前未能送达（{w}）：{e}",
   "imp_discord": "Discord 通知"
 }
