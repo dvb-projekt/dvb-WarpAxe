@@ -8,6 +8,7 @@
 //! Ethernet when the board has the HAT, Wi-Fi when configured), then the
 //! API.
 
+mod alerts;
 mod api;
 mod board;
 mod clock;
@@ -293,6 +294,12 @@ fn main() {
         _ => detail::boot(diag::reset_reason(), None),
     };
     events::record("boot", boot_detail);
+    // A crash or a watchdog ended the last run (a flashing tool's
+    // watchdog reset was forgiven above): a Discord message, sent once
+    // the network is up.
+    if diag::last_run_crashed() {
+        alerts::crash(diag::reset_reason());
+    }
     // The marker of a restart the previous run began (update, upload,
     // restart, download mode; `warpaxe_diag::restart`): a crash reset
     // after it is a crash in that restart, which the event log says
@@ -589,6 +596,7 @@ fn main() {
     clock::start();
     market::start();
     update::start();
+    alerts::start();
     set_step("CHAIN");
     if board::devkit() {
         // A T-Display-S3 without chips: no chain, the ESP32-S3 hashes by

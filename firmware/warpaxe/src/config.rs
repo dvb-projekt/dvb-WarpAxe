@@ -251,6 +251,27 @@ pub struct Config {
     /// Australian and New Zealand time zones, else 24 h), "24h", "12h".
     #[serde(rename = "clockFormat")]
     pub clock_format: String,
+    /// Discord notifications (docs/22): the webhook the miner posts to,
+    /// empty = none. A secret (its token lets anyone post to the
+    /// channel): the API shows `***` when one is set and
+    /// `discordWebhookSet`, never the URL; `***` coming back in a PATCH
+    /// keeps it. Only Discord's own https URLs are taken
+    /// (`warpaxe_alerts::webhook`).
+    #[serde(rename = "discordWebhook")]
+    pub discord_webhook: String,
+    /// A message when a block is found.
+    #[serde(rename = "alertBlockFound")]
+    pub alert_block: bool,
+    /// A message on a new all-time best difficulty (at most one per ten
+    /// minutes, the newest value).
+    #[serde(rename = "alertBestDiff")]
+    pub alert_best: bool,
+    /// A message when the miner moves to the fallback pool or back.
+    #[serde(rename = "alertPoolSwitch")]
+    pub alert_pool: bool,
+    /// A message after a restart that a crash or a watchdog caused.
+    #[serde(rename = "alertCrash")]
+    pub alert_crash: bool,
 }
 
 impl Default for Config {
@@ -339,6 +360,11 @@ impl Default for Config {
             night_end: warpaxe_displaycfg::DEFAULT_NIGHT_END_MIN,
             night_brightness: warpaxe_displaycfg::DEFAULT_NIGHT_BRIGHTNESS,
             clock_format: warpaxe_displaycfg::DEFAULT_CLOCK_FORMAT.into(),
+            discord_webhook: String::new(),
+            alert_block: true,
+            alert_best: true,
+            alert_pool: true,
+            alert_crash: true,
         }
     }
 }
@@ -452,6 +478,7 @@ pub fn raise_best_diff_f(diff: f64) {
         }
         *best = diff;
     }
+    crate::alerts::best_diff(diff);
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if let Err(e) = nvs.set_u64(BEST_F_KEY, diff.to_bits()) {
             log::warn!("config: storing best diff: {e}");
@@ -1144,6 +1171,8 @@ pub fn raise_best_diff(diff: u64) {
         }
         *best = diff;
     }
+    // The Discord message, folded to one per ten minutes (RAM only).
+    crate::alerts::best_diff(diff as f64);
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         if let Err(e) = nvs.set_u64(BEST_KEY, diff) {
             log::warn!("config: storing best diff: {e}");
@@ -1360,6 +1389,7 @@ impl Config {
         c.wifi_pass = mask(&self.wifi_pass);
         c.stratum_pass = mask(&self.stratum_pass);
         c.fallback_pass = mask(&self.fallback_pass);
+        c.discord_webhook = mask(&self.discord_webhook);
         c
     }
 }
@@ -1396,6 +1426,17 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     }
     if cfg.fallback_pass == "***" {
         cfg.fallback_pass = old.fallback_pass;
+    }
+    // The webhook: `***` keeps it, empty clears it, anything else must
+    // be a Discord webhook URL (pasted with a space around it, taken).
+    if cfg.discord_webhook == "***" {
+        cfg.discord_webhook = old.discord_webhook;
+    } else if cfg.discord_webhook != old.discord_webhook {
+        cfg.discord_webhook = cfg.discord_webhook.trim().to_string();
+        if !cfg.discord_webhook.is_empty() {
+            warpaxe_alerts::webhook::validate(&cfg.discord_webhook)
+                .map_err(|r| anyhow::anyhow!(r.text()))?;
+        }
     }
     save(&cfg)?;
     Ok(cfg)
@@ -1629,6 +1670,9 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
             took.push("hostname");
         }
     }
+    if cfg.discord_webhook.is_empty() && import_discord(stock, &mut cfg) {
+        took.push("discord");
+    }
     // After an overheat stop ForgeOS (and older AxeOS) leave their
     // emergency point in NVS: 1000 mV, 50 MHz, fans 100 % manual,
     // `overheat_mode` 1. That is no point the owner chose, so WarpAxe
@@ -1706,6 +1750,34 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
         }
     }
     took
+}
+
+/// NerdOS's Discord alerter (`alrt_disc_url`, NerdQAxe+ v1.1): its
+/// webhook when it is one WarpAxe takes, and its switches where it has
+/// them: `alrt_disc_bf_en` block found, `alrt_disc_bd_en` best
+/// difficulty, `alrt_disc_en` its watchdog restart (a restart without a
+/// share for an hour; here the restart after a crash or a watchdog). It
+/// has no pool-switch message, so that switch keeps WarpAxe's default.
+/// The URL never reaches the log.
+fn import_discord(stock: &Stock, cfg: &mut Config) -> bool {
+    const KEY: &str = "alrt_disc_url";
+    let Some(url) = stock
+        .long_str(KEY)
+        .or_else(|| stock.str(KEY))
+        .map(|u| u.trim().to_string())
+    else {
+        return false;
+    };
+    if let Err(r) = warpaxe_alerts::webhook::validate(&url) {
+        log::warn!("config: the stock firmware's Discord webhook not taken over ({})", r.text());
+        return false;
+    }
+    cfg.discord_webhook = url;
+    let flag = |k: &str, d: bool| stock.num(k).map_or(d, |v| v != 0.0);
+    cfg.alert_block = flag("alrt_disc_bf_en", cfg.alert_block);
+    cfg.alert_best = flag("alrt_disc_bd_en", cfg.alert_best);
+    cfg.alert_crash = flag("alrt_disc_en", cfg.alert_crash);
+    true
 }
 
 /// TLS from a stock pool entry: 1 = TLS with the CA bundle, 2 = TLS

@@ -388,6 +388,11 @@ pub fn system_info() -> serde_json::Value {
     if let (Some(o), Some(e)) = (v.as_object_mut(), eth.as_object()) {
         o.extend(e.clone());
     }
+    // Discord notifications (docs/22): whether a webhook is set (never
+    // the URL: it holds a token) and the last send's result (null
+    // before the first): ok, HTTP code, error, what, unix time, uptime.
+    v["discordWebhookSet"] = json!(!cfg.discord_webhook.is_empty());
+    v["discordLastResult"] = json!(crate::alerts::last_result());
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
     }
@@ -1467,6 +1472,16 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         events::flush();
         diagnostics(req)
     })?;
+    // Discord notifications (docs/22): a test message to the webhook
+    // set, queued for the alerts thread (202), or why not (409).
+    server.fn_handler("/api/v1/alerts/test", Method::Post, |mut req| {
+        diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
+        log::info!("api: Discord test message requested from {}", peer(&mut req));
+        match crate::alerts::test() {
+            Ok(()) => reply_json(req, 202, &json!({"queued": true})),
+            Err(e) => reply_json(req, 409, &json!({"queued": false, "error": e})),
+        }
+    })?;
     server.fn_handler("/api/v1/bestdiff/reset", Method::Post, |req| {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         config::reset_best_diff();
@@ -1937,6 +1952,8 @@ fn scrubber(cfg: &config::Config) -> warpaxe_diag::scrub::Scrubber {
         .secret(&cfg.wifi_pass)
         .secret(&cfg.stratum_pass)
         .secret(&cfg.fallback_pass)
+        .secret(&cfg.discord_webhook)
+        .secret(warpaxe_alerts::webhook::token(&cfg.discord_webhook).unwrap_or_default())
         .replace(&cfg.ssid, &mask_ssid(&cfg.ssid))
         .replace(&cfg.stratum_user, &mask_worker(&cfg.stratum_user))
         .replace(&cfg.fallback_user, &mask_worker(&cfg.fallback_user));
@@ -1985,6 +2002,12 @@ fn dump_texts(cfg: &config::Config) -> Vec<String> {
         .filter_map(|u| u.split_once('.').map(|(a, _)| a.to_string()))
         .collect();
     t.extend(addrs);
+    // The Discord webhook and its token alone (after the split above:
+    // its dots are no worker's).
+    t.push(cfg.discord_webhook.clone());
+    if let Some(token) = warpaxe_alerts::webhook::token(&cfg.discord_webhook) {
+        t.push(token.to_string());
+    }
     t
 }
 
@@ -2070,6 +2093,7 @@ fn diagnostics(
         o.remove("wifiPass");
         o.remove("stratumPassword");
         o.remove("fallbackStratumPassword");
+        o.remove("discordWebhook");
     }
     section(&mut r, "config", c)?;
     section(&mut r, "savedPools", json!(config::pools().iter().map(|p| json!({"name": p.name, "host": p.url, "port": p.port, "user": p.user, "protocol": p.protocol})).collect::<Vec<_>>()))?;

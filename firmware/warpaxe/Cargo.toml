@@ -71,6 +71,9 @@ warpaxe-jsonval = { path = "../../crates/jsonval" }
 warpaxe-inflate = { path = "../../crates/inflate" }
 # The diagnostics file's privacy rules and the event log's ring.
 warpaxe-diag = { path = "../../crates/diag" }
+# Discord notifications: which webhook URLs are taken, the messages,
+# coalescing and the one retry (src/alerts.rs sends).
+warpaxe-alerts = { path = "../../crates/alerts" }
 
 [build-dependencies]
 embuild = "0.33"
