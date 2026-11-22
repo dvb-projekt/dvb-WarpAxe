@@ -924,6 +924,16 @@ fn report_back_with_work(fallback: bool) {
     }
 }
 
+/// The least stack the probe thread (4 KB, `run`) has had to spare since
+/// boot, bytes, read after each probe's connect (DNS and the race are its
+/// deepest calls); 0 until the first probe. `probeStackFree` in the API.
+static PROBE_STACK_FREE: AtomicU32 = AtomicU32::new(0);
+
+/// The least stack the probe thread has had to spare, bytes.
+pub fn probe_stack_free() -> u32 {
+    PROBE_STACK_FREE.load(Ordering::Relaxed)
+}
+
 /// While on the fallback: every few minutes, try a TCP connect to the main
 /// pool; when it answers, end the fallback session so `run` goes back.
 fn probe_primary() {
@@ -951,6 +961,8 @@ fn probe_primary() {
         let reachable =
             crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5))
                 .is_ok();
+        // The high-water mark only falls, so the newest reading is the least.
+        PROBE_STACK_FREE.store(diag::stack_unused(), Ordering::Relaxed);
         if reachable {
             if let Some(s) = FALLBACK_STREAM.lock().unwrap().as_ref() {
                 BACK_TO_PRIMARY.store(true, Ordering::Relaxed);
