@@ -66,6 +66,10 @@ espflash save-image --chip esp32s3 --flash-size 16mb \
 # for the boards with chips; Oliver decides then. The headroom is printed
 # so the day does not come as a surprise; docs/16 says where the image's
 # bytes are and what else could be taken out (tools/image-breakdown.py).
+# newlib nano printf (docs/16) misreads ll/hh/j/z/t/q and positions; one
+# before a %s would crash the line that prints it. CI builds no ESP image,
+# so the check runs here, on the image that ships.
+python3 "$ROOT/tools/check-printf.py" "$OUT/warpaxe.bin"
 APP_BYTES=$(wc -c < "$OUT/warpaxe.bin")
 HEADROOM=$((0x2F0000 - APP_BYTES))
 echo "import window headroom: $HEADROOM bytes below 0x2F0000 (app $APP_BYTES bytes)"
