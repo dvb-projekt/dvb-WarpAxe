@@ -350,7 +350,9 @@ impl Limits {
     /// without an error counter.
     pub fn error_max_percent(&self, asic: Asic) -> Option<f32> {
         match asic {
-            Asic::Bm1370 => Some(self.error_max_percent_bm1370),
+            // The BM1368 has the BM1370's counters and, until a board has
+            // shown its own rate, the BM1370's line.
+            Asic::Bm1370 | Asic::Bm1368 => Some(self.error_max_percent_bm1370),
             Asic::Bm1373 => Some(self.error_max_percent_bm1373),
             Asic::Bm1397 => None,
         }

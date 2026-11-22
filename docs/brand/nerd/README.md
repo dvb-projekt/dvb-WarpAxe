@@ -7,6 +7,7 @@ sprites:
 | File | Boards | Cut from |
 |---|---|---|
 | `nerdqaxe-plusplus-wordmark.png` | NerdQAxe++ (all revisions) | NerdOS theme `NerdQaxePlus2` |
+| `nerdqaxe-plus-wordmark.png` | NerdQAxe+ | NerdOS theme `NerdQaxePlus` (v1.1.2, cut at the same place as the NerdQAxe++'s: x 69, y 29, 186 × 43) |
 | `nerdoctaxe-wordmark.png` | NerdOctaxe-γ | NerdOS theme `NerdOctaxeGamma` |
 | `nerdaxe-wordmark.png` | NerdAxe Gamma | NerdOS theme `NerdAxeGamma` |
 | `nerdqx-wordmark.png` | NerdQX (Q1370, Q1373) | NerdOS theme `NerdQX` |

@@ -16,6 +16,7 @@
 //! simulator say "you sent SET_ADDRESS before CHAIN_INACTIVE" instead of
 //! "byte 7 differs".
 
+pub mod bm1368;
 pub mod bm1370;
 pub mod bm1373;
 pub mod bm1397;

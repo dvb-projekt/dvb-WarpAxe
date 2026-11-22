@@ -952,6 +952,7 @@ back at any time with `GET /api/v1/display/frame`.
 | Bitaxe Gamma (601/602) | 1× BM1370 | TPS546 | **runs 24/7** |
 | NerdQAxe++ (every revision but Rev 7; NerdOS treats them alike) | 4× BM1370 | TPS53647 | **runs 24/7** (on a Rev 6.1) |
 | NerdQAxe++ Rev 7 | 4× BM1370 | TPS546 (two voltage domains) | profile from NerdOS, recognised on the bus and offered for one click; not run yet |
+| NerdQAxe+ | 4× BM1368 | TPS53647 (2-phase) | profile from NerdOS (490 MHz / 1250 mV, 70 W), offered with the NerdQAxe++ and the NerdOCTAXE-γ, whose bus it shares; the chip id tells it apart on the first start; WarpAxe's first BM1368, tested against the simulator only, not run yet. Details: [`docs/21`](docs/21-BM1368-and-the-NerdQAxe-plus.md) |
 | NerdOCTAXE-γ Rev 3.1 | 8× BM1370 | TPS53667 (6-phase) | **runs** since 2026-09-28; at 700 MHz / 1210 mV the pool counts 11.59 TH/s ±2.5% (NerdOS: 11.71) since v0.1.9 paces work as NerdOS does; a v2.2 board with the 4-phase TPS53647 runs at a user's since 2026-10-01 (it overheated until its second fan was linked to the chip fan, now the default) |
 | BitForge Nano (800) | 2× BM1370 | TPS546 + INA260 | **runs** since 2026-09-29 (ForgeOS's Medium preset 525 MHz / 1150 mV: 2.19 TH/s at 43–45 W; 625 MHz / 1160 mV: 2.53 TH/s at 37–38 A, just below ForgeOS v1.7's Power preset of 636 MHz / 1160 mV (610 MHz / 1200 mV since v1.8)); taken on the first start since v0.1.35 (its PCA9544 mux and INA260 exist on no other board); since v0.1.36 its regulator limits (38 / 40 A, 13.5 V input) and chip diode scale are ForgeOS's ([`docs/08`](docs/08-Temperature-stop-limits-against-the-stock-firmware.md)) |
 | Bitaxe Gamma Duo (650) | 2× BM1370 | TPS546 | profile; runs at a user's since 2026-09-30 (v0.1.10), not on our bench; free clock values with `?oc` as on the Gamma |
@@ -969,7 +970,8 @@ from their stock firmware, but nobody has run WarpAxe on one yet. Please
 don't flash them unless you can recover the stock firmware over USB.
 
 The Bitaxes on other chips (Max with the BM1397, Ultra and Hex with the
-BM1366, Supra and Supra Hex with the BM1368) cannot run WarpAxe, nor can
+BM1366, Supra and Supra Hex with the BM1368: WarpAxe drives the BM1368
+for the NerdQAxe+, but has no profile for these two boards) cannot run WarpAxe, nor can
 TinyChipHub's Zyber boards (8S, 8G, 8G+, 12G: one regulator for four
 voltage domains in series, no profile in WarpAxe). Since
 v0.1.47 the installer page recognises them from the settings their stock

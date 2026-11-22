@@ -27,6 +27,7 @@ its reset; the routing is lwIP's own.
 | Board | SCLK | MOSI | MISO | CS | RST | INT | Profile |
 |---|---|---|---|---|---|---|---|
 | NerdQAxe++ (every revision, Rev 7 included) | 2 | 12 | 16 | 21 | – | – | `NERDQAXE_PLUSPLUS`, `NERDQAXE_PLUSPLUS_REV7` |
+| NerdQAxe+ (BM1368; profile only, see docs/21) | 2 | 12 | 16 | 21 | – | – | `NERDQAXE_PLUS` |
 | NerdOctaxe-γ up to rev 3.3 | 2 | 12 | 16 | 21 | – | – | `NERDOCTAXE_GAMMA` |
 | NerdAxe Gaia (over the interposer) | 10 | 3 | 16 | 21 | – | – | `NERDAXE_GAIA` |
 
@@ -54,8 +55,12 @@ Two things to know about the table:
   firmware never uses one board's pins on another: the pins come from the
   profile of the board that was detected or verified, and only then.
 
-The NerdQAxe+ (BM1368) also carries the header in NerdOS, but WarpAxe has
-no profile for that board, so it is not in the table. The NerdQX (Q1370 /
+The NerdQAxe+ (BM1368) carries the header in NerdOS (`kHatPins` in
+`nerdqaxeplus.cpp`, the class the NerdQAxe++ derives from); since its
+profile (docs/21) it is in the table. NerdOS does not probe the HAT
+when the NerdQAxe+'s CAN extension (FXL6408 at 0x43) is fitted, whose
+CAN lines are GPIO21/16; WarpAxe does not know the CAN extension, so do
+not fit both. The NerdQX (Q1370 /
 Q1373) uses the same pins in NerdOS (`nerdqx.h`); its WarpAxe profiles
 say `ethernet: None` for this round, which covers the boards that have
 run here.

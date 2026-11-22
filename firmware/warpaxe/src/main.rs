@@ -69,6 +69,11 @@ static MARK_NQPP: (i32, i32, &[u8]) = (
     30,
     include_bytes!("splash/mark_nerdqaxe-plusplus_138x30.rgb565a.z"),
 );
+static MARK_NQP: (i32, i32, &[u8]) = (
+    130,
+    30,
+    include_bytes!("splash/mark_nerdqaxe-plus_130x30.rgb565a.z"),
+);
 static MARK_OCTAXE: (i32, i32, &[u8]) = (
     143,
     34,
@@ -149,6 +154,7 @@ fn draw_splash(d: &mut display::Display, splash_for: &mut Option<&'static str>) 
             };
             let mark = match profile.name {
                 "nerdqaxe-plusplus" | "nerdqaxe-plusplus-rev7" => Some(MARK_NQPP),
+                "nerdqaxe-plus" => Some(MARK_NQP),
                 "nerdoctaxe-gamma" => Some(MARK_OCTAXE),
                 "nerdaxe-gamma" => Some(MARK_NERDAXE),
                 "nerdaxe-gaia" => Some(MARK_GAIA),

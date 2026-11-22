@@ -111,6 +111,7 @@ def badge(width=66):
 # consent): black or transparent background → alpha.
 MARKS = [
     ("nerd", "nerdqaxe-plusplus", 30),
+    ("nerd", "nerdqaxe-plus", 30),
     ("nerd", "nerdoctaxe", 34),
     ("nerd", "nerdaxe", 34),
     ("nerd", "nerdqx", 38),
