@@ -988,12 +988,14 @@ fn run(mut uart: ChipUart) {
                             // recent jobs, older ones come back "stale".
                             let age_n = stratum::state().jobs_received.saturating_sub(*job_seq);
                             let age_s = diag::uptime_s().saturating_sub(*job_t);
-                            stratum::submit(job, f.ntime, f.nonce, f.version ^ job.version);
-                            update(|s| {
-                                s.shares_sent += 1;
-                                s.submit_age_hist[(age_n as usize).min(3)] += 1;
-                                s.last_submit_age = format!("{age_n} notifies, {age_s} s");
-                            });
+                            let block = block::meets_target(&hash, job.nbits);
+                            if stratum::submit(job, f.ntime, f.nonce, f.version ^ job.version, block) {
+                                update(|s| {
+                                    s.shares_sent += 1;
+                                    s.submit_age_hist[(age_n as usize).min(3)] += 1;
+                                    s.last_submit_age = format!("{age_n} notifies, {age_s} s");
+                                });
+                            }
                         } else {
                             update(|s| s.low_diff += 1);
                         }

@@ -222,6 +222,19 @@ enum Outgoing {
 /// The newest work with its notify number and block-change number,
 /// published together so the miner's view of both stays in step.
 static NOTIFY: Mutex<Option<(Feed, u64, u64)>> = Mutex::new(None);
+/// The job ids the miner has taken from this session's work
+/// (`next_job`), newest last, at most [`SESSION_JOBS_MAX`]. Emptied when
+/// a session ends, with [`NOTIFY`]. A share for a job not in it was found
+/// on the work of an earlier session (the chips keep hashing it until the
+/// new pool's first job arrives) and would only come back stale: it is
+/// dropped and counted instead of sent (device test 2026-11-22: 1 reject
+/// after a V2 → V1 switch, 9 during a session without a job yet).
+static SESSION_JOBS: Mutex<std::collections::VecDeque<String>> =
+    Mutex::new(std::collections::VecDeque::new());
+const SESSION_JOBS_MAX: usize = 64;
+/// Shares dropped because their job came from an earlier session
+/// (`sharesDroppedOldSession` in the API).
+pub static OLD_SESSION_SHARES: AtomicU32 = AtomicU32::new(0);
 static EXTRANONCE2: Mutex<u32> = Mutex::new(0);
 static SUBMIT: Mutex<Option<Sender<Outgoing>>> = Mutex::new(None);
 static NEXT_ID: Mutex<u64> = Mutex::new(100);
@@ -286,6 +299,19 @@ pub fn next_job() -> Option<(Job, u64, u64)> {
         Feed::V1(session, prepared) => prepared.build(session, &en2),
         Feed::V2(t) => t.build(&en2),
     }?;
+    {
+        let mut ids = SESSION_JOBS.lock().unwrap();
+        if ids.back() != Some(&job.job_id) {
+            // A pool that sends an earlier id again moves it to the back,
+            // so the cap drops the ids not used for longest.
+            if let Some(i) = ids.iter().position(|id| *id == job.job_id) {
+                ids.remove(i);
+            } else if ids.len() >= SESSION_JOBS_MAX {
+                ids.pop_front();
+            }
+            ids.push_back(job.job_id.clone());
+        }
+    }
     Some((job, *seq, *clean_seq))
 }
 
@@ -324,10 +350,21 @@ fn publish(feed: Feed, clean: bool) {
 }
 
 /// Queue a share. Silently dropped when no session is up.
-pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
+pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32, block: bool) -> bool {
+    // A block candidate always goes out: a pool that kept the job (same
+    // extranonce1 after a quick reconnect) may still take it, and a
+    // stale reject costs nothing next to a block lost.
+    if !block && !SESSION_JOBS.lock().unwrap().contains(&job.job_id) {
+        let n = OLD_SESSION_SHARES.fetch_add(1, Ordering::Relaxed) + 1;
+        log::info!(
+            "stratum: share for job {} from an earlier session dropped, not sent ({n} so far)",
+            job.job_id
+        );
+        return false;
+    }
     let out = if state().sv2 {
         let Ok(job_id) = job.job_id.parse::<u32>() else {
-            return;
+            return false;
         };
         Outgoing::V2 {
             job_id,
@@ -360,8 +397,10 @@ pub fn submit(job: &Job, ntime: u32, nonce: u32, version_bits: u32) {
     if let Some(tx) = SUBMIT.lock().unwrap().as_ref() {
         if tx.send(out).is_ok() {
             update(|s| s.shares_sent += 1);
+            return true;
         }
     }
+    false
 }
 
 /// The V1 session thread and its fallback probe run on PSRAM stacks like
@@ -1338,6 +1377,7 @@ impl Drop for SenderGuard {
     fn drop(&mut self) {
         *SUBMIT.lock().unwrap() = None;
         *NOTIFY.lock().unwrap() = None;
+        SESSION_JOBS.lock().unwrap().clear();
     }
 }
 

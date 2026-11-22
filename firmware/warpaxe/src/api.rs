@@ -333,6 +333,8 @@ pub fn system_info() -> serde_json::Value {
     // Nonces the chain driver dropped as repeats of one it had just
     // counted (ESP-Miner's name). 0 on the devkit, which has no chain.
     v["duplicateHWNonces"] = json!(m.duplicates);
+    v["sharesDroppedOldSession"] =
+        json!(crate::stratum::OLD_SESSION_SHARES.load(std::sync::atomic::Ordering::Relaxed));
     // WarpTune's heartbeat (`POST /api/v1/regulator`): active while its
     // time to live runs. Always present.
     v["externalRegulator"] = crate::regulator::json();
