@@ -726,6 +726,8 @@
   "imp_discord": "Discord 通知",
   "payoutCheck": "收益检查",
   "payout_s": "适用于 Solo 矿池：某矿池的 coinbase 一旦向你的地址支付过，之后若连续 2 个区块未向其支付，则切换到另一个矿池；没有另一个矿池时仅发出警告。",
+  "pay_ok": "收款地址已验证",
+  "pay_ok_s": "此 Solo 矿池的 coinbase 支付到你的地址；矿机会在每个区块中检查这一点。",
   "pay_warn": "收益",
   "pay_missing": "此矿池的 coinbase 未向你的地址支付任何金额（连续 2 个区块）。没有可切换的矿池：矿机继续在此挖矿。",
   "pay_last": "{ago}前，{p} 连续 2 个区块未向你的地址支付。",

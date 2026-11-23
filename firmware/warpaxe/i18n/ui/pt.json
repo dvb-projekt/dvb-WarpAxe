@@ -726,6 +726,8 @@
   "imp_discord": "notificações do Discord",
   "payoutCheck": "Verificação do pagamento",
   "payout_s": "Pools solo: se a coinbase de um pool já pagou ao seu endereço e depois dois blocos seguidos não lhe pagam nada, o minerador muda para o outro pool, ou avisa se não houver outro.",
+  "pay_ok": "pagamento verificado",
+  "pay_ok_s": "A coinbase deste pool de mineração a solo paga ao seu endereço; o minerador verifica-o em cada bloco.",
   "pay_warn": "Pagamento",
   "pay_missing": "A coinbase deste pool não paga nada ao seu endereço (2 blocos seguidos). Não há outro pool para onde mudar: o minerador continua aqui.",
   "pay_last": "{p} não pagou nada ao seu endereço em 2 blocos seguidos, há {ago}.",

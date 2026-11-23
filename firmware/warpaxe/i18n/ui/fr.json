@@ -726,6 +726,8 @@
   "imp_discord": "notifications Discord",
   "payoutCheck": "Contrôle du paiement",
   "payout_s": "Pools solo : si la coinbase d’un pool a déjà payé votre adresse, le mineur bascule sur l’autre pool dès que deux blocs de suite ne lui versent rien, ou alerte s’il n’y en a pas.",
+  "pay_ok": "paiement vérifié",
+  "pay_ok_s": "La coinbase de ce pool solo verse le paiement à votre adresse ; le mineur le vérifie à chaque bloc.",
   "pay_warn": "Paiement",
   "pay_missing": "La coinbase de ce pool ne verse rien à votre adresse (2 blocs de suite). Aucun autre pool vers lequel basculer : le mineur continue ici.",
   "pay_last": "{p} n’a rien versé à votre adresse pendant 2 blocs de suite, il y a {ago}.",

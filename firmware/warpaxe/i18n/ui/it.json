@@ -726,6 +726,8 @@
   "imp_discord": "notifiche Discord",
   "payoutCheck": "Controllo del pagamento",
   "payout_s": "Pool solo: se la coinbase di un pool ha già pagato il tuo indirizzo e poi due blocchi di fila non gli pagano nulla, il miner passa all’altro pool, o avvisa se non ce n’è un altro.",
+  "pay_ok": "pagamento verificato",
+  "pay_ok_s": "La coinbase di questo pool di solo mining paga al tuo indirizzo; il miner lo verifica a ogni blocco.",
   "pay_warn": "Pagamento",
   "pay_missing": "La coinbase di questo pool non paga nulla al tuo indirizzo (2 blocchi di fila). Nessun altro pool a cui passare: il miner continua qui.",
   "pay_last": "{p} non ha pagato nulla al tuo indirizzo per 2 blocchi di fila, {ago} fa.",
