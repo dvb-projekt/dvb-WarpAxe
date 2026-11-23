@@ -483,8 +483,12 @@ struct PayState {
     slot: usize,
     id: u32,
     host: String,
-    /// The last pool left or warned about, with the uptime second.
-    last: Option<(String, u64)>,
+    /// The last pool left or warned about, with the uptime second and
+    /// whether it was for the fee (else for paying nothing).
+    last: Option<(String, u64, bool)>,
+    /// The pool's fee in the session's last job with evidence, tenths
+    /// of a percent (`payoutFee`).
+    fee: Option<u16>,
 }
 
 static PAY: Mutex<PayState> = Mutex::new(PayState {
@@ -495,13 +499,33 @@ static PAY: Mutex<PayState> = Mutex::new(PayState {
     id: 0,
     host: String::new(),
     last: None,
+    fee: None,
 });
 
-/// What the API shows of the payout check: the pool in use armed, found
-/// keeping the payout now, and the last pool found so (host, uptime).
-pub fn payout_status() -> (bool, bool, Option<(String, u64)>) {
+/// What the API shows of the payout check.
+pub struct PayoutStatus {
+    /// The pool in use is armed.
+    pub armed: bool,
+    /// It pays the address nothing, found and not paid since.
+    pub missing: bool,
+    /// It keeps more than the limit, found and not within it since.
+    pub fee_over: bool,
+    /// Its fee in the last job with evidence, tenths of a percent.
+    pub fee: Option<u16>,
+    /// The last pool found so (host, uptime second, for the fee).
+    pub last: Option<(String, u64, bool)>,
+}
+
+/// The payout check's state for the API.
+pub fn payout_status() -> PayoutStatus {
     let g = PAY.lock().unwrap();
-    (g.check.armed(), g.check.missing(), g.last.clone())
+    PayoutStatus {
+        armed: g.check.armed(),
+        missing: g.check.missing(),
+        fee_over: g.check.fee_over(),
+        fee: g.fee,
+        last: g.last.clone(),
+    }
 }
 
 /// A new session starts on `slot` with this pool: its check starts over,
@@ -518,6 +542,7 @@ fn pay_session(fallback: bool, host: &str, port: u16, user: &str) {
     g.check = payout_check::Check::new(g.mem.armed(slot, id));
     g.slot = slot;
     g.id = id;
+    g.fee = None;
     g.host.clear();
     g.host.push_str(host);
 }
@@ -529,7 +554,8 @@ fn session_authorized() -> bool {
 }
 
 /// Judge one job's payout (`None`: not decoded); `prev_hash` is the block
-/// it builds on. An armed pool found keeping the payout is recorded
+/// it builds on. An armed pool found keeping the payout, or more than
+/// `payoutMaxFee` of it, is recorded
 /// (event, Discord) and, where another pool can take over, the session
 /// ends with [`PayoutMissing`]. Jobs before the session is authorized
 /// are no evidence: a pool may hand out a template for its own address
@@ -540,20 +566,34 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
         return Ok(());
     }
     // Two fields per job: no copy of the whole config.
-    let (e, enabled) =
-        config::with(|c| (payout_check::evidence(pay, &c.coin_ticker), c.payout_check));
+    let (e, enabled, max_fee) = config::with(|c| {
+        (
+            payout_check::evidence(pay, &c.coin_ticker),
+            c.payout_check,
+            c.payout_max_fee.min(payout_check::MAX_FEE_LIMIT),
+        )
+    });
     if e == payout_check::Evidence::None {
         return Ok(());
     }
     let mut g = PAY.lock().unwrap();
     let (slot, id) = (g.slot, g.id);
-    let step = g.check.job(e, payout_check::block_key(prev_hash), enabled);
-    // A payment to an armed pool (armed now or before): stored as seen,
-    // and a mark for leaving it is cleared. A small share of a pool that
-    // never armed stores nothing.
-    if matches!(e, payout_check::Evidence::Paid { .. }) && g.check.armed() && g.mem.paid(slot, id) {
-        let stored = g.mem.stored();
-        config::set_payout_seen(stored);
+    g.fee = e.fee();
+    let step = g.check.job(e, payout_check::block_key(prev_hash), enabled, max_fee);
+    // A payment to an armed pool (armed now or before): stored as seen;
+    // within the limit (or with the check off) a mark for leaving it is
+    // cleared too. A small share of a pool that never armed stores
+    // nothing.
+    if matches!(e, payout_check::Evidence::Paid { .. }) && g.check.armed() {
+        let changed = if e.good(max_fee) || !enabled {
+            g.mem.paid(slot, id)
+        } else {
+            g.mem.see(slot, id)
+        };
+        if changed {
+            let stored = g.mem.stored();
+            config::set_payout_seen(stored);
+        }
     }
     match step {
         Step::Nothing => Ok(()),
@@ -562,10 +602,10 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
             Ok(())
         }
         Step::Recovered => {
-            log::warn!("stratum: payout check: the pool's coinbase pays the miner's address again");
+            log::warn!("stratum: payout check: the pool's coinbase pays the miner's address within the limit again");
             Ok(())
         }
-        Step::Act { kept_sat } => {
+        Step::Act(problem) => {
             let on_fallback = slot == payout_check::FALLBACK;
             let (other_ok, other_id) = config::with(|c| {
                 if on_fallback {
@@ -578,40 +618,70 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
                 }
             });
             let switch = g.mem.can_switch(on_fallback, other_ok, other_id);
-            // Found so already and not paid since (a reconnect, or back
-            // here because the other pool is down): the event and the
-            // message stand, no second one; the switch still happens.
-            let warned = g.mem.is_left(slot, id);
-            g.mem.leave(slot, id);
+            // Found so already, for the same reason, and not paid within
+            // the limit since (a reconnect, or back here because the
+            // other pool is down): the event and the message stand, no
+            // second one; the switch still happens. Another reason is
+            // reported.
+            let warned = g.mem.left_reason(slot, id) == Some(problem.is_fee());
+            g.mem.leave(slot, id, problem.is_fee());
             let host = g.host.clone();
             if warned {
                 drop(g);
-                log::warn!("stratum: payout check: pool {host} still pays the miner's address nothing{}",
+                log::warn!("stratum: payout check: pool {host} still {}{}",
+                    if matches!(problem, payout_check::Problem::Fee { .. }) { "keeps more than the limit" } else { "pays the miner's address nothing" },
                     if switch { ", switching pools" } else { ", mining on" });
                 return if switch { Err(PayoutMissing) } else { Ok(()) };
             }
-            g.last = Some((host.clone(), diag::uptime_s()));
+            g.last = Some((
+                host.clone(),
+                diag::uptime_s(),
+                problem.is_fee(),
+            ));
             drop(g);
             let sw = match (switch, on_fallback) {
                 (false, _) => 0,
                 (true, false) => 1,
                 (true, true) => 2,
             };
-            log::warn!(
-                "stratum: payout check: pool {host} paid the miner's address nothing in {} blocks in a row (keeps {kept_sat} sat){}",
-                payout_check::BLOCKS_TO_ACT,
-                if switch { ", switching pools" } else { ", no other pool to switch to, mining on" }
-            );
-            crate::events::record(
-                "pool",
-                warpaxe_diag::events::detail::payout_missing(&host, kept_sat, sw),
-            );
+            let then = if switch { ", switching pools" } else { ", no other pool to switch to, mining on" };
+            let detail = match problem {
+                payout_check::Problem::Missing { kept_sat } => {
+                    log::warn!(
+                        "stratum: payout check: pool {host} paid the miner's address nothing in {} blocks in a row (keeps {kept_sat} sat){then}",
+                        payout_check::BLOCKS_TO_ACT
+                    );
+                    warpaxe_diag::events::detail::payout_missing(&host, kept_sat, sw)
+                }
+                payout_check::Problem::Fee { fee, limit } => {
+                    log::warn!(
+                        "stratum: payout check: pool {host} kept {fee}/1000 of the coinbase in {} blocks in a row (limit {limit}/1000){then}",
+                        payout_check::BLOCKS_TO_ACT
+                    );
+                    warpaxe_diag::events::detail::payout_fee(&host, fee, limit, sw)
+                }
+            };
+            crate::events::record("pool", detail);
             if switch {
                 Err(PayoutMissing)
             } else {
                 Ok(())
             }
         }
+    }
+}
+
+/// The payout check's settings were changed (PATCH): a new
+/// `payoutMaxFee` forgets the pools left for their fee, `payoutCheck`
+/// switched (`all`) every pool left. A miner on the fallback because
+/// the main pool was left goes back to judge it again with the new
+/// settings.
+pub fn payout_settings_changed(all: bool) {
+    let main_id =
+        config::with(|c| payout_check::pool_id(&c.stratum_url, c.stratum_port, &c.stratum_user));
+    let redo = PAY.lock().unwrap().mem.settings_changed(main_id, all);
+    if redo && using_fallback() {
+        reconnect_because("payout check settings changed, judging the main pool again");
     }
 }
 

@@ -731,9 +731,15 @@
   "pay_warn": "Pagamento",
   "pay_missing": "A coinbase deste pool não paga nada ao seu endereço (2 blocos seguidos). Não há outro pool para onde mudar: o minerador continua aqui.",
   "pay_last": "{p} não pagou nada ao seu endereço em 2 blocos seguidos, há {ago}.",
-  "pay_sw0": "não há outro pool, continua minerando aqui",
+  "pay_sw0": "não há outro pool, continua a minerar aqui",
   "pay_sw1": "passou para o pool reserva",
   "pay_sw2": "voltou ao pool principal",
   "alertPayout": "Um pool solo deixa de pagar ao seu endereço",
-  "evd_payout_missing": "o pool {p} não pagou nada ao seu endereço em 2 blocos seguidos (o pool fica com todos os {sat} sat)"
+  "evd_payout_missing": "o pool {p} não pagou nada ao seu endereço em 2 blocos seguidos (o pool fica com todos os {sat} sat)",
+  "payoutMaxFee": "Taxa máxima do pool (%)",
+  "maxfee_s": "Um pool que fica com uma parte da coinbase superior a esta em dois blocos seguidos é abandonado como um que deixa de pagar; 100 = sem limite.",
+  "pay_fee": "taxa {f} %",
+  "pay_fee_over": "Este pool fica com {f} % da coinbase, mais do que o seu limite de {m} % (2 blocos seguidos). Não há outro pool para onde mudar: o minerador continua aqui.",
+  "pay_last_fee": "{p} ficou com mais do que o seu limite de taxa em 2 blocos seguidos, há {ago}.",
+  "evd_payout_fee": "o pool {p} ficou com {fee} % da coinbase em 2 blocos seguidos (limite {max} %)"
 }

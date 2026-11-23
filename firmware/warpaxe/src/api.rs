@@ -399,12 +399,18 @@ pub fn system_info() -> serde_json::Value {
     // The payout check (docs/23): the setting, whether the pool in use
     // has paid the miner's address (armed), whether it is found keeping
     // the payout now, and the last pool found so (null = none since boot).
-    let (pay_armed, pay_missing, pay_last) = crate::stratum::payout_status();
+    let pay = crate::stratum::payout_status();
     v["payoutCheck"] = json!(cfg.payout_check);
-    v["payoutArmed"] = json!(pay_armed);
-    v["payoutMissing"] = json!(cfg.payout_check && pay_missing);
+    v["payoutArmed"] = json!(pay.armed);
+    v["payoutMissing"] = json!(cfg.payout_check && pay.missing);
     v["payoutLastMissing"] =
-        pay_last.map_or(serde_json::Value::Null, |(host, at)| json!({"host": host, "uptime_s": at}));
+        pay.last.map_or(serde_json::Value::Null, |(host, at, fee)| json!({"host": host, "uptime_s": at, "why": if fee { "fee" } else { "missing" }}));
+    // The fee rule: the limit (tenths of a percent), the pool's fee in its
+    // last decoded job (tenths, null before one; 1000 for a coinbase
+    // that pays the address nothing), and whether it is found over.
+    v["payoutMaxFee"] = json!(cfg.payout_max_fee);
+    v["payoutFee"] = json!(pay.fee);
+    v["payoutFeeOver"] = json!(cfg.payout_check && pay.fee_over);
     v["discordLastResult"] = json!(crate::alerts::last_result());
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());
@@ -1195,6 +1201,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let who = peer(&mut req);
         let body = read_body(&mut req, 4096)?;
+        // The payout check's two settings before the change (docs/23).
+        let pay_before = config::with(|c| (c.payout_max_fee, c.payout_check));
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) if limits_refuse(&v).is_some() => {
                 let why = limits_refuse(&v).unwrap_or_default();
@@ -1266,6 +1274,12 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     });
                     if pool_change {
                         stratum::reconnect();
+                    }
+                    // A new fee limit forgets the pools left for their fee,
+                    // the check switched every pool left (docs/23).
+                    let check_changed = cfg.payout_check != pay_before.1;
+                    if check_changed || cfg.payout_max_fee != pay_before.0 {
+                        stratum::payout_settings_changed(check_changed);
                     }
                     if v.get("coreVoltage").is_some() {
                         board::request_core_mv(cfg.core_voltage);

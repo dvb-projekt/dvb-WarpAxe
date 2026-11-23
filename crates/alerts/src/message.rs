@@ -101,6 +101,16 @@ pub enum Alert {
         /// What the firmware did.
         switched: u8,
     },
+    /// A solo pool keeps more than `payoutMaxFee` (docs/23): `fee` and
+    /// `limit` in tenths of a percent, `switched` as above.
+    PayoutFee {
+        /// What the firmware did.
+        switched: u8,
+        /// The fee, tenths of a percent.
+        fee: u16,
+        /// The limit, tenths of a percent.
+        limit: u16,
+    },
 }
 
 impl Alert {
@@ -115,7 +125,7 @@ impl Alert {
             | Alert::Back
             | Alert::FallbackStale { .. } => Kind::Pool,
             Alert::Crash { .. } => Kind::Crash,
-            Alert::PayoutMissing { .. } => Kind::Payout,
+            Alert::PayoutMissing { .. } | Alert::PayoutFee { .. } => Kind::Payout,
         }
     }
 
@@ -165,6 +175,18 @@ impl Alert {
                 2 => format!("⚠️ {h}: the fallback pool's coinbase stopped paying this miner's address, back to the main pool"),
                 _ => format!("⚠️ {h}: the pool's coinbase stopped paying this miner's address, still mining on it (no other pool to switch to)"),
             },
+            Alert::PayoutFee {
+                switched,
+                fee,
+                limit,
+            } => {
+                let (fee, limit) = (pct(*fee), pct(*limit));
+                match switched {
+                    1 => format!("⚠️ {h}: the main pool keeps {fee} % of the coinbase (limit {limit} %), mining on the fallback pool"),
+                    2 => format!("⚠️ {h}: the fallback pool keeps {fee} % of the coinbase (limit {limit} %), back to the main pool"),
+                    _ => format!("⚠️ {h}: the pool keeps {fee} % of the coinbase (limit {limit} %), still mining on it (no other pool to switch to)"),
+                }
+            }
         };
         if skipped > 0 && self.kind() == Kind::Pool {
             let what = if skipped == 1 { "switch" } else { "switches" };
@@ -192,6 +214,11 @@ pub fn from_event(code: &str, value: impl Fn(&str) -> Option<u64>) -> Option<Ale
         },
         "payout_missing" => Alert::PayoutMissing {
             switched: value("sw").map_or(0, |v| u8::try_from(v).unwrap_or(0)),
+        },
+        "payout_fee" => Alert::PayoutFee {
+            switched: value("sw").map_or(0, |v| u8::try_from(v).unwrap_or(0)),
+            fee: value("fee").map_or(0, |v| u16::try_from(v).unwrap_or(u16::MAX)),
+            limit: value("max").map_or(0, |v| u16::try_from(v).unwrap_or(u16::MAX)),
         },
         _ => return None,
     })
@@ -222,6 +249,16 @@ pub fn si(v: f64) -> String {
         return format!("1.00{}", UNITS[i + 1]);
     }
     format!("{s}{}", UNITS[i])
+}
+
+/// Tenths of a percent as a percentage, by integers: 20 → `2`, 35 →
+/// `3.5`.
+fn pct(t: u16) -> String {
+    if t.is_multiple_of(10) {
+        format!("{}", t / 10)
+    } else {
+        format!("{}.{}", t / 10, t % 10)
+    }
 }
 
 /// Text from the device without control characters, cut to `max`
@@ -338,6 +375,24 @@ mod tests {
                 "⚠️ bitaxe602: the fallback pool's coinbase stopped paying this miner's address, back to the main pool",
             ),
             (
+                Alert::PayoutFee {
+                    switched: 1,
+                    fee: 35,
+                    limit: 20,
+                },
+                0.0,
+                "⚠️ bitaxe602: the main pool keeps 3.5 % of the coinbase (limit 2 %), mining on the fallback pool",
+            ),
+            (
+                Alert::PayoutFee {
+                    switched: 0,
+                    fee: 100,
+                    limit: 5,
+                },
+                0.0,
+                "⚠️ bitaxe602: the pool keeps 10 % of the coinbase (limit 0.5 %), still mining on it (no other pool to switch to)",
+            ),
+            (
                 Alert::PayoutMissing { switched: 0 },
                 0.0,
                 "⚠️ bitaxe602: the pool's coinbase stopped paying this miner's address, still mining on it (no other pool to switch to)",
@@ -412,6 +467,20 @@ mod tests {
         assert_eq!(
             from_event("payout_missing", sw),
             Some(Alert::PayoutMissing { switched: 2 })
+        );
+        let fee = |k: &str| match k {
+            "sw" => Some(2),
+            "fee" => Some(35),
+            "max" => Some(20),
+            _ => None,
+        };
+        assert_eq!(
+            from_event("payout_fee", fee),
+            Some(Alert::PayoutFee {
+                switched: 2,
+                fee: 35,
+                limit: 20
+            })
         );
         assert_eq!(
             from_event("payout_missing", |_| None),

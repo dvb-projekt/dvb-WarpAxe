@@ -735,5 +735,11 @@
   "pay_sw1": "已切换到备用矿池",
   "pay_sw2": "已切回主矿池",
   "alertPayout": "Solo 矿池停止向你的地址支付",
-  "evd_payout_missing": "矿池 {p} 连续 2 个区块未向你的地址支付（矿池保留全部 {sat} sat）"
+  "evd_payout_missing": "矿池 {p} 连续 2 个区块未向你的地址支付（矿池保留全部 {sat} sat）",
+  "payoutMaxFee": "矿池最高费率 (%)",
+  "maxfee_s": "矿池若连续 2 个区块保留的 coinbase 超过此值，将与停止支付的矿池一样被切换；100 = 不限。",
+  "pay_fee": "费率 {f} %",
+  "pay_fee_over": "此矿池保留 coinbase 的 {f} %，超过你设定的 {m} % 上限（连续 2 个区块）。没有可切换的矿池：矿机继续在此挖矿。",
+  "pay_last_fee": "{ago}前，{p} 连续 2 个区块保留的比例超过你设定的费率上限。",
+  "evd_payout_fee": "矿池 {p} 连续 2 个区块保留 coinbase 的 {fee} %（上限 {max} %）"
 }

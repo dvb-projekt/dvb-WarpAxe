@@ -674,7 +674,8 @@ back at any time with `GET /api/v1/display/frame`.
   `retry_after` respected; NerdOS's webhook and switches are taken over
   on the first start ([`docs/22`](docs/22-Discord-notifications.md)).
 - Payout check: a solo pool whose coinbase once paid the miner's address
-  most of the reward and then pays it nothing in two blocks in a row is
+  most of the reward and then pays it nothing, or keeps more than the
+  fee limit (`payoutMaxFee`, default 2.0 %), in two blocks in a row is
   left for the fallback pool (or a warning without one), with an event
   and a Discord message; the probe does not take the miner back to it
   ([`docs/23`](docs/23-Payout-check.md)).

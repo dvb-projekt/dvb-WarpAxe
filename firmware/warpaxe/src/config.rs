@@ -281,6 +281,12 @@ pub struct Config {
     /// jobs of two blocks in a row is left for the other pool, with an event and a warning.
     #[serde(rename = "payoutCheck")]
     pub payout_check: bool,
+    /// The highest fee the payout check lets an armed pool keep of the
+    /// coinbase, tenths of a percent (20 = 2.0 %, 1000 = no limit); two
+    /// blocks in a row over it are acted on like a pool that stops
+    /// paying (docs/23).
+    #[serde(rename = "payoutMaxFee")]
+    pub payout_max_fee: u16,
 }
 
 impl Default for Config {
@@ -376,6 +382,7 @@ impl Default for Config {
             alert_crash: true,
             alert_payout: true,
             payout_check: true,
+            payout_max_fee: warpaxe_stratum::payout_check::DEFAULT_MAX_FEE,
         }
     }
 }
@@ -1505,6 +1512,9 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
             warpaxe_alerts::webhook::validate(&cfg.discord_webhook)
                 .map_err(|r| anyhow::anyhow!(r.text()))?;
         }
+    }
+    if cfg.payout_max_fee > warpaxe_stratum::payout_check::MAX_FEE_LIMIT {
+        anyhow::bail!("payoutMaxFee is in tenths of a percent, 0 to 1000");
     }
     save(&cfg)?;
     Ok(cfg)

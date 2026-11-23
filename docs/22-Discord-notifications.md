@@ -30,7 +30,7 @@ One line in English, starting with the miner's hostname:
 | Block found (`alertBlockFound`) | `🎉 bitaxe602: BLOCK FOUND at height 978480, difficulty 128.1T (network 102.3T)` (a coin other than BTC is named after the height) |
 | New best difficulty (`alertBestDiff`) | `⛏️ bitaxe602: new best difficulty 14.8M (network 102.3T)` |
 | Pool switch (`alertPoolSwitch`) | `↪️ bitaxe602: main pool failed 3 times, mining on the fallback pool`, `↪️ bitaxe602: main pool sent no new job for 300 s, mining on the fallback pool`, `↩️ bitaxe602: back on the main pool`, `↩️ bitaxe602: fallback pool sent no new job for 600 s either, back to the main pool` |
-| Solo pool stops paying your address (`alertPayout`, docs/23) | `⚠️ bitaxe602: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool` (or `… back to the main pool`, or `… still mining on it (no other pool to switch to)`) |
+| Solo pool stops paying your address (`alertPayout`, docs/23) | `⚠️ bitaxe602: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool` (or `… back to the main pool`, or `… still mining on it (no other pool to switch to)`); for the fee limit `⚠️ bitaxe602: the main pool keeps 3.5 % of the coinbase (limit 2 %), mining on the fallback pool` |
 | Restart after a crash (`alertCrash`) | `⚠️ bitaxe602: restarted after a crash (int-wdt)` (the reset reason: `panic`, `int-wdt`, `task-wdt`, `wdt`) |
 | (the test button) | `✅ bitaxe602: test message from WarpAxe` |
 

@@ -735,5 +735,11 @@
   "pay_sw1": "passato al pool di riserva",
   "pay_sw2": "tornato al pool principale",
   "alertPayout": "Un pool solo smette di pagare il tuo indirizzo",
-  "evd_payout_missing": "il pool {p} non ha pagato nulla al tuo indirizzo per 2 blocchi di fila (il pool tiene tutti i {sat} sat)"
+  "evd_payout_missing": "il pool {p} non ha pagato nulla al tuo indirizzo per 2 blocchi di fila (il pool tiene tutti i {sat} sat)",
+  "payoutMaxFee": "Commissione massima del pool (%)",
+  "maxfee_s": "Un pool che trattiene una quota della coinbase superiore a questa per due blocchi di fila viene lasciato come uno che smette di pagare; 100 = nessun limite.",
+  "pay_fee": "commissione {f} %",
+  "pay_fee_over": "Questo pool trattiene il {f} % della coinbase, più del tuo limite del {m} % (2 blocchi di fila). Nessun altro pool a cui passare: il miner continua qui.",
+  "pay_last_fee": "{p} ha trattenuto più del tuo limite di commissione per 2 blocchi di fila, {ago} fa.",
+  "evd_payout_fee": "il pool {p} ha trattenuto il {fee} % della coinbase per 2 blocchi di fila (limite {max} %)"
 }
