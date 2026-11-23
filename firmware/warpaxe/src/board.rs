@@ -55,14 +55,19 @@ use crate::config;
 pub const VR_FAN_TARGET_C: f32 = 65.0;
 
 /// The regulator temperature the fans hold on this board, °C: 65 on the
-/// Nerd boards' second fan (NerdOS), 80 on the NerdAxe boards, whose one
-/// fan also cools the chip — their regulator runs at 70-75 °C in normal
-/// mining and only shuts down at 105 °C, so 65 held the fan at 100 %.
+/// Nerd multi-chip boards' second fan (NerdOS), 80 on every board with
+/// one fan output (Bitaxe, NerdAxe, BitForge Nano), whose fan also cools
+/// the chips. There it is a safety net: the one fan follows whichever of
+/// chip and regulator needs more, and a regulator in normal mining (a
+/// NerdAxe's at 70-75 °C, a Bitaxe Gamma's at 50-70 °C) stays below 80,
+/// so the fan is the chip's as in AxeOS; only a regulator heading for its
+/// 105 °C stop (an overclock, a Gamma Turbo's two chips) turns it up
+/// before the chips have to go off. 65 held a NerdAxe's fan at 100 %.
 pub fn vr_fan_target_c(profile: &Profile) -> f32 {
-    if profile.name.starts_with("nerdaxe") {
-        80.0
-    } else {
+    if matches!(profile.thermal, ThermalKind::Tmp1075Emc2302) {
         VR_FAN_TARGET_C
+    } else {
+        80.0
     }
 }
 /// Seconds without a chip temperature reading before the core voltage
@@ -3169,7 +3174,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             // it settles after the chips' start: full fan meanwhile.
             let full = overheat() || FANS_FULL.load(Ordering::Relaxed) || unwatched || settle_held;
             let want = if full {
-                (100, 100)
+                (100, 100, 100)
             } else {
                 let chip = if !cfg.autofanspeed {
                     if idle {
@@ -3186,6 +3191,14 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         None => 100, // no reading: full fan
                     }
                 };
+                // The regulator's PID, run once per pass: the second fan
+                // output on the two-fan boards, the safety net of the one
+                // fan everywhere else.
+                let vr_pid = if hold && !idle {
+                    None
+                } else {
+                    vr_temp.map(|c| pid_vr.compute(c as f32, vr_target_c) as u8)
+                };
                 let vrf = if !cfg.autofanspeed2 {
                     if idle {
                         cfg.manual_fan_speed2.min(low)
@@ -3195,34 +3208,34 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 } else if hold && !idle {
                     100
                 } else {
-                    match vr_temp {
-                        Some(c) => pid_vr.compute(c as f32, vr_target_c) as u8,
-                        None if dark => low,
-                        None => 100,
+                    match (vr_pid, vr_temp) {
+                        (Some(d), _) => d,
+                        (None, None) if dark => low,
+                        (None, None) => 100,
+                        (None, Some(_)) => low,
                     }
                 };
-                (chip, if cfg.link_fans { chip } else { vrf })
+                // One fan output: the chip's duty, raised to the
+                // regulator's when that needs more (automatic fan only; a
+                // fan set by hand stays as set).
+                let one = match vr_pid {
+                    Some(d) if cfg.autofanspeed && !idle => chip.max(d),
+                    _ => chip,
+                };
+                (chip, if cfg.link_fans { chip } else { vrf }, one)
             };
             // The self-test's fan step: at least the asked duty on both
             // outputs, never less than the loop wants.
             let want = match fan_boost_now() {
-                Some(p) => (want.0.max(p), want.1.max(p)),
+                Some(p) => (want.0.max(p), want.1.max(p), want.2.max(p)),
                 None => want,
             };
-            // One fan output: the second value mirrors the first. On the
-            // NerdAxe boards that one fan also cools a regulator running
-            // near its current limit, so it follows whichever of chip and
-            // regulator needs more (the Bitaxe boards keep AxeOS's chip-only
-            // fan).
+            // Two fan outputs (the Nerd multi-chip boards): chip fan and
+            // second fan as above. One fan output: it follows whichever of
+            // chip and regulator needs more ([`vr_fan_target_c`]), and the
+            // second value mirrors it.
             let two = matches!(t, Thermal::Nerd { .. });
-            let want = if two {
-                want
-            } else if profile.name.starts_with("nerdaxe") {
-                let one = want.0.max(want.1);
-                (one, one)
-            } else {
-                (want.0, want.0)
-            };
+            let want = if two { (want.0, want.1) } else { (want.2, want.2) };
             if want != fans && t.set_fans(want.0, want.1) {
                 fans = want;
             }
