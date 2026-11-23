@@ -325,6 +325,16 @@ pub mod detail {
         coded("fan_chip", &[("chip", Value::from(chip))])
     }
 
+    /// The core regulator came back from its NVM (a reset of its own):
+    /// the core at `got` mV instead of `want`; set up again and the chips
+    /// switched off and on.
+    pub fn vr_reset(got: u16, want: u16) -> Detail {
+        coded(
+            "vr_reset",
+            &[("got", Value::from(got)), ("mv", Value::from(want))],
+        )
+    }
+
     /// A share met the network difficulty: a block at this height of
     /// this coin.
     pub fn block_found(height: u64, coin: &str) -> Detail {
@@ -700,6 +710,7 @@ pub const CODES: &[&str] = &[
     "domain_given_up",
     "chain_restart",
     "fan_chip",
+    "vr_reset",
     "block_found",
     "block_confirmed",
     "block_orphaned",
@@ -780,6 +791,11 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "fan_chip" => format!(
             "fan and temperature chip ({}) not found: no fan and no chip temperature, ASICs stay off",
             g("chip")
+        ),
+        "vr_reset" => format!(
+            "core regulator lost its settings (core at {} mV instead of {} mV), reconfigured, ASICs power-cycled",
+            g("got"),
+            g("mv")
         ),
         "block_found" => format!("block {} found ({})", g("h"), g("coin")),
         "block_confirmed" => format!("block {} confirmed: the pool's next work builds on it", g("h")),

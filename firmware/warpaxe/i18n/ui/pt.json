@@ -595,6 +595,7 @@
   "evd_chip_silent": "o chip {c} parou de responder",
   "evd_chain_restart": "todos os {n} chips mudos por 60 s a {mv} mV, ASICs reiniciados",
   "evd_fan_chip": "chip de ventoinha e temperatura ({chip}) não encontrado: sem ventoinha nem temperatura dos chips, ASICs mantidos desligados",
+  "evd_vr_reset": "o regulador de tensão perdeu as configurações (núcleo a {got} mV em vez de {mv} mV), reconfigurado, ASICs desligados e religados",
   "evd_chip_restart": "chip {c} mudo por 10 min a {mv} mV, ASICs reiniciados",
   "evd_chip_given_up": "chip {c} ainda mudo após 3 reinícios, sem novos reinícios até uma nova frequência, uma nova tensão ou a próxima inicialização",
   "evd_domain_latch": "chip {c}, domínio {d} a {pct} % dos outros domínios do chip por {min} min, ASICs desligados e religados",
