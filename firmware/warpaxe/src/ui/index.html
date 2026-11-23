@@ -673,7 +673,7 @@ function dashboard() {
       <div class="row" style="margin:0"><span class="mute">${t("icore")}</span><span class="num">${nf(i.coreCurrentA, 1)} A</span></div>`}`}
       <div class="row" style="margin:0"><span class="mute">${t("clock")}${cfoActive(i) ? ` <span class="dim" style="font-size:12px">(${t("cfo_base")})</span>` : ""}</span><span class="num">${i.frequencyActual || i.frequency} MHz</span></div>${cfoDash(i)}${clockStepNote(i)}</section>
     <section class="card ins"><h2>${t("pool")}<small class="${i.stratumConnected ? "ok" : "err"}">${t(i.stratumConnected ? "connected" : "disconnected")}</small></h2>
-      <div class="plink"><span class="dot" style="${!i.stratumConnected ? "background:var(--err);box-shadow:0 0 10px var(--err)" : i.isUsingFallbackStratum ? "background:var(--warn);box-shadow:0 0 10px var(--warn)" : ""}"></span><span class="host">${esc(i.isUsingFallbackStratum ? i.activePool : `${hp(i.stratumURL, i.stratumPort)}`)}</span><span class="num" style="font-size:12px;color:var(--plasma);white-space:nowrap">${i.stratumProtocolActive === "SV2" ? "Sv2 · Noise" : "V1"}${i.stratumTLSActive ? " · TLS" : ""}${i.poolAddressFamily ? " · " + i.poolAddressFamily : ""}${payBadge(i)}</span></div>
+      <div class="plink"><span class="dot" style="${!i.stratumConnected ? "background:var(--err);box-shadow:0 0 10px var(--err)" : i.isUsingFallbackStratum ? "background:var(--warn);box-shadow:0 0 10px var(--warn)" : ""}"></span><span class="host">${esc(i.isUsingFallbackStratum ? i.activePool : `${hp(i.stratumURL, i.stratumPort)}`)}</span><span class="num" style="font-size:12px;color:var(--plasma);white-space:nowrap">${i.stratumProtocolActive === "SV2" ? "Sv2 · Noise" : "V1"}${i.stratumTLSActive ? " · TLS" : ""}${i.poolAddressFamily ? " · " + i.poolAddressFamily : ""}</span></div>${payBadge(i)}
       <div class="row" style="margin:0"><span class="mute">${t("worker")}</span><span class="num" style="font-size:13px">${esc(worker(i.isUsingFallbackStratum ? i.fallbackStratumUser : i.stratumUser))}</span></div>
       <div class="row" style="margin:0"><span class="mute">${t("difficulty")}</span><span class="num">${nf(i.poolDifficulty, i.poolDifficulty > 0 && i.poolDifficulty < 1 ? 3 : 0)}</span></div>
       <div class="row" style="margin:0"><span class="mute">${t("shares")}</span><span class="num">${nf(i.sharesAccepted)} / <span class="${i.sharesRejected ? "warn" : ""}">${nf(i.sharesRejected)}</span></span></div>
@@ -952,10 +952,11 @@ function poolHero() {
    and there was no other pool to go to (red), or the last pool found so
    since boot (muted). */
 /* The payout check is armed for the pool in use and it pays the address:
-   a green mark next to the protocol on the pool card. */
+   a green line under the pool on the pool card (on its own line, so the
+   pool's name is not squeezed out of the row). */
 function payBadge(i) {
   if (i.payoutCheck === false || !i.payoutArmed || i.payoutMissing) return "";
-  return ` · <span style="color:var(--ok)" title="${esc(t("pay_ok_s"))}">✓ ${t("pay_ok")}</span>`;
+  return `<div class="num" style="font-size:12px;color:var(--ok);margin:4px 0 0 2px" title="${esc(t("pay_ok_s"))}">✓ ${t("pay_ok")}</div>`;
 }
 function payoutWarn(i) {
   if (i.payoutCheck === false) return "";
