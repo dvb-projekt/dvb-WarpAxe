@@ -594,7 +594,7 @@
   "crash_nodump": "Ce plantage n’a laissé aucun core dump.",
   "evd_chip_silent": "la puce {c} ne répond plus",
   "evd_chain_restart": "toutes les {n} puces muettes pendant 60 s à {mv} mV, ASIC redémarrés",
-  "evd_fan_chip": "puce de ventilateur et de température ({chip}) introuvable : pas de ventilateur ni de température des puces, ASIC laissés éteints",
+  "evd_fan_chip": "puce de ventilateur et de température ({chip}) introuvable : pas de ventilateur ni de température des puces, ASIC maintenus éteints",
   "evd_chip_restart": "puce {c} muette pendant 10 min à {mv} mV, ASIC redémarrés",
   "evd_chip_given_up": "puce {c} toujours muette après 3 redémarrages, plus aucun redémarrage jusqu’à une nouvelle fréquence, une nouvelle tension ou le prochain démarrage",
   "evd_domain_latch": "puce {c}, domaine {d} à {pct} % des autres domaines de la puce pendant {min} min, ASIC éteints puis rallumés",

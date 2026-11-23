@@ -2095,7 +2095,7 @@ fn nano_thermal(
 ) -> Option<Thermal> {
     let mut sensors = channels.map(|ch| Emc2101::new(Muxed::new(bus.clone(), mux, ch), config));
     for (i, s) in sensors.iter_mut().enumerate() {
-        match s.init().and_then(|()| s.set_fan_percent(100)) {
+        match retry_init(|| s.init().and_then(|()| s.set_fan_percent(100))) {
             Ok(()) => log::info!(
                 "board: EMC2101 #{} up (mux channel {}), fan 100 %",
                 i + 1,
