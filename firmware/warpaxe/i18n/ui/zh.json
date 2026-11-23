@@ -723,5 +723,15 @@
   "dw_w_test": "测试消息",
   "dw_ok": "上一条消息 {d} 前已送达（{w}）",
   "dw_fail": "上一条消息 {d} 前未能送达（{w}）：{e}",
-  "imp_discord": "Discord 通知"
+  "imp_discord": "Discord 通知",
+  "payoutCheck": "收益检查",
+  "payout_s": "适用于 Solo 矿池：某矿池的 coinbase 一旦向你的地址支付过，之后若连续 2 个任务未向其支付，则切换到另一个矿池；没有另一个矿池时仅发出警告。",
+  "pay_warn": "收益",
+  "pay_missing": "此矿池的 coinbase 未向你的地址支付任何金额（连续 2 个任务）。没有可切换的矿池：矿机继续在此挖矿。",
+  "pay_last": "{p} 连续 2 个任务未向你的地址支付，{ago}前。",
+  "pay_sw0": "没有可切换的矿池，继续挖矿",
+  "pay_sw1": "已切换到备用矿池",
+  "pay_sw2": "已切回主矿池",
+  "alertPayout": "Solo 矿池停止向你的地址支付",
+  "evd_payout_missing": "矿池 {p} 连续 2 个任务未向你的地址支付（保留全部 {sat} sat）"
 }

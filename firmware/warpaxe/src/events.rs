@@ -57,6 +57,9 @@ pub fn record(kind: &'static str, detail: Detail) {
 /// Nothing is written when nothing is queued or every queued event was a
 /// repeat.
 pub fn flush() {
+    // The payout check's pools seen paying (docs/23) take the same ride:
+    // set on the stratum thread, written from here.
+    crate::config::flush_payout_seen();
     let pending: Vec<Event> = std::mem::take(&mut *PENDING.lock().unwrap());
     if pending.is_empty() {
         return;

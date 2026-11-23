@@ -272,6 +272,15 @@ pub struct Config {
     /// A message after a restart that a crash or a watchdog caused.
     #[serde(rename = "alertCrash")]
     pub alert_crash: bool,
+    /// A message when a solo pool's coinbase stops paying the miner's
+    /// address (docs/23).
+    #[serde(rename = "alertPayout")]
+    pub alert_payout: bool,
+    /// The payout check (docs/23): a pool whose coinbase once paid the
+    /// miner's address and then pays it nothing in two decoded jobs in a
+    /// row is left for the other pool, with an event and a warning.
+    #[serde(rename = "payoutCheck")]
+    pub payout_check: bool,
 }
 
 impl Default for Config {
@@ -365,6 +374,8 @@ impl Default for Config {
             alert_best: true,
             alert_pool: true,
             alert_crash: true,
+            alert_payout: true,
+            payout_check: true,
         }
     }
 }
@@ -441,8 +452,48 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
         .flatten()
         .map(|s| s.trim_end_matches('\0').to_string())
         .unwrap_or_default();
+    *PAYOUT_SEEN.lock().unwrap() = (nvs.get_u64(PAYOUT_SEEN_KEY).ok().flatten().unwrap_or(0), false);
     *NVS.lock().unwrap() = Some(nvs);
     Ok(())
+}
+
+/// The pools seen paying the miner's address (docs/23,
+/// `warpaxe_stratum::payout_check::Memory::stored`), and whether that
+/// changed since it was stored. Read at boot on the main task; set from
+/// the stratum thread (stack in PSRAM, no flash) and written by
+/// [`flush_payout_seen`] from an internal stack.
+static PAYOUT_SEEN: Mutex<(u64, bool)> = Mutex::new((0, false));
+const PAYOUT_SEEN_KEY: &str = "payseen";
+
+/// The stored pools seen paying, as read at boot or set since.
+pub fn payout_seen() -> u64 {
+    PAYOUT_SEEN.lock().unwrap().0
+}
+
+/// Note a new value (RAM only); [`flush_payout_seen`] stores it.
+pub fn set_payout_seen(v: u64) {
+    let mut g = PAYOUT_SEEN.lock().unwrap();
+    if g.0 != v {
+        *g = (v, true);
+    }
+}
+
+/// Store the pools seen paying if they changed. A flash write: only from
+/// a thread whose stack is in internal RAM (`events::flush` calls it).
+pub fn flush_payout_seen() {
+    let v = {
+        let mut g = PAYOUT_SEEN.lock().unwrap();
+        if !g.1 {
+            return;
+        }
+        g.1 = false;
+        g.0
+    };
+    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
+        if let Err(e) = nvs.set_u64(PAYOUT_SEEN_KEY, v) {
+            log::warn!("config: storing the pools seen paying: {e}");
+        }
+    }
 }
 
 /// The default NVS partition, for reading another firmware's namespace
@@ -1184,6 +1235,15 @@ pub fn get() -> Config {
     CONFIG.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// Read a few fields without cloning the whole config: for a caller on
+/// every job (the payout check), where `get` would copy every string.
+pub fn with<R>(f: impl FnOnce(&Config) -> R) -> R {
+    match CONFIG.lock().unwrap().as_ref() {
+        Some(c) => f(c),
+        None => f(&Config::default()),
+    }
+}
+
 /// A string of our NVS namespace by key, for the small records other
 /// modules keep beside the config (the event log). `None` when there is
 /// none or it does not read.
@@ -1756,7 +1816,8 @@ pub fn import_stock(stock: &Stock) -> Vec<&'static str> {
 /// webhook when it is one WarpAxe takes, and its switches where it has
 /// them: `alrt_disc_bf_en` block found, `alrt_disc_bd_en` best
 /// difficulty, `alrt_disc_en` its watchdog restart (a restart without a
-/// share for an hour; here the restart after a crash or a watchdog). It
+/// share for an hour; here the restart after a crash or a watchdog),
+/// `alrt_disc_cb_en` its coinbase check (here the payout check). It
 /// has no pool-switch message, so that switch keeps WarpAxe's default.
 /// The URL never reaches the log.
 fn import_discord(stock: &Stock, cfg: &mut Config) -> bool {
@@ -1777,6 +1838,8 @@ fn import_discord(stock: &Stock, cfg: &mut Config) -> bool {
     cfg.alert_block = flag("alrt_disc_bf_en", cfg.alert_block);
     cfg.alert_best = flag("alrt_disc_bd_en", cfg.alert_best);
     cfg.alert_crash = flag("alrt_disc_en", cfg.alert_crash);
+    // Its coinbase check's message: here the payout check's (docs/23).
+    cfg.alert_payout = flag("alrt_disc_cb_en", cfg.alert_payout);
     true
 }
 

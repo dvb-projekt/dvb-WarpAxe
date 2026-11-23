@@ -1,7 +1,8 @@
 //! Discord notifications (docs/22): a short message to the webhook the
 //! owner entered when a block is found, on a new all-time best
-//! difficulty, on a switch to or from the fallback pool and after a
-//! restart that a crash caused. The rules (which URLs, the texts,
+//! difficulty, on a switch to or from the fallback pool, after a
+//! restart that a crash caused and when a solo pool stops paying the
+//! miner's address (docs/23). The rules (which URLs, the texts,
 //! coalescing, the one retry) are `warpaxe_alerts`; this module queues
 //! and sends.
 //!
@@ -73,10 +74,15 @@ pub fn crash(reason: &str) {
 }
 
 /// An event as `events::record` notes it: a switch between the main and
-/// the fallback pool becomes a message (folded to one a minute).
+/// the fallback pool becomes a message (folded to one a minute); a pool
+/// found keeping the payout (docs/23) one of its own, never folded.
 pub fn on_event(detail: &warpaxe_diag::events::Detail) {
     if let Some(a) = message::from_event(detail.code(), |k| detail.number(k)) {
-        POOL.lock().unwrap().offer(a);
+        if a.kind() == Kind::Payout {
+            push(a);
+        } else {
+            POOL.lock().unwrap().offer(a);
+        }
     }
 }
 
@@ -136,6 +142,7 @@ fn next_due(cfg: &config::Config, now: u64) -> Option<(Alert, u32)> {
                 Kind::Crash => cfg.alert_crash,
                 Kind::BestDiff => cfg.alert_best,
                 Kind::Pool => cfg.alert_pool,
+                Kind::Payout => cfg.alert_payout,
             };
             if on {
                 return Some((a, 0));

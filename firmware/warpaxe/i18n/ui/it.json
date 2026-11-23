@@ -723,5 +723,15 @@
   "dw_w_test": "messaggio di prova",
   "dw_ok": "Ultimo messaggio consegnato {d} fa ({w})",
   "dw_fail": "Ultimo messaggio non consegnato {d} fa ({w}): {e}",
-  "imp_discord": "notifiche Discord"
+  "imp_discord": "notifiche Discord",
+  "payoutCheck": "Controllo del pagamento",
+  "payout_s": "Pool solo: quando la coinbase di un pool ha pagato il tuo indirizzo, due job di fila che non gli pagano nulla passano all’altro pool, o avvisano se non ce n’è uno.",
+  "pay_warn": "Pagamento",
+  "pay_missing": "La coinbase di questo pool non paga nulla al tuo indirizzo (2 job di fila). Nessun altro pool a cui passare: il miner continua qui.",
+  "pay_last": "{p} non ha pagato nulla al tuo indirizzo per 2 job di fila, {ago} fa.",
+  "pay_sw0": "nessun altro pool a cui passare, il mining continua",
+  "pay_sw1": "sul pool di riserva",
+  "pay_sw2": "ritorno al pool principale",
+  "alertPayout": "Un pool solo smette di pagare il tuo indirizzo",
+  "evd_payout_missing": "il pool {p} non ha pagato nulla al tuo indirizzo per 2 job di fila (tiene tutti i {sat} sat)"
 }

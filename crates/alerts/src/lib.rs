@@ -3,7 +3,8 @@
 //! The miner posts a short message to a Discord webhook the owner
 //! entered when something worth a look happens: a block found, a new
 //! all-time best difficulty, a switch to or from the fallback pool, a
-//! restart after a crash. This crate holds the rules, kept apart from
+//! restart after a crash, a solo pool that stops paying the miner's
+//! address (docs/23). This crate holds the rules, kept apart from
 //! any I/O so they are host tests; the firmware's `alerts` module queues
 //! and sends (`docs/22`).
 //!
