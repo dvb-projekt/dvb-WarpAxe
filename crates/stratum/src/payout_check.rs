@@ -187,6 +187,13 @@ pub enum Problem {
     },
 }
 
+impl Problem {
+    /// For the fee (else for paying nothing).
+    pub fn is_fee(&self) -> bool {
+        matches!(self, Problem::Fee { .. })
+    }
+}
+
 /// What the firmware does after a job.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
@@ -285,10 +292,18 @@ impl Check {
             },
             Evidence::None => return step,
         };
-        if self.problem.is_some() {
-            // Acted on already: what is wrong now, without a second act.
-            self.problem = Some(problem);
-            return step;
+        if let Some(old) = self.problem {
+            if old.is_fee() == problem.is_fee() {
+                // Acted on already, the same reason: the figures follow,
+                // no second act, and a run for the other reason starts
+                // over.
+                self.problem = Some(problem);
+                self.misses = 0;
+                self.miss_block = None;
+                return step;
+            }
+            // The other reason: acted on again once it, too, holds for
+            // two blocks in a row (below).
         }
         if self.miss_block == Some(block) {
             // Another template of the same block.
@@ -298,6 +313,8 @@ impl Check {
         self.misses = self.misses.saturating_add(1);
         if self.misses >= BLOCKS_TO_ACT {
             self.problem = Some(problem);
+            self.misses = 0;
+            self.miss_block = None;
             Step::Act(problem)
         } else {
             step
@@ -319,6 +336,8 @@ pub fn block_key(prev_hash: &[u8; 32]) -> u64 {
 pub struct Memory {
     seen: [u32; 2],
     left: [u32; 2],
+    /// Why each was left: for the fee (else for paying nothing).
+    left_fee: [bool; 2],
 }
 
 impl Memory {
@@ -327,6 +346,7 @@ impl Memory {
         Self {
             seen: [0; 2],
             left: [0; 2],
+            left_fee: [false; 2],
         }
     }
 
@@ -335,6 +355,7 @@ impl Memory {
         Self {
             seen: [(v >> 32) as u32, v as u32],
             left: [0; 2],
+            left_fee: [false; 2],
         }
     }
 
@@ -376,11 +397,35 @@ impl Memory {
         changed
     }
 
-    /// The pool `id` in `slot` was left for not paying.
-    pub fn leave(&mut self, slot: usize, id: u32) {
-        if let Some(l) = self.left.get_mut(slot) {
-            *l = id;
+    /// The pool `id` in `slot` was left for not paying (`fee`: for
+    /// keeping more than the limit).
+    pub fn leave(&mut self, slot: usize, id: u32, fee: bool) {
+        if slot <= FALLBACK {
+            self.left[slot] = id;
+            self.left_fee[slot] = fee;
         }
+    }
+
+    /// Why the pool `id` in `slot` was left: `Some(true)` for the fee,
+    /// `Some(false)` for paying nothing, `None` when it is not left.
+    pub fn left_reason(&self, slot: usize, id: u32) -> Option<bool> {
+        self.is_left(slot, id).then(|| self.left_fee[slot])
+    }
+
+    /// The payout check's settings changed: `all` (`payoutCheck`
+    /// switched) forgets every left mark, otherwise (`payoutMaxFee`
+    /// changed) those left for the fee only. True when the main pool
+    /// `main_id` was left and no longer is: a miner on the fallback for
+    /// it should judge the main pool again.
+    pub fn settings_changed(&mut self, main_id: u32, all: bool) -> bool {
+        let was = self.is_left(MAIN, main_id);
+        for slot in [MAIN, FALLBACK] {
+            if all || self.left_fee[slot] {
+                self.left[slot] = 0;
+                self.left_fee[slot] = false;
+            }
+        }
+        was && !self.is_left(MAIN, main_id)
     }
 
     /// The pool `id` in `slot` was left for not paying and has not paid
@@ -648,9 +693,18 @@ mod tests {
             c.job(paid(500), 2, true, MAX),
             Step::Act(Problem::Fee { fee: 50, limit: 20 })
         );
-        // Now nothing at all: the state follows, no second act.
+        // Now nothing at all: another reason, acted on again once it
+        // holds for two blocks.
         assert_eq!(c.job(miss, 3, true, MAX), Step::Nothing);
+        assert!(c.fee_over());
+        assert_eq!(
+            c.job(miss, 4, true, MAX),
+            Step::Act(Problem::Missing { kept_sat: 7 })
+        );
         assert!(c.missing() && !c.fee_over());
+        // And the same reason again: no act.
+        assert_eq!(c.job(miss, 5, true, MAX), Step::Nothing);
+        assert_eq!(c.job(miss, 6, true, MAX), Step::Nothing);
         // The other way round.
         let mut c = Check::new(true);
         assert_eq!(c.job(paid(500), 1, true, MAX), Step::Nothing);
@@ -658,10 +712,14 @@ mod tests {
             c.job(miss, 2, true, MAX),
             Step::Act(Problem::Missing { kept_sat: 7 })
         );
-        // A payment over the limit is no recovery.
+        // A payment over the limit is no recovery; a single block of it
+        // is no new reason, and one of the old reason breaks its run.
         assert_eq!(c.job(paid(500), 3, true, MAX), Step::Nothing);
-        assert!(c.fee_over());
-        assert_eq!(c.job(paid(20), 4, true, MAX), Step::Recovered);
+        assert!(c.missing());
+        assert_eq!(c.job(miss, 4, true, MAX), Step::Nothing);
+        assert_eq!(c.job(paid(500), 5, true, MAX), Step::Nothing);
+        assert!(c.missing());
+        assert_eq!(c.job(paid(20), 6, true, MAX), Step::Recovered);
     }
 
     #[test]
@@ -737,7 +795,7 @@ mod tests {
         assert!(!m.armed(MAIN, fb), "another pool in the slot");
         assert!(m.paid(FALLBACK, fb));
         // Stored and read back: the seen marks survive, left ones do not.
-        m.leave(MAIN, main);
+        m.leave(MAIN, main, false);
         let back = Memory::from_stored(m.stored());
         assert!(back.armed(MAIN, main) && back.armed(FALLBACK, fb));
         assert!(!back.is_left(MAIN, main));
@@ -753,7 +811,7 @@ mod tests {
         let main = pool_id("solo.a", 3333, "bc1qa");
         let fb = pool_id("solo.b", 3333, "bc1qa");
         m.paid(MAIN, main);
-        m.leave(MAIN, main);
+        m.leave(MAIN, main, false);
         assert!(m.is_left(MAIN, main));
         assert!(!m.probe_allowed(main, true));
         // The check switched off: the probe goes as before.
@@ -766,7 +824,7 @@ mod tests {
         assert!(!m.is_left(MAIN, main));
         assert!(m.probe_allowed(main, true));
         // Paying in the other slot does not clear it.
-        m.leave(MAIN, main);
+        m.leave(MAIN, main, false);
         m.paid(FALLBACK, fb);
         assert!(m.is_left(MAIN, main));
     }
@@ -781,10 +839,43 @@ mod tests {
         assert!(!m.can_switch(false, false, fb));
         // On the fallback: back to the main pool, unless it was left.
         assert!(m.can_switch(true, true, main));
-        m.leave(MAIN, main);
+        m.leave(MAIN, main, false);
         assert!(!m.can_switch(true, true, main));
         // Both left: warn only.
-        m.leave(FALLBACK, fb);
+        m.leave(FALLBACK, fb, false);
         assert!(!m.can_switch(false, true, fb));
+    }
+
+    #[test]
+    fn left_marks_keep_their_reason_and_settings_clear_them() {
+        let main = pool_id("solo.a", 3333, "bc1qa");
+        let fb = pool_id("solo.b", 3333, "bc1qa");
+        let mut m = Memory::new();
+        m.leave(MAIN, main, true);
+        m.leave(FALLBACK, fb, false);
+        assert_eq!(m.left_reason(MAIN, main), Some(true));
+        assert_eq!(m.left_reason(FALLBACK, fb), Some(false));
+        assert_eq!(m.left_reason(MAIN, fb), None);
+        // The reason changes with a new leave.
+        m.leave(MAIN, main, false);
+        assert_eq!(m.left_reason(MAIN, main), Some(false));
+        m.leave(MAIN, main, true);
+        // A new fee limit: the fee marks go, the main pool is to be
+        // judged again.
+        assert!(m.settings_changed(main, false));
+        assert!(!m.is_left(MAIN, main));
+        assert!(m.is_left(FALLBACK, fb));
+        // Again: nothing left for the fee, nothing to do.
+        assert!(!m.settings_changed(main, false));
+        // Main left for paying nothing stays left on a fee change ...
+        m.leave(MAIN, main, false);
+        assert!(!m.settings_changed(main, false));
+        assert!(m.is_left(MAIN, main));
+        // ... and goes when the check is switched.
+        assert!(m.settings_changed(main, true));
+        assert!(!m.is_left(MAIN, main) && !m.is_left(FALLBACK, fb));
+        // Only the fallback left: nothing for the main pool to redo.
+        m.leave(FALLBACK, fb, true);
+        assert!(!m.settings_changed(main, true));
     }
 }

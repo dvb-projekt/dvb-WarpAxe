@@ -667,7 +667,6 @@ pub mod detail {
     }
 }
 
-/// A value as the English text shows it.
 /// What the payout check did (`sw` of `payout_missing`, `payout_fee`).
 fn switched(v: Option<&Value>) -> &'static str {
     match v.and_then(Value::as_u64) {
@@ -687,6 +686,7 @@ fn tenths(v: Option<&Value>) -> String {
     }
 }
 
+/// A value as the English text shows it.
 fn show(v: Option<&Value>) -> String {
     match v {
         Some(Value::String(s)) => s.clone(),
