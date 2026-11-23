@@ -89,7 +89,9 @@ pool that keeps more of the reward than the fee limit the owner set
     alternate one paying job with two jobs on made-up block hashes and
     raise an event and a Discord message every few seconds. Within the
     cooldown the pool is still marked left and the switch still
-    happens; only the event and the message are held back.
+    happens; only the event and the message are held back. A change
+    of `payoutMaxFee` or `payoutCheck` ends the cooldown, so the next
+    act after it is reported at once.
 - **No automatic return.** A main pool left for not paying is marked
   *left* (RAM). The probe that normally takes the miner back from the
   fallback skips it. The same mark is set for a pool left for its fee.

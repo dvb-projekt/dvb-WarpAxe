@@ -450,11 +450,14 @@ impl Memory {
 
     /// The payout check's settings changed: `all` (`payoutCheck`
     /// switched) forgets every left mark, otherwise (`payoutMaxFee`
-    /// changed) those left for the fee only. True when the main pool
+    /// changed) those left for the fee only. The report cooldown
+    /// ([`REPORT_COOLDOWN_S`]) starts over too: the owner changed the
+    /// rules and hears about the next act at once. True when the main pool
     /// `main_id` was left and no longer is: a miner on the fallback for
     /// it should judge the main pool again.
     pub fn settings_changed(&mut self, main_id: u32, all: bool) -> bool {
         let was = self.is_left(MAIN, main_id);
+        self.reported = [(0, 0); 2];
         for slot in [MAIN, FALLBACK] {
             if all || self.left_fee[slot] {
                 self.left[slot] = 0;
@@ -951,5 +954,25 @@ mod tests {
         assert!(m.act(FALLBACK, fb, true, 6 + 2 * REPORT_COOLDOWN_S));
         // No slot, no pool: nothing.
         assert!(!m.act(2, main, false, 0) && !m.act(MAIN, 0, false, 0));
+    }
+
+    #[test]
+    fn a_settings_change_ends_the_report_cooldown() {
+        let main = pool_id("solo.a", 3333, "bc1qa");
+        for all in [false, true] {
+            let mut m = Memory::new();
+            m.paid(MAIN, main);
+            assert!(m.act(MAIN, main, true, 100));
+            // Paid, failed again: within the cooldown, not reported.
+            m.paid(MAIN, main);
+            assert!(!m.act(MAIN, main, true, 110));
+            // The owner changes the fee limit or switches the check: the
+            // next act is reported at once.
+            m.settings_changed(main, all);
+            assert!(m.act(MAIN, main, true, 120));
+            // And the cooldown runs from that report.
+            m.paid(MAIN, main);
+            assert!(!m.act(MAIN, main, true, 130));
+        }
     }
 }
