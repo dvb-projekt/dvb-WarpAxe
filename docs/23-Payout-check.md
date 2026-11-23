@@ -164,5 +164,13 @@ pool that keeps more of the reward than the fee limit the owner set
 
 By host tests only (`cargo test -p warpaxe-stratum payout_check`, plus
 the event and alert texts in `warpaxe-diag` and `warpaxe-alerts`). The
-firmware build passes. Not yet run on a device or against a pool that
-stops paying.
+firmware build passes.
+
+On devices: main e8a6095 ran for three hours on the eight boards of the
+test fleet (Bitaxe Gamma, NerdAxe Gaia, Naja Duo and others) against
+WarpPool and a local solo pool. The check armed on every board, the
+pool card showed "✓ payout checked · fee 0 %", and no board raised a
+false alarm or left a pool; two short pool restarts during the watch
+were handled by the usual fallback, not by the payout check. A pool that
+really stops paying has not been met on a device; that path is covered
+by the host tests only.
