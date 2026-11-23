@@ -71,11 +71,13 @@ pub enum Family {
     Ipv4Only,
 }
 
-/// How an answer from [`get`] came: over IPv6 from `host`, or over IPv4.
+/// How an answer from [`get`] (or a connection from [`open`]) came: over
+/// IPv6 from `host`, or over IPv4.
 pub struct Via(Option<String>);
 
 impl Via {
-    /// The body of this answer broke off: if it came over IPv6, that host
+    /// The body of this answer broke off, or the request's body or answer
+    /// after [`open`] failed in transport: if it came over IPv6, that host
     /// goes over IPv4 for a while, so the caller's retry takes IPv4.
     pub fn body_failed(&self) {
         if let Some(h) = &self.0 {
@@ -147,20 +149,22 @@ fn open_v4(
     Ok(c)
 }
 
-/// The connection to `url` with the request line and headers sent; the
-/// body, if any, and `initiate_response` are the caller's. Over IPv6 when
+/// The connection to `url` with the request line and headers sent, and
+/// how it came; the body, if any, and `initiate_response` are the
+/// caller's, and so is calling [`Via::body_failed`] when they fail
+/// (the request is not repeated: its headers went out). Over IPv6 when
 /// the rule allows it and that opens, else over IPv4 as before.
 pub fn open(
     url: &str,
     conf: &Configuration,
     method: Method,
     headers: &[(&str, &str)],
-) -> Result<EspHttpConnection, EspError> {
+) -> Result<(EspHttpConnection, Via), EspError> {
     if let Some(t) = ipv6_target(url) {
         match open_v6(&t, conf, method, headers) {
             Ok(c) => {
                 log::info!("http: {} open over IPv6", t.name);
-                return Ok(c);
+                return Ok((c, Via(Some(t.name))));
             }
             Err(e) => {
                 log::info!("http: {} over IPv6 failed ({e}): over IPv4", t.name);
@@ -168,7 +172,7 @@ pub fn open(
             }
         }
     }
-    open_v4(url, conf, method, headers)
+    open_v4(url, conf, method, headers).map(|c| (c, Via(None)))
 }
 
 /// A GET to `url` with the response headers read: over IPv6 when the

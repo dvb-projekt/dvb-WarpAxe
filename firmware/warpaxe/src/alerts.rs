@@ -247,7 +247,7 @@ fn post(url: &str, body: &str) -> Result<(u16, Option<f64>), String> {
     let len = body.len().to_string();
     // Over IPv6 when the pool's rule allows it (docs/17); a failed IPv6
     // open falls back to IPv4 before the body goes out, never after.
-    let mut c = crate::net::http::open(
+    let (mut c, via) = crate::net::http::open(
         url,
         &Configuration {
             crt_bundle_attach: Some(crate::tls_trust::attach),
@@ -264,8 +264,19 @@ fn post(url: &str, body: &str) -> Result<(u16, Option<f64>), String> {
         ],
     )
     .map_err(|e| e.to_string())?;
-    c.write_all(body.as_bytes()).map_err(|e| e.to_string())?;
-    c.initiate_response().map_err(|e| e.to_string())?;
+    // A transport failure after the headers went out (no status): never
+    // repeated here at once over IPv4 (Discord may have the message); the
+    // one retry `pace` allows comes later as before, and since an IPv6
+    // host now goes over IPv4 for a while (as a GET's would), it takes
+    // IPv4.
+    let sent = match c.write_all(body.as_bytes()) {
+        Ok(()) => c.initiate_response().map_err(|e| e.to_string()),
+        Err(e) => Err(e.to_string()),
+    };
+    if let Err(e) = sent {
+        via.body_failed();
+        return Err(e);
+    }
     let status = c.status();
     if status != 429 {
         return Ok((status, None));

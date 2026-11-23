@@ -86,7 +86,9 @@ UI, on by default.
    sent twice. A GET whose IPv6 answer is 404 or a server error (an IPv6
    front end not bound to the site) is asked once more over IPv4. A host
    that failed over IPv6 in any of these ways, or whose body broke off
-   over IPv6, goes over IPv4 for 30 minutes, so a broken IPv6 path costs
+   over IPv6 (for a POST: its body or answer failed in transport after
+   the headers went out, so the alert's one later retry takes IPv4), goes
+   over IPv4 for 30 minutes, so a broken IPv6 path costs
    one failed attempt, not one per request; the update's third and last
    attempt is IPv4 only in any case. Redirects over IPv6 are followed hop by hop, each hop with
    its own name and its own choice of family (`warpaxe_stratum::url`,
