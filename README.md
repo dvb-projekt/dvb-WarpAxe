@@ -673,6 +673,11 @@ back at any time with `GET /api/v1/display/frame`.
   thread on a PSRAM stack sends, at most one retry, Discord's
   `retry_after` respected; NerdOS's webhook and switches are taken over
   on the first start ([`docs/22`](docs/22-Discord-notifications.md)).
+- Payout check: a solo pool whose coinbase once paid the miner's address
+  most of the reward and then pays it nothing in two blocks in a row is
+  left for the fallback pool (or a warning without one), with an event
+  and a Discord message; the probe does not take the miner back to it
+  ([`docs/23`](docs/23-Payout-check.md)).
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
   /api/system`, `/api/system/asic`, `/api/v2/settings`, NerdOS's
   `/api/v2/dashboard` (its `performance` object: hash rates and, per chip,
@@ -1266,7 +1271,11 @@ curl -s -X POST -d '{"board":{"SilentVrShutdown":{"above_hz":600000000}}}' http:
 - [`docs/22-Discord-notifications.md`](docs/22-Discord-notifications.md)
   — the Discord messages: setting up a webhook, what each message says
   and when it is sent, how it is sent without holding anything up, the
-  API fields, what leaves the miner and what never does.
+  API fields, what leaves the miner and what never does;
+- [`docs/23-Payout-check.md`](docs/23-Payout-check.md)
+  — the payout check: a solo pool whose coinbase stops paying the
+  miner's address is left for the other pool, with an event, a Discord
+  message and a warning; the rule, its limits and the API fields.
 
 Short version: registers and init sequences are **data**, not code per
 chip; the PLL is **solved**, so the reported frequency is the real one;

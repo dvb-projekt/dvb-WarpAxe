@@ -723,5 +723,15 @@
   "dw_w_test": "message de test",
   "dw_ok": "Dernier message transmis il y a {d} ({w})",
   "dw_fail": "Échec de l’envoi du dernier message il y a {d} ({w}) : {e}",
-  "imp_discord": "notifications Discord"
+  "imp_discord": "notifications Discord",
+  "payoutCheck": "Contrôle du paiement",
+  "payout_s": "Pools solo : si la coinbase d’un pool a déjà payé votre adresse, le mineur bascule sur l’autre pool dès que deux blocs de suite ne lui versent rien, ou alerte s’il n’y en a pas.",
+  "pay_warn": "Paiement",
+  "pay_missing": "La coinbase de ce pool ne verse rien à votre adresse (2 blocs de suite). Aucun autre pool vers lequel basculer : le mineur continue ici.",
+  "pay_last": "{p} n’a rien versé à votre adresse pendant 2 blocs de suite, il y a {ago}.",
+  "pay_sw0": "aucun autre pool, le minage continue ici",
+  "pay_sw1": "bascule sur le pool de secours",
+  "pay_sw2": "retour au pool principal",
+  "alertPayout": "Un pool solo cesse de payer votre adresse",
+  "evd_payout_missing": "le pool {p} n’a rien versé à votre adresse pendant 2 blocs de suite (le pool garde les {sat} sat)"
 }

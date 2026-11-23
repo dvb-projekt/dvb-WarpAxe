@@ -9,6 +9,7 @@
 //! ↪️ bitaxe602: main pool failed 3 times, mining on the fallback pool
 //! ↩️ bitaxe602: back on the main pool
 //! ⚠️ bitaxe602: restarted after a crash (int-wdt)
+//! ⚠️ bitaxe602: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool
 //! ✅ bitaxe602: test message from WarpAxe
 //! ```
 //!
@@ -31,6 +32,8 @@ pub enum Kind {
     Pool,
     /// `alertCrash`.
     Crash,
+    /// `alertPayout`.
+    Payout,
 }
 
 impl Kind {
@@ -42,6 +45,7 @@ impl Kind {
             Kind::BestDiff => "bestDiff",
             Kind::Pool => "pool",
             Kind::Crash => "crash",
+            Kind::Payout => "payout",
         }
     }
 }
@@ -89,6 +93,14 @@ pub enum Alert {
         /// The reset reason.
         reason: String,
     },
+    /// A solo pool's coinbase stopped paying the miner's address
+    /// (docs/23): `switched` 0 = no other pool, mining on; 1 = on the
+    /// fallback; 2 = back to the main pool. The pool's address is not
+    /// said (see the module's note).
+    PayoutMissing {
+        /// What the firmware did.
+        switched: u8,
+    },
 }
 
 impl Alert {
@@ -103,6 +115,7 @@ impl Alert {
             | Alert::Back
             | Alert::FallbackStale { .. } => Kind::Pool,
             Alert::Crash { .. } => Kind::Crash,
+            Alert::PayoutMissing { .. } => Kind::Payout,
         }
     }
 
@@ -147,6 +160,11 @@ impl Alert {
             Alert::Crash { reason } => {
                 format!("⚠️ {h}: restarted after a crash ({})", plain(reason, 16))
             }
+            Alert::PayoutMissing { switched } => match switched {
+                1 => format!("⚠️ {h}: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool"),
+                2 => format!("⚠️ {h}: the fallback pool's coinbase stopped paying this miner's address, back to the main pool"),
+                _ => format!("⚠️ {h}: the pool's coinbase stopped paying this miner's address, still mining on it (no other pool to switch to)"),
+            },
         };
         if skipped > 0 && self.kind() == Kind::Pool {
             let what = if skipped == 1 { "switch" } else { "switches" };
@@ -157,8 +175,9 @@ impl Alert {
 }
 
 /// The detail codes of the event log (`warpaxe_diag::events::detail`)
-/// that are a pool switch, as a message; `value` reads the event's
-/// numbers by name (`n` failures, `s` seconds).
+/// that are a pool switch or a payout gone missing, as a message;
+/// `value` reads the event's numbers by name (`n` failures, `s`
+/// seconds, `sw` what the payout check did).
 pub fn from_event(code: &str, value: impl Fn(&str) -> Option<u64>) -> Option<Alert> {
     Some(match code {
         "pool_fallback" => Alert::Fallback {
@@ -170,6 +189,9 @@ pub fn from_event(code: &str, value: impl Fn(&str) -> Option<u64>) -> Option<Ale
         "pool_back" => Alert::Back,
         "fallback_stale" => Alert::FallbackStale {
             secs: value("s").unwrap_or(0),
+        },
+        "payout_missing" => Alert::PayoutMissing {
+            switched: value("sw").map_or(0, |v| u8::try_from(v).unwrap_or(0)),
         },
         _ => return None,
     })
@@ -305,6 +327,21 @@ mod tests {
                 0.0,
                 "⚠️ bitaxe602: restarted after a crash (int-wdt)",
             ),
+            (
+                Alert::PayoutMissing { switched: 1 },
+                0.0,
+                "⚠️ bitaxe602: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool",
+            ),
+            (
+                Alert::PayoutMissing { switched: 2 },
+                0.0,
+                "⚠️ bitaxe602: the fallback pool's coinbase stopped paying this miner's address, back to the main pool",
+            ),
+            (
+                Alert::PayoutMissing { switched: 0 },
+                0.0,
+                "⚠️ bitaxe602: the pool's coinbase stopped paying this miner's address, still mining on it (no other pool to switch to)",
+            ),
         ];
         for (a, net, want) in cases {
             assert_eq!(a.text(h, net, 0), want);
@@ -342,6 +379,8 @@ mod tests {
             Kind::Crash
         );
         assert_eq!(Kind::BestDiff.name(), "bestDiff");
+        assert_eq!(Alert::PayoutMissing { switched: 1 }.kind(), Kind::Payout);
+        assert_eq!(Kind::Payout.name(), "payout");
     }
 
     #[test]
@@ -369,6 +408,15 @@ mod tests {
         assert_eq!(from_event("pool_stale", v), None);
         assert_eq!(from_event("pools_out", v), None);
         assert_eq!(from_event("block_found", v), None);
+        let sw = |k: &str| (k == "sw").then_some(2);
+        assert_eq!(
+            from_event("payout_missing", sw),
+            Some(Alert::PayoutMissing { switched: 2 })
+        );
+        assert_eq!(
+            from_event("payout_missing", |_| None),
+            Some(Alert::PayoutMissing { switched: 0 })
+        );
         assert_eq!(
             from_event("pool_fallback", |_| None),
             Some(Alert::Fallback { fails: 0 })

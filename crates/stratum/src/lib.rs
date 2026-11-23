@@ -20,6 +20,7 @@ pub mod line;
 pub mod message;
 pub mod outage;
 pub mod payout;
+pub mod payout_check;
 pub mod stale;
 pub mod url;
 

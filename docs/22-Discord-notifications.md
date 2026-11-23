@@ -30,6 +30,7 @@ One line in English, starting with the miner's hostname:
 | Block found (`alertBlockFound`) | `🎉 bitaxe602: BLOCK FOUND at height 978480, difficulty 128.1T (network 102.3T)` (a coin other than BTC is named after the height) |
 | New best difficulty (`alertBestDiff`) | `⛏️ bitaxe602: new best difficulty 14.8M (network 102.3T)` |
 | Pool switch (`alertPoolSwitch`) | `↪️ bitaxe602: main pool failed 3 times, mining on the fallback pool`, `↪️ bitaxe602: main pool sent no new job for 300 s, mining on the fallback pool`, `↩️ bitaxe602: back on the main pool`, `↩️ bitaxe602: fallback pool sent no new job for 600 s either, back to the main pool` |
+| Solo pool stops paying your address (`alertPayout`, docs/23) | `⚠️ bitaxe602: the main pool's coinbase stopped paying this miner's address, mining on the fallback pool` (or `… back to the main pool`, or `… still mining on it (no other pool to switch to)`) |
 | Restart after a crash (`alertCrash`) | `⚠️ bitaxe602: restarted after a crash (int-wdt)` (the reset reason: `panic`, `int-wdt`, `task-wdt`, `wdt`) |
 | (the test button) | `✅ bitaxe602: test message from WarpAxe` |
 
@@ -74,14 +75,14 @@ with a 10 KB stack in PSRAM (no internal RAM, docs/20), does the rest:
 
 - `PATCH /api/system`: `discordWebhook` (a URL, `""` removes it, `"***"`
   keeps it), `alertBlockFound`, `alertBestDiff`, `alertPoolSwitch`,
-  `alertCrash` (booleans; `0`/`1` taken too).
+  `alertPayout`, `alertCrash` (booleans; `0`/`1` taken too).
 - `GET /api/v1/state` → `config`: the same fields, `discordWebhook` as
   `"***"` when one is set.
 - `GET /api/system/info`: `discordWebhookSet` (bool) and
   `discordLastResult`: `null` before the first send, else
   `{"ok": true, "code": 204, "error": null, "what": "test", "t": <unix
-  or 0>, "uptime": <s>}`; `what` is `test`, `block`, `bestDiff`, `pool`
-  or `crash`.
+  or 0>, "uptime": <s>}`; `what` is `test`, `block`, `bestDiff`, `pool`,
+  `payout` or `crash`.
 - `POST /api/v1/alerts/test`: `202 {"queued": true}`, or `409
   {"queued": false, "error": …}` without a webhook or within five
   seconds of the last test.
@@ -108,7 +109,7 @@ webhook URL it accepts, with `alrt_disc_bf_en` (block found),
 `alrt_disc_bd_en` (best difficulty) and `alrt_disc_en` (NerdOS's restart
 after an hour without a share; here the restart after a crash). NerdOS
 has no pool-switch message; that switch stays on. Its coinbase-check
-alert (`alrt_disc_cb_en`) has no counterpart yet.
+alert (`alrt_disc_cb_en`) sets `alertPayout` (docs/23).
 
 ## Not yet
 

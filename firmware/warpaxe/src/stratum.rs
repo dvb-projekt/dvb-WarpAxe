@@ -17,7 +17,9 @@ use warpaxe_stratum::message::{
     subscribe_request, suggest_difficulty_request, Request,
 };
 use warpaxe_stratum::outage::{self, Change, PoolWatch};
-use warpaxe_stratum::{coinbase, line, parse_line, payout, Incoming, Job, Prepared, Session};
+use warpaxe_stratum::{
+    coinbase, line, parse_line, payout, payout_check, Incoming, Job, Prepared, Session,
+};
 
 use crate::link::{KeyRefused, Link, LinkReader};
 use crate::{board, clock, config, diag, miner};
@@ -453,6 +455,172 @@ impl std::fmt::Display for StaleJob {
 }
 
 impl std::error::Error for StaleJob {}
+
+/// A session ended because its pool, armed by the payout check, paid the
+/// miner's address nothing in the jobs of two blocks in a row, and there is
+/// another pool to go to (docs/23).
+#[derive(Debug)]
+struct PayoutMissing;
+
+impl std::fmt::Display for PayoutMissing {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("the pool's coinbase pays this miner's address nothing, switching pools")
+    }
+}
+
+impl std::error::Error for PayoutMissing {}
+
+/// The payout check's state (docs/23, `warpaxe_stratum::payout_check`):
+/// which pools have paid the address and which were left for not paying
+/// (`mem`), the running session's verdicts (`check`), and what the API
+/// shows. Small, behind one lock; the Sv2 thread uses it too.
+struct PayState {
+    mem: payout_check::Memory,
+    loaded: bool,
+    check: payout_check::Check,
+    /// The running session's slot (`payout_check::MAIN`/`FALLBACK`),
+    /// pool id and host.
+    slot: usize,
+    id: u32,
+    host: String,
+    /// The last pool left or warned about, with the uptime second.
+    last: Option<(String, u64)>,
+}
+
+static PAY: Mutex<PayState> = Mutex::new(PayState {
+    mem: payout_check::Memory::new(),
+    loaded: false,
+    check: payout_check::Check::new(false),
+    slot: payout_check::MAIN,
+    id: 0,
+    host: String::new(),
+    last: None,
+});
+
+/// What the API shows of the payout check: the pool in use armed, found
+/// keeping the payout now, and the last pool found so (host, uptime).
+pub fn payout_status() -> (bool, bool, Option<(String, u64)>) {
+    let g = PAY.lock().unwrap();
+    (g.check.armed(), g.check.missing(), g.last.clone())
+}
+
+/// A new session starts on `slot` with this pool: its check starts over,
+/// armed when the pool has paid the address before.
+fn pay_session(fallback: bool, host: &str, port: u16, user: &str) {
+    let mut g = PAY.lock().unwrap();
+    if !g.loaded {
+        // Read at boot on the main task (`config::init`), RAM here.
+        g.mem = payout_check::Memory::from_stored(config::payout_seen());
+        g.loaded = true;
+    }
+    let slot = if fallback { payout_check::FALLBACK } else { payout_check::MAIN };
+    let id = payout_check::pool_id(host, port, user);
+    g.check = payout_check::Check::new(g.mem.armed(slot, id));
+    g.slot = slot;
+    g.id = id;
+    g.host.clear();
+    g.host.push_str(host);
+}
+
+/// Whether the running session is authorized (V1 `mining.authorize`
+/// answered true, Sv2 channel open), without cloning the whole state.
+fn session_authorized() -> bool {
+    STATE.lock().unwrap().as_ref().is_some_and(|s| s.authorized)
+}
+
+/// Judge one job's payout (`None`: not decoded); `prev_hash` is the block
+/// it builds on. An armed pool found keeping the payout is recorded
+/// (event, Discord) and, where another pool can take over, the session
+/// ends with [`PayoutMissing`]. Jobs before the session is authorized
+/// are no evidence: a pool may hand out a template for its own address
+/// until it knows the worker.
+fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), PayoutMissing> {
+    use payout_check::Step;
+    if !session_authorized() {
+        return Ok(());
+    }
+    // Two fields per job: no copy of the whole config.
+    let (e, enabled) =
+        config::with(|c| (payout_check::evidence(pay, &c.coin_ticker), c.payout_check));
+    if e == payout_check::Evidence::None {
+        return Ok(());
+    }
+    let mut g = PAY.lock().unwrap();
+    let (slot, id) = (g.slot, g.id);
+    let step = g.check.job(e, payout_check::block_key(prev_hash), enabled);
+    // A payment to an armed pool (armed now or before): stored as seen,
+    // and a mark for leaving it is cleared. A small share of a pool that
+    // never armed stores nothing.
+    if matches!(e, payout_check::Evidence::Paid { .. }) && g.check.armed() && g.mem.paid(slot, id) {
+        let stored = g.mem.stored();
+        config::set_payout_seen(stored);
+    }
+    match step {
+        Step::Nothing => Ok(()),
+        Step::Arm => {
+            log::info!("stratum: payout check: this pool's coinbase pays the miner's address, armed");
+            Ok(())
+        }
+        Step::Recovered => {
+            log::warn!("stratum: payout check: the pool's coinbase pays the miner's address again");
+            Ok(())
+        }
+        Step::Act { kept_sat } => {
+            let on_fallback = slot == payout_check::FALLBACK;
+            let (other_ok, other_id) = config::with(|c| {
+                if on_fallback {
+                    (true, payout_check::pool_id(&c.stratum_url, c.stratum_port, &c.stratum_user))
+                } else {
+                    (
+                        c.use_fallback && !c.fallback_url.is_empty() && !c.fallback_user.is_empty(),
+                        payout_check::pool_id(&c.fallback_url, c.fallback_port, &c.fallback_user),
+                    )
+                }
+            });
+            let switch = g.mem.can_switch(on_fallback, other_ok, other_id);
+            // Found so already and not paid since (a reconnect, or back
+            // here because the other pool is down): the event and the
+            // message stand, no second one; the switch still happens.
+            let warned = g.mem.is_left(slot, id);
+            g.mem.leave(slot, id);
+            let host = g.host.clone();
+            if warned {
+                drop(g);
+                log::warn!("stratum: payout check: pool {host} still pays the miner's address nothing{}",
+                    if switch { ", switching pools" } else { ", mining on" });
+                return if switch { Err(PayoutMissing) } else { Ok(()) };
+            }
+            g.last = Some((host.clone(), diag::uptime_s()));
+            drop(g);
+            let sw = match (switch, on_fallback) {
+                (false, _) => 0,
+                (true, false) => 1,
+                (true, true) => 2,
+            };
+            log::warn!(
+                "stratum: payout check: pool {host} paid the miner's address nothing in {} blocks in a row (keeps {kept_sat} sat){}",
+                payout_check::BLOCKS_TO_ACT,
+                if switch { ", switching pools" } else { ", no other pool to switch to, mining on" }
+            );
+            crate::events::record(
+                "pool",
+                warpaxe_diag::events::detail::payout_missing(&host, kept_sat, sw),
+            );
+            if switch {
+                Err(PayoutMissing)
+            } else {
+                Ok(())
+            }
+        }
+    }
+}
+
+/// The probe may take the miner back to the main pool: not to one left
+/// for not paying the address (docs/23) while the check is on.
+fn probe_allowed(cfg: &config::Config) -> bool {
+    let id = payout_check::pool_id(&cfg.stratum_url, cfg.stratum_port, &cfg.stratum_user);
+    PAY.lock().unwrap().mem.probe_allowed(id, cfg.payout_check)
+}
 static PROBE_EVERY_S: AtomicU32 = AtomicU32::new(PRIMARY_PROBE);
 
 /// The live stream while on the fallback, so the probe thread can end
@@ -681,6 +849,7 @@ fn run() {
         // fallback session at once. The probe sets it only while a
         // fallback session's link is registered, which none is here.
         BACK_TO_PRIMARY.store(false, Ordering::Relaxed);
+        pay_session(on_fallback, &host, port, &user);
         let result = match v2 {
             Some(v2) => session_v2_on_psram(host.clone(), port, user.clone(), v2, on_fallback),
             None => session(&host, port, tls, pin, &user, &pass, on_fallback),
@@ -755,6 +924,22 @@ fn run() {
                 s.local_ip = None;
                 s.reconnects += 1;
             });
+        }
+        if result
+            .as_ref()
+            .err()
+            .is_some_and(|e| e.downcast_ref::<PayoutMissing>().is_some())
+        {
+            // Left for keeping the payout (docs/23): straight to the other
+            // pool, nothing counted. The probe does not bring the miner
+            // back to a main pool left this way (`probe_allowed`).
+            on_fallback = !on_fallback;
+            fails = 0;
+            probing = false;
+            backoff = Duration::from_secs(3);
+            BACK_UNREPORTED.store(false, Ordering::Relaxed);
+            STALE.lock().unwrap().switched();
+            continue;
         }
         if let Some(stale) = result
             .as_ref()
@@ -1002,6 +1187,9 @@ fn probe_primary() {
             continue;
         }
         let cfg = config::get();
+        if !probe_allowed(&cfg) {
+            continue;
+        }
         // Over IPv6 or IPv4 like the session itself (`net::dial`).
         let reachable =
             crate::net::dial::dial(&cfg.stratum_url, cfg.stratum_port, Duration::from_secs(5))
@@ -1309,6 +1497,7 @@ fn session(
                         clean
                     );
                 }
+                let prev = *prepared.prev_hash();
                 publish(Feed::V1(s.clone(), prepared), clean);
                 if !clean
                     && first_job
@@ -1343,6 +1532,7 @@ fn session(
                     }
                     Some(_) => {}
                 }
+                let verdict = pay_job(pay.as_ref(), &prev);
                 update(|st| {
                     st.last_job_id = job_id;
                     st.block_height = height;
@@ -1350,6 +1540,7 @@ fn session(
                     st.scriptsig = tag;
                     set_payout(st, pay, user);
                 });
+                verdict?;
             }
             Incoming::Ping { id } => {
                 pings = pings.saturating_add(1);
@@ -1796,7 +1987,9 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
             if started.elapsed() < Duration::from_secs(5) || clean {
                 log::info!("stratum: sv2 job {job_id} ntime {} clean {clean}", t.ntime);
             }
+            let prev = t.prev_hash;
             publish(Feed::V2(t), clean);
+            let verdict = pay_job(pay.as_ref(), &prev);
             update(|st| {
                 st.version_mask = mask;
                 st.last_job_id = job_id;
@@ -1805,6 +1998,7 @@ fn on_v2_event(ev: Event, user: &str, started: &Instant) -> anyhow::Result<()> {
                 st.scriptsig = tag;
                 set_payout(st, pay, user);
             });
+            verdict?;
         }
         Event::ExtranoncePrefix(p) => {
             let prefix = hex::encode(&p);
