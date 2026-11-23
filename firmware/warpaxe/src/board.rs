@@ -2314,6 +2314,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // and logged once per value.
     let mut core_retry_at = Instant::now();
     let mut core_refused_logged: Option<u16> = None;
+    // The last set_core failed: it may have failed after VOUT_COMMAND
+    // went out (only OPERATION refused), so the regulator's read-back is
+    // not judged until a request goes through, and the voltage in force
+    // is written again even if it is wanted once more.
+    let mut core_unsettled = false;
     // A voltage drop waiting for the clock to come down (core_hold).
     let mut core_hold = CoreHold::new();
     let mut core_held_logged = false;
@@ -3015,7 +3020,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 }
             };
         if want != 0
-            && want != applied_mv
+            && (want != applied_mv || core_unsettled)
             && !held
             && POWERED.load(Ordering::Relaxed)
             && Instant::now() >= core_retry_at
@@ -3029,6 +3034,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     log::info!("board: core {want} mV");
                     applied_mv = want;
                     core_refused_logged = None;
+                    core_unsettled = false;
                     update(|s| {
                         s.core_mv_refused = None;
                         if s.last_error.starts_with("core:") {
@@ -3043,6 +3049,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         );
                         core_refused_logged = Some(want);
                     }
+                    core_unsettled = true;
                     core_retry_at = Instant::now() + Duration::from_secs(1);
                     update(|s| {
                         s.core_mv_refused = Some(want);
@@ -3057,7 +3064,10 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // and the core read 1150 mV after it whatever was set): the chips
         // off and on, with its init run again before the voltage. Judged
         // against the voltage last written (`applied_mv`): a request still
-        // pending or refused leaves the part at that one. Two reads must
+        // held leaves the part at that one. Not while a refused request
+        // waits for its retry (`core_unsettled`): a set_core that failed
+        // after VOUT_COMMAND went out leaves the part at neither value,
+        // and that is no reset. Two reads must
         // agree (a word garbled on the bus is no reset), and after
         // [`VR_RESETS_MAX`] in a row without a quiet half hour between
         // them the watch stops until the next boot instead of cycling the
@@ -3067,6 +3077,7 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
             if vr_resets_in_row >= VR_RESETS_MAX {
                 // Given up; said once when it happened.
             } else if POWERED.load(Ordering::Relaxed)
+                && !core_unsettled
                 && !CYCLE.load(Ordering::Relaxed)
                 && !VR_REINIT.load(Ordering::Relaxed)
             {
