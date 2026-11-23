@@ -360,6 +360,28 @@ pub struct Window {
     pub compensation: Option<[u8; 5]>,
 }
 
+/// What a TPS546 holds instead of the firmware's settings
+/// ([`Tps546::settings_lost`]). Volts, and the divider.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Lost {
+    /// VOUT_COMMAND as read.
+    pub vout_command: f32,
+    /// VOUT_SCALE_LOOP as read.
+    pub scale_loop: f32,
+}
+
+/// The judgement of [`Tps546::settings_lost`]: VOUT_COMMAND more than two
+/// encoding steps from `want_vout`, or VOUT_SCALE_LOOP not the config's.
+pub fn lost(cfg: &Config, vout_exp: i32, want_vout: f32, cmd: u16, scale: f32) -> Option<Lost> {
+    let want = f32_to_ulinear16(want_vout, vout_exp);
+    let off = cmd.abs_diff(want) > 2;
+    let rescaled = (scale - cfg.scale_loop).abs() > 0.001;
+    (off || rescaled).then(|| Lost {
+        vout_command: pm::ulinear16_to_f32(cmd, vout_exp),
+        scale_loop: scale,
+    })
+}
+
 /// The driver, owning the bus.
 pub struct Tps546<I> {
     bus: I,
@@ -655,6 +677,20 @@ impl<I: I2c> Tps546<I> {
         Ok(pm::linear11_to_i32(self.read_word(pm::READ_TEMPERATURE_1)?))
     }
 
+    /// Whether the part still holds what [`init`](Self::init) and
+    /// [`set_vout`](Self::set_vout) wrote: VOUT_COMMAND at `want_vout`
+    /// (within two steps of its ULINEAR16 encoding) and VOUT_SCALE_LOOP at
+    /// the config's divider. A TPS546 that resets on its own (a brown-out
+    /// of its own supply) comes back from its NVM: on the Zyber 8G that
+    /// is 4.60 V (1150 mV per chip) and a 6.0 V ceiling, while the
+    /// firmware still believes its last value was applied. `Ok(None)`:
+    /// both as written.
+    pub fn settings_lost(&mut self, want_vout: f32) -> Result<Option<Lost>, Error<I::Error>> {
+        let cmd = self.read_word(pm::VOUT_COMMAND)?;
+        let scale = pm::linear11_to_f32(self.read_word(pm::VOUT_SCALE_LOOP)?);
+        Ok(lost(&self.cfg, self.vout_exp, want_vout, cmd, scale))
+    }
+
     /// STATUS_WORD as the device reports it.
     pub fn status_word(&mut self) -> Result<u16, Error<I::Error>> {
         self.read_word(pm::STATUS_WORD)
@@ -763,6 +799,37 @@ mod tests {
         let mut a = vec![6u8];
         a.extend_from_slice(&DEVICE_ID_D24A);
         Tx::WriteRead(ADDR, vec![pm::IC_DEVICE_ID], a)
+    }
+
+    #[test]
+    fn settings_lost_sees_the_nvm_values_after_a_reset() {
+        let cfg = Config::NERDQAXE_PLUSPLUS_REV7;
+        let exp = -9;
+        let want = 2.4; // 1200 mV per chip, two in series
+        let written = f32_to_ulinear16(want, exp);
+        assert_eq!(lost(&cfg, exp, want, written, cfg.scale_loop), None);
+        assert_eq!(lost(&cfg, exp, want, written + 2, cfg.scale_loop), None);
+        // Back from an NVM value of 1150 mV per chip.
+        let nvm = f32_to_ulinear16(2.3, exp);
+        let l = lost(&cfg, exp, want, nvm, cfg.scale_loop).expect("lost");
+        assert!((l.vout_command - 2.3).abs() < 0.002);
+        // The divider alone gives it away too.
+        assert!(lost(&cfg, exp, want, written, 0.25).is_some());
+    }
+
+    #[test]
+    fn settings_lost_reads_the_command_and_the_divider() {
+        let exp = -9;
+        let cfg = Config::NERDQAXE_PLUSPLUS_REV7;
+        let w = f32_to_ulinear16(2.4, exp).to_le_bytes().to_vec();
+        let s = f32_to_linear11(cfg.scale_loop).to_le_bytes().to_vec();
+        let bus = Bus::new(vec![
+            Tx::WriteRead(ADDR, vec![pm::VOUT_COMMAND], w),
+            Tx::WriteRead(ADDR, vec![pm::VOUT_SCALE_LOOP], s),
+        ]);
+        let mut vr = Tps546::new(bus, cfg);
+        vr.vout_exp = exp;
+        assert_eq!(vr.settings_lost(2.4), Ok(None));
     }
 
     #[test]

@@ -594,6 +594,7 @@
   "crash_nodump": "No se escribió ningún volcado de memoria (core dump) para este fallo.",
   "evd_chip_silent": "el chip {c} dejó de responder",
   "evd_chain_restart": "todos los {n} chips sin respuesta durante 60 s a {mv} mV, ASIC reiniciados",
+  "evd_vr_reset": "el regulador de tensión perdió su configuración (núcleo a {got} mV en lugar de {mv} mV), reconfigurado, ASIC apagados y encendidos de nuevo",
   "evd_chip_restart": "chip {c} sin respuesta durante 10 min a {mv} mV, ASIC reiniciados",
   "evd_chip_given_up": "chip {c} sigue sin respuesta tras 3 reinicios, no habrá más reinicios hasta una nueva frecuencia, un nuevo voltaje o el próximo arranque",
   "evd_domain_latch": "chip {c}, dominio {d} al {pct} % de los demás dominios del chip durante {min} min, ASIC apagados y encendidos de nuevo",

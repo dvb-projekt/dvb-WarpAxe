@@ -594,6 +594,7 @@
   "crash_nodump": "Per questo crash non è stato scritto alcun core dump.",
   "evd_chip_silent": "il chip {c} non risponde più",
   "evd_chain_restart": "tutti i {n} chip muti per 60 s a {mv} mV, ASIC riavviati",
+  "evd_vr_reset": "il regolatore di tensione ha perso le sue impostazioni (core a {got} mV invece di {mv} mV), riconfigurato, ASIC spenti e riaccesi",
   "evd_chip_restart": "chip {c} muto per 10 min a {mv} mV, ASIC riavviati",
   "evd_chip_given_up": "chip {c} ancora muto dopo 3 riavvii, nessun altro riavvio fino a una nuova frequenza, una nuova tensione o il prossimo avvio",
   "evd_domain_latch": "chip {c}, dominio {d} al {pct} % degli altri domini del chip per {min} min, ASIC spenti e riaccesi",

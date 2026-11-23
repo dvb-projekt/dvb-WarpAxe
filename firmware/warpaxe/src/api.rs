@@ -295,6 +295,8 @@ pub fn system_info() -> serde_json::Value {
         .map(|&hz| serde_json::Value::from(f64::from(hz) / 1e6))
         .collect();
     v["domainLatchResets"] = json!(m.domain_latch_resets);
+    // The core regulator found back on its NVM values and set up again.
+    v["vrResets"] = json!(b.vr_resets);
     v["lastDomainLatchReset"] = m.last_domain_latch_reset.map_or(serde_json::Value::Null, |(chip, domain, percent, at)| json!({"chip": chip, "domain": domain, "percent": percent, "uptime_s": at}));
     v["domainsGivenUp"] = m.domains_given_up.iter().map(|(c, d)| json!({"chip": c, "domain": d})).collect();
     // Night mode (display): on/off, the window in minutes of the local

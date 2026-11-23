@@ -141,6 +141,9 @@ pub struct BoardState {
     pub last_error: String,
     /// What the regulator answered to each probe at boot.
     pub vr_probe: String,
+    /// Times the core regulator was found back on its NVM values
+    /// (`Tps546::settings_lost`) and set up again, since boot.
+    pub vr_resets: u32,
 }
 
 static STATE: Mutex<Option<BoardState>> = Mutex::new(None);
@@ -215,6 +218,11 @@ static CYCLE: AtomicBool = AtomicBool::new(false);
 /// The self-test's fan step: both outputs at least this duty until the
 /// deadline, then the PID again. Only ever raises the duty.
 static FAN_BOOST: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
+/// The core regulator lost its settings: the next switch-on runs its
+/// init again before the voltage (`Regulator::reinit`).
+static VR_REINIT: AtomicBool = AtomicBool::new(false);
+/// Seconds between two read-backs of the regulator's settings.
+const VR_CHECK_S: u64 = 10;
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
@@ -1330,6 +1338,23 @@ impl Regulator {
             log::warn!("board: CLEAR_FAULTS failed");
         }
     }
+    /// What a TPS546 holds instead of the firmware's settings, if it came
+    /// back from its NVM; `None` while it holds them, when the bus does
+    /// not answer, and on the Nerd regulators (not watched).
+    fn settings_lost(&mut self, volts: f32) -> Option<warpaxe_board::tps546::Lost> {
+        match self {
+            Regulator::Tps546(vr, _) => vr.settings_lost(volts).ok().flatten(),
+            Regulator::Tps5364x { .. } => None,
+        }
+    }
+    /// The TPS546's whole init again (conversion off), after it lost its
+    /// settings; nothing on the Nerd regulators.
+    fn reinit(&mut self) -> Result<(), String> {
+        match self {
+            Regulator::Tps546(vr, _) => vr.init().map(|_| ()).map_err(|e| format!("{e:?}")),
+            Regulator::Tps5364x { .. } => Ok(()),
+        }
+    }
     fn set_core(&mut self, volts: f32) -> Result<(), String> {
         match self {
             Regulator::Tps546(vr, _) => {
@@ -2312,6 +2337,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // The reset line was pulled low for a no-pool stop with the rail off.
     let mut pool_reset_held = false;
     let mut pool_reset_failed = false;
+    // The regulator's settings are read back this often while the core
+    // is up and no new voltage is pending (`settings_lost`).
+    let mut vr_check_at = Instant::now() + Duration::from_secs(VR_CHECK_S);
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -2810,6 +2838,12 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     // Latched fault bits stay until cleared; a fault that
                     // is still there trips the guard again after the grace.
                     vr.clear_faults();
+                    if VR_REINIT.swap(false, Ordering::Relaxed) {
+                        match vr.reinit() {
+                            Ok(()) => log::warn!("board: core regulator set up again"),
+                            Err(e) => log::error!("board: core regulator set-up failed: {e}"),
+                        }
+                    }
                     match vr.on(profile.vout_for_core_mv(applied_mv)) {
                         Ok(()) => true,
                         Err(e) => {
@@ -2982,6 +3016,37 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         s.core_mv_refused = Some(want);
                         s.last_error = format!("core: {want} mV refused: {e}");
                     });
+                }
+            }
+        }
+
+        // The regulator back on its NVM values (a reset of its own: the
+        // Zyber 8G's chains all went silent together every hour or two,
+        // and the core read 1150 mV after it whatever was set): the chips
+        // off and on, with its init run again before the voltage.
+        if Instant::now() >= vr_check_at {
+            vr_check_at = Instant::now() + Duration::from_secs(VR_CHECK_S);
+            let settled = want == 0 || want == applied_mv;
+            if settled
+                && POWERED.load(Ordering::Relaxed)
+                && !CYCLE.load(Ordering::Relaxed)
+                && !VR_REINIT.load(Ordering::Relaxed)
+            {
+                let volts = profile.vout_for_core_mv(applied_mv);
+                if let Some(lost) = vr.as_mut().and_then(|vr| vr.settings_lost(volts)) {
+                    let got = profile.core_mv_for_vout(lost.vout_command);
+                    log::warn!(
+                        "board: core regulator lost its settings: VOUT_COMMAND {:.3} V (want {volts:.3} V), VOUT_SCALE_LOOP {}",
+                        lost.vout_command,
+                        lost.scale_loop
+                    );
+                    crate::events::record(
+                        "power",
+                        warpaxe_diag::events::detail::vr_reset(got, applied_mv),
+                    );
+                    update(|s| s.vr_resets += 1);
+                    VR_REINIT.store(true, Ordering::Relaxed);
+                    cycle_chips("core regulator lost its settings");
                 }
             }
         }
