@@ -32,8 +32,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 use warpaxe_diag::restart::{Marker, Step};
 
-use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
-use esp_idf_svc::http::Method;
+use esp_idf_svc::http::client::Configuration;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -366,18 +365,17 @@ fn get(url: &str, max: usize, mut progress: impl FnMut(usize)) -> anyhow::Result
 fn get_once(url: &str, max: usize, progress: &mut impl FnMut(usize)) -> anyhow::Result<Vec<u8>> {
     let mut url = url.to_string();
     for _ in 0..5 {
-        let mut c = EspHttpConnection::new(&Configuration {
-            crt_bundle_attach: Some(crate::tls_trust::attach),
-            timeout: Some(Duration::from_secs(20)),
-            buffer_size: Some(2048),
-            ..Default::default()
-        })?;
-        c.initiate_request(
-            Method::Get,
+        // Over IPv6 when the pool's rule allows it (docs/17).
+        let mut c = crate::net::http::get(
             &url,
+            &Configuration {
+                crt_bundle_attach: Some(crate::tls_trust::attach),
+                timeout: Some(Duration::from_secs(20)),
+                buffer_size: Some(2048),
+                ..Default::default()
+            },
             &[("Accept", "application/json, application/octet-stream")],
         )?;
-        c.initiate_response()?;
         let status = c.status();
         if (300..400).contains(&status) {
             let next = c

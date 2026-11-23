@@ -21,7 +21,7 @@ use std::collections::VecDeque;
 use std::sync::Mutex;
 use std::time::Duration;
 
-use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
+use esp_idf_svc::http::client::Configuration;
 use esp_idf_svc::http::Method;
 use warpaxe_alerts::pace::{self, Coalesce, LastResult, Next};
 use warpaxe_alerts::{message, webhook, Alert, Kind};
@@ -237,18 +237,19 @@ fn send(url: &str, kind: Kind, text: &str) -> u64 {
 /// error text is the transport's (never the URL: the caller scrubs it
 /// all the same).
 fn post(url: &str, body: &str) -> Result<(u16, Option<f64>), String> {
-    let mut c = EspHttpConnection::new(&Configuration {
-        crt_bundle_attach: Some(crate::tls_trust::attach),
-        timeout: Some(Duration::from_secs(10)),
-        // Cloudflare's answer carries long headers (cookies, reporting).
-        buffer_size: Some(2048),
-        ..Default::default()
-    })
-    .map_err(|e| e.to_string())?;
     let len = body.len().to_string();
-    c.initiate_request(
-        Method::Post,
+    // Over IPv6 when the pool's rule allows it (docs/17); a failed IPv6
+    // open falls back to IPv4 before the body goes out, never after.
+    let mut c = crate::net::http::open(
         url,
+        &Configuration {
+            crt_bundle_attach: Some(crate::tls_trust::attach),
+            timeout: Some(Duration::from_secs(10)),
+            // Cloudflare's answer carries long headers (cookies, reporting).
+            buffer_size: Some(2048),
+            ..Default::default()
+        },
+        Method::Post,
         &[
             ("Content-Type", "application/json"),
             ("Content-Length", &len),

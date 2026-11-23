@@ -6,7 +6,7 @@
 use std::sync::Mutex;
 use std::time::Duration;
 
-use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
+use esp_idf_svc::http::client::Configuration;
 
 use crate::{config, diag};
 
@@ -49,13 +49,16 @@ pub fn start() {
 }
 
 fn get_json(url: &str) -> anyhow::Result<serde_json::Value> {
-    let mut c = EspHttpConnection::new(&Configuration {
-        crt_bundle_attach: Some(crate::tls_trust::attach),
-        timeout: Some(Duration::from_secs(10)),
-        ..Default::default()
-    })?;
-    c.initiate_request(esp_idf_svc::http::Method::Get, url, &[])?;
-    c.initiate_response()?;
+    // Over IPv6 when the pool's rule allows it (docs/17).
+    let mut c = crate::net::http::get(
+        url,
+        &Configuration {
+            crt_bundle_attach: Some(crate::tls_trust::attach),
+            timeout: Some(Duration::from_secs(10)),
+            ..Default::default()
+        },
+        &[],
+    )?;
     if c.status() != 200 {
         anyhow::bail!("{url}: HTTP {}", c.status());
     }

@@ -21,6 +21,7 @@ pub mod message;
 pub mod outage;
 pub mod payout;
 pub mod stale;
+pub mod url;
 
 pub use gate::WorkGate;
 pub use job::{Job, Prepared, Session};
