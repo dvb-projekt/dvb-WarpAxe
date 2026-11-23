@@ -3,11 +3,20 @@
 //!
 //! [`crate::payout`] reads who a job pays. A pool the check knows to be
 //! a solo pool for this miner, because one of its coinbases paid the
-//! miner's address, is *armed*; from then on two decoded jobs in a row
-//! that pay the address nothing are taken as the pool keeping the block
-//! (a misconfigured or hijacked pool, a pool that changed its terms) and
-//! the firmware warns and switches to the other pool. Everything here is
-//! the rule, without I/O, so it is host-tested:
+//! miner's address more than half of the reward, is *armed*; from then
+//! on the jobs of two different blocks in a row that pay the address
+//! nothing are taken as the pool keeping the block (a misconfigured or
+//! hijacked pool, a pool that changed its terms) and the firmware warns
+//! and switches to the other pool. Everything here is the rule, without
+//! I/O, so it is host-tested.
+//!
+//! Why "more than half" and "two blocks": a pool that pays its miners in
+//! the coinbase by their share of the last blocks (Ocean's TIDES,
+//! P2Pool) lists a small miner only while the miner's balance is over
+//! its threshold, so the miner's output comes and goes from block to
+//! block. Such a coinbase never pays one small miner most of the reward
+//! and so never arms; and a solo pool's template is rebuilt within a
+//! block several times, so one odd template is one block, not two.
 //!
 //! - [`pool_id`]: which pool configuration (host, port, worker) a mark
 //!   belongs to. A mark for another id does not apply, so editing the
@@ -15,18 +24,19 @@
 //! - [`evidence`]: what one job says: paid, nothing to the address, or no
 //!   evidence (not decoded, a pool account instead of an address, an
 //!   address of another coin than the one configured).
-//! - [`Check`]: one session's verdicts: arm on the first paying job, act
-//!   on the [`MISSES_TO_ACT`]th missing one in a row.
+//! - [`Check`]: one session's verdicts: arm on the first solo-shaped
+//!   paying job, act when the jobs of [`BLOCKS_TO_ACT`] different blocks
+//!   in a row pay nothing.
 //! - [`Memory`]: per pool slot (main, fallback), the pool seen paying
 //!   (stored) and the pool left for not paying (RAM): the probe does not
 //!   take the miner back to a main pool left this way.
 
 use crate::payout::Payout;
 
-/// Decoded jobs in a row without an output to the miner's address before
-/// the firmware acts: one odd job (a pool restarting, a template built in
-/// a hurry) is not enough.
-pub const MISSES_TO_ACT: u8 = 2;
+/// Different blocks in a row whose decoded jobs pay the miner's address
+/// nothing before the firmware acts: one odd template (a pool
+/// restarting, a template built in a hurry) is one block, not enough.
+pub const BLOCKS_TO_ACT: u8 = 2;
 
 /// The pool slots of [`Memory`].
 pub const MAIN: usize = 0;
@@ -69,8 +79,13 @@ pub fn coin_matches(ticker: &str, bitcoin: bool) -> bool {
 /// What one job says about the payout.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Evidence {
-    /// The coinbase pays the miner's address something.
-    Paid,
+    /// The coinbase pays the miner's address something; `solo` when
+    /// that is more than half of the coinbase (a solo pool, perhaps with
+    /// a fee or a donation output), which alone arms a pool.
+    Paid {
+        /// The miner gets more than half of the coinbase.
+        solo: bool,
+    },
     /// The coinbase pays the miner's address nothing; the pool keeps
     /// `kept_sat` (the whole coinbase).
     Missing {
@@ -88,7 +103,9 @@ pub fn evidence(pay: Option<&Payout>, ticker: &str) -> Evidence {
     match pay {
         Some(p) if p.own_address && coin_matches(ticker, p.bitcoin) && p.total > 0 => {
             if p.user > 0 {
-                Evidence::Paid
+                Evidence::Paid {
+                    solo: u128::from(p.user) * 2 > u128::from(p.total),
+                }
             } else {
                 Evidence::Missing { kept_sat: p.total }
             }
@@ -105,8 +122,9 @@ pub enum Step {
     /// The pool paid the address for the first time: armed now (the
     /// firmware stores the mark).
     Arm,
-    /// The armed pool paid nothing in [`MISSES_TO_ACT`] decoded jobs in
-    /// a row: warn, and switch where there is another pool.
+    /// The armed pool paid nothing in the jobs of [`BLOCKS_TO_ACT`]
+    /// different blocks in a row: warn, and switch where there is
+    /// another pool.
     Act {
         /// What the pool keeps, satoshis.
         kept_sat: u64,
@@ -120,7 +138,10 @@ pub enum Step {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Check {
     armed: bool,
+    /// Blocks in a row with a job that paid nothing.
     misses: u8,
+    /// The block of the last miss counted.
+    miss_block: Option<u64>,
     missing: bool,
 }
 
@@ -131,6 +152,7 @@ impl Check {
         Self {
             armed,
             misses: 0,
+            miss_block: None,
             missing: false,
         }
     }
@@ -146,15 +168,24 @@ impl Check {
         self.missing
     }
 
-    /// The next job's evidence. `enabled` is the `payoutCheck` setting:
-    /// without it a pool is still armed (so that turning the check on
-    /// later finds it armed) but never acted on.
-    pub fn job(&mut self, e: Evidence, enabled: bool) -> Step {
+    /// The next job's evidence; `block` names the block the job builds
+    /// on (its previous block's hash, or part of it), so misses are
+    /// counted per block, not per job. `enabled` is the `payoutCheck`
+    /// setting: without it a pool is still armed (so that turning the
+    /// check on later finds it armed) but never acted on.
+    pub fn job(&mut self, e: Evidence, block: u64, enabled: bool) -> Step {
         match e {
             Evidence::None => Step::Nothing,
-            Evidence::Paid => {
+            Evidence::Paid { solo } => {
                 self.misses = 0;
+                self.miss_block = None;
                 if !self.armed {
+                    if !solo {
+                        // A share of the reward among others (a pool that
+                        // pays its miners in the coinbase): not a solo
+                        // pool, never armed by this.
+                        return Step::Nothing;
+                    }
                     self.armed = true;
                     Step::Arm
                 } else if self.missing {
@@ -168,8 +199,13 @@ impl Check {
                 if !self.armed || !enabled || self.missing {
                     return Step::Nothing;
                 }
+                if self.miss_block == Some(block) {
+                    // Another template of the same block.
+                    return Step::Nothing;
+                }
+                self.miss_block = Some(block);
                 self.misses = self.misses.saturating_add(1);
-                if self.misses >= MISSES_TO_ACT {
+                if self.misses >= BLOCKS_TO_ACT {
                     self.missing = true;
                     Step::Act { kept_sat }
                 } else {
@@ -178,6 +214,14 @@ impl Check {
             }
         }
     }
+}
+
+/// A block's key for [`Check::job`]: the first eight bytes of the hash
+/// of the block a job builds on.
+pub fn block_key(prev_hash: &[u8; 32]) -> u64 {
+    let mut b = [0u8; 8];
+    b.copy_from_slice(&prev_hash[..8]);
+    u64::from_le_bytes(b)
 }
 
 /// Per pool slot ([`MAIN`], [`FALLBACK`]): the pool seen paying the
@@ -286,10 +330,12 @@ mod tests {
         assert_ne!(pool_id("", 0, ""), 0);
     }
 
+    const PAID: Evidence = Evidence::Paid { solo: true };
+
     #[test]
     fn only_a_decoded_coinbase_to_an_address_of_the_coin_counts() {
-        assert_eq!(evidence(Some(&pay(100, 99)), "BTC"), Evidence::Paid);
-        assert_eq!(evidence(Some(&pay(100, 99)), ""), Evidence::Paid);
+        assert_eq!(evidence(Some(&pay(100, 99)), "BTC"), PAID);
+        assert_eq!(evidence(Some(&pay(100, 99)), ""), PAID);
         assert_eq!(
             evidence(Some(&pay(100, 0)), "btc"),
             Evidence::Missing { kept_sat: 100 }
@@ -318,11 +364,25 @@ mod tests {
     }
 
     #[test]
+    fn solo_shaped_means_more_than_half_to_the_miner() {
+        // A solo pool with a 2 % fee, or a donation output.
+        assert_eq!(evidence(Some(&pay(100, 98)), "BTC"), PAID);
+        assert_eq!(evidence(Some(&pay(100, 51)), "BTC"), PAID);
+        // Half or less: a share among others.
+        let shared = Evidence::Paid { solo: false };
+        assert_eq!(evidence(Some(&pay(100, 50)), "BTC"), shared);
+        assert_eq!(evidence(Some(&pay(312_500_000, 40_000)), "BTC"), shared);
+        // No overflow at the largest sums.
+        let max = 21_000_000 * 100_000_000;
+        assert_eq!(evidence(Some(&pay(max, max)), "BTC"), PAID);
+    }
+
+    #[test]
     fn a_pool_never_seen_paying_is_never_acted_on() {
         let mut c = Check::new(false);
-        for _ in 0..10 {
+        for b in 0..10 {
             assert_eq!(
-                c.job(Evidence::Missing { kept_sat: 5 }, true),
+                c.job(Evidence::Missing { kept_sat: 5 }, b, true),
                 Step::Nothing
             );
         }
@@ -331,36 +391,70 @@ mod tests {
     }
 
     #[test]
-    fn two_missing_jobs_in_a_row_act_once() {
+    fn a_coinbase_paying_pool_never_arms_on_a_small_share() {
+        // Ocean/TIDES, P2Pool: the miner's output comes and goes with its
+        // balance; a small share of the reward never arms the pool.
         let mut c = Check::new(false);
-        assert_eq!(c.job(Evidence::Paid, true), Step::Arm);
-        assert!(c.armed());
-        assert_eq!(c.job(Evidence::Paid, true), Step::Nothing);
+        let small = Evidence::Paid { solo: false };
         let miss = Evidence::Missing {
             kept_sat: 312_500_000,
         };
-        assert_eq!(c.job(miss, true), Step::Nothing);
+        for b in 0..6 {
+            assert_eq!(c.job(small, b * 2, true), Step::Nothing);
+            assert_eq!(c.job(miss, b * 2 + 1, true), Step::Nothing);
+        }
+        assert!(!c.armed());
+    }
+
+    #[test]
+    fn two_blocks_in_a_row_without_payout_act_once() {
+        let mut c = Check::new(false);
+        assert_eq!(c.job(PAID, 1, true), Step::Arm);
+        assert!(c.armed());
+        assert_eq!(c.job(PAID, 1, true), Step::Nothing);
+        let miss = Evidence::Missing {
+            kept_sat: 312_500_000,
+        };
+        assert_eq!(c.job(miss, 2, true), Step::Nothing);
+        // More templates of the same block are one miss.
+        for _ in 0..5 {
+            assert_eq!(c.job(miss, 2, true), Step::Nothing);
+        }
+        assert!(!c.missing());
         assert_eq!(
-            c.job(miss, true),
+            c.job(miss, 3, true),
             Step::Act {
                 kept_sat: 312_500_000
             }
         );
         assert!(c.missing());
         // Once only, however many follow.
-        assert_eq!(c.job(miss, true), Step::Nothing);
-        assert_eq!(c.job(Evidence::Paid, true), Step::Recovered);
+        assert_eq!(c.job(miss, 4, true), Step::Nothing);
+        assert_eq!(c.job(PAID, 5, true), Step::Recovered);
         assert!(!c.missing());
-        assert_eq!(c.job(Evidence::Paid, true), Step::Nothing);
+        assert_eq!(c.job(PAID, 5, true), Step::Nothing);
     }
 
     #[test]
-    fn one_odd_job_between_paying_ones_is_forgiven() {
+    fn any_payment_counts_as_paid_on_an_armed_pool() {
         let mut c = Check::new(true);
         let miss = Evidence::Missing { kept_sat: 1 };
-        for _ in 0..5 {
-            assert_eq!(c.job(miss, true), Step::Nothing);
-            assert_eq!(c.job(Evidence::Paid, true), Step::Nothing);
+        assert_eq!(c.job(miss, 1, true), Step::Nothing);
+        assert_eq!(
+            c.job(Evidence::Paid { solo: false }, 2, true),
+            Step::Nothing
+        );
+        assert_eq!(c.job(miss, 3, true), Step::Nothing);
+        assert!(!c.missing());
+    }
+
+    #[test]
+    fn one_odd_block_between_paying_ones_is_forgiven() {
+        let mut c = Check::new(true);
+        let miss = Evidence::Missing { kept_sat: 1 };
+        for b in 0..5 {
+            assert_eq!(c.job(miss, b, true), Step::Nothing);
+            assert_eq!(c.job(PAID, b, true), Step::Nothing);
         }
         assert!(!c.missing());
     }
@@ -369,24 +463,34 @@ mod tests {
     fn jobs_without_evidence_neither_count_nor_break_the_row() {
         let mut c = Check::new(true);
         let miss = Evidence::Missing { kept_sat: 1 };
-        assert_eq!(c.job(miss, true), Step::Nothing);
-        assert_eq!(c.job(Evidence::None, true), Step::Nothing);
-        assert_eq!(c.job(Evidence::None, true), Step::Nothing);
-        assert_eq!(c.job(miss, true), Step::Act { kept_sat: 1 });
+        assert_eq!(c.job(miss, 1, true), Step::Nothing);
+        assert_eq!(c.job(Evidence::None, 2, true), Step::Nothing);
+        assert_eq!(c.job(Evidence::None, 3, true), Step::Nothing);
+        assert_eq!(c.job(miss, 4, true), Step::Act { kept_sat: 1 });
     }
 
     #[test]
     fn switched_off_it_still_arms_but_never_acts() {
         let mut c = Check::new(false);
-        assert_eq!(c.job(Evidence::Paid, false), Step::Arm);
+        assert_eq!(c.job(PAID, 1, false), Step::Arm);
         let miss = Evidence::Missing { kept_sat: 1 };
-        for _ in 0..4 {
-            assert_eq!(c.job(miss, false), Step::Nothing);
+        for b in 2..6 {
+            assert_eq!(c.job(miss, b, false), Step::Nothing);
         }
         assert!(!c.missing());
         // Turned on: the row starts from there.
-        assert_eq!(c.job(miss, true), Step::Nothing);
-        assert_eq!(c.job(miss, true), Step::Act { kept_sat: 1 });
+        assert_eq!(c.job(miss, 6, true), Step::Nothing);
+        assert_eq!(c.job(miss, 7, true), Step::Act { kept_sat: 1 });
+    }
+
+    #[test]
+    fn block_keys_tell_blocks_apart() {
+        let mut a = [0u8; 32];
+        let mut b = [0u8; 32];
+        a[0] = 1;
+        b[0] = 2;
+        assert_ne!(block_key(&a), block_key(&b));
+        assert_eq!(block_key(&a), block_key(&a));
     }
 
     #[test]
