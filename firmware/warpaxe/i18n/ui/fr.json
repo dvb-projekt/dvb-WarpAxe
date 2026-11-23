@@ -725,13 +725,13 @@
   "dw_fail": "Échec de l’envoi du dernier message il y a {d} ({w}) : {e}",
   "imp_discord": "notifications Discord",
   "payoutCheck": "Contrôle du paiement",
-  "payout_s": "Pools solo : dès que la coinbase d’un pool a payé votre adresse, deux jobs de suite qui ne lui versent rien font basculer sur l’autre pool, ou donnent une alerte s’il n’y en a pas.",
+  "payout_s": "Pools solo : si la coinbase d’un pool a déjà payé votre adresse, le mineur bascule sur l’autre pool dès que deux blocs de suite ne lui versent rien, ou alerte s’il n’y en a pas.",
   "pay_warn": "Paiement",
-  "pay_missing": "La coinbase de ce pool ne verse rien à votre adresse (2 jobs de suite). Aucun autre pool vers lequel basculer : le mineur continue ici.",
-  "pay_last": "{p} n’a rien versé à votre adresse pendant 2 jobs de suite, il y a {ago}.",
-  "pay_sw0": "aucun autre pool vers lequel basculer, le minage continue",
-  "pay_sw1": "sur le pool de secours",
+  "pay_missing": "La coinbase de ce pool ne verse rien à votre adresse (2 blocs de suite). Aucun autre pool vers lequel basculer : le mineur continue ici.",
+  "pay_last": "{p} n’a rien versé à votre adresse pendant 2 blocs de suite, il y a {ago}.",
+  "pay_sw0": "aucun autre pool, le minage continue ici",
+  "pay_sw1": "bascule sur le pool de secours",
   "pay_sw2": "retour au pool principal",
   "alertPayout": "Un pool solo cesse de payer votre adresse",
-  "evd_payout_missing": "le pool {p} n’a rien versé à votre adresse pendant 2 jobs de suite (il garde les {sat} sat)"
+  "evd_payout_missing": "le pool {p} n’a rien versé à votre adresse pendant 2 blocs de suite (le pool garde les {sat} sat)"
 }

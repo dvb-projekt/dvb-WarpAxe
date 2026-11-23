@@ -277,8 +277,8 @@ pub struct Config {
     #[serde(rename = "alertPayout")]
     pub alert_payout: bool,
     /// The payout check (docs/23): a pool whose coinbase once paid the
-    /// miner's address and then pays it nothing in two decoded jobs in a
-    /// row is left for the other pool, with an event and a warning.
+    /// miner's address most of the reward and then pays it nothing in the
+    /// jobs of two blocks in a row is left for the other pool, with an event and a warning.
     #[serde(rename = "payoutCheck")]
     pub payout_check: bool,
 }
@@ -482,17 +482,25 @@ pub fn set_payout_seen(v: u64) {
 /// a thread whose stack is in internal RAM (`events::flush` calls it).
 pub fn flush_payout_seen() {
     let v = {
-        let mut g = PAYOUT_SEEN.lock().unwrap();
+        let g = PAYOUT_SEEN.lock().unwrap();
         if !g.1 {
             return;
         }
-        g.1 = false;
         g.0
     };
-    if let Some(nvs) = NVS.lock().unwrap().as_mut() {
-        if let Err(e) = nvs.set_u64(PAYOUT_SEEN_KEY, v) {
-            log::warn!("config: storing the pools seen paying: {e}");
+    let Some(result) = NVS.lock().unwrap().as_mut().map(|nvs| nvs.set_u64(PAYOUT_SEEN_KEY, v)) else {
+        return;
+    };
+    match result {
+        // Clean only when what was written is still the newest value; a
+        // failed write is tried again at the next flush.
+        Ok(()) => {
+            let mut g = PAYOUT_SEEN.lock().unwrap();
+            if g.0 == v {
+                g.1 = false;
+            }
         }
+        Err(e) => log::warn!("config: storing the pools seen paying: {e}"),
     }
 }
 

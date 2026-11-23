@@ -391,7 +391,7 @@ pub mod detail {
     }
 
     /// A pool whose coinbase had paid the miner's address paid it nothing
-    /// in two decoded jobs in a row (docs/23): `host` the pool, `kept`
+    /// in the decoded jobs of two blocks in a row (docs/23): `host` the pool, `kept`
     /// what it keeps (satoshis), `switched` 0 = no other pool to switch
     /// to (mining on), 1 = to the fallback, 2 = back to the main pool.
     pub fn payout_missing(host: &str, kept: u64, switched: u8) -> Detail {
@@ -835,13 +835,13 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("s")
         ),
         "payout_missing" => format!(
-            "pool {} paid this miner's address nothing in 2 jobs in a row (keeps all {} sat), {}",
+            "pool {} paid this miner's address nothing in 2 blocks in a row (pool keeps all {} sat), {}",
             g("p"),
             g("sat"),
             match p.get("sw").and_then(Value::as_u64) {
-                Some(1) => "on the fallback",
-                Some(2) => "back to the main pool",
-                _ => "no other pool to switch to, mining on",
+                Some(1) => "switched to the fallback",
+                Some(2) => "switched back to the main pool",
+                _ => "no other pool, keeps mining here",
             }
         ),
         "pools_out" => "no pool answers, chips off until one does".into(),
@@ -1290,15 +1290,15 @@ mod tests {
             ),
             (
                 detail::payout_missing("solo.example.org", 312_500_000, 1),
-                "pool solo.example.org paid this miner's address nothing in 2 jobs in a row (keeps all 312500000 sat), on the fallback",
+                "pool solo.example.org paid this miner's address nothing in 2 blocks in a row (pool keeps all 312500000 sat), switched to the fallback",
             ),
             (
                 detail::payout_missing("solo.example.org", 5, 2),
-                "pool solo.example.org paid this miner's address nothing in 2 jobs in a row (keeps all 5 sat), back to the main pool",
+                "pool solo.example.org paid this miner's address nothing in 2 blocks in a row (pool keeps all 5 sat), switched back to the main pool",
             ),
             (
                 detail::payout_missing("solo.example.org", 5, 0),
-                "pool solo.example.org paid this miner's address nothing in 2 jobs in a row (keeps all 5 sat), no other pool to switch to, mining on",
+                "pool solo.example.org paid this miner's address nothing in 2 blocks in a row (pool keeps all 5 sat), no other pool, keeps mining here",
             ),
             (detail::pools_out(), "no pool answers, chips off until one does"),
             (
