@@ -371,7 +371,7 @@
   "usbSubnet": "Endereço USB (192.168.x.1)",
   "usb_subnet_s": "Um segundo WarpAxe no mesmo computador precisa de outro número aqui.",
   "ipv6": "IPv6",
-  "ipv6_s": "Pools, a atualização online, os dados de preço e taxas e as notificações do Discord usam IPv6 quando o servidor oferece, com o IPv4 começando no máximo um quarto de segundo depois. A interface web responde por IPv6 apenas à rede local. Em uma rede sem IPv6, nada muda.",
+  "ipv6_s": "Os pools, a atualização online, os dados de preço e comissões e as notificações do Discord usam IPv6 quando o servidor o disponibiliza; o IPv4 arranca, no máximo, um quarto de segundo depois. A interface web só responde por IPv6 a dispositivos da rede local. Numa rede sem IPv6, nada muda.",
   "ipv6_addr": "Endereços",
   "ipv6_none": "O roteador ainda não forneceu um endereço IPv6.",
   "ota_aborted": "A última atualização não iniciou: o minerador voltou para esta versão.",
