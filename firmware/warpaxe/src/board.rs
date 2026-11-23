@@ -1400,10 +1400,18 @@ impl Regulator {
             Regulator::Tps5364x { .. } => Ok(()),
         }
     }
-    fn set_core(&mut self, volts: f32) -> Result<(), String> {
+    /// The core voltage commanded. An error carries whether something
+    /// may have reached the part: not for a voltage outside its window
+    /// (`OutOfRange`, refused before any write), else yes (a bus error
+    /// can come after VOUT_COMMAND went out).
+    fn set_core(&mut self, volts: f32) -> Result<(), (String, bool)> {
+        fn refused<E: core::fmt::Debug>(e: warpaxe_board::i2c::Error<E>) -> (String, bool) {
+            let written = !matches!(e, warpaxe_board::i2c::Error::OutOfRange);
+            (format!("{e:?}"), written)
+        }
         match self {
             Regulator::Tps546(vr, _) => {
-                let r = vr.set_vout(volts).map_err(|e| format!("{e:?}"));
+                let r = vr.set_vout(volts).map_err(refused);
                 // The output is set either way; the window register the
                 // part refused keeps its last value (the limits are
                 // percentages of VOUT_COMMAND, a fixed value can fall
@@ -1415,9 +1423,7 @@ impl Regulator {
                 }
                 r
             }
-            Regulator::Tps5364x { vr, .. } => {
-                vr.set_vout(volts).map(|_| ()).map_err(|e| format!("{e:?}"))
-            }
+            Regulator::Tps5364x { vr, .. } => vr.set_vout(volts).map(|_| ()).map_err(refused),
         }
     }
     /// Core voltage back on at `volts` after [`off`](Self::off). On the
@@ -2314,8 +2320,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // and logged once per value.
     let mut core_retry_at = Instant::now();
     let mut core_refused_logged: Option<u16> = None;
-    // The last set_core failed: it may have failed after VOUT_COMMAND
-    // went out (only OPERATION refused), so the regulator's read-back is
+    // The last set_core failed after something may have been written
+    // (only OPERATION refused after VOUT_COMMAND; an out-of-range value
+    // writes nothing and does not count), so the regulator's read-back is
     // not judged until a request goes through, and the voltage in force
     // is written again even if it is wanted once more.
     let mut core_unsettled = false;
@@ -3042,14 +3049,16 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         }
                     });
                 }
-                Err(e) => {
+                Err((e, written)) => {
                     if core_refused_logged != Some(want) {
                         log::warn!(
                             "board: core {want} mV refused: {e}, staying at {applied_mv} mV"
                         );
                         core_refused_logged = Some(want);
                     }
-                    core_unsettled = true;
+                    // Out of range: nothing was written, the part still
+                    // holds `applied_mv` and the watch goes on judging.
+                    core_unsettled |= written;
                     core_retry_at = Instant::now() + Duration::from_secs(1);
                     update(|s| {
                         s.core_mv_refused = Some(want);
