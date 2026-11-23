@@ -609,6 +609,8 @@
   "evd_pools_back": "un pool vuelve a responder tras {s} s, ASIC encendidos de nuevo",
   "st_nopool": "Ningún pool accesible: ASIC apagados",
   "nopool_dash": "Ahora mismo no responde ningún pool. Los ASIC están apagados y se vuelven a encender solos en cuanto un pool envíe trabajo.",
+  "st_fanchip": "Chip del ventilador no encontrado: los ASIC siguen apagados",
+  "fanchip_dash": "El chip del ventilador y de temperatura no respondió al arrancar. Sin él, el minero no puede controlar el ventilador ni leer la temperatura de los chips, así que los ASIC siguen apagados. Revisa la placa y luego reinicia el minero.",
   "evd_pool_saved": "se cambió al pool guardado «{p}»",
   "evd_chip_clocks": "frecuencia por chip ajustada a mano: {o} MHz",
   "evd_chip_clocks_api": "frecuencia por chip ajustada por la API: {o} MHz",

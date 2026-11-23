@@ -609,6 +609,8 @@
   "evd_pools_back": "um pool voltou a responder após {s} s, ASICs religados",
   "st_nopool": "Nenhum pool acessível: ASICs desligados",
   "nopool_dash": "No momento nenhum pool responde. Os ASICs estão desligados e voltam a ligar sozinhos assim que um pool enviar trabalho.",
+  "st_fanchip": "Chip do ventilador não encontrado: os ASICs continuam desligados",
+  "fanchip_dash": "O chip do ventilador e de temperatura não respondeu na inicialização. Sem ele, o minerador não consegue controlar o ventilador nem ler a temperatura dos chips, por isso os ASICs continuam desligados. Verifique a placa e depois reinicie o minerador.",
   "evd_pool_saved": "passou para o pool salvo “{p}”",
   "evd_chip_clocks": "frequência por chip definida manualmente: {o} MHz",
   "evd_chip_clocks_api": "frequência por chip definida pela API: {o} MHz",

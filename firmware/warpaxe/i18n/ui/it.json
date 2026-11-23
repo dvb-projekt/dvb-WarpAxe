@@ -609,6 +609,8 @@
   "evd_pools_back": "un pool risponde di nuovo dopo {s} s, ASIC riaccesi",
   "st_nopool": "Nessun pool raggiungibile: ASIC spenti",
   "nopool_dash": "Al momento nessun pool risponde. Gli ASIC sono spenti e si riaccendono da soli non appena un pool invia lavoro.",
+  "st_fanchip": "Chip della ventola non trovato: gli ASIC restano spenti",
+  "fanchip_dash": "Il chip della ventola e della temperatura non ha risposto all’avvio. Senza di esso il miner non può né comandare la ventola né leggere la temperatura dei chip, quindi gli ASIC restano spenti. Controlla la scheda, poi riavvia il miner.",
   "evd_pool_saved": "passato al pool salvato “{p}”",
   "evd_chip_clocks": "frequenza per chip impostata a mano: {o} MHz",
   "evd_chip_clocks_api": "frequenza per chip impostata tramite l’API: {o} MHz",

@@ -609,6 +609,8 @@
   "evd_pools_back": "un pool répond à nouveau après {s} s, ASIC rallumés",
   "st_nopool": "Aucun pool joignable : ASIC coupés",
   "nopool_dash": "Aucun pool ne répond pour le moment. Les ASIC sont coupés et se rallument d’eux-mêmes dès qu’un pool envoie du travail.",
+  "st_fanchip": "Puce du ventilateur introuvable : les ASIC restent coupés",
+  "fanchip_dash": "La puce du ventilateur et de température n’a pas répondu au démarrage. Sans elle, le mineur ne peut ni piloter le ventilateur ni lire la température des puces : les ASIC restent donc coupés. Vérifiez la carte, puis redémarrez le mineur.",
   "evd_pool_saved": "passage au pool enregistré « {p} »",
   "evd_chip_clocks": "fréquence par puce réglée à la main : {o} MHz",
   "evd_chip_clocks_api": "fréquence par puce réglée via l’API : {o} MHz",

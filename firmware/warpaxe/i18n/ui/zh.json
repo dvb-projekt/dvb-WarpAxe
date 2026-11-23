@@ -609,6 +609,8 @@
   "evd_pools_back": "{s} 秒后有矿池恢复响应，ASIC 已重新开启",
   "st_nopool": "无法连接任何矿池：ASIC 已关闭",
   "nopool_dash": "目前没有矿池响应。ASIC 已关闭，一旦有矿池下发任务就会自动重新开启。",
+  "st_fanchip": "未找到风扇芯片：ASIC 保持关闭",
+  "fanchip_dash": "启动时风扇和温度芯片没有响应。没有它，矿机既无法控制风扇，也无法读取芯片温度，因此 ASIC 保持关闭。请检查电路板，然后重启矿机。",
   "evd_pool_saved": "已切换到已保存的矿池“{p}”",
   "evd_chip_clocks": "单芯片频率已手动设置：{o} MHz",
   "evd_chip_clocks_api": "单芯片频率已通过 API 设置：{o} MHz",
