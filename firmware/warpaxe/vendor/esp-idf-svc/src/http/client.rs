@@ -106,11 +106,30 @@ pub struct EspHttpConnection {
     follow_redirects: bool,
     headers: BTreeMap<Uncased<'static>, String>,
     content_len_header: UnsafeCell<Option<Option<String>>>,
+    // WarpAxe patch 5: the name the server certificate is checked
+    // against (and sent as SNI). esp-tls keeps the pointer, so the
+    // string lives as long as the connection.
+    _common_name: Option<alloc::ffi::CString>,
 }
 
 impl EspHttpConnection {
     pub fn new(configuration: &Configuration) -> Result<Self, EspError> {
+        Self::new_with_common_name(configuration, None)
+    }
+
+    /// As [`EspHttpConnection::new`], with the certificate checked against
+    /// `common_name` (also sent as SNI) instead of the URL's host: for a
+    /// URL with an address literal whose server is known by its name.
+    /// WarpAxe patch 5.
+    pub fn new_with_common_name(
+        configuration: &Configuration,
+        common_name: Option<&str>,
+    ) -> Result<Self, EspError> {
         let event_handler = Box::new(None);
+        let common_name = match common_name {
+            Some(n) => Some(alloc::ffi::CString::new(n).map_err(|_| EspError::from_infallible::<ESP_FAIL>())?),
+            None => None,
+        };
 
         #[allow(clippy::manual_c_str_literals)]
         let mut native_config = esp_http_client_config_t {
@@ -125,6 +144,10 @@ impl EspHttpConnection {
 
             ..Default::default()
         };
+
+        if let Some(n) = common_name.as_ref() {
+            native_config.common_name = n.as_ptr() as _;
+        }
 
         if let Some(buffer_size) = configuration.buffer_size {
             native_config.buffer_size = buffer_size as _;
@@ -162,6 +185,7 @@ impl EspHttpConnection {
                 follow_redirects: false,
                 headers: BTreeMap::new(),
                 content_len_header: UnsafeCell::new(None),
+                _common_name: common_name,
             })
         }
     }

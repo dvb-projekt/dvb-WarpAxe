@@ -70,6 +70,30 @@ UI, on by default.
    dual-stack socket). Refusals are counted (`ipv6Refused`); the first ten
    and every hundredth are logged. This needed `open_fn` in esp-idf-svc's server configuration
    (vendor patch 3, `vendor/esp-idf-svc/WARPAXE-PATCH.md`).
+8. **HTTP follows the pool (2026-11-23).** The online update, market data
+   (price and fees) and Discord alerts use the same resolver and race as
+   the pool (`net/http.rs` on top of `net/dial.rs` `pick`). Like esp-tls,
+   the ESP-IDF HTTP client resolves names with `AF_UNSPEC` and gets the A
+   record only, so an IPv6 winner goes to the client as a `[literal]` URL;
+   the name goes in the `Host` header, as SNI and as the name the
+   certificate is checked against (`common_name`, vendor patch 5), never
+   the literal. An IPv4 winner, the switch off or no global or
+   unique-local address: the URL goes to the client unchanged, without an
+   AAAA query, as before. If the IPv6 attempt fails before an answer
+   (connect, TLS), the request is made again over IPv4 at once; a GET
+   also when no answer comes over IPv6 (a path that drops large packets),
+   a POST only before its headers went out, so a Discord message is never
+   sent twice. A GET whose IPv6 answer is 404 or a server error (an IPv6
+   front end not bound to the site) is asked once more over IPv4. A host
+   that failed over IPv6 in any of these ways, or whose body broke off
+   over IPv6, goes over IPv4 for 30 minutes, so a broken IPv6 path costs
+   one failed attempt, not one per request; the update's third and last
+   attempt is IPv4 only in any case. Redirects over IPv6 are followed hop by hop, each hop with
+   its own name and its own choice of family (`warpaxe_stratum::url`,
+   host-tested). On 2026-11-23 git.warppool.org (the update) and
+   mempool.space had AAAA records, discord.com had none: alerts stay on
+   IPv4 until Discord publishes one, at the cost of one AAAA lookup per
+   half hour.
 
 ## The switch
 
@@ -85,7 +109,9 @@ within two seconds and the session is rebuilt. `PATCH /api/system`
 unique-local addresses of the station), `poolAddress` and
 `poolAddressFamily` (`"IPv4"`/`"IPv6"`, null while no session is up),
 `ipv6Refused` (web connections refused since boot). The pool cards show
-the family next to V1/V2 and TLS.
+the family next to V1/V2 and TLS. The update check, market data and
+alerts have no field of their own: an IPv6 attempt that fell back to IPv4
+is logged (`http: <name> over IPv6 failed (...): over IPv4`).
 
 ## What it costs
 
@@ -106,8 +132,20 @@ the family next to V1/V2 and TLS.
 
 - An IPv6-only network (no IPv4 at all) is not supported: the DNS
   servers come from DHCPv4 (`CONFIG_LWIP_IPV6_RDNSS_MAX_DNS_SERVERS` is 0).
-- Only pool connections use IPv6. The online update, market data, NTP and
-  the swarm search stay on IPv4.
+- Pool connections, the online update, market data and Discord alerts use
+  IPv6 (rules 2 to 5 and 8). NTP stays on IPv4: lwIP's SNTP client looks
+  names up A first (`LWIP_DNS_ADDRTYPE_DEFAULT`), so a server with both
+  records is always reached over IPv4; going over IPv6 would mean
+  resolving each server ourselves and pinning the literal, and NTP is UDP,
+  with no connect to race and nothing to fall back on when the IPv6 route
+  drops packets. A network with IPv6 has IPv4 too (first limit), so
+  nothing is lost.
+- The swarm search walks the own IPv4 /24 only.
+- The web UI and API answer IPv6 peers on the link, unique-local ones and
+  the miner's own /64 (rule 7); global peers elsewhere stay refused.
+- mDNS: the ESP-IDF mDNS component answers on IPv6 as well once the
+  station has its link-local address (`CONFIG_MDNS_PREDEF_NETIF_STA` with
+  `CONFIG_LWIP_IPV6`); not changed, not checked.
 
 ## Privacy
 
@@ -133,6 +171,15 @@ off.
 | First connection after boot, dual-stack pool | IPv6 (prefix about 3 s after link-local) |
 | Stratum V2 to warppool through the IPv6-only relay (`[ULA literal]`) | IPv6, Noise handshake and certificate verified, shares accepted |
 | Web UI over the global address from the same /64, and over the ULA | served |
+
+HTTP over IPv6 (rule 8, branch feat/ipv6-everywhere, 2026-11-23): host
+tests only (`warpaxe_stratum::url`) and the firmware build; not run on a
+device yet. To check: an update check and download, the price card and a
+Discord test message on a dual-stack network (log and the router's
+connection list show the family), an IPv6 host that answers 404 or
+breaks off (IPv4 at once, then for 30 minutes), the same with the switch off (no AAAA
+query, IPv4 as before), and a certificate error for a wrong name still
+refused.
 
 Not tested on hardware: an IPv6 route that drops packets silently (the
 timing is host-tested), a refused web connection from outside the /64

@@ -216,7 +216,7 @@ fn candidates(host: &str, port: u16) -> Vec<Cand> {
         let took = t.elapsed();
         if v6.is_empty() || took > AAAA_SLOW {
             log::info!(
-                "stratum: AAAA for {host}: {} in {} ms, not asked again for {} min",
+                "dial: AAAA for {host}: {} in {} ms, not asked again for {} min",
                 v6.len(),
                 took.as_millis(),
                 AAAA_SKIP.as_secs() / 60
@@ -240,7 +240,7 @@ fn candidates(host: &str, port: u16) -> Vec<Cand> {
         g.iter().any(|(k, _)| *k == key)
     };
     if ipv4_first(silent_v6, !v6.is_empty(), !v4.is_empty()) {
-        log::info!("stratum: {host} sent no work over IPv6 lately: IPv4 first");
+        log::info!("dial: {host} sent no work over IPv6 lately: IPv4 first");
         return interleave(v4, v6);
     }
     interleave(v6, v4)
@@ -337,7 +337,7 @@ fn race(
                 match start(&cands[i]) {
                     Ok(fd) => pending.push(Pending { fd, idx: i }),
                     Err(e) => {
-                        log::info!("stratum: {} failed at once: {e}", cands[i].addr);
+                        log::info!("dial: {} failed at once: {e}", cands[i].addr);
                         last_err = Some(format!("{}: {e}", cands[i].addr));
                         race.failed(ms(t0));
                     }
@@ -365,7 +365,7 @@ fn race(
         let n = unsafe { sys::poll(fds.as_mut_ptr(), fds.len() as _, wait_ms.min(1000) as i32) };
         if n < 0 {
             // A select error: not a refusal; do not spin on it.
-            log::warn!("stratum: poll failed: {}", io::Error::last_os_error());
+            log::warn!("dial: poll failed: {}", io::Error::last_os_error());
             std::thread::sleep(Duration::from_millis(50));
             continue;
         }
@@ -390,7 +390,7 @@ fn race(
             } else {
                 "connect failed (no socket error reported)".to_string()
             };
-            log::info!("stratum: {} refused: {why}", c.addr);
+            log::info!("dial: {} refused: {why}", c.addr);
             last_err = Some(format!("{}: {why}", c.addr));
         }
         if let Some(k) = done {
@@ -400,7 +400,7 @@ fn race(
             let addr = cands[win.idx].addr;
             if race.started() > 1 || win.idx > 0 {
                 log::info!(
-                    "stratum: {} answered first ({} of {} tried, {} ms)",
+                    "dial: {} answered first ({} of {} tried, {} ms)",
                     addr,
                     race.started(),
                     cands.len(),

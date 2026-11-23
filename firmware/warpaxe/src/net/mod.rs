@@ -11,6 +11,7 @@
 
 pub mod dial;
 pub mod eth;
+pub mod http;
 pub mod mdns;
 pub mod usb;
 pub mod wifi;

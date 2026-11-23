@@ -32,8 +32,7 @@ use std::sync::{Condvar, Mutex};
 use std::time::Duration;
 use warpaxe_diag::restart::{Marker, Step};
 
-use esp_idf_svc::http::client::{Configuration, EspHttpConnection};
-use esp_idf_svc::http::Method;
+use esp_idf_svc::http::client::Configuration;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 
@@ -351,7 +350,14 @@ fn fetch_latest() -> anyhow::Result<Release> {
 fn get(url: &str, max: usize, mut progress: impl FnMut(usize)) -> anyhow::Result<Vec<u8>> {
     let mut last = None;
     for attempt in 1..=3 {
-        match get_once(url, max, &mut progress) {
+        // The last attempt goes over IPv4 whatever happened over IPv6
+        // (docs/17 rule 8): an IPv6 path that answers but breaks off.
+        let family = if attempt == 3 {
+            crate::net::http::Family::Ipv4Only
+        } else {
+            crate::net::http::Family::Any
+        };
+        match get_once(url, max, &mut progress, family) {
             Ok(b) => return Ok(b),
             Err(e) => {
                 log::warn!("update: {url}: attempt {attempt} failed: {e}");
@@ -363,21 +369,26 @@ fn get(url: &str, max: usize, mut progress: impl FnMut(usize)) -> anyhow::Result
     Err(last.unwrap_or_else(|| anyhow::anyhow!("{url}: no attempt made")))
 }
 
-fn get_once(url: &str, max: usize, progress: &mut impl FnMut(usize)) -> anyhow::Result<Vec<u8>> {
+fn get_once(
+    url: &str,
+    max: usize,
+    progress: &mut impl FnMut(usize),
+    family: crate::net::http::Family,
+) -> anyhow::Result<Vec<u8>> {
     let mut url = url.to_string();
     for _ in 0..5 {
-        let mut c = EspHttpConnection::new(&Configuration {
-            crt_bundle_attach: Some(crate::tls_trust::attach),
-            timeout: Some(Duration::from_secs(20)),
-            buffer_size: Some(2048),
-            ..Default::default()
-        })?;
-        c.initiate_request(
-            Method::Get,
+        // Over IPv6 when the pool's rule allows it (docs/17).
+        let (mut c, via) = crate::net::http::get(
             &url,
+            &Configuration {
+                crt_bundle_attach: Some(crate::tls_trust::attach),
+                timeout: Some(Duration::from_secs(20)),
+                buffer_size: Some(2048),
+                ..Default::default()
+            },
             &[("Accept", "application/json, application/octet-stream")],
+            family,
         )?;
-        c.initiate_response()?;
         let status = c.status();
         if (300..400).contains(&status) {
             let next = c
@@ -405,7 +416,7 @@ fn get_once(url: &str, max: usize, progress: &mut impl FnMut(usize)) -> anyhow::
         let mut body = Vec::new();
         let mut buf = vec![0u8; 4096];
         loop {
-            let n = c.read(&mut buf)?;
+            let n = c.read(&mut buf).inspect_err(|_| via.body_failed())?;
             if n == 0 {
                 break;
             }

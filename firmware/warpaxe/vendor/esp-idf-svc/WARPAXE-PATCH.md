@@ -1,7 +1,7 @@
 # esp-idf-svc 0.51.0, patched for WarpAxe
 
 Unchanged copy of the crates.io release `esp-idf-svc 0.51.0`
-(MIT OR Apache-2.0, https://github.com/esp-rs/esp-idf-svc) with four changes.
+(MIT OR Apache-2.0, https://github.com/esp-rs/esp-idf-svc) with five changes.
 
 ## 1. `src/wifi.rs`
 
@@ -52,3 +52,17 @@ firmware's vprintf hook; with the flag at 0 it keeps the stack it had
 before. Checked in the disassembly of the v0.1.47 build, 2026-11-18;
 check again when ESP-IDF or the Wi-Fi libraries change. Added for
 v0.1.47.
+
+## 5. `src/http/client.rs`, `common_name`
+
+`EspHttpConnection::new_with_common_name` takes the name the server
+certificate is checked against (and sent as SNI), passed through to
+`esp_http_client_config_t::common_name`; the connection keeps the string,
+since esp-tls keeps only the pointer. `new` passes `None`, as before.
+
+Why: the online update, market data and Discord alerts go over IPv6 when
+the pool rule allows it (docs/17). esp-tls resolves names with
+`AF_UNSPEC`, which in lwIP gives the A record only, so the firmware picks
+the address and hands the client a URL with the `[IPv6]` literal; the
+certificate must still be checked against the name, never the literal.
+Added 2026-11-23.
