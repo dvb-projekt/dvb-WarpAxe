@@ -132,6 +132,13 @@ pub fn try_ipv6(setting: bool, own_beyond_link: bool, host_is_literal: bool) -> 
     setting && own_beyond_link && !host_is_literal
 }
 
+/// Whether an answer that came over IPv6 is worth one more try over
+/// IPv4: not found or a server error can be an IPv6 front end that is
+/// not bound to the right site, while the IPv4 one is.
+pub fn ipv6_answer_suspect(status: u16) -> bool {
+    status == 404 || status >= 500
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,6 +220,17 @@ mod tests {
         );
         assert_eq!(resolve_location(base, "other"), None);
         assert_eq!(resolve_location(base, "//evil.example/x"), None);
+    }
+
+    #[test]
+    fn suspect_answers() {
+        assert!(ipv6_answer_suspect(404));
+        assert!(ipv6_answer_suspect(500));
+        assert!(ipv6_answer_suspect(503));
+        assert!(!ipv6_answer_suspect(200));
+        assert!(!ipv6_answer_suspect(302));
+        assert!(!ipv6_answer_suspect(403));
+        assert!(!ipv6_answer_suspect(429));
     }
 
     #[test]

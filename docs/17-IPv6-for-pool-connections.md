@@ -83,7 +83,12 @@ UI, on by default.
    (connect, TLS), the request is made again over IPv4 at once; a GET
    also when no answer comes over IPv6 (a path that drops large packets),
    a POST only before its headers went out, so a Discord message is never
-   sent twice. Redirects over IPv6 are followed hop by hop, each hop with
+   sent twice. A GET whose IPv6 answer is 404 or a server error (an IPv6
+   front end not bound to the site) is asked once more over IPv4. A host
+   that failed over IPv6 in any of these ways, or whose body broke off
+   over IPv6, goes over IPv4 for 30 minutes, so a broken IPv6 path costs
+   one failed attempt, not one per request; the update's third and last
+   attempt is IPv4 only in any case. Redirects over IPv6 are followed hop by hop, each hop with
    its own name and its own choice of family (`warpaxe_stratum::url`,
    host-tested). On 2026-11-23 git.warppool.org (the update) and
    mempool.space had AAAA records, discord.com had none: alerts stay on
@@ -171,7 +176,8 @@ HTTP over IPv6 (rule 8, branch feat/ipv6-everywhere, 2026-11-23): host
 tests only (`warpaxe_stratum::url`) and the firmware build; not run on a
 device yet. To check: an update check and download, the price card and a
 Discord test message on a dual-stack network (log and the router's
-connection list show the family), the same with the switch off (no AAAA
+connection list show the family), an IPv6 host that answers 404 or
+breaks off (IPv4 at once, then for 30 minutes), the same with the switch off (no AAAA
 query, IPv4 as before), and a certificate error for a wrong name still
 refused.
 

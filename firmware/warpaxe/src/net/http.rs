@@ -16,21 +16,73 @@
 //! A request whose IPv6 attempt fails before an answer (connect, TLS) is
 //! made once more over IPv4 at once; a GET also when the answer does not
 //! come (a path that drops large packets). A POST is not repeated once its
-//! headers went out, so a Discord message is never sent twice.
+//! headers went out, so a Discord message is never sent twice. A GET whose
+//! IPv6 answer is 404 or a server error (an IPv6 front end not bound to
+//! the site) is asked once more over IPv4. A host that failed over IPv6
+//! goes over IPv4 for half an hour ([`NO_V6_FOR`]), so a broken IPv6 path
+//! costs one failed attempt, not one per request.
 
 use std::net::SocketAddr;
-use std::time::Duration;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use esp_idf_svc::http::client::{Configuration, EspHttpConnection, FollowRedirectsPolicy};
 use esp_idf_svc::http::Method;
 use esp_idf_svc::sys::EspError;
-use warpaxe_stratum::url::{parse, resolve_location, try_ipv6};
+use warpaxe_stratum::url::{ipv6_answer_suspect, parse, resolve_location, try_ipv6};
 
 /// At most this long for the address race (one TCP handshake per family;
 /// with one address there is no race at all).
 const PICK_BUDGET: Duration = Duration::from_secs(5);
 /// Redirects followed over IPv6 (over IPv4 the client follows them).
 const MAX_REDIRECTS: usize = 5;
+
+/// After an IPv6 failure, the host goes over IPv4 for this long.
+const NO_V6_FOR: Duration = Duration::from_secs(30 * 60);
+/// Hosts that failed over IPv6, and until when they go over IPv4 (a
+/// handful at most: the update, its download host, mempool.space).
+static NO_V6: Mutex<Vec<(String, Instant)>> = Mutex::new(Vec::new());
+
+/// `host` failed over IPv6 (no connection, no TLS, a suspect answer or a
+/// body that broke off): IPv4 only for [`NO_V6_FOR`].
+pub fn ipv6_failed(host: &str) {
+    log::info!(
+        "http: {host}: IPv4 only for {} min",
+        NO_V6_FOR.as_secs() / 60
+    );
+    let mut g = NO_V6.lock().unwrap();
+    g.retain(|(h, _)| h != host);
+    g.push((host.to_string(), Instant::now() + NO_V6_FOR));
+}
+
+fn ipv6_skipped(host: &str) -> bool {
+    let now = Instant::now();
+    let mut g = NO_V6.lock().unwrap();
+    g.retain(|(_, until)| *until > now);
+    g.iter().any(|(h, _)| h == host)
+}
+
+/// Which families a request may use.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Family {
+    /// IPv6 when the rule allows it, else IPv4.
+    Any,
+    /// IPv4 only, as before IPv6 (a last attempt).
+    Ipv4Only,
+}
+
+/// How an answer from [`get`] came: over IPv6 from `host`, or over IPv4.
+pub struct Via(Option<String>);
+
+impl Via {
+    /// The body of this answer broke off: if it came over IPv6, that host
+    /// goes over IPv4 for a while, so the caller's retry takes IPv4.
+    pub fn body_failed(&self) {
+        if let Some(h) = &self.0 {
+            ipv6_failed(h);
+        }
+    }
+}
 
 /// An IPv6 way to `url`: the literal URL, the `Host` header and the name.
 struct V6 {
@@ -45,7 +97,8 @@ fn ipv6_target(url: &str) -> Option<V6> {
         crate::config::get().ipv6,
         !super::dial::global_ipv6().is_empty(),
         u.host_is_literal(),
-    ) {
+    ) || ipv6_skipped(u.host)
+    {
         return None;
     }
     match super::dial::pick(u.host, u.port, PICK_BUDGET) {
@@ -106,23 +159,32 @@ pub fn open(
     if let Some(t) = ipv6_target(url) {
         match open_v6(&t, conf, method, headers) {
             Ok(c) => return Ok(c),
-            Err(e) => log::info!("http: {} over IPv6 failed ({e}): over IPv4", t.name),
+            Err(e) => {
+                log::info!("http: {} over IPv6 failed ({e}): over IPv4", t.name);
+                ipv6_failed(&t.name);
+            }
         }
     }
     open_v4(url, conf, method, headers)
 }
 
 /// A GET to `url` with the response headers read: over IPv6 when the
-/// rule allows it, redirects followed (each hop decides anew), and once
-/// more over IPv4 when the IPv6 attempt brings no answer. The status is
-/// the caller's to check, as with the client itself.
+/// rule allows it and `family` is [`Family::Any`], redirects followed
+/// (each hop decides anew), and once more over IPv4 when the IPv6 attempt
+/// brings no answer or a suspect one (404, 5xx). The status is the
+/// caller's to check, as with the client itself; [`Via`] says how the
+/// answer came, for a body that breaks off.
 pub fn get(
     url: &str,
     conf: &Configuration,
     headers: &[(&str, &str)],
-) -> Result<EspHttpConnection, EspError> {
+    family: Family,
+) -> Result<(EspHttpConnection, Via), EspError> {
     let mut url = url.to_string();
     for _ in 0..=MAX_REDIRECTS {
+        if family == Family::Ipv4Only {
+            break;
+        }
         let Some(t) = ipv6_target(&url) else {
             break;
         };
@@ -134,20 +196,27 @@ pub fn get(
             Ok(c) => c,
             Err(e) => {
                 log::info!("http: {} over IPv6 failed ({e}): over IPv4", t.name);
+                ipv6_failed(&t.name);
                 break;
             }
         };
         let status = c.status();
+        if ipv6_answer_suspect(status) {
+            log::info!("http: {} answered {status} over IPv6: over IPv4", t.name);
+            drop(c);
+            ipv6_failed(&t.name);
+            break;
+        }
         if !(300..400).contains(&status) || status == 304 {
-            return Ok(c);
+            return Ok((c, Via(Some(t.name))));
         }
         match c.header("Location").and_then(|l| resolve_location(&url, l)) {
             Some(next) => url = next,
             // A redirect without a usable Location: the caller sees it.
-            None => return Ok(c),
+            None => return Ok((c, Via(Some(t.name)))),
         }
     }
     let mut c = open_v4(&url, conf, Method::Get, headers)?;
     c.initiate_response()?;
-    Ok(c)
+    Ok((c, Via(None)))
 }

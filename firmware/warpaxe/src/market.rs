@@ -50,7 +50,7 @@ pub fn start() {
 
 fn get_json(url: &str) -> anyhow::Result<serde_json::Value> {
     // Over IPv6 when the pool's rule allows it (docs/17).
-    let mut c = crate::net::http::get(
+    let (mut c, via) = crate::net::http::get(
         url,
         &Configuration {
             crt_bundle_attach: Some(crate::tls_trust::attach),
@@ -58,6 +58,7 @@ fn get_json(url: &str) -> anyhow::Result<serde_json::Value> {
             ..Default::default()
         },
         &[],
+        crate::net::http::Family::Any,
     )?;
     if c.status() != 200 {
         anyhow::bail!("{url}: HTTP {}", c.status());
@@ -65,7 +66,7 @@ fn get_json(url: &str) -> anyhow::Result<serde_json::Value> {
     let mut body = Vec::new();
     let mut buf = [0u8; 512];
     loop {
-        let n = c.read(&mut buf)?;
+        let n = c.read(&mut buf).inspect_err(|_| via.body_failed())?;
         if n == 0 || body.len() > 8192 {
             break;
         }
