@@ -390,7 +390,16 @@ pub struct Choices {
     pub abs_min_core_mv: u16,
     /// Highest core voltage a PATCH may set, mV; 0 = no limit.
     pub abs_max_core_mv: u16,
+    /// Factory clock, MHz.
+    pub default_frequency_mhz: u32,
+    /// Factory core voltage, mV.
+    pub default_core_mv: u16,
+    /// Power the board is built for, W (published as `maxPower`).
+    pub max_power_w: u16,
 }
+
+/// NerdOS `NerdOctaxeGamma` with the 4-phase TPS53647 (`max_pin`).
+const OCTAXE_4P_MAX_POWER_W: u16 = 250;
 
 /// NerdOS `NerdOctaxeGamma` with the 6-phase TPS53667 fitted: the
 /// extended lists and an 850 MHz ceiling; the voltage limits stay the
@@ -462,8 +471,10 @@ impl Profile {
 
     /// The choices this board publishes. The NerdOCTAXE-γ's depend on the
     /// regulator found at start (`tps53667`): the 6-phase part gets
-    /// NerdOS's extended lists, the 4-phase TPS53647 the NerdQAxe++'s it
-    /// inherits there.
+    /// NerdOS's extended lists and 700 MHz / 1210 mV, 300 W; the 4-phase
+    /// TPS53647 the NerdQAxe++'s lists and factory point it inherits
+    /// there (600 MHz / 1150 mV) and 250 W. `false` is the cautious
+    /// answer while the regulator is not known yet.
     pub fn choices(&self, tps53667: bool) -> Choices {
         let own = Choices {
             frequency_options: self.frequency_options,
@@ -471,6 +482,9 @@ impl Profile {
             abs_max_frequency_mhz: self.abs_max_frequency_mhz,
             abs_min_core_mv: self.abs_min_core_mv,
             abs_max_core_mv: self.abs_max_core_mv,
+            default_frequency_mhz: self.default_frequency_mhz,
+            default_core_mv: self.default_core_mv,
+            max_power_w: self.max_power_w,
         };
         if self.name != NERDOCTAXE_GAMMA.name {
             return own;
@@ -481,10 +495,19 @@ impl Profile {
                 frequency_options: OCTAXE_6P_FREQUENCIES,
                 voltage_options: OCTAXE_6P_VOLTAGES,
                 abs_max_frequency_mhz: 850,
+                default_frequency_mhz: self.default_frequency_mhz,
+                default_core_mv: self.default_core_mv,
+                max_power_w: self.max_power_w,
                 ..base
             }
         } else {
-            base
+            // NerdOS `NerdOctaxeGamma` without the TPS53667: the
+            // NerdQAxe++'s factory point and limits, and 250 W for the
+            // four-phase regulator's 180 A.
+            Choices {
+                max_power_w: OCTAXE_4P_MAX_POWER_W,
+                ..base
+            }
         }
     }
 
@@ -1222,7 +1245,9 @@ pub const NERDQAXE_PLUSPLUS_REV7: Profile = Profile {
 
 /// NerdOctaxe-γ: eight BM1370 on 12 V, TPS53667 six-phase (or TPS53647
 /// four-phase when VR_DETECT GPIO3 reads low:
-/// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W.
+/// [`tps53647::Config::NERDOCTAXE_GAMMA_4P`]), 700 MHz / 1210 mV, 300 W
+/// with the six-phase part; the four-phase one publishes 600 MHz /
+/// 1150 mV and 250 W ([`Profile::choices`]).
 pub const NERDOCTAXE_GAMMA: Profile = Profile {
     name: "nerdoctaxe-gamma",
     model: "NerdOctaxe",
@@ -2098,8 +2123,37 @@ mod tests {
         assert_eq!(six.abs_max_frequency_mhz, 850);
         assert_eq!((six.abs_min_core_mv, six.abs_max_core_mv), (1050, 1400));
         assert_eq!(
-            NERDOCTAXE_GAMMA.choices(false),
-            NERDQAXE_PLUSPLUS.choices(false)
+            (six.default_frequency_mhz, six.default_core_mv),
+            (700, 1210)
+        );
+        assert_eq!(six.max_power_w, 300);
+        let four = NERDOCTAXE_GAMMA.choices(false);
+        assert_eq!(
+            four,
+            Choices {
+                max_power_w: 250,
+                ..NERDQAXE_PLUSPLUS.choices(false)
+            }
+        );
+        assert_eq!(
+            (four.default_frequency_mhz, four.default_core_mv),
+            (600, 1150)
+        );
+        assert_eq!(four.abs_max_frequency_mhz, 800);
+        assert!(four.frequency_options.contains(&four.default_frequency_mhz));
+        assert!(four.voltage_options.contains(&four.default_core_mv));
+        let gamma = BITAXE_GAMMA.choices(false);
+        assert_eq!(
+            (
+                gamma.default_frequency_mhz,
+                gamma.default_core_mv,
+                gamma.max_power_w
+            ),
+            (
+                BITAXE_GAMMA.default_frequency_mhz,
+                BITAXE_GAMMA.default_core_mv,
+                BITAXE_GAMMA.max_power_w
+            )
         );
         assert_eq!(BITAXE_GAMMA.choices(true), BITAXE_GAMMA.choices(false));
         assert!(BITAXE_GAMMA.choices(true).frequency_options.is_empty());

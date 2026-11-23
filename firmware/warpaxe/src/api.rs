@@ -122,7 +122,7 @@ pub fn system_info() -> serde_json::Value {
         "boardAsicCount": profile.asic_count,
         "boardDetect": board::detect_info(),
         "boardModels": warpaxe_board::profile::ALL.iter().map(|p| json!({"name": p.name, "model": if p.asic_count == 0 { "WarpMiner (T-Display-S3)" } else { p.model }, "experimental": p.asic_count == 0, "tested": warpaxe_board::detect::TESTED.contains(&p.name)})).collect::<Vec<_>>(),
-        "nominalVoltage": profile.nominal_voltage_v, "maxPower": profile.max_power_w,
+        "nominalVoltage": profile.nominal_voltage_v, "maxPower": choices().max_power_w,
         "power": b.power_w, "powerEstimated": b.power_estimated, "hasFan": profile.has_fan(), "hasVr": b.has_vr, "voltage": b.vin_mv, "current": b.iout_ma,
         // The supply under load (`warpaxe_board::psu_sag`): input voltage at
         // rest and hashing, the sag between them, and its warning.
@@ -463,7 +463,7 @@ fn settings_v2() -> Option<serde_json::Value> {
     }
     Some(json!({
         "deviceModel": p.name,
-        "defaultFrequency": p.default_frequency_mhz, "defaultCoreVoltage": p.default_core_mv,
+        "defaultFrequency": c.default_frequency_mhz, "defaultCoreVoltage": c.default_core_mv,
         "absMinCoreVoltage": c.abs_min_core_mv, "absMaxCoreVoltage": c.abs_max_core_mv,
         "frequencyOptions": c.frequency_options, "voltageOptions": c.voltage_options,
     }))
@@ -501,7 +501,7 @@ fn asic_options() -> Option<serde_json::Value> {
     }
     Some(json!({
         "ASICModel": asic_model(), "deviceModel": p.name, "asicCount": p.asic_count,
-        "defaultFrequency": p.default_frequency_mhz, "defaultVoltage": p.default_core_mv,
+        "defaultFrequency": c.default_frequency_mhz, "defaultVoltage": c.default_core_mv,
         "absMaxFrequency": c.abs_max_frequency_mhz,
         "absMinVoltage": c.abs_min_core_mv, "absMaxVoltage": c.abs_max_core_mv,
         "ecoFrequency": 0, "ecoVoltage": 0,

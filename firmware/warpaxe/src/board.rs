@@ -1589,10 +1589,14 @@ pub fn init_bus(mut i2c0: I2C0) {
     // asked for, and every voltage drop would wait for it for ever.
     // The config as it is now: a first start above may have taken the
     // stock firmware's clock over since `cfg` was read.
+    // The factory point to fall back to: the regulator is not known yet
+    // here, and `choices(false)` is the cautious one (the NerdOctaxe's
+    // four-phase 600 MHz / 1150 mV rather than the six-phase 700 / 1210).
+    let factory = profile.choices(false);
     let stored_mhz = config::get().frequency;
     let above = profile.abs_max_frequency_mhz > 0 && stored_mhz > profile.abs_max_frequency_mhz;
     let unsettable = profile.asic_count > 0
-        && profile.default_frequency_mhz >= MIN_FREQUENCY_MHZ
+        && factory.default_frequency_mhz >= MIN_FREQUENCY_MHZ
         && (stored_mhz < MIN_FREQUENCY_MHZ
             || stored_mhz
                 .checked_mul(1_000_000)
@@ -1611,9 +1615,9 @@ pub fn init_bus(mut i2c0: I2C0) {
             "board: clock {} MHz is {why} on {}: starting at its default {} MHz",
             fixed.frequency,
             profile.name,
-            profile.default_frequency_mhz
+            factory.default_frequency_mhz
         );
-        fixed.frequency = profile.default_frequency_mhz;
+        fixed.frequency = factory.default_frequency_mhz;
         if let Err(e) = config::save(&fixed) {
             log::warn!("board: saving the clock failed: {e}");
         }
@@ -1631,15 +1635,15 @@ pub fn init_bus(mut i2c0: I2C0) {
         let ceiling = profile.abs_max_core_mv;
         let outside =
             (floor > 0 && cfg.core_voltage < floor) || (ceiling > 0 && cfg.core_voltage > ceiling);
-        if outside && cfg.core_voltage != profile.default_core_mv {
+        if outside && cfg.core_voltage != factory.default_core_mv {
             let mut fixed = cfg;
             log::warn!(
                 "board: core voltage {} mV is outside {}'s {floor}–{ceiling} mV: starting at its default {} mV",
                 fixed.core_voltage,
                 profile.name,
-                profile.default_core_mv
+                factory.default_core_mv
             );
-            fixed.core_voltage = profile.default_core_mv;
+            fixed.core_voltage = factory.default_core_mv;
             if let Err(e) = config::save(&fixed) {
                 log::warn!("board: saving the core voltage failed: {e}");
             }
