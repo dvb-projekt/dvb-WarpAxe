@@ -128,8 +128,8 @@ pool that keeps more of the reward than the fee limit the owner set
   also to pools armed before the update. That is intended: a solo pool
   that keeps more than 2 % is left unless the owner raises the limit
   (release note).
-- The fee field on the Pool page shows only while the saved setting has
-  `payoutCheck` on.
+- The fee field on the Pool page shows only while the `payoutCheck`
+  switch is on. It follows the switch as it is flipped, before saving.
 
 ## API
 
