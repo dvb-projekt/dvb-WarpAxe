@@ -594,7 +594,7 @@
   "crash_nodump": "这次崩溃没有写入核心转储。",
   "evd_chip_silent": "芯片 {c} 不再响应",
   "evd_chain_restart": "全部 {n} 颗芯片在 {mv} mV 下 60 秒无响应，已重启 ASIC",
-  "evd_vr_reset": "电压调节器丢失了设置（核心 {got} mV，而非 {mv} mV），已重新配置，ASIC 已断电后重新上电",
+  "evd_vr_reset": "电压调节器设置丢失（核心 {got} mV，应为 {mv} mV），已重新配置，ASIC 已断电重新上电",
   "evd_chip_restart": "芯片 {c} 在 {mv} mV 下 10 分钟无响应，已重启 ASIC",
   "evd_chip_given_up": "芯片 {c} 重启 3 次后仍无响应，在更改频率、更改电压或下次启动前不再重启",
   "evd_domain_latch": "芯片 {c} 的域 {d} 持续 {min} 分钟仅为同一芯片其他域的 {pct} %，已将 ASIC 断电并重新上电",

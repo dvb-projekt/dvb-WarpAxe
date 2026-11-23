@@ -782,7 +782,7 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("mv")
         ),
         "vr_reset" => format!(
-            "core regulator lost its settings (core at {} mV instead of {} mV), set up again and ASICs switched off and on",
+            "core regulator lost its settings (core at {} mV instead of {} mV), reconfigured, ASICs power-cycled",
             g("got"),
             g("mv")
         ),

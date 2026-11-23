@@ -594,7 +594,7 @@
   "crash_nodump": "このクラッシュではコアダンプは書き込まれませんでした。",
   "evd_chip_silent": "チップ {c} が応答しなくなりました",
   "evd_chain_restart": "{mv} mV で {n} 個のチップすべてが 60 秒間応答なし、ASIC を再起動",
-  "evd_vr_reset": "電圧レギュレータが設定を失いました（コア {got} mV、設定値 {mv} mV）。再設定し、ASIC をオフ／オンしました",
+  "evd_vr_reset": "電圧レギュレータの設定が消失（コア {got} mV、設定値 {mv} mV）、再設定し ASIC の電源を再投入",
   "evd_chip_restart": "チップ {c} が {mv} mV で 10 分間応答なし、ASIC を再起動",
   "evd_chip_given_up": "チップ {c} は 3 回の再起動後も応答なし、クロックまたは電圧の変更か次回起動まで再起動しません",
   "evd_domain_latch": "チップ {c} のドメイン {d} が {min} 分間、同じチップの他のドメインの {pct} % にとどまったため、ASIC の電源を切って入れ直しました",

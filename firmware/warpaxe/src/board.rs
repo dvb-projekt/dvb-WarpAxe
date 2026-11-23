@@ -223,6 +223,11 @@ static FAN_BOOST: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
 static VR_REINIT: AtomicBool = AtomicBool::new(false);
 /// Seconds between two read-backs of the regulator's settings.
 const VR_CHECK_S: u64 = 10;
+/// Regulator resets in a row after which the read-back stops until the
+/// next boot (a part that loses its settings at every switch-on).
+const VR_RESETS_MAX: u32 = 3;
+/// A reset this long after the last one starts the count anew.
+const VR_QUIET: Duration = Duration::from_secs(30 * 60);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
@@ -2340,6 +2345,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
     // The regulator's settings are read back this often while the core
     // is up and no new voltage is pending (`settings_lost`).
     let mut vr_check_at = Instant::now() + Duration::from_secs(VR_CHECK_S);
+    let mut vr_resets_in_row = 0u32;
+    let mut vr_last_reset: Option<Instant> = None;
     loop {
         // Once a second: sensors, config, the sample.
         if last_sample.elapsed() >= Duration::from_secs(1) {
@@ -3023,17 +3030,32 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
         // The regulator back on its NVM values (a reset of its own: the
         // Zyber 8G's chains all went silent together every hour or two,
         // and the core read 1150 mV after it whatever was set): the chips
-        // off and on, with its init run again before the voltage.
+        // off and on, with its init run again before the voltage. Judged
+        // against the voltage last written (`applied_mv`): a request still
+        // pending or refused leaves the part at that one. Two reads must
+        // agree (a word garbled on the bus is no reset), and after
+        // [`VR_RESETS_MAX`] in a row without a quiet half hour between
+        // them the watch stops until the next boot instead of cycling the
+        // chips for ever.
         if Instant::now() >= vr_check_at {
             vr_check_at = Instant::now() + Duration::from_secs(VR_CHECK_S);
-            let settled = want == 0 || want == applied_mv;
-            if settled
-                && POWERED.load(Ordering::Relaxed)
+            if vr_resets_in_row >= VR_RESETS_MAX {
+                // Given up; said once when it happened.
+            } else if POWERED.load(Ordering::Relaxed)
                 && !CYCLE.load(Ordering::Relaxed)
                 && !VR_REINIT.load(Ordering::Relaxed)
             {
                 let volts = profile.vout_for_core_mv(applied_mv);
-                if let Some(lost) = vr.as_mut().and_then(|vr| vr.settings_lost(volts)) {
+                let lost = vr.as_mut().and_then(|vr| {
+                    vr.settings_lost(volts)
+                        .and_then(|_| vr.settings_lost(volts))
+                });
+                if let Some(lost) = lost {
+                    if vr_last_reset.is_some_and(|t| t.elapsed() >= VR_QUIET) {
+                        vr_resets_in_row = 0;
+                    }
+                    vr_resets_in_row += 1;
+                    vr_last_reset = Some(Instant::now());
                     let got = profile.core_mv_for_vout(lost.vout_command);
                     log::warn!(
                         "board: core regulator lost its settings: VOUT_COMMAND {:.3} V (want {volts:.3} V), VOUT_SCALE_LOOP {}",
@@ -3047,6 +3069,11 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                     update(|s| s.vr_resets += 1);
                     VR_REINIT.store(true, Ordering::Relaxed);
                     cycle_chips("core regulator lost its settings");
+                    if vr_resets_in_row >= VR_RESETS_MAX {
+                        log::error!(
+                            "board: core regulator lost its settings {VR_RESETS_MAX} times in a row: no more read-backs until the next boot"
+                        );
+                    }
                 }
             }
         }
