@@ -158,7 +158,10 @@ pub fn open(
 ) -> Result<EspHttpConnection, EspError> {
     if let Some(t) = ipv6_target(url) {
         match open_v6(&t, conf, method, headers) {
-            Ok(c) => return Ok(c),
+            Ok(c) => {
+                log::info!("http: {} open over IPv6", t.name);
+                return Ok(c);
+            }
             Err(e) => {
                 log::info!("http: {} over IPv6 failed ({e}): over IPv4", t.name);
                 ipv6_failed(&t.name);
@@ -208,6 +211,7 @@ pub fn get(
             break;
         }
         if !(300..400).contains(&status) || status == 304 {
+            log::info!("http: {} answered {status} over IPv6", t.name);
             return Ok((c, Via(Some(t.name))));
         }
         match c.header("Location").and_then(|l| resolve_location(&url, l)) {
