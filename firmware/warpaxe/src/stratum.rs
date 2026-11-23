@@ -620,13 +620,14 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
             let switch = g.mem.can_switch(on_fallback, other_ok, other_id);
             // Found so already, for the same reason, and not paid within
             // the limit since (a reconnect, or back here because the
-            // other pool is down): the event and the message stand, no
-            // second one; the switch still happens. Another reason is
-            // reported.
-            let warned = g.mem.left_reason(slot, id) == Some(problem.is_fee());
-            g.mem.leave(slot, id, problem.is_fee());
+            // other pool is down), or reported less than ten minutes ago
+            // whatever came in between (a pool alternating one paying
+            // job with fake blocks): the event and the message stand, no
+            // second one; the switch still happens. Another reason after
+            // the cooldown is reported.
+            let report = g.mem.act(slot, id, problem.is_fee(), diag::uptime_s());
             let host = g.host.clone();
-            if warned {
+            if !report {
                 drop(g);
                 log::warn!("stratum: payout check: pool {host} still {}{}",
                     if matches!(problem, payout_check::Problem::Fee { .. }) { "keeps more than the limit" } else { "pays the miner's address nothing" },

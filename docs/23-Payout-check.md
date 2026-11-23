@@ -83,6 +83,13 @@ pool that keeps more of the reward than the fee limit the owner set
     event and message. This holds after a reconnect to it, and also when
     the miner comes back to it because the other pool is down. The
     switch still happens, without a second event or message.
+  - Reports on one pool are at least ten minutes of uptime apart
+    (`REPORT_COOLDOWN_S`), per slot, even when a paying job cleared the
+    mark in between or the reason changed. Without that, a pool could
+    alternate one paying job with two jobs on made-up block hashes and
+    raise an event and a Discord message every few seconds. Within the
+    cooldown the pool is still marked left and the switch still
+    happens; only the event and the message are held back.
 - **No automatic return.** A main pool left for not paying is marked
   *left* (RAM). The probe that normally takes the miner back from the
   fallback skips it. The same mark is set for a pool left for its fee.

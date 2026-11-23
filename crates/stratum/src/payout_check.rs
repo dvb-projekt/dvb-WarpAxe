@@ -41,6 +41,14 @@ use crate::payout::Payout;
 /// restarting, a template built in a hurry) is one block, not enough.
 pub const BLOCKS_TO_ACT: u8 = 2;
 
+/// After a pool is reported for keeping the payout (event, Discord), no
+/// further report for the same pool for this long, in uptime seconds,
+/// even if a paying job cleared its *left* mark in between: a hostile
+/// pool cannot turn the check into an alert loop by alternating one
+/// paying job with two jobs on fake block hashes. The switch itself is
+/// not held back.
+pub const REPORT_COOLDOWN_S: u64 = 600;
+
 /// The pool slots of [`Memory`].
 pub const MAIN: usize = 0;
 /// The fallback pool's slot.
@@ -338,6 +346,9 @@ pub struct Memory {
     left: [u32; 2],
     /// Why each was left: for the fee (else for paying nothing).
     left_fee: [bool; 2],
+    /// The pool last reported in each slot and the uptime second of
+    /// that report ([`REPORT_COOLDOWN_S`]); RAM only.
+    reported: [(u32, u64); 2],
 }
 
 impl Memory {
@@ -347,6 +358,7 @@ impl Memory {
             seen: [0; 2],
             left: [0; 2],
             left_fee: [false; 2],
+            reported: [(0, 0); 2],
         }
     }
 
@@ -356,6 +368,7 @@ impl Memory {
             seen: [(v >> 32) as u32, v as u32],
             left: [0; 2],
             left_fee: [false; 2],
+            reported: [(0, 0); 2],
         }
     }
 
@@ -404,6 +417,29 @@ impl Memory {
             self.left[slot] = id;
             self.left_fee[slot] = fee;
         }
+    }
+
+    /// The armed pool `id` in `slot` is acted on (two blocks without the
+    /// payout, `fee`: or over the fee limit) at uptime `now_s`: it is
+    /// marked left for that reason. True when the act is to be reported
+    /// (event, Discord): not when it was already left for the same
+    /// reason and has not paid within the limit since, and not within
+    /// [`REPORT_COOLDOWN_S`] of the last report on this pool in this
+    /// slot, whatever happened in between (a paying job, another
+    /// reason).
+    pub fn act(&mut self, slot: usize, id: u32, fee: bool, now_s: u64) -> bool {
+        if slot > FALLBACK || id == 0 {
+            return false;
+        }
+        let same = self.left_reason(slot, id) == Some(fee);
+        self.leave(slot, id, fee);
+        let (last_id, last_s) = self.reported[slot];
+        let cooling = last_id == id && now_s.saturating_sub(last_s) < REPORT_COOLDOWN_S;
+        if same || cooling {
+            return false;
+        }
+        self.reported[slot] = (id, now_s);
+        true
     }
 
     /// Why the pool `id` in `slot` was left: `Some(true)` for the fee,
@@ -877,5 +913,43 @@ mod tests {
         // Only the fallback left: nothing for the main pool to redo.
         m.leave(FALLBACK, fb, true);
         assert!(!m.settings_changed(main, true));
+    }
+
+    #[test]
+    fn reports_are_held_back_for_ten_minutes_per_pool() {
+        let main = pool_id("solo.a", 3333, "bc1qa");
+        let other = pool_id("solo.c", 3333, "bc1qa");
+        let fb = pool_id("solo.b", 3333, "bc1qa");
+        let mut m = Memory::new();
+        m.paid(MAIN, main);
+        // The first act is reported, at any uptime.
+        assert!(m.act(MAIN, main, false, 5));
+        assert!(m.is_left(MAIN, main));
+        // Same reason, still left: never a second report.
+        assert!(!m.act(MAIN, main, false, 5 + REPORT_COOLDOWN_S));
+        // A hostile loop: one paying job clears the mark, two jobs on
+        // fake block hashes act again, seconds later. Left again, but
+        // not reported.
+        for t in [20, 40, 300, 604] {
+            m.paid(MAIN, main);
+            assert!(!m.is_left(MAIN, main));
+            assert!(!m.act(MAIN, main, false, t));
+            assert!(m.is_left(MAIN, main));
+        }
+        // A new reason within the cooldown: left for it, not reported.
+        assert!(!m.act(MAIN, main, true, 605 - 1));
+        assert_eq!(m.left_reason(MAIN, main), Some(true));
+        // After the cooldown a new reason is reported again ...
+        assert!(m.act(MAIN, main, false, 5 + REPORT_COOLDOWN_S));
+        // ... and so is the same reason after a paying job.
+        m.paid(MAIN, main);
+        assert!(!m.act(MAIN, main, false, 4 + 2 * REPORT_COOLDOWN_S));
+        m.paid(MAIN, main);
+        assert!(m.act(MAIN, main, false, 5 + 2 * REPORT_COOLDOWN_S));
+        // Another pool in the slot, or the other slot, is its own.
+        assert!(m.act(MAIN, other, false, 6 + 2 * REPORT_COOLDOWN_S));
+        assert!(m.act(FALLBACK, fb, true, 6 + 2 * REPORT_COOLDOWN_S));
+        // No slot, no pool: nothing.
+        assert!(!m.act(2, main, false, 0) && !m.act(MAIN, 0, false, 0));
     }
 }
