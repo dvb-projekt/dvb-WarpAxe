@@ -674,9 +674,9 @@ back at any time with `GET /api/v1/display/frame`.
   `retry_after` respected; NerdOS's webhook and switches are taken over
   on the first start ([`docs/22`](docs/22-Discord-notifications.md)).
 - Payout check: a solo pool whose coinbase once paid the miner's address
-  and then pays it nothing in two decoded jobs in a row is left for the
-  fallback pool (or a warning without one), with an event and a Discord
-  message; the probe does not take the miner back to it
+  most of the reward and then pays it nothing in two blocks in a row is
+  left for the fallback pool (or a warning without one), with an event
+  and a Discord message; the probe does not take the miner back to it
   ([`docs/23`](docs/23-Payout-check.md)).
 - AxeOS/NerdOS-compatible endpoints: `/api/system/info`, `PATCH
   /api/system`, `/api/system/asic`, `/api/v2/settings`, NerdOS's

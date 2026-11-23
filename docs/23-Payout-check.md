@@ -13,7 +13,12 @@ message, and a switch to the other pool.
 `stratum.rs` (`pay_session`, `pay_job`).
 
 - **Which pools.** Only a pool whose coinbase has paid the miner's address
-  at least once. That marks the pool *armed*. The mark belongs to the
+  more than half of the coinbase at least once (`user * 2 > total`: a
+  solo pool, with a fee or a donation output if it has one). That marks
+  the pool *armed*. A pool that pays its miners in the coinbase by
+  share (Ocean's TIDES, P2Pool, P2Poolv2) lists a small miner only while
+  the miner's balance is over a threshold. Such a coinbase never pays one
+  small miner most of the reward, so it never arms. The mark belongs to the
   pool's configuration: host (case ignored), port and worker name,
   hashed (`pool_id`). It is kept per slot (main, fallback) in NVS
   (`payseen`, one u64), so it survives a reboot. Editing host, port or
@@ -24,13 +29,19 @@ message, and a switch to the other pool.
   one set in `coinTicker`. A Bitcoin address counts on `BTC` (or no
   ticker), any other coin's address on any other ticker. Where the two
   disagree, the check stays out.
-- **Evidence.** Only a job whose coinbase was fully decoded counts. A job
-  without one (decode failed, a coinbase without outputs) is no evidence
-  either way. It neither counts as a miss nor breaks a run of misses.
-- **When it acts.** On an armed pool, **2 decoded jobs in a row** that pay
-  the address 0 sat (`MISSES_TO_ACT`). One odd job between paying ones is
-  forgiven. It acts once per session, and the next paying job clears the
-  state.
+- **Evidence.** Only a job whose coinbase was fully decoded counts, and
+  only once the session is authorized (V1 `mining.authorize` answered
+  true, Sv2 channel open). A pool may hand out templates for its own
+  address until it knows the worker. A job without evidence (decode
+  failed, a coinbase without outputs, before authorize) neither counts
+  as a miss nor breaks a run of misses. On an armed pool any payment to
+  the address counts as paid, even a small one.
+- **When it acts.** On an armed pool, when the jobs of **2 different blocks
+  in a row** pay the address 0 sat (`BLOCKS_TO_ACT`). Blocks are told
+  apart by the hash of the block the job builds on. More templates of
+  the same block count as one miss, and a paying job in between starts
+  the count over. It acts once per session, and the next paying job
+  clears the state.
 - **What it does.**
   - It records the event `payout_missing` (pool host `p`, what the pool
     keeps `sat`, and `sw`: 1 = to the fallback, 2 = back to the main
@@ -43,24 +54,31 @@ message, and a switch to the other pool.
     main pool. No failure is counted for either.
   - If there is no other pool, or the other pool was itself left for not
     paying, it only warns. The miner keeps mining, and the Pool page
-    shows a red note while the state lasts. A reconnect to the same pool
-    brings no second event or message while the pool still does not pay.
+    shows a red note while the state lasts.
+  - A pool found keeping the payout once is not reported again until it
+    pays or is edited. This holds after a reconnect to it, and also when
+    the miner comes back to it because the other pool is down. The
+    switch still happens, without a second event or message.
 - **No automatic return.** A main pool left for not paying is marked
   *left* (RAM). The probe that normally takes the miner back from the
   fallback skips it. The mark clears when one of that pool's jobs pays
   the address again (for example when an outage round brings the miner
-  there), when the pool is edited, or when `payoutCheck` is switched off.
+  there) or when the pool is edited.
 - **Off switch.** With `payoutCheck` off, pools are still armed (so that
-  switching it on later finds them armed), but nothing ever acts.
+  switching it on later finds them armed), but nothing ever acts, and
+  the probe ignores the *left* mark. The mark is not cleared: switched
+  on again, the check honours it.
 
 ## Limits
 
 - The *left* mark is RAM only. After a reboot the miner starts on the
   main pool again, and a pool that still keeps the payout is left again
-  after its first two jobs.
+  after two blocks.
 - A fallback left for not paying does not block the normal switch to it
   after three failures on the main pool. If it still does not pay, it is
-  left again after two jobs.
+  left again after two blocks, without a second event.
+- Leaving takes two blocks, about 20 minutes on Bitcoin. Jobs mined
+  meanwhile pay the pool if one of them finds a block.
 - A pool armed by one paying job that later pays through another script
   of the same address (P2PKH and P2WPKH of the same key) counts as not
   paying. `Wallet::pays` matches the exact address the worker name
