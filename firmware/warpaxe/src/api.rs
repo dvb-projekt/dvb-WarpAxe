@@ -1201,6 +1201,8 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
         diag::HTTP_HITS.fetch_add(1, Ordering::Relaxed);
         let who = peer(&mut req);
         let body = read_body(&mut req, 4096)?;
+        // The payout check's two settings before the change (docs/23).
+        let pay_before = config::with(|c| (c.payout_max_fee, c.payout_check));
         match serde_json::from_slice::<serde_json::Value>(&body) {
             Ok(v) if limits_refuse(&v).is_some() => {
                 let why = limits_refuse(&v).unwrap_or_default();
@@ -1272,6 +1274,12 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
                     });
                     if pool_change {
                         stratum::reconnect();
+                    }
+                    // A new fee limit forgets the pools left for their fee,
+                    // the check switched every pool left (docs/23).
+                    let check_changed = cfg.payout_check != pay_before.1;
+                    if check_changed || cfg.payout_max_fee != pay_before.0 {
+                        stratum::payout_settings_changed(check_changed);
                     }
                     if v.get("coreVoltage").is_some() {
                         board::request_core_mv(cfg.core_voltage);

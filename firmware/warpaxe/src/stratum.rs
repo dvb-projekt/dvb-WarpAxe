@@ -618,11 +618,13 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
                 }
             });
             let switch = g.mem.can_switch(on_fallback, other_ok, other_id);
-            // Found so already and not paid since (a reconnect, or back
-            // here because the other pool is down): the event and the
-            // message stand, no second one; the switch still happens.
-            let warned = g.mem.is_left(slot, id);
-            g.mem.leave(slot, id);
+            // Found so already, for the same reason, and not paid within
+            // the limit since (a reconnect, or back here because the
+            // other pool is down): the event and the message stand, no
+            // second one; the switch still happens. Another reason is
+            // reported.
+            let warned = g.mem.left_reason(slot, id) == Some(problem.is_fee());
+            g.mem.leave(slot, id, problem.is_fee());
             let host = g.host.clone();
             if warned {
                 drop(g);
@@ -634,7 +636,7 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
             g.last = Some((
                 host.clone(),
                 diag::uptime_s(),
-                matches!(problem, payout_check::Problem::Fee { .. }),
+                problem.is_fee(),
             ));
             drop(g);
             let sw = match (switch, on_fallback) {
@@ -666,6 +668,20 @@ fn pay_job(pay: Option<&payout::Payout>, prev_hash: &[u8; 32]) -> Result<(), Pay
                 Ok(())
             }
         }
+    }
+}
+
+/// The payout check's settings were changed (PATCH): a new
+/// `payoutMaxFee` forgets the pools left for their fee, `payoutCheck`
+/// switched (`all`) every pool left. A miner on the fallback because
+/// the main pool was left goes back to judge it again with the new
+/// settings.
+pub fn payout_settings_changed(all: bool) {
+    let main_id =
+        config::with(|c| payout_check::pool_id(&c.stratum_url, c.stratum_port, &c.stratum_user));
+    let redo = PAY.lock().unwrap().mem.settings_changed(main_id, all);
+    if redo && using_fallback() {
+        reconnect_because("payout check settings changed, judging the main pool again");
     }
 }
 
