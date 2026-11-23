@@ -319,6 +319,12 @@ pub mod detail {
         )
     }
 
+    /// The thermal chip that runs the fan (`chip`) did not answer at
+    /// start: no fan, no chip temperature, the chips stay off.
+    pub fn fan_chip(chip: &str) -> Detail {
+        coded("fan_chip", &[("chip", Value::from(chip))])
+    }
+
     /// A share met the network difficulty: a block at this height of
     /// this coin.
     pub fn block_found(height: u64, coin: &str) -> Detail {
@@ -693,6 +699,7 @@ pub const CODES: &[&str] = &[
     "domain_latch",
     "domain_given_up",
     "chain_restart",
+    "fan_chip",
     "block_found",
     "block_confirmed",
     "block_orphaned",
@@ -769,6 +776,10 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             "all {} chips silent for 60 s at {} mV, chain restarted",
             g("n"),
             g("mv")
+        ),
+        "fan_chip" => format!(
+            "fan and temperature chip ({}) not found: no fan and no chip temperature, ASICs stay off",
+            g("chip")
         ),
         "block_found" => format!("block {} found ({})", g("h"), g("coin")),
         "block_confirmed" => format!("block {} confirmed: the pool's next work builds on it", g("h")),

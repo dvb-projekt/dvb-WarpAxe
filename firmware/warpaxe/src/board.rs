@@ -215,6 +215,9 @@ static CYCLE: AtomicBool = AtomicBool::new(false);
 /// The self-test's fan step: both outputs at least this duty until the
 /// deadline, then the PID again. Only ever raises the duty.
 static FAN_BOOST: Mutex<Option<(u8, Instant)>> = Mutex::new(None);
+/// The board's fan runs through a thermal chip that did not answer at
+/// start (`fan_chip_gone`): the chips stay off until a restart.
+static FAN_CHIP_MISSING: AtomicBool = AtomicBool::new(false);
 /// Core voltage the API asked for, mV; 0 = nothing pending.
 static WANTED_MV: AtomicU16 = AtomicU16::new(0);
 static RESET: Mutex<Option<Pin>> = Mutex::new(None);
@@ -534,7 +537,7 @@ pub fn overheat() -> bool {
 /// refused ([`choice_blocked`]: nothing but a restart or another choice
 /// lets them on again).
 pub fn shutdown() -> bool {
-    SHUTDOWN.load(Ordering::Relaxed) || choice_blocked()
+    SHUTDOWN.load(Ordering::Relaxed) || choice_blocked() || fan_chip_missing()
 }
 
 /// Where the board choice stands. `None` while no board is chosen (the
@@ -601,6 +604,43 @@ pub fn sibling_counts() -> Vec<u8> {
 /// verified.
 pub fn choice_pending() -> bool {
     choice() == Some(Choice::Pending)
+}
+
+/// The fan's thermal chip did not answer at start: no fan, no chip
+/// temperature, so the chips stay off whatever `/api/v1/chips/on` says,
+/// until a restart.
+pub fn fan_chip_missing() -> bool {
+    FAN_CHIP_MISSING.load(Ordering::Relaxed)
+}
+
+/// A thermal chip that drives the board's fan failed its init: without
+/// it nothing runs the fan and nothing reads the chips, and the board
+/// would hash until the regulator's own limit stopped it (a StarMiner's
+/// CTF2301B, refused as no EMC2101, in v0.1.47). The chips stay off,
+/// with the reason in the event log.
+fn fan_chip_gone(chip: &str, e: String) {
+    log::error!("board: {chip} init failed: {e}: no fan and no chip temperature, the chips stay off");
+    FAN_CHIP_MISSING.store(true, Ordering::Relaxed);
+    update(|s| {
+        s.has_thermal = false;
+        s.last_error = format!("{}: {e}", chip.to_lowercase());
+    });
+    crate::events::record("board", warpaxe_diag::events::detail::fan_chip(chip));
+}
+
+/// A thermal chip's init, tried three times 100 ms apart before it
+/// counts as missing (`fan_chip_gone` keeps the chips off until a
+/// restart: one bus hiccup at boot must not).
+fn retry_init<E>(mut f: impl FnMut() -> Result<(), E>) -> Result<(), E> {
+    let mut last = f();
+    for _ in 1..3 {
+        if last.is_ok() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+        last = f();
+    }
+    last
 }
 
 /// The chosen board was refused: the chips stay off whatever
@@ -2019,15 +2059,9 @@ fn start_nerd(profile: &'static Profile, bus: SharedI2c) {
 fn emc2101_thermal(profile: &'static Profile, bus: &SharedI2c) -> Option<Thermal> {
     let mut thermal = profile.emc2101().map(|c| Emc2101::new(bus.clone(), c));
     if let Some(t) = thermal.as_mut() {
-        match t.init().and_then(|()| t.set_fan_percent(100)) {
+        match retry_init(|| t.init().and_then(|()| t.set_fan_percent(100))) {
             Ok(()) => log::info!("board: EMC2101 up, fan 100 %"),
-            Err(e) => {
-                log::error!("board: EMC2101 init failed: {e:?}");
-                update(|s| {
-                    s.has_thermal = false;
-                    s.last_error = format!("emc2101: {e:?}");
-                });
-            }
+            Err(e) => fan_chip_gone("EMC2101", format!("{e:?}")),
         }
     }
     thermal
@@ -2039,17 +2073,13 @@ fn emc2101_thermal(profile: &'static Profile, bus: &SharedI2c) -> Option<Thermal
 /// speed until the first reading; `None` when it does not answer.
 fn emc2103_thermal(config: warpaxe_board::emc2103::Config, bus: &SharedI2c) -> Option<Thermal> {
     let mut t = Emc2103::new(bus.clone(), config);
-    match t.init().and_then(|()| t.set_fan_percent(100)) {
+    match retry_init(|| t.init().and_then(|()| t.set_fan_percent(100))) {
         Ok(()) => {
             log::info!("board: EMC2103 up, fan 100 %");
             Some(Thermal::Emc2103(t))
         }
         Err(e) => {
-            log::error!("board: EMC2103 init failed: {e:?}");
-            update(|s| {
-                s.has_thermal = false;
-                s.last_error = format!("emc2103: {e:?}");
-            });
+            fan_chip_gone("EMC2103", format!("{e:?}"));
             None
         }
     }
@@ -2072,15 +2102,10 @@ fn nano_thermal(
                 channels[i]
             ),
             Err(e) => {
-                log::error!(
-                    "board: EMC2101 #{} (mux channel {}) init failed: {e:?}",
-                    i + 1,
-                    channels[i]
+                fan_chip_gone(
+                    &format!("EMC2101 #{}", i + 1),
+                    format!("mux channel {}: {e:?}", channels[i]),
                 );
-                update(|s| {
-                    s.has_thermal = false;
-                    s.last_error = format!("emc2101 #{}: {e:?}", i + 1);
-                });
                 return None;
             }
         }
