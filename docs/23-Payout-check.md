@@ -76,8 +76,11 @@ pool that keeps more of the reward than the fee limit the owner set
   - If there is no other pool, or the other pool was itself left for not
     paying, it only warns. The miner keeps mining, and the Pool page
     shows a red note while the state lasts.
-  - A pool found keeping the payout once is not reported again until it
-    pays or is edited. This holds after a reconnect to it, and also when
+  - A pool found keeping the payout once is not reported again for the
+    same reason until it pays within the limit or is edited. The mark
+    keeps its reason (paying nothing, or the fee). If the pool later
+    fails for the other reason, for two blocks again, that is a new
+    event and message. This holds after a reconnect to it, and also when
     the miner comes back to it because the other pool is down. The
     switch still happens, without a second event or message.
 - **No automatic return.** A main pool left for not paying is marked
@@ -108,9 +111,16 @@ pool that keeps more of the reward than the fee limit the owner set
 - Stratum V2: WarpAxe opens extended channels only, whose jobs carry the
   coinbase, so they are checked like V1. A standard channel (not used)
   would carry no coinbase and so no evidence.
-- A fee limit raised after a pool was left does not clear its *left*
-  mark. The mark clears with the pool's next job within the new limit,
-  once the miner is on that pool again.
+- Changing the settings clears *left* marks. A new `payoutMaxFee` clears
+  the marks of pools left for their fee. Switching `payoutCheck`, on or
+  off, clears every mark. If the miner is on the fallback because the
+  main pool was left, and that mark is gone, the session is rebuilt at
+  once (the same reconnect a pool change makes). The main pool is then
+  judged again under the new settings.
+- The 2.0 % default applies to every armed pool from this release on,
+  also to pools armed before the update. That is intended: a solo pool
+  that keeps more than 2 % is left unless the owner raises the limit
+  (release note).
 - The fee field on the Pool page shows only while the saved setting has
   `payoutCheck` on.
 
