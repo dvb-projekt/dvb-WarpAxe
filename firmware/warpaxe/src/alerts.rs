@@ -163,6 +163,7 @@ pub fn start() {
     let spawned = diag::spawn_psram("alerts", STACK, || {
         let mut online_since: Option<u64> = None;
         let mut quiet_until = 0u64;
+        let mut stack_logged = false;
         loop {
             std::thread::sleep(Duration::from_secs(pace::SPACING_S));
             if !waiting() {
@@ -189,6 +190,15 @@ pub fn start() {
             let network = crate::stratum::state().network_difficulty;
             let text = alert.text(&cfg.hostname, network, skipped);
             quiet_until = send(&cfg.discord_webhook, alert.kind(), &text);
+            // Once per boot, after the first send (TLS, the POST and any
+            // retry): how much of the stack is spare.
+            if !stack_logged {
+                stack_logged = true;
+                log::info!(
+                    "alerts: {} bytes of the thread's stack never used so far",
+                    diag::stack_unused()
+                );
+            }
         }
     });
     if let Err(e) = spawned {

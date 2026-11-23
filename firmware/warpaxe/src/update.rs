@@ -206,12 +206,22 @@ pub fn start() {
     diag::spawn_psram("update", 10 * 1024, || {
         std::thread::sleep(Duration::from_secs(60));
         let mut last = None::<std::time::Instant>;
+        let mut stack_logged = false;
         loop {
             let want = REQUEST.swap(0, Ordering::Relaxed);
             let due = config::get().update_check && last.map_or(true, |t| t.elapsed() >= EVERY);
             if want == 1 || (want == 0 && due) {
                 last = Some(std::time::Instant::now());
                 check();
+                // Once per boot, after the first check (TLS, the release
+                // JSON): how much of the stack is spare.
+                if !stack_logged {
+                    stack_logged = true;
+                    log::info!(
+                        "update: {} bytes of the thread's stack never used so far",
+                        diag::stack_unused()
+                    );
+                }
             }
             if want == 2 {
                 install();

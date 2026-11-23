@@ -32,17 +32,29 @@ pub fn get() -> Option<Market> {
 }
 
 pub fn start() {
-    diag::spawn_psram("market", 8192, || loop {
-        let cfg = config::get();
-        if cfg.btc_price {
-            match fetch(&cfg.price_currency) {
-                Ok(m) => *MARKET.lock().unwrap() = Some(m),
-                Err(e) => log::warn!("market: {e}"),
+    diag::spawn_psram("market", 8192, || {
+        let mut stack_logged = false;
+        loop {
+            let cfg = config::get();
+            if cfg.btc_price {
+                match fetch(&cfg.price_currency) {
+                    Ok(m) => *MARKET.lock().unwrap() = Some(m),
+                    Err(e) => log::warn!("market: {e}"),
+                }
+                // Once per boot, after the first fetch (TLS and JSON are
+                // the deepest it gets): how much of the stack is spare.
+                if !stack_logged {
+                    stack_logged = true;
+                    log::info!(
+                        "market: {} bytes of the thread's stack never used so far",
+                        diag::stack_unused()
+                    );
+                }
+                std::thread::sleep(EVERY);
+            } else {
+                *MARKET.lock().unwrap() = None;
+                std::thread::sleep(Duration::from_secs(30));
             }
-            std::thread::sleep(EVERY);
-        } else {
-            *MARKET.lock().unwrap() = None;
-            std::thread::sleep(Duration::from_secs(30));
         }
     })
     .expect("market thread");
