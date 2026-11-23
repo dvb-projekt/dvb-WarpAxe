@@ -735,5 +735,11 @@
   "pay_sw1": "bascule sur le pool de secours",
   "pay_sw2": "retour au pool principal",
   "alertPayout": "Un pool solo cesse de payer votre adresse",
-  "evd_payout_missing": "le pool {p} n’a rien versé à votre adresse pendant 2 blocs de suite (le pool garde les {sat} sat)"
+  "evd_payout_missing": "le pool {p} n’a rien versé à votre adresse pendant 2 blocs de suite (le pool garde les {sat} sat)",
+  "payoutMaxFee": "Frais de pool maximaux (%)",
+  "maxfee_s": "Un pool qui garde davantage de la coinbase pendant deux blocs de suite est quitté comme un pool qui cesse de payer ; 100 = aucune limite.",
+  "pay_fee": "frais {f} %",
+  "pay_fee_over": "Ce pool garde {f} % de la coinbase, plus que votre limite de {m} % (2 blocs de suite). Aucun autre pool vers lequel basculer : le mineur continue ici.",
+  "pay_last_fee": "{p} a gardé plus que votre limite de frais pendant 2 blocs de suite, il y a {ago}.",
+  "evd_payout_fee": "le pool {p} a gardé {fee} % de la coinbase pendant 2 blocs de suite (limite {max} %)"
 }

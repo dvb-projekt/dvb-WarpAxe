@@ -735,5 +735,11 @@
   "pay_sw1": "cambia al pool de respaldo",
   "pay_sw2": "vuelve al pool principal",
   "alertPayout": "Un pool solo deja de pagar a tu dirección",
-  "evd_payout_missing": "el pool {p} no pagó nada a tu dirección en 2 bloques seguidos (se queda con los {sat} sat)"
+  "evd_payout_missing": "el pool {p} no pagó nada a tu dirección en 2 bloques seguidos (se queda con los {sat} sat)",
+  "payoutMaxFee": "Comisión máxima del pool (%)",
+  "maxfee_s": "Un pool que se queda con más de la coinbase en dos bloques seguidos se abandona como uno que deja de pagar; 100 = sin límite.",
+  "pay_fee": "comisión {f} %",
+  "pay_fee_over": "Este pool se queda con el {f} % de la coinbase, más que tu límite del {m} % (2 bloques seguidos). No hay otro pool al que cambiar: el minero sigue minando aquí.",
+  "pay_last_fee": "{p} se quedó con más que tu límite de comisión en 2 bloques seguidos, hace {ago}.",
+  "evd_payout_fee": "el pool {p} se quedó con el {fee} % de la coinbase en 2 bloques seguidos (límite {max} %)"
 }

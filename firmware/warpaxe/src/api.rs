@@ -399,12 +399,18 @@ pub fn system_info() -> serde_json::Value {
     // The payout check (docs/23): the setting, whether the pool in use
     // has paid the miner's address (armed), whether it is found keeping
     // the payout now, and the last pool found so (null = none since boot).
-    let (pay_armed, pay_missing, pay_last) = crate::stratum::payout_status();
+    let pay = crate::stratum::payout_status();
     v["payoutCheck"] = json!(cfg.payout_check);
-    v["payoutArmed"] = json!(pay_armed);
-    v["payoutMissing"] = json!(cfg.payout_check && pay_missing);
+    v["payoutArmed"] = json!(pay.armed);
+    v["payoutMissing"] = json!(cfg.payout_check && pay.missing);
     v["payoutLastMissing"] =
-        pay_last.map_or(serde_json::Value::Null, |(host, at)| json!({"host": host, "uptime_s": at}));
+        pay.last.map_or(serde_json::Value::Null, |(host, at, fee)| json!({"host": host, "uptime_s": at, "why": if fee { "fee" } else { "missing" }}));
+    // The fee rule: the limit (tenths of a percent), the pool's fee in its
+    // last decoded job (tenths, null before one; 1000 for a coinbase
+    // that pays the address nothing), and whether it is found over.
+    v["payoutMaxFee"] = json!(cfg.payout_max_fee);
+    v["payoutFee"] = json!(pay.fee);
+    v["payoutFeeOver"] = json!(cfg.payout_check && pay.fee_over);
     v["discordLastResult"] = json!(crate::alerts::last_result());
     if board::devkit() {
         v["cpuMiner"] = json!(crate::cpuminer::info());

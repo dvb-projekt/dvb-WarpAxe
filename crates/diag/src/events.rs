@@ -405,6 +405,21 @@ pub mod detail {
         )
     }
 
+    /// An armed pool kept more than `payoutMaxFee` of its coinbase in two
+    /// blocks in a row (docs/23): `fee` and `limit` in tenths of a
+    /// percent, `switched` as for [`payout_missing`].
+    pub fn payout_fee(host: &str, fee: u16, limit: u16, switched: u8) -> Detail {
+        coded(
+            "payout_fee",
+            &[
+                ("p", name(host)),
+                ("fee", Value::from(fee)),
+                ("max", Value::from(limit)),
+                ("sw", Value::from(switched)),
+            ],
+        )
+    }
+
     /// Neither the main nor the fallback pool answers: the chips are
     /// off until one does.
     pub fn pools_out() -> Detail {
@@ -653,6 +668,25 @@ pub mod detail {
 }
 
 /// A value as the English text shows it.
+/// What the payout check did (`sw` of `payout_missing`, `payout_fee`).
+fn switched(v: Option<&Value>) -> &'static str {
+    match v.and_then(Value::as_u64) {
+        Some(1) => "switched to the fallback",
+        Some(2) => "switched back to the main pool",
+        _ => "no other pool, keeps mining here",
+    }
+}
+
+/// Tenths of a percent as a percentage: 20 → `2`, 35 → `3.5`, by
+/// integers (no float formatting on the device's stacks).
+fn tenths(v: Option<&Value>) -> String {
+    match v.and_then(Value::as_u64) {
+        Some(t) if t.is_multiple_of(10) => format!("{}", t / 10),
+        Some(t) => format!("{}.{}", t / 10, t % 10),
+        None => show(v),
+    }
+}
+
 fn show(v: Option<&Value>) -> String {
     match v {
         Some(Value::String(s)) => s.clone(),
@@ -736,6 +770,7 @@ pub const CODES: &[&str] = &[
     "pool_stale_fallback",
     "fallback_stale",
     "payout_missing",
+    "payout_fee",
     "pools_out",
     "pools_back",
     "pool_saved",
@@ -838,11 +873,14 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             "pool {} paid this miner's address nothing in 2 blocks in a row (pool keeps all {} sat), {}",
             g("p"),
             g("sat"),
-            match p.get("sw").and_then(Value::as_u64) {
-                Some(1) => "switched to the fallback",
-                Some(2) => "switched back to the main pool",
-                _ => "no other pool, keeps mining here",
-            }
+            switched(p.get("sw"))
+        ),
+        "payout_fee" => format!(
+            "pool {} kept {} % of the coinbase in 2 blocks in a row (limit {} %), {}",
+            g("p"),
+            tenths(p.get("fee")),
+            tenths(p.get("max")),
+            switched(p.get("sw"))
         ),
         "pools_out" => "no pool answers, chips off until one does".into(),
         "pools_back" => format!("a pool answers again after {} s, chips back on", g("s")),
@@ -1299,6 +1337,14 @@ mod tests {
             (
                 detail::payout_missing("solo.example.org", 5, 0),
                 "pool solo.example.org paid this miner's address nothing in 2 blocks in a row (pool keeps all 5 sat), no other pool, keeps mining here",
+            ),
+            (
+                detail::payout_fee("solo.example.org", 35, 20, 1),
+                "pool solo.example.org kept 3.5 % of the coinbase in 2 blocks in a row (limit 2 %), switched to the fallback",
+            ),
+            (
+                detail::payout_fee("solo.example.org", 100, 0, 0),
+                "pool solo.example.org kept 10 % of the coinbase in 2 blocks in a row (limit 0 %), no other pool, keeps mining here",
             ),
             (detail::pools_out(), "no pool answers, chips off until one does"),
             (
