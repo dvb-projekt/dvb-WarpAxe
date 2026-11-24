@@ -320,7 +320,7 @@ pub mod detail {
     }
 
     /// The thermal chip that runs the fan (`chip`) did not answer at
-    /// start: no fan, no chip temperature, the chips stay off.
+    /// start: no fan control, the chips stay off.
     pub fn fan_chip(chip: &str) -> Detail {
         coded("fan_chip", &[("chip", Value::from(chip))])
     }
@@ -840,7 +840,7 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("mv")
         ),
         "fan_chip" => format!(
-            "fan and temperature chip ({}) not found: no fan and no chip temperature, ASICs stay off",
+            "fan chip ({}) not found: no fan control, ASICs stay off",
             g("chip")
         ),
         "vr_reset" => format!(

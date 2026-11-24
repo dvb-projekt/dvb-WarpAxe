@@ -1422,7 +1422,7 @@ pub fn start() -> anyhow::Result<EspHttpServer<'static>> {
             return reply_json(
                 req,
                 409,
-                &json!({"shutdown": true, "error": "the fan and temperature chip did not answer at start; the chips stay off until a restart"}),
+                &json!({"shutdown": true, "error": "the fan chip did not answer at start; the chips stay off until a restart"}),
             );
         }
         board::set_shutdown(false);

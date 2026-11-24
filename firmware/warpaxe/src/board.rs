@@ -637,7 +637,7 @@ pub fn fan_chip_missing() -> bool {
 /// CTF2301B, refused as no EMC2101, in v0.1.47). The chips stay off,
 /// with the reason in the event log.
 fn fan_chip_gone(chip: &str, e: String) {
-    log::error!("board: {chip} init failed: {e}: no fan and no chip temperature, the chips stay off");
+    log::error!("board: {chip} init failed: {e}: no fan control, the chips stay off");
     FAN_CHIP_MISSING.store(true, Ordering::Relaxed);
     update(|s| {
         s.has_thermal = false;
