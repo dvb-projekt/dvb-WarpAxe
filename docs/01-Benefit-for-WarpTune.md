@@ -137,7 +137,7 @@ fault injection. The sequence from the WarpTune journal:
 09:45:16  heartbeat f=440  V=970  P=4.99 W  hr=2655  temp=48.6  vr=49.5
           "point changed 420→440 MHz @ 960→970 mV: settling 45s, judged after 600s"
    ...    (six minutes of nothing)
-09:51:10  write     restore on shutdown          ← Oliver intervenes by hand
+09:51:10  write     restore on shutdown          ← the owner intervenes by hand
 ```
 
 30 seconds after the write: power from **36 W to 4.99 W**, temperature from
@@ -188,7 +188,7 @@ tick, the point counts as bad, fallback to the last anchor,
 entry in the post-mortem log. Without manual intervention, without network connection, without
 power disconnection.
 
-### What Oliver did
+### What the owner did
 
 `ladder_cap_mhz = 400` — one step below the last point that ran (420),
 with the note *"raise only with a judged 400/420"*. That is the right

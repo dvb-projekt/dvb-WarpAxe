@@ -47,7 +47,7 @@ pub const WIFI_SSID_KEY: &str = "sta.ssid";
 /// Station password blob key.
 pub const WIFI_PASSWORD_KEY: &str = "sta.pswd";
 
-/// The pool every WarpAxe devkit mines to (Oliver, 2026-10-05): the
+/// The pool every WarpAxe devkit mines to (2026-10-05): the
 /// NerdMiner's own pool setting is not taken over.
 pub const POOL_HOST: &str = "pool.warppool.org";
 /// Its Stratum V1 port.

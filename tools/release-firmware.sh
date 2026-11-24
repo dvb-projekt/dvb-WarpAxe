@@ -63,7 +63,7 @@ espflash save-image --chip esp32s3 --flash-size 16mb \
 # The gate binds every board's release to that window. Should it bite one
 # day, the plan is to give up the import (the devkit's first start then
 # asks for Wi-Fi and wallet like any board) rather than hold a release
-# for the boards with chips; Oliver decides then. The headroom is printed
+# for the boards with chips; the owner decides then. The headroom is printed
 # so the day does not come as a surprise; docs/16 says where the image's
 # bytes are and what else could be taken out (tools/image-breakdown.py).
 # newlib nano printf (docs/16) misreads ll/hh/j/z/t/q and positions; one
@@ -178,7 +178,7 @@ fi
 
 # PUBLISH_GATE=<file>: hold here, after the soaks, until the release is
 # cleared by hand: the run publishes once <file> exists and stops without
-# publishing once <file>.abort does (Oliver, 2026-10-20: the go-ahead to
+# publishing once <file>.abort does (2026-10-20: the go-ahead to
 # publish comes after the soaks, separately).
 if [ -n "${PUBLISH_GATE:-}" ]; then
     echo "soaks passed: waiting for $PUBLISH_GATE to publish ($PUBLISH_GATE.abort stops)"

@@ -9,7 +9,7 @@ exclude = ["crates/scenarios", "firmware/proof-usb"]
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
-authors = ["dvb-projekt <oliver-mai@gmx.de>"]
+authors = ["dvb-projekt"]
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

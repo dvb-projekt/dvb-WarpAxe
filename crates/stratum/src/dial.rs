@@ -227,17 +227,17 @@ mod tests {
     #[test]
     fn only_the_local_network_reaches_the_web_ui_over_ipv6() {
         let p = |s: &str| s.parse::<core::net::Ipv6Addr>().unwrap();
-        let own = [p("2a02:db8:1:8d60:9a88:e0ff:fe03:55c8"), p("fd00:1::5")];
+        let own = [p("2001:db8:1:10:1234:56ff:fe78:9abc"), p("fd00:1::5")];
         assert!(ipv6_peer_is_local(p("fe80::1"), &own));
-        assert!(ipv6_peer_is_local(p("fdc8:396b:5f6c::61"), &own));
+        assert!(ipv6_peer_is_local(p("fd12:3456:789a::61"), &own));
         assert!(ipv6_peer_is_local(p("::ffff:192.168.178.10"), &own));
         assert!(ipv6_peer_is_local(p("::1"), &own));
-        assert!(ipv6_peer_is_local(p("2a02:db8:1:8d60::abcd"), &own));
+        assert!(ipv6_peer_is_local(p("2001:db8:1:10::abcd"), &own));
         // Same provider, another customer's /64; and the wider internet.
-        assert!(!ipv6_peer_is_local(p("2a02:db8:1:8d61::abcd"), &own));
+        assert!(!ipv6_peer_is_local(p("2001:db8:1:11::abcd"), &own));
         assert!(!ipv6_peer_is_local(p("2600:9000:a612:9253::1"), &own));
         // Without a global address of our own, no global peer is local.
-        assert!(!ipv6_peer_is_local(p("2a02:db8:1:8d60::abcd"), &[]));
+        assert!(!ipv6_peer_is_local(p("2001:db8:1:10::abcd"), &[]));
     }
 
     #[test]

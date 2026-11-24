@@ -109,7 +109,7 @@ _Filled in as they come; nothing here is from notes._
 
 ### Hardware test on .41 (NerdQAxe++, 2026-10-20 07:17–07:28Z)
 
-Oliver's OK through dvb-WarpAxe #2, Warppool #2 told; images from
+The owner's OK through dvb-WarpAxe #2, Warppool #2 told; images from
 commit 5a84125 only. `free` / `largest` = `freeHeapInternal` /
 `largestFreeInternal`.
 

@@ -1,7 +1,7 @@
 # Self-test, diagnostics file and event log
 
 Written 2026-10-21 (branch `feat/selftest`, on v0.1.33, for v0.1.34),
-after Oliver asked for a guided test with one summarised result, as
+after the owner asked for a guided test with one summarised result, as
 AxeOS has for the factory, and then for a file a user can send to
 support and for a log of what happened to the miner across restarts.
 WarpAxe already checked most of the self-test's points while mining
@@ -361,7 +361,7 @@ and the ELF belong together in the release folder.
   config states and the log formatting. Since the fix ("selftest: the window and the report on the heap …") the window lives in a
   `Box`, the thread has 16 KB, and the log line at the end says how
   much of it was never used, so the next run measures the real need.
-- **The second run on .42** (image 4c0ec36 with the fix, Oliver's OK,
+- **The second run on .42** (image 4c0ec36 with the fix, the owner's OK,
   dvb-WarpAxe #2): PASS, 9 checks, 73 s, no restart. `10240 of 16384
   bytes of the thread's stack never used`: the peak is about 6 KB, so
   the 8 KB of the first run were too little even with the window on
@@ -447,7 +447,7 @@ mind: the fan, flash, secrets.
   the test runs hides the progress screen, and the result still shows
   when it is in (acknowledged per run id and state).
 
-Open for Oliver: the limits (80 / 67 / 5 and 8 / ±5 / ±10 / 500 rpm)
+Open for the owner: the limits (80 / 67 / 5 and 8 / ±5 / ±10 / 500 rpm)
 before the first device runs; whether the NerdOS boards' `CHIPS OFF`
 display wording should follow the web UI (unrelated, noted by the
 Portuguese proofreader); and whether a self-test should be offered on

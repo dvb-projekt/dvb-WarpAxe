@@ -78,8 +78,7 @@ impl Config {
     /// (7.9–8.6) and 8.22 °C on chip 2 (59.1 / 59.9 °C against 51.0 /
     /// 51.5 °C), error rate unchanged. With 0x37 the 75 °C stop, the fan
     /// target and the figures in the API are on the maker's scale, as
-    /// ForgeOS and the tuning tools see the board. Taken 2026-10-23
-    /// (Oliver).
+    /// ForgeOS and the tuning tools see the board. Taken 2026-10-23.
     pub const BITFORGE_NANO_DIODE: Config = Config {
         ideality: Some(0x37),
         beta: Some(0x00),

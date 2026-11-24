@@ -22,7 +22,7 @@
 //! `estats` of an Avalon Q is one long `Key[Value]` token string
 //! (`MM ID0:Summary`) plus the per-chip arrays in `HBinfo`, both read
 //! token by token so a field this firmware has not seen does no harm.
-//! Field meanings were checked against Oliver's Avalon Q (MM 25052801,
+//! Field meanings were checked against the owner's Avalon Q (MM 25052801,
 //! cgminer 4.11.1, API 3.7) on 2026-10-18 and against WarpTune's own
 //! Avalon client; the fixtures under `fixtures/` are those replies with
 //! the wallet masked.

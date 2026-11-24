@@ -407,7 +407,7 @@ join.
 
 ## Still to check on devices
 
-Through dvb-WarpAxe #2, with Oliver's OK:
+Through dvb-WarpAxe #2, with the owner's OK:
 
 1. **Splash on an LCD board of each wordmark**: Gaia, NerdOctaxe,
    NerdQAxe++ (and Rev 7), NerdAxe, NerdNOS, Q1370/Q1373, Naja Duo,

@@ -1,7 +1,7 @@
 # A clock of its own per chip
 
 Written 2026-11-12 (branch `claude/warpaxe-per-chip-takt-c5dd77`, after
-v0.1.43), on a handover from dvb-WarpAxe #2 for Oliver. Built and tested
+v0.1.43), on a handover from dvb-WarpAxe #2 for the owner. Built and tested
 on the host and against the simulator. The first device runs the same
 evening (by dvb-WarpAxe #2) changed three things, told in *What the
 devices said*: the mining loop's stack, where its state lives, and
@@ -378,7 +378,7 @@ at its own clock, chip 0 at the chain's. One hour with `[0, -25]`:
 for chip 0 (expected about 2085), errors 0.04 % and 0.07 %.
 
 The Naja Duo's midpoint measurement (item 8's last part) was dropped
-(Oliver, 2026-11-13): not needed.
+(2026-11-13): not needed.
 
 ## Naja Duo at 550 MHz (2026-11-17, run by Warppool #2)
 
@@ -418,7 +418,7 @@ hashes, the way it takes the same register written to all, the simulator
 cannot show. The short test of 2026-10-02 on a NerdQAxe++ (one chip
 ±25 MHz, its counter rate followed 1:1, no duplicates) suggests it does.
 On the BM1373 the single writes are proven by hand; the offsets through
-the driver are not yet. To be run with Oliver's OK, through dvb-WarpAxe
+the driver are not yet. To be run with the owner's OK, through dvb-WarpAxe
 #2:
 
 1. **NerdOctaxe, chip 2 at −25 MHz** (625 MHz, the voltage it runs at):

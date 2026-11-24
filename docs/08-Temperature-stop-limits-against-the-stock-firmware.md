@@ -39,8 +39,8 @@ line above.
 |---|---|---|---|
 | bitaxe-gamma, -duo, -turbo, naja-duo, gamma-hex | 75 (was 90) | 105 (was 145) | ESP-Miner's compare lines |
 | bitforge-nano | 75 (was 90) | 105 (was 145) | as ForgeOS v1.7 (read from its source 2026-10-23; until then taken as ESP-Miner's) |
-| nerdaxe-gamma | 70 (was 90) | 105 (was 145) | chip as NerdOS; regulator: NerdOS has no stop, WarpAxe keeps AxeOS's 105 on the same TPS546 — **deliberate deviation, Oliver's call** |
-| nerdaxe-gaia | 75 (unchanged) | 105 (unchanged) | chip = the reference board's NVS, not the Kconfig 70 — kept, decided by Oliver (below) |
+| nerdaxe-gamma | 70 (was 90) | 105 (was 145) | chip as NerdOS; regulator: NerdOS has no stop, WarpAxe keeps AxeOS's 105 on the same TPS546 — **deliberate deviation, the owner's call** |
+| nerdaxe-gaia | 75 (unchanged) | 105 (unchanged) | chip = the reference board's NVS, not the Kconfig 70 — kept, decided by the owner (below) |
 | nerdqaxe-plusplus, nerdoctaxe-gamma, q1370, q1373 | 70 | 70 | unchanged, NerdOS |
 | nerdqaxe-plusplus-rev7 | 70 | 70 (was 105) | the 105 in the profile was NerdOS's dashboard figure, not its stop |
 | nerdnos | 80 | 105 (was 145, reported only) | no regulator temperature |
@@ -99,7 +99,7 @@ the board where ForgeOS would have shown about 67 °C, its 60 °C fan
 target held the chips where ForgeOS shows about 52 °C (louder than
 stock), and the Nano's temperatures were not comparable with a stock
 Nano's in a swarm or a tuner. **Since v0.1.36 the Nano profile uses
-0x37** (`emc2101::Config::BITFORGE_NANO_DIODE`, Oliver's decision
+0x37** (`emc2101::Config::BITFORGE_NANO_DIODE`, the owner's decision
 2026-10-23); every other EMC2101 board keeps 0x24. What follows from
 it:
 
@@ -184,10 +184,10 @@ back on; the third stop within an hour keeps the chips off with the
 reason on screen. ForgeOS's highest preset is "Power", 610 MHz /
 1200 mV (`performance-modes.ts`, forge-os 30c64e9, read 2026-11-17; this
 page said 636 MHz / 1160 mV before), under the same 40 A limit. WarpTune stays below 90 % of the warning line (34.2 A), so a
-tuned Nano does not get there (Oliver's decision 2026-10-23: keep 625
+tuned Nano does not get there (the owner's decision 2026-10-23: keep 625
 and say so, rather than drop it).
 
-## Decided by Oliver (2026-10-20)
+## Decided by the owner (2026-10-20)
 
 1. NerdAxe Gamma and Gaia keep the 105 °C regulator stop that NerdOS
    does not have.

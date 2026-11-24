@@ -1,6 +1,6 @@
 # WarpForge — Firmware Design, Stage 1: BM1370
 
-*Working title. As of 2026-09-22. Authors: Oliver + Claude. Status: draft, none of it built.*
+*Working title. As of 2026-09-22. Authors: dvb-projekt + Claude. Status: draft, none of it built.*
 
 ---
 
@@ -741,7 +741,7 @@ become better than the existing code.
 
 ### 12.1 BM1366 / BM1368 — DECIDED: no (2026-09-22)
 
-**Oliver has neither BM1366 nor BM1368 in the portfolio.** My original argument
+**The owner has neither BM1366 nor BM1368 in the portfolio.** My original argument
 "the hardware is there, so it's testable" was simply wrong — the miner list
 contains BM1370 (Bitaxe 602, BitForge Nano, NerdQAxe++, NerdOCTAXE-γ), BM1373
 (NerdAxe Gaia) and the Avalon Q. Not a single one of the old chips.
@@ -954,7 +954,7 @@ that finds errors that cost hardware in the field.
 
 ### 13.8 The regression suite (2026-09-23, commit 9278ebf)
 
-On Oliver's go: `crates/scenarios/` in WarpAxe drives WarpTune's `Regulator`
+On the owner's go: `crates/scenarios/` in WarpAxe drives WarpTune's `Regulator`
 **in-process** against `Device` — no HTTP, no wall clock, `Limits` shortened via
 struct literal. Five field failures as tests, **40 ms** for all: healthy ascent;
 VR death in the settle window with ceiling (pins dvb-WarpPool 1c80963); chip
@@ -971,7 +971,7 @@ promised as the Stage A yield — "the simulator as a test device for the
 Regulator" — exists, found a regulator bug on the first day, and the bug is
 nailed down as a test before it was merged fixed.
 
-### 13.9 The Avalon block (2026-09-23, on Oliver's go)
+### 13.9 The Avalon block (2026-09-23, on the owner's go)
 
 `warpaxe-sim::avalon::AvalonQ` models the Q as an MM controller (no chip sim):
 three work modes with the measurements from 09-11, mode change = hashboard
@@ -996,18 +996,18 @@ standby 55 W.
 
 **Addendum, same evening:** A and B are fixed in WarpTune (`83faac4`: share
 counter as a second voice on the urgent descent, share window from `settle_s`,
-Avalon judge at `settle + 900`) and live at Oliver's. The model was switched to
+Avalon judge at `settle + 900`) and live at the owner's. The model was switched to
 cgminer's real behavior — `MHS 15m` is an exponentially decaying average
 (τ 900 s), not a window — which makes scenario A *stricter*; the fix holds
 regardless. C was an artifact of my harness: the real runner switches off live
 control after 12 unverified ticks (`live_off`) and never writes a second time;
 after rebuilding this path the test confirms exactly that. **All 14 scenarios
-green**, no more `#[ignore]`. Open (Oliver's decision): whether `live_off` on a
+green**, no more `#[ignore]`. Open (the owner's decision): whether `live_off` on a
 refused `ascset` is too harsh.
 
-## 14. Transport: USB-C and LAN alongside WLAN (request from Oliver, 2026-09-23)
+## 14. Transport: USB-C and LAN alongside WLAN (request from the owner, 2026-09-23)
 
-**DECIDED (Oliver, 2026-09-23): the default is the USB bridge (14.6, path 2).**
+**DECIDED (2026-09-23): the default is the USB bridge (14.6, path 2).**
 The miner is a USB-NCM device; a Linux host next to it bridges USB to LAN.
 LAN directly on the miner (W5500) and miner-as-USB-host (14.6, path 1) are
 options, not the default.
@@ -1132,16 +1132,16 @@ NerdQAxe/Gaia (Pmaxsd) are not checked against sources; the boards are closed
 (only Gerber/firmware public). The assumption remains "same standard S3
 wiring" until a device is on the bench.
 
-**Two hardware classes (corrected 2026-09-23 after Oliver's pointer):**
+**Two hardware classes (corrected 2026-09-23 after the owner's pointer):**
 the Bitaxe Gamma has an ESP32-S3-WROOM-1 on its own PCB with a bare USB-C
 socket (14.5). **Every Nerd device — NerdAxe Gamma, NerdQAxe+/++,
 NerdOctaxe-γ, Q1370, Gaia/Q1373 — carries a complete LilyGO T-Display-S3
 dev board** as its controller; the carrier has no USB socket at all. In
-Oliver's portfolio the Bitaxe is the exception, the T-Display-S3 the
+the owner's portfolio the Bitaxe is the exception, the T-Display-S3 the
 rule. WarpAxe treats both the same at the netif level; what differs is
 in 14.7.
 
-### 14.6 USB ↔ LAN purely in software? (question from Oliver, 2026-09-23)
+### 14.6 USB ↔ LAN purely in software? (question from the owner, 2026-09-23)
 
 Yes, two paths — one on the miner, one on a host next to it.
 
@@ -1178,7 +1178,7 @@ the same bridge. Cable: USB-A-to-C because of the missing CC pulldowns (14.5).
 - On the Mac: Internet Sharing or a bridge via `ifconfig bridge` — works, but
   nothing for continuous operation.
 
-**Decided (Oliver, 2026-09-23): path 2 is the default ("USB bridge").**
+**Decided (2026-09-23): path 2 is the default ("USB bridge").**
 Path 1 becomes an option behind a Kconfig switch, only once a specific adapter
 with power-in has been measured as suitable. Both need 14.2 as the foundation;
 none of it changes the architecture decision from 14.4.
@@ -1236,7 +1236,7 @@ one driver for every board; `main/boards/` has `nerdaxegamma`,
    non-touch variant, 16 MB). An ESP32-S3-DevKitC covers only the Bitaxe
    class and adds nothing the T-Display-S3 lacks for the USB proof.
 6. **Test bed:** with the Nerd family on T-Display-S3, the NerdAxe Gamma
-   (single BM1370, KiCad open, same controller as Oliver's other devices)
+   (single BM1370, KiCad open, same controller as the owner's other devices)
    is the better first target than the Bitaxe Gamma; the Bitaxe stays
    the second, for the WROOM/bare-socket class.
 
@@ -1292,7 +1292,7 @@ Findings that go into the real firmware:
    "unchanged" segments unless `--no-skip`.
 7. SPIFFS on the NerdMiner keeps old config versions; the newest copy is
    the last one in flash order.
-8. Correction (Oliver, 2026-09-23): the Bitaxe Gamma does have a display —
+8. Correction (2026-09-23): the Bitaxe Gamma does have a display —
    a monochrome 128 × 32 SSD1306 OLED on I²C (SDA GPIO47, SCL GPIO48),
    plugged onto header J3 of the schematic. The board profile therefore
    carries a display kind: ST7789 over the i80 bus (Nerd class) or SSD1306

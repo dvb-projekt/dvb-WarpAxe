@@ -1,7 +1,7 @@
 # 13 · Ethernet over the W5500 HAT (NerdHat)
 
 Written 2026-11-04 (branch `claude/warpaxe-gaia-ethernet-cd405d` on
-`main` e04bfb1), after Oliver ordered a NerdHat for the Gaia. Built and
+`main` e04bfb1), after the owner ordered a NerdHat for the Gaia. Built and
 host-tested without the hardware; the device test below is still to be
 run once the HAT is here. Nothing in this round changes the Gaia's
 clock and voltage limits.
@@ -211,7 +211,7 @@ left under it, 174,912 before this change.
 
 ## Device test (once the HAT is here)
 
-Device actions only after Oliver's OK, announced to Warppool #2 first,
+Device actions only after the owner's OK, announced to Warppool #2 first,
 with an image from a committed state. The Gaia is the first board; the
 NerdQAxe++ and the Octaxe rev 3.1 follow with the same list.
 

@@ -1,7 +1,7 @@
 # 21 · The BM1368 and the NerdQAxe+
 
 Written 2026-11-22 on branch `feat/nerdqaxe-plus` (from `main` 43fe804,
-v0.1.48), after Oliver asked for a NerdQAxe+ profile. The NerdQAxe+ is
+v0.1.48), after the owner asked for a NerdQAxe+ profile. The NerdQAxe+ is
 the NerdQAxe++'s carrier with four BM1368 instead of BM1370, so the
 profile needed a chip WarpAxe had never driven. Nothing here has run on
 hardware: no BM1368 is on the bench. What is tested is that the profile,

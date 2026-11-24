@@ -316,9 +316,9 @@ update's slot (`esp_ota_begin` with `OTA_SIZE_UNKNOWN` erases the whole
 slot first, 48 blocks of 64 KB, 150 ms typical each); the ESP-IDF
 option `CONFIG_SPI_FLASH_BYPASS_BLOCK_ERASE` would make that 768 sector
 erases, some 30 s longer per update, for a worst case that has not been
-seen. Oliver decides whether that is wanted.
+seen. The owner decides whether that is wanted.
 
-Reproduction plan, with Oliver's OK: on the .42 at an hour's uptime,
+Reproduction plan, with the owner's OK: on the .42 at an hour's uptime,
 upload the build with the 1000 ms watchdog through the web UI several
 times (each at a long uptime, so the chip is warm and NVS has filled),
 and look for `config: storing the restart marker took N ms` lines and
@@ -429,7 +429,7 @@ loader (exit 1). esptool 4.9's `hard_reset` for the ESP32-S3 clears
 `--after hard_reset` and leave the `write_mem` out, and the app comes up
 as `usb`.
 
-**Reproduced** (dvb-WarpAxe #2 on the Nano .44, 2026-10-24, Oliver's
+**Reproduced** (dvb-WarpAxe #2 on the Nano .44, 2026-10-24, the owner's
 OK, right after its switch to the 256 KB table). v0.1.37 `3e0188b`:
 `POST /api/v1/bootloader` → `RTC_CNTL_STORE6_REG` = `0x80040004`; out by
 esptool 4.9 `--after hard_reset` → a boot with a current dump of 70,852

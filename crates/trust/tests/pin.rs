@@ -1,7 +1,7 @@
 //! The pool pin against self-signed certificates: two made with openssl
 //! from one key (`pool-self-signed.der`, then a renewal with other dates,
 //! another serial, another name and SAN: `pool-self-signed-renewed.der`),
-//! one from another key, and the one WarpPool on Oliver's Umbrel served
+//! one from another key, and the one WarpPool on the owner's Umbrel served
 //! on 2026-11-05 (rcgen, CN "rcgen self signed cert"), whose value
 //! 15:1A:…:47 was measured with openssl on the Mac the same day.
 

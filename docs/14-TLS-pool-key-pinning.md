@@ -1,13 +1,13 @@
 # A pool on its own certificate: pinning the pool's key, with a click
 
-Oliver set the NerdAxe Gaia to Stratum V1 over TLS against WarpPool on
-his Umbrel (port 3334). Every connection failed and the Gaia fell back to
+The owner set the NerdAxe Gaia to Stratum V1 over TLS against WarpPool on
+an Umbrel at home (port 3334). Every connection failed and the Gaia fell back to
 the fallback pool. WarpPool's certificate there is self-signed (rcgen, CN
 "rcgen self signed cert", SAN dvb-warppool, dvb-warppool.local,
 umbrel.local, localhost, no IP), and `link.rs` checked only against the
 pinned CA bundle and the host name.
 
-Oliver's decision (2026-11-05): pin the fingerprint of the pool's key,
+The owner's decision (2026-11-05): pin the fingerprint of the pool's key,
 confirmed by a click; not a custom-CA upload as the first answer.
 
 ## The rule
@@ -52,7 +52,7 @@ confirmed by a click; not a custom-CA upload as the first answer.
 - API: the full string, no line breaks.
 - WarpPool shows the same value in its Connect window from its next
   release (`/api/overview` → `connect.tls_spki_sha256`).
-- Oliver's Umbrel (192.168.178.3:3334), measured from the Mac on
+- The owner's Umbrel (192.168.178.3:3334), measured from the Mac on
   2026-11-05 and kept as a test vector:
   `15:1A:63:B8:21:17:9C:A4:60:E8:E9:C5:BC:66:9F:F4:2F:00:C8:7B:EE:E3:0F:06:35:06:26:BD:09:9E:E0:47`.
 

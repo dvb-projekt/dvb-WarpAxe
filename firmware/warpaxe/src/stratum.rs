@@ -775,7 +775,7 @@ fn pin_of(stored: &str) -> Option<Pin> {
 
 /// Pool settings changed over the API: end the running session now, so
 /// the new pool, worker, password, TLS or protocol applies within
-/// seconds instead of at the next reboot (Oliver renamed a worker on
+/// seconds instead of at the next reboot (the owner renamed a worker on
 /// 2026-10-08 and the pool saw it hours later, at an OTA reboot).
 pub fn reconnect() {
     reconnect_because("pool settings changed");

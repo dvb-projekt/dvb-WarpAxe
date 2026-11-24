@@ -159,7 +159,7 @@ batch (a preemption on core 1), the next minute back at 304.
 
 - The software worker on core 0 (29–30 kH/s in service, 34 alone): a
   hand-written Xtensa SHA-256 was estimated at +15–25 % of that worker,
-  so +5–8 kH/s of the total; Oliver set it aside on 2026-10-07.
+  so +5–8 kH/s of the total; the owner set it aside on 2026-10-07.
 - NMMiner's 384.5 kH/s: with ~320 from the peripheral and ~30 from the
   software, WarpAxe lands at ~350. The remaining 10 % would have to come
   from a software loop two to three times faster than ours, or from

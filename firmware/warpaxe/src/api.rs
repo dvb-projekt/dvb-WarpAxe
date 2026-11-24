@@ -55,7 +55,7 @@ const SELF_HEALS: [&str; 3] = ["chain_silent", "chip_silent", "domain_latch"];
 
 /// The chip name the API reports. The devkit (a profile without chips)
 /// names what actually hashes, so an AxeOS-style scanner lists it as
-/// what it is and not as a BM1370 (Warppool, Oliver, 2026-10-05).
+/// what it is and not as a BM1370 (Warppool, 2026-10-05).
 fn asic_model() -> &'static str {
     if board::devkit() {
         return "ESP32-S3 SHA";

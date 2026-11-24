@@ -235,8 +235,8 @@ pub struct Profile {
     /// The panel sits the other way round on this carrier than on the
     /// bare LilyGO: NerdOS and the BitMaker Gaia firmware draw every Nerd
     /// carrier rotated 180° as their base, so their `flipscreen = 0` is
-    /// upright in the case. XORed with the configured flip (Oliver,
-    /// 2026-09-29: "the 180° turn concerns the whole Nerd series").
+    /// upright in the case. XORed with the configured flip (2026-09-29:
+    /// "the 180° turn concerns the whole Nerd series").
     pub display_flip: bool,
     /// A GPIO that must enable the chips' power before the regulator
     /// goes on (ESP-Miner `asic_enable`, Naja Duo and Gamma Hex).
@@ -428,7 +428,7 @@ impl Profile {
     /// How high an owner may set the chip stop: NerdOS lets them choose up
     /// to 90 °C (`range 50 90` in its Kconfig), so its boards keep that;
     /// AxeOS has no such setting, so a Bitaxe (and every other board) can
-    /// only go below its own line (Oliver, 2026-10-20).
+    /// only go below its own line (2026-10-20).
     pub fn chip_stop_max_c(&self) -> f32 {
         let nerdos = ["nerdqaxe", "nerdoctaxe", "nerdaxe", "q13"]
             .iter()
@@ -616,7 +616,7 @@ impl Profile {
     /// value itself is one the driver takes. Published as
     /// `regulatorMinMv`; a core voltage below it is refused whatever the
     /// board's own choices say — never a core voltage below the
-    /// regulator's clean range (Oliver, 2026-10-05).
+    /// regulator's clean range (2026-10-05).
     pub fn regulator_min_core_mv(&self) -> u16 {
         let vout = match self.vr {
             Vr::Tps546(c)
@@ -744,8 +744,8 @@ const COLOR_ENABLE: Option<AsicEnable> = Some(AsicEnable {
 /// 2 × core), EMC2103 with the BM1373 diode fit, ST7789 display,
 /// Color pins. Stock 327 MHz / 1000 mV. Runs on our bench since
 /// 2026-11-12 (v0.1.44).
-/// The preset list goes to 550 MHz, the voltage to 1120 mV (Oliver,
-/// 2026-11-15, after the .47 bench); free values (`?oc`) go up to
+/// The preset list goes to 550 MHz, the voltage to 1120 mV (2026-11-15,
+/// after the .47 bench); free values (`?oc`) go up to
 /// 600 MHz, the maker's documented overclock (Solo Satoshi: 600 MHz /
 /// 1120 mV, 8 TH/s, ~92 W, ~38 A of the stacked TPS546's 61 A warning).
 /// AxeOS's own overclock mode has no upper bound at all.
@@ -767,7 +767,7 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // on the bench, 2026-11-13 (54.2 W predicted). 90 W at the 2.24 V
     // stacked rail is about 40 A, well below the 61 A warning; the
     // regulator's protection and the temperature limits still guard the
-    // board. 105 W since 2026-11-15 (Oliver, .47 bench): WarpTune's
+    // board. 105 W since 2026-11-15 (.47 bench): WarpTune's
     // limit becomes 94.5 W, enough for 550 MHz at 1120 mV (~92 W by the
     // bench model, 9.8 W static + f·V²); at 95 W the search stopped at
     // 500 MHz. 105 W at 2.24 V is about 47 A, below the 61 A warning.
@@ -897,7 +897,7 @@ pub const BITFORGE_NANO: Profile = Profile {
     // (leakage of warmer chips; 2026-10-23, 10 min). ForgeOS itself runs
     // no target but a curve (chip 45→75 °C = fan 35→100 %,
     // `power_management_task.c` 39–86), about 67 % at 60 °C, so it holds
-    // the chips cooler than a 60 °C target would. Oliver, 2026-10-23.
+    // the chips cooler than a 60 °C target would (2026-10-23).
     // A Nano that still has the old 60 stored goes back to the profile's
     // value once (`NANO_FAN_TARGET_BEFORE_V0136`, `migrated_fan_target`).
     fan_target_c: 52.0,
@@ -922,7 +922,7 @@ pub const BITFORGE_NANO: Profile = Profile {
 pub const T_DISPLAY_S3_DEVKIT: Profile = Profile {
     name: "t-display-s3",
     // What the display, the splash and the web UI call the devkit: the
-    // toy's own name (Oliver, 2026-10-05), not the module's.
+    // toy's own name (2026-10-05), not the module's.
     model: "WarpMiner",
     asic: Asic::Bm1370,
     asic_count: 0,
@@ -1018,7 +1018,7 @@ pub const NERDAXE_GAMMA: Profile = Profile {
     // the TPS546's own 145 °C OT_FAULT protects it. WarpAxe keeps AxeOS's
     // 105 °C stop on purpose: same regulator, same carrier class as the
     // Bitaxe Gamma, and a stop 40 °C below the part's fault is the
-    // safer default (Oliver's call, 2026-10-20 handoff).
+    // safer default (the owner's call in the 2026-10-20 handoff).
     chip_stop_c: 70.0,
     vr_stop_c: 105.0,
     temp_offset_c: 0.0,
@@ -1370,7 +1370,7 @@ pub const Q1373: Profile = Profile {
 /// regulator, no display, no chips; the web UI asks which board it is.
 /// NerdNOS: a LilyGO T-Display-S3 on a carrier with one BM1397. Pins as
 /// WantClue's `nerdnos.h` has them (NerdMiner_v2 branch `nerdnos`,
-/// first working version 2024-09-07, the firmware on Oliver's .46):
+/// first working version 2024-09-07, the firmware on the owner's .46):
 /// chain UART on GPIO17/18 (the S3's native U1, right header) through
 /// a TXU0202 level shifter, the NTC on GPIO2, the core rail sensed on
 /// GPIO3, and two control lines the stock firmware calls RST (GPIO12:
@@ -1607,7 +1607,7 @@ mod tests {
             "WarpTune's limit 94.5 W fits 550 MHz / 1120 mV (~92 W)"
         );
         // WarpTune's Max ceiling: the top clock option, and absMaxVoltage
-        // as its voltage ceiling (Oliver, 2026-11-15).
+        // as its voltage ceiling (2026-11-15).
         assert_eq!(naja.frequency_options.last(), Some(&550));
         assert_eq!(naja.voltage_options.last(), Some(&1120));
         let c = naja.choices(false);

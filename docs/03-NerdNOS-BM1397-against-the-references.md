@@ -2,7 +2,7 @@
 
 Written 2026-10-08, before anything ran on the chip; the first run is
 recorded at the end. The device is
-Oliver's NerdNOS (`192.168.178.46`, stock firmware "NerdNOS" 2.0.5, a
+the owner's NerdNOS (`192.168.178.46`, stock firmware "NerdNOS" 2.0.5, a
 NerdMiner fork by WantClue). The references:
 
 * **WantClue** — github.com/WantClue/NerdMiner_v2, branch `nerdnos`
@@ -94,7 +94,7 @@ line itself (the old revision's wiring on a new header), the same drive is
 still right. One assumption stays: that the .46 matches WantClue's
 `nerdnos.h` and not a third revision.
 
-**Settled on 2026-10-08 (Oliver found github.com/WantClue/NerdNOS):** a
+**Settled on 2026-10-08 (the owner found github.com/WantClue/NerdNOS):** a
 fork of benjamin-wilson/NerdNOS with the later board, rev 1.3, commits
 up to 2024-10-31 ("other buck converter" 08-28, "fixed reset" 09-10,
 Schottky diode so the display's USB cannot feed the buck 09-16, gerbers
@@ -140,7 +140,7 @@ the "long" window is. The error counter 0x4C is read as on the BM1370.
 
 ## Overheat on a board without a fan: one clock step down
 
-Since 2026-10-08 (Oliver's wish): after an overheat stop on a board the
+Since 2026-10-08 (the owner's wish): after an overheat stop on a board the
 firmware cannot cool (`hasFan` false, the NerdNOS), the chip comes back
 one clock option lower (300 → 275 → 250 …) instead of at the same clock;
 the stock firmware drops to a fixed 210 MHz instead. The step lives in
@@ -178,7 +178,7 @@ vacuum cleaner in the room). Modem sleep took the ESP's die from 59.4 to
 56.4 °C and the chip's plateau from 73.9–74.4 to 73.2–73.4 °C. About two
 degrees over the stock firmware remain unexplained — the display, the
 processor at 56 °C in the same case, or the room; two degrees is what the
-vacuum cleaner did. Oliver's decision: leave it so, modem sleep stays for
+vacuum cleaner did. The owner's decision: leave it so, modem sleep stays for
 boards without a fan, the rest is not chased.
 
 **A/B at the pool, 300 MHz, one hour each (Warppool #2, Σ share
@@ -253,7 +253,7 @@ keep away from flash, NVS and esp_ota_*.
 
 ## Before the first flash on the .46 (rules in force)
 
-Full flash backup over USB first; committed images only; Oliver's OK and a
+Full flash backup over USB first; committed images only; the owner's OK and a
 heads-up to Warppool #2; the preview before the flash. None of this has run
 on a chip.
 

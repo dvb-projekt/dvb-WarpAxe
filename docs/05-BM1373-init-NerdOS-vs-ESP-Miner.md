@@ -4,7 +4,7 @@ Written 2026-10-10 for the Gaia (`192.168.178.40`, one BM1373 on a
 TPS546, 12 V carrier, 380 MHz / 960 mV under WarpAxe v0.1.24). This is
 step 1 of the handoff: the whole bring-up of the three firmwares side by
 side, read from source, nothing run on a board. Step 2 (an A/B on the
-Gaia) only happens with Oliver's OK.
+Gaia) only happens with the owner's OK.
 
 Why: the Gaia's chip error counter sits at 3–6 % (3.3 % at 350 MHz /
 960 mV, 6.2 % over the 24 h run of 07./08.10. at 300–380 MHz / 930–960
@@ -197,7 +197,7 @@ things the step set does not have today:
 
 ## Step 2, the build (2026-10-10, on the branch, not flashed)
 
-Built after Oliver's OK (via dvb-WarpAxe #2), host gates green, ESP
+Built after the owner's OK (via dvb-WarpAxe #2), host gates green, ESP
 image built, nothing flashed:
 
 - `BM1373_ESP` in `crates/core/src/chip/bm1373.rs`: ESP-Miner's lists
@@ -224,7 +224,7 @@ image built, nothing flashed:
 
 ## Result of the A/B (2026-10-10, the Gaia on cd58c79)
 
-Run by dvb-WarpAxe #2 after Oliver's OK: the Gaia at 380 MHz / 960 mV,
+Run by dvb-WarpAxe #2 after the owner's OK: the Gaia at 380 MHz / 960 mV,
 WarpTune in dry run, `asicDifficulty` 256, blocks NerdOS, ESP-Miner,
 NerdOS, ESP-Miner of 70 min each, the first 10 min of every block
 dropped. Before the first ESP-Miner block the log read "chain start …
@@ -261,7 +261,7 @@ change there is no reason to expect one from the smaller, and the
 - **The Gaia's default stays NerdOS's init**, which is also the stock
   firmware's. The Gaia runs it again with the 4096 ticket mask.
 - The `chipInit` switch and `BM1373_ESP` have done their job. Only
-  this document went to main (Oliver, 2026-10-10); the code path stays
+  this document went to main (2026-10-10); the code path stays
   on the branch `claude/bm1373-init-ab-handoff-ec3720` (cd58c79) for
   reference, so main has no unused init.
 - In short: ESP-Miner's BM1373 init brings the Gaia up and hashes at
@@ -272,7 +272,7 @@ change there is no reason to expect one from the smaller, and the
 ## The plan before the A/B (kept for the record)
 
 
-Do step 2, with Oliver's OK and one flash. The candidates 1–3 are the
+Do step 2, with the owner's OK and one flash. The candidates 1–3 are the
 same kind of core trim that fixed the Octaxe, the Naja Duo proves the
 sequence on the same chip and MCU, and one image with a setting and a
 fallback is enough. Order:
@@ -319,7 +319,7 @@ fallback is enough. Order:
   `WarpForge-Firmware/messdaten-2026-10/` as the template.
 
 The Gaia's default stays NerdOS's init until the numbers say otherwise;
-that is Oliver's call after the A/B. The result goes to Bitronics and
+that is the owner's call after the A/B. The result goes to Bitronics and
 shufps (drafts in `Mail-Gaia-Fehlerrate.md`).
 
 ## The Naja Duo: ESP-Miner's init by board (2026-11-12, not yet on a device)

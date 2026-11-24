@@ -1970,7 +1970,7 @@ fn import_fans(stock: &Stock, cfg: &mut Config) -> bool {
 
 /// Screen orientation, colours and when it goes dark. `flipscreen` (NerdOS,
 /// pre-2.15 AxeOS) means what WarpAxe's switch means: the NerdOCTAXE-γ in
-/// Oliver's case runs flipped under both, and the Bitaxe Gamma's OLED
+/// the owner's case runs flipped under both, and the Bitaxe Gamma's OLED
 /// reads right with it on. AxeOS 2.15 turns the board's own orientation
 /// by `rotation` (0 = as the board comes, which on the Gamma is WarpAxe's
 /// flipped and on the Color boards its own way up; 180 = the other way;

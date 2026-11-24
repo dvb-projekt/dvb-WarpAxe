@@ -1,7 +1,7 @@
 # Board choice guard: a chosen board is checked before its chips get power
 
 Written 2026-10-22 (branch `feat/board-choice-guard` on `feat/v0135`, for
-v0.1.35), after dvb-WarpAxe #2 and Oliver asked that a board picked by
+v0.1.35), after dvb-WarpAxe #2 and the owner asked that a board picked by
 hand on the first start cannot hurt the board it actually runs on.
 
 ## The problem
@@ -265,7 +265,7 @@ silent sensor more likely means the wrong board than a broken one
   after a verified first start is the ordinary one (`POST
   /api/v1/selftest`), started 20 s after the chain is up.
 - Nothing was flashed and no device was restarted for this work; the
-  first device runs are Oliver's call (a wrong choice is never tried on
+  first device runs are the owner's call (a wrong choice is never tried on
   real hardware, only here and in the host tests).
 
 ## Image size

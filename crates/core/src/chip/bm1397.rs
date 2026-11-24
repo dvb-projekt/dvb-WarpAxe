@@ -2,7 +2,7 @@
 //!
 //! The init is WantClue's `BM1397_init()` / `_send_init()`
 //! (NerdMiner_v2, branch `nerdnos`, `src/drivers/nerd-nos/bm1397.cpp`,
-//! read 2026-10-08), the firmware that runs on Oliver's NerdNOS (.46)
+//! read 2026-10-08), the firmware that runs on the owner's NerdNOS (.46)
 //! today; ESP-Miner's `bm1397.c` (v2.15.3, the Bitaxe Max) sends the same
 //! registers in the same order and adds one write (`MISC_CONTROL` ←
 //! `00 00 7A 31`, the default UART divider, before the ramp). Both derive

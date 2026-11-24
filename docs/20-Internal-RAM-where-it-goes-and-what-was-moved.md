@@ -139,7 +139,7 @@ documented IRAM savings that neither firmware uses (both have far less
 code in internal RAM pressure than a Rust image with TLS, Sv2, USB NCM
 and a web UI).
 
-## Device test (via Warppool #2, after Oliver's OK)
+## Device test (via Warppool #2, after the owner's OK)
 
 On a NerdQAxe++ (.41, the Ethernet board) and one Bitaxe, clean builds
 of this branch only, never .43, not .40/.47:
@@ -195,7 +195,7 @@ image also holds `.iram0.text_end` padding.
 
 ## Device test (.46 and .42, 2026-11-21)
 
-Oliver's OK in this session for .46 and .42; Warppool #2 paused and
+The owner's OK in this session for .46 and .42; Warppool #2 paused and
 logged; images by OTA upload of the clean build `5a052c952`. Heap log
 once a minute (`freeHeapInternal` / `largestFreeInternal`, samples
 after 120 s up):
@@ -232,7 +232,7 @@ At the end of boot (`heap:` log line): .46 157 KB free, largest piece
 
 ### Second round (same day): the rest of the fleet, V1, Ethernet, the click update
 
-Oliver's OK in this session for .44, .45 and .41 and for the
+The owner's OK in this session for .44, .45 and .41 and for the
 `read_body` fix (`a5c4e96`: the upload body in one allocation of its
 Content-Length, `try_reserve` instead of an abort; the doubling Vec
 had crashed an upload on .41 on 2026-11-20). Images `a5c4e968d`

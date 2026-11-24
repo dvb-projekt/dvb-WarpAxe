@@ -236,7 +236,7 @@ up) and costs nothing where it would.
    restarts, three chips off/on), domains at +2 min; `grep "NerdOS
    init"` in the log once. Pass: 32 domains six times.
 2. Cheap test on a dead-domain state, before or after 1 (a device write,
-   Oliver's OK): clock 700 → 600 MHz by PATCH, 2 min, domains; back to
+   the owner's OK): clock 700 → 600 MHz by PATCH, 2 min, domains; back to
    700, 2 min, domains. Comes back at 600 and dies at 700 = clock margin
    at 700 on this chip (1210 mV too little for that domain, or the
    trim); stays dead at 600 = decided at bring-up.
@@ -245,7 +245,7 @@ up) and costs nothing where it would.
 
 ## Test plan for the .45 (first round, as run)
 
-Flash only with Oliver's OK and a heads-up to Warppool #2; a committed
+Flash only with the owner's OK and a heads-up to Warppool #2; a committed
 image only; WarpTune's re-inits off (or its latch rule at "needs a power
 cycle") during the runs, so the counts are the firmware's alone.
 
