@@ -45,10 +45,14 @@ UI, on by default.
    in practice it is one IPv6 against one IPv4 address.
 4. **The first connection waits briefly for the prefix.** Right after
    joining, the first pool connection follows the IPv4 address within a
-   fraction of a second, while the prefix is still on its way. Connections
-   within the first 4 s of SLAAC wait for a global or unique-local
-   address; later ones never wait. On an IPv4-only network this costs up
-   to 4 s once per association.
+   fraction of a second, while the prefix is still on its way (3 to 7 s
+   after SLAAC starts on a FRITZ!Box). Connections within the first 10 s
+   of SLAAC wait for a global or unique-local address; later ones never
+   wait. On an IPv4-only network this costs up to 10 s once per
+   association. Until v0.1.49 the window was 4 s, and a prefix that took
+   7 s sent the first connection over IPv4 (the .41, 2026-11-24). The
+   first race on a fresh address also gives IPv6 a 1 s head start instead
+   of 250 ms: the first IPv6 packets answer late.
 5. **TLS.** esp-tls resolves names itself with `AF_UNSPEC` (A records
    only), so WarpAxe picks the address and hands esp-tls the literal, with
    the pool's name as `common_name`: it still goes out as SNI and the
@@ -170,7 +174,7 @@ off.
 | Switch on again | IPv6, shares |
 | TLS, dual-stack (solo.atlaspool.io:4333) | IPv6, certificate verified for the name |
 | TLS, IPv4-only (public-pool.io:4333) | IPv4, no probe, certificate verified |
-| First connection after boot, dual-stack pool | IPv6 (prefix about 3 s after link-local) |
+| First connection after boot, dual-stack pool | IPv6 (prefix 3 to 7 s after link-local) |
 | Stratum V2 to warppool through the IPv6-only relay (`[ULA literal]`) | IPv6, Noise handshake and certificate verified, shares accepted |
 | Web UI over the global address from the same /64, and over the ULA | served |
 

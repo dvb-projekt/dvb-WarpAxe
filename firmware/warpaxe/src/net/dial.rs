@@ -81,13 +81,15 @@ struct Cand {
 }
 
 /// Right after joining the network the router's prefix is still on its
-/// way (about 3 s after SLAAC starts on a FRITZ!Box, 2026-11-17), while the first pool
-/// connection follows the IPv4 address within a fraction of a second.
-/// That first connection waits up to this long, measured from the start
-/// of SLAAC, for a global or unique-local address; later ones never wait.
-/// On an IPv4-only network this is the one cost: up to 4 s once per
+/// way (3 s after SLAAC started on a FRITZ!Box on 2026-11-17; 5 s on the
+/// .42 and 7 s on the .41 on 2026-11-24, when the .41's first pool
+/// connection gave up waiting at 4 s and went over IPv4), while the
+/// first pool connection follows the IPv4 address within a fraction of
+/// a second. Connections in this window from the start of SLAAC wait for
+/// a global or unique-local address; later ones never wait. On an
+/// IPv4-only network this is the one cost: up to 10 s once per
 /// association.
-const FIRST_PREFIX_WAIT: Duration = Duration::from_secs(4);
+const FIRST_PREFIX_WAIT: Duration = Duration::from_secs(10);
 
 /// The station's IPv6 addresses beyond the link, waiting for them only in
 /// the first [`FIRST_PREFIX_WAIT`] of SLAAC.
