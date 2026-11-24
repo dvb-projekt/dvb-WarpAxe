@@ -143,6 +143,11 @@ pub(crate) fn set_hotspot(h: Option<(String, String)>) {
 static IP6_STARTED: Mutex<Option<std::time::Instant>> = Mutex::new(None);
 
 pub(crate) fn set_ip6_started(at: Option<std::time::Instant>) {
+    // A fresh address: the first IPv6 race on it gets the longer head
+    // start again (`dial::FIRST_IPV6_RACE_DONE`).
+    if at.is_some() {
+        dial::rearm_first_ipv6_race();
+    }
     *IP6_STARTED.lock().unwrap() = at;
 }
 

@@ -315,8 +315,13 @@ pub fn pick(host: &str, port: u16, budget: Duration) -> anyhow::Result<SocketAdd
     }
 }
 
-/// Set by the first race of the boot that leads with IPv6.
+/// Set by the first race of an association that leads with IPv6;
+/// cleared when SLAAC starts on a new association.
 static FIRST_IPV6_RACE_DONE: AtomicBool = AtomicBool::new(false);
+
+pub(crate) fn rearm_first_ipv6_race() {
+    FIRST_IPV6_RACE_DONE.store(false, Ordering::Relaxed);
+}
 
 fn race(
     host: &str,
@@ -329,9 +334,10 @@ fn race(
     }
     let t0 = Instant::now();
     let ms = |t0: Instant| t0.elapsed().as_millis() as u64;
-    // The first race of the boot that leads with IPv6 gives it a longer
-    // head start ([`FIRST_IPV6_STAGGER_MS`]): its first packet waits for
-    // neighbour discovery. Taken once, whatever the race's outcome.
+    // The first race of an association that leads with IPv6 gives it a
+    // longer head start ([`FIRST_IPV6_STAGGER_MS`]): the first IPv6
+    // packets on a fresh address are slow to get an answer. Taken once
+    // per association (rearmed with SLAAC), whatever the outcome.
     let first_gap = if cands.len() > 1
         && cands[0].addr.is_ipv6()
         && !FIRST_IPV6_RACE_DONE.swap(true, Ordering::Relaxed)

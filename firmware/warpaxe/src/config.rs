@@ -1492,7 +1492,7 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     }
     // Read back through the boot's parser (bytes), not `from_value`: the
     // firmware then carries one deserializer for `Config` instead of two
-    // (about 23 KB of image, docs/16). The text is the same document the
+    // (35 KB of image, docs/16). The text is the same document the
     // tree holds, so every field reads as it would from the tree.
     let text = serde_json::to_vec(&cur)?;
     drop(cur);

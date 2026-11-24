@@ -18,12 +18,13 @@
 /// pending (RFC 8305 §5 recommends 250 ms).
 pub const STAGGER_MS: u64 = 250;
 
-/// The head start of the first address in the first race after boot
-/// that leads with IPv6. Its first packet waits for neighbour discovery
-/// of the router; on the fleet that took longer than [`STAGGER_MS`]
-/// (2026-11-23: IPv4 won 276–304 ms in on four boards while IPv6 to the
-/// same pool answered in ~21 ms from the Mac), so a dual-stack pool was
-/// reached over IPv4 until the next reconnect. Once per boot, never more.
+/// The head start of the first address in the first race on a fresh
+/// IPv6 address (once per Wi-Fi association) that leads with IPv6. The
+/// first IPv6 packets after SLAAC are slow to get an answer (neighbour
+/// discovery on either side); on the fleet that took longer than
+/// [`STAGGER_MS`] (2026-11-23: IPv4 won 276–304 ms in on four boards
+/// while IPv6 to the same pool answered in ~21 ms from the Mac), so a
+/// dual-stack pool was reached over IPv4 until the next reconnect.
 pub const FIRST_IPV6_STAGGER_MS: u64 = 1000;
 
 /// The host part of a pool address as the user may type it: an IPv6
@@ -141,7 +142,7 @@ impl Race {
 
     /// As [`Race::new`], with `first_gap_ms` between the first and the
     /// second start ([`FIRST_IPV6_STAGGER_MS`] for the first IPv6 dial
-    /// after boot). A failure of the first address still starts the next
+    /// on a fresh address). A failure of the first address still starts the next
     /// at once.
     pub fn with_first_gap(n: usize, now_ms: u64, budget_ms: u64, first_gap_ms: u64) -> Race {
         Race {
@@ -317,6 +318,15 @@ mod tests {
         assert_eq!(r.step(0), Step::Start(0));
         r.failed(5);
         assert_eq!(r.step(5), Step::Start(1));
+        // One address: the gap has nothing to hold back.
+        let mut r = Race::with_first_gap(1, 0, 10_000, FIRST_IPV6_STAGGER_MS);
+        assert_eq!(r.step(0), Step::Start(0));
+        assert_eq!(r.step(0), Step::Wait(10_000));
+        // A gap past the budget: the wait ends at the deadline.
+        let mut r = Race::with_first_gap(2, 0, 600, FIRST_IPV6_STAGGER_MS);
+        assert_eq!(r.step(0), Step::Start(0));
+        assert_eq!(r.step(0), Step::Wait(600));
+        assert_eq!(r.step(600), Step::GiveUp);
     }
 
     #[test]
