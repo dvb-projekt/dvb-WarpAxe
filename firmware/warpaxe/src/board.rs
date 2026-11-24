@@ -2165,13 +2165,17 @@ fn nerd_thermal(profile: &'static Profile, bus: &SharedI2c, invert_polarity: boo
         log::info!("board: EMC2302 product {product:#04x} manufacturer {mfr:#04x}");
     }
     // FAN2 is the fan on the ASIC cooler (NerdOS's channel 0), FAN1 the
-    // one at the regulator.
-    let fans_ok = fans.init(&emc2302::Config::two_pole(invert_polarity)).is_ok()
-        && fans.set_fan_percent(Fan::One, 100).is_ok()
-        && fans.set_fan_percent(Fan::Two, 100).is_ok();
-    if !fans_ok {
-        log::error!("board: EMC2302 init failed");
-        update(|s| s.last_error = "emc2302 init failed".into());
+    // one at the regulator. Without the EMC2302 nothing drives either
+    // fan: the chips stay off (`fan_chip_gone`), as on the boards whose
+    // fan chip also reads the chip temperature. The TMP1075s would still
+    // read, but a board without fans only gets hotter.
+    let up = retry_init(|| {
+        fans.init(&emc2302::Config::two_pole(invert_polarity))?;
+        fans.set_fan_percent(Fan::One, 100)?;
+        fans.set_fan_percent(Fan::Two, 100)
+    });
+    if let Err(e) = up {
+        fan_chip_gone("EMC2302", format!("{e:?}"));
     }
     Thermal::Nerd {
         fans,
