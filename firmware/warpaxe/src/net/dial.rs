@@ -16,11 +16,14 @@ use std::ffi::CString;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream};
 use std::os::fd::FromRawFd;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::sys;
-use warpaxe_stratum::dial::{host_port, interleave, ipv4_first, pool_host, Race, Step};
+use warpaxe_stratum::dial::{
+    host_port, interleave, ipv4_first, pool_host, Race, Step, FIRST_IPV6_STAGGER_MS, STAGGER_MS,
+};
 
 /// Most addresses kept per family. lwIP's resolver keeps
 /// `CONFIG_LWIP_DNS_MAX_HOST_IP` per name (1 in this build), so in
@@ -312,6 +315,9 @@ pub fn pick(host: &str, port: u16, budget: Duration) -> anyhow::Result<SocketAdd
     }
 }
 
+/// Set by the first race of the boot that leads with IPv6.
+static FIRST_IPV6_RACE_DONE: AtomicBool = AtomicBool::new(false);
+
 fn race(
     host: &str,
     port: u16,
@@ -323,7 +329,18 @@ fn race(
     }
     let t0 = Instant::now();
     let ms = |t0: Instant| t0.elapsed().as_millis() as u64;
-    let mut race = Race::new(cands.len(), 0, budget.as_millis() as u64);
+    // The first race of the boot that leads with IPv6 gives it a longer
+    // head start ([`FIRST_IPV6_STAGGER_MS`]): its first packet waits for
+    // neighbour discovery. Taken once, whatever the race's outcome.
+    let first_gap = if cands.len() > 1
+        && cands[0].addr.is_ipv6()
+        && !FIRST_IPV6_RACE_DONE.swap(true, Ordering::Relaxed)
+    {
+        FIRST_IPV6_STAGGER_MS
+    } else {
+        STAGGER_MS
+    };
+    let mut race = Race::with_first_gap(cands.len(), 0, budget.as_millis() as u64, first_gap);
     let mut pending: Vec<Pending> = Vec::new();
     let mut last_err: Option<String> = None;
     let close_all = |p: &mut Vec<Pending>| {

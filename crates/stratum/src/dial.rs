@@ -18,6 +18,14 @@
 /// pending (RFC 8305 §5 recommends 250 ms).
 pub const STAGGER_MS: u64 = 250;
 
+/// The head start of the first address in the first race after boot
+/// that leads with IPv6. Its first packet waits for neighbour discovery
+/// of the router; on the fleet that took longer than [`STAGGER_MS`]
+/// (2026-11-23: IPv4 won 276–304 ms in on four boards while IPv6 to the
+/// same pool answered in ~21 ms from the Mac), so a dual-stack pool was
+/// reached over IPv4 until the next reconnect. Once per boot, never more.
+pub const FIRST_IPV6_STAGGER_MS: u64 = 1000;
+
 /// The host part of a pool address as the user may type it: an IPv6
 /// literal in brackets (`[2001:db8::1]`, the usual form next to a port)
 /// loses them; surrounding spaces go. Anything else is returned as is.
@@ -120,18 +128,29 @@ pub struct Race {
     /// a failure: now).
     due_ms: u64,
     deadline_ms: u64,
+    /// The gap after the first start (later gaps are [`STAGGER_MS`]).
+    first_gap_ms: u64,
 }
 
 impl Race {
     /// `n` addresses, the first one due at `now_ms`, all of it over at
     /// `now_ms + budget_ms`.
     pub fn new(n: usize, now_ms: u64, budget_ms: u64) -> Race {
+        Race::with_first_gap(n, now_ms, budget_ms, STAGGER_MS)
+    }
+
+    /// As [`Race::new`], with `first_gap_ms` between the first and the
+    /// second start ([`FIRST_IPV6_STAGGER_MS`] for the first IPv6 dial
+    /// after boot). A failure of the first address still starts the next
+    /// at once.
+    pub fn with_first_gap(n: usize, now_ms: u64, budget_ms: u64, first_gap_ms: u64) -> Race {
         Race {
             n,
             next: 0,
             pending: 0,
             due_ms: now_ms,
             deadline_ms: now_ms.saturating_add(budget_ms),
+            first_gap_ms,
         }
     }
 
@@ -145,7 +164,12 @@ impl Race {
             let i = self.next;
             self.next += 1;
             self.pending += 1;
-            self.due_ms = now_ms.saturating_add(STAGGER_MS);
+            let gap = if i == 0 {
+                self.first_gap_ms
+            } else {
+                STAGGER_MS
+            };
+            self.due_ms = now_ms.saturating_add(gap);
             return Step::Start(i);
         }
         if self.pending == 0 && self.next >= self.n {
@@ -278,6 +302,21 @@ mod tests {
         r.failed(60);
         assert_eq!(r.step(60), Step::GiveUp);
         assert_eq!(r.started(), 3);
+    }
+
+    #[test]
+    fn the_first_ipv6_dial_after_boot_gives_ipv6_a_longer_head_start() {
+        let mut r = Race::with_first_gap(3, 0, 10_000, FIRST_IPV6_STAGGER_MS);
+        assert_eq!(r.step(0), Step::Start(0));
+        assert_eq!(r.step(0), Step::Wait(1000));
+        assert_eq!(r.step(1000), Step::Start(1));
+        // Later gaps are the usual quarter second.
+        assert_eq!(r.step(1000), Step::Wait(250));
+        // A first address that fails at once does not hold the next back.
+        let mut r = Race::with_first_gap(2, 0, 10_000, FIRST_IPV6_STAGGER_MS);
+        assert_eq!(r.step(0), Step::Start(0));
+        r.failed(5);
+        assert_eq!(r.step(5), Step::Start(1));
     }
 
     #[test]
