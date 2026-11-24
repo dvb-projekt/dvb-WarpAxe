@@ -1490,7 +1490,14 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
             }
         }
     }
-    let mut cfg: Config = serde_json::from_value(cur)?;
+    // Read back through the boot's parser (bytes), not `from_value`: the
+    // firmware then carries one deserializer for `Config` instead of two
+    // (about 23 KB of image, docs/16). The text is the same document the
+    // tree holds, so every field reads as it would from the tree.
+    let text = serde_json::to_vec(&cur)?;
+    drop(cur);
+    let mut cfg: Config = serde_json::from_slice(&text)?;
+    drop(text);
     // A masked secret coming back in a PATCH means "keep what you have".
     let old = get();
     if cfg.wifi_pass == "***" {
