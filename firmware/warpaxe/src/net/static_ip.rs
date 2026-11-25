@@ -19,7 +19,7 @@
 //! DHCP until the next restart, with an event and a dashboard banner.
 
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
 use std::time::Instant;
 
 use esp_idf_svc::handle::RawHandle;
@@ -36,6 +36,43 @@ const FALLBACK: u8 = 3;
 static MODE: AtomicU8 = AtomicU8::new(0);
 /// The static address went to the Ethernet HAT (else to the station).
 static ON_ETH: AtomicBool = AtomicBool::new(false);
+
+/// The other interface's DNS servers (main, backup; network-order bytes
+/// as a word, 0 = none), seen in lwIP's one list before the typed ones
+/// replaced them: with the address on the HAT, the station's from its
+/// lease. Put back when the HAT gives the list up again.
+static OTHER_DNS: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
+
+/// Put the other interface's DNS servers back ([`OTHER_DNS`]), if any were
+/// seen: after the HAT's fallback (its DHCP client start cleared the list)
+/// and when the HAT's link goes after the address was confirmed (the
+/// typed servers may not be reachable from the station's network). The
+/// next lease of either interface writes the list anyway.
+pub fn restore_other_dns(netif: &EspNetif) {
+    let main = OTHER_DNS[0].load(Ordering::Relaxed).to_ne_bytes();
+    if main == [0; 4] {
+        return;
+    }
+    let backup = match OTHER_DNS[1].load(Ordering::Relaxed).to_ne_bytes() {
+        [0, 0, 0, 0] => main,
+        b => b,
+    };
+    let h = netif.handle();
+    set_dns(
+        h,
+        sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN,
+        Ipv4Addr::from(main),
+    );
+    set_dns(
+        h,
+        sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP,
+        Ipv4Addr::from(backup),
+    );
+    log::info!(
+        "static ip: DNS {} of the other interface back",
+        Ipv4Addr::from(main)
+    );
+}
 
 /// The interface (`eth` = the HAT, else the station) carries a static
 /// address that nothing has answered yet: its link does not count as
@@ -227,6 +264,8 @@ pub struct Guard {
     iface: &'static str,
     watch: Watch,
     t0: Instant,
+    /// The last tick had the link.
+    had_link: bool,
 }
 
 /// What the interface's thread must do after [`Guard::tick`].
@@ -244,6 +283,7 @@ impl Guard {
             iface,
             watch: Watch::new(),
             t0: Instant::now(),
+            had_link: false,
         }
     }
 
@@ -261,11 +301,24 @@ impl Guard {
         if main == d && (backup == d2 || (self.s.dns2.is_none() && backup == [0; 4])) {
             return;
         }
+        self.remember_other_dns(h);
         set_dns_both(h, &self.s);
         log::info!("static ip: DNS {} set again", self.s.dns);
         if let Some(i) = super::Ip4::of(netif) {
             super::set_ip4(self.iface == "ethernet", Some(i));
         }
+    }
+
+    /// What lwIP's list holds now, when it is not the typed servers: the
+    /// other interface's ([`OTHER_DNS`]).
+    fn remember_other_dns(&self, h: *mut sys::esp_netif_t) {
+        let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
+        if main == [0; 4] || main == self.s.dns.octets() {
+            return;
+        }
+        let backup = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP);
+        OTHER_DNS[0].store(u32::from_ne_bytes(main), Ordering::Relaxed);
+        OTHER_DNS[1].store(u32::from_ne_bytes(backup), Ordering::Relaxed);
     }
 
     pub fn settings(&self) -> &Settings {
@@ -287,7 +340,14 @@ impl Guard {
         if self.watch.holds_dns(link) {
             self.keep_dns(netif);
         }
+        // The HAT's cable out after the address was confirmed: the
+        // station's DNS again, the typed servers may sit behind the cable.
+        let lost = self.had_link && !link;
+        self.had_link = link;
         if self.watch.confirmed() {
+            if lost && self.iface == "ethernet" {
+                restore_other_dns(netif);
+            }
             return Step::Keep;
         }
         let now = self.t0.elapsed().as_secs() as u32;
@@ -315,6 +375,9 @@ impl Guard {
                 Step::Keep
             }
             Verdict::FallBack => {
+                // The list as it is now, before the DHCP client start
+                // clears it (`restore_other_dns` puts it back).
+                self.remember_other_dns(netif.handle());
                 // The event's own log line says what happened. No pool
                 // session can be up on the address here: one would have
                 // confirmed it.

@@ -89,11 +89,23 @@ station on DHCP, the station's lease would replace the typed servers.
 So the guard looks at the list on every tick (every one or two
 seconds) and sets the typed servers again when they were replaced,
 for as long as the static address is in use: confirmed and with its
-link up (a HAT with its cable out leaves the station's DNS alone, the
-station may be in another network), not before the first answer and
-not after the fallback. The log says `static ip: DNS … set again`. A
-lookup in the second or so before that, or before the address is
-confirmed, can still go to the lease's server. `ipv4Now` shows the server in the list.
+link up, not before the first answer and not after the fallback. The
+log says `static ip: DNS … set again`. A lookup in the second or so
+before that, or before the address is confirmed, can still go to the
+lease's server. `ipv4Now` shows the server in the list.
+
+Before the typed servers replace what is in the list, the guard keeps
+that (the other interface's, the station's from its lease) and puts it
+back (`static_ip::restore_other_dns`, log `DNS … of the other interface
+back`) when the HAT gives the list up: after the HAT's fallback, whose
+DHCP client start clears the list, and when the HAT's cable goes out
+after the address was confirmed, since the typed servers may sit behind
+the cable. The next lease of either interface writes the list anyway.
+
+`apply` sets the typed servers before the first answer as well (with
+the address, which clears the list): until something answers they are
+what the static interface starts with, and the station's next lease may
+replace them, which is fine before the address is confirmed.
 
 ## Lock-out guard
 
