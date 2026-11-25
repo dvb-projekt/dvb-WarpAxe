@@ -745,7 +745,7 @@
   "pay_last_fee": "{p} ha trattenuto più del tuo limite di commissione per 2 blocchi di fila, {ago} fa.",
   "evd_payout_fee": "il pool {p} ha trattenuto il {fee} % della coinbase per 2 blocchi di fila (limite {max} %)",
   "staticIp": "IPv4 statico",
-  "staticIp_s": "Un indirizzo fisso al posto del DHCP del router: per il cavo Ethernet se è montato un HAT, altrimenti per il Wi-Fi. Vale dopo un riavvio. Se né il gateway né il pool rispondono entro 3 minuti, il miner riprende un indirizzo via DHCP fino al riavvio successivo, così un errore di battitura non ti chiude fuori. IPv6 non cambia.",
+  "staticIp_s": "Un indirizzo fisso al posto del DHCP del router: per il cavo Ethernet se è montato un HAT, altrimenti per il Wi-Fi. Vale dopo un riavvio. Se né il gateway né il pool rispondono entro 3 minuti, il miner riprende un indirizzo via DHCP fino al prossimo riavvio, così un errore di battitura non ti taglia fuori. IPv6 resta invariato.",
   "staticIpAddr": "Indirizzo IPv4",
   "staticNetmask": "Maschera di sottorete",
   "staticGateway": "Gateway (router)",
@@ -756,8 +756,8 @@
   "sip_dns2_empty": "Vuoto = nessuno.",
   "sip_on": "Indirizzo IPv4 statico in uso",
   "sip_wait": "Indirizzo IPv4 statico impostato, in attesa di risposta dal gateway",
-  "sip_fb": "L’indirizzo IPv4 statico non ha avuto risposta: DHCP fino al riavvio successivo",
-  "sip_fb_dash": "L’indirizzo statico {ip} non ha avuto risposta né dal gateway {gw} né dal pool, quindi il miner ha preso un indirizzo dal DHCP del router per restare raggiungibile. Controlla le impostazioni statiche; il riavvio successivo riprova l’indirizzo statico.",
+  "sip_fb": "Nessuna risposta con l’indirizzo IPv4 statico: DHCP fino al prossimo riavvio",
+  "sip_fb_dash": "Con l’indirizzo statico {ip} non è arrivata risposta né dal gateway {gw} né dal pool, quindi il miner ha preso un indirizzo dal DHCP del router per restare raggiungibile. Controlla le impostazioni statiche; al prossimo riavvio riproverà con l’indirizzo statico.",
   "evk_net": "Rete",
-  "evd_static_ip_fallback": "IPv4 statico {ip} su {if}: nessuna risposta dal gateway {gw} né dal pool per {s} s, di nuovo DHCP fino al riavvio successivo"
+  "evd_static_ip_fallback": "IPv4 statico {ip} su {if}: nessuna risposta dal gateway {gw} né dal pool per {s} s, si torna al DHCP fino al prossimo riavvio"
 }

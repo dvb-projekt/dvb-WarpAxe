@@ -745,7 +745,7 @@
   "pay_last_fee": "{p} ficou com mais do que o seu limite de taxa em 2 blocos seguidos, há {ago}.",
   "evd_payout_fee": "o pool {p} ficou com {fee} % da coinbase em 2 blocos seguidos (limite {max} %)",
   "staticIp": "IPv4 estático",
-  "staticIp_s": "Um endereço fixo em vez do DHCP do roteador: para o cabo Ethernet quando há um HAT, senão para o Wi-Fi. Vale após reiniciar. Se nem o gateway nem o pool responderem em 3 minutos, o minerador volta a pegar um endereço por DHCP até o próximo reinício, para que um erro de digitação não te deixe de fora. O IPv6 não é afetado.",
+  "staticIp_s": "Um endereço fixo em vez do DHCP do roteador: para o cabo Ethernet quando há um HAT, senão para o Wi-Fi. Entra em vigor após reiniciar. Se nem o gateway nem o pool responderem em 3 minutos, o minerador volta a obter um endereço por DHCP até o próximo reinício, para que um erro de digitação não deixe você sem acesso. O IPv6 não é afetado.",
   "staticIpAddr": "Endereço IPv4",
   "staticNetmask": "Máscara de sub-rede",
   "staticGateway": "Gateway (roteador)",
@@ -755,9 +755,9 @@
   "sip_dns_empty": "Vazio = o gateway.",
   "sip_dns2_empty": "Vazio = nenhum.",
   "sip_on": "Endereço IPv4 estático em uso",
-  "sip_wait": "Endereço IPv4 estático definido, aguardando resposta do gateway",
+  "sip_wait": "Endereço IPv4 estático definido, aguardando a resposta do gateway",
   "sip_fb": "O endereço IPv4 estático não teve resposta: DHCP até o próximo reinício",
-  "sip_fb_dash": "O endereço estático {ip} não teve resposta do gateway {gw} nem do pool, então o minerador pegou um endereço do DHCP do roteador para continuar acessível. Verifique as configurações estáticas; o próximo reinício tenta o endereço estático de novo.",
+  "sip_fb_dash": "O endereço estático {ip} não teve resposta do gateway {gw} nem do pool, então o minerador obteve um endereço pelo DHCP do roteador para continuar acessível. Verifique as configurações estáticas; o próximo reinício tenta o endereço estático de novo.",
   "evk_net": "Rede",
   "evd_static_ip_fallback": "IPv4 estático {ip} em {if}: sem resposta do gateway {gw} nem do pool por {s} s, de volta ao DHCP até o próximo reinício"
 }
