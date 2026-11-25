@@ -757,7 +757,7 @@
   "sip_on": "Indirizzo IPv4 statico in uso",
   "sip_wait": "Indirizzo IPv4 statico impostato, in attesa di risposta dal gateway",
   "sip_fb": "Nessuna risposta con l’indirizzo IPv4 statico: DHCP fino al prossimo riavvio",
-  "sip_inv": "Impostazioni IPv4 statica non valide: è in uso il DHCP. Controlla i campi qui sotto.",
+  "sip_inv": "Impostazioni IPv4 statiche non valide: DHCP in uso. Controlla i campi qui sotto.",
   "sip_fb_dash": "Con l’indirizzo statico {ip} non è arrivata risposta né dal gateway {gw} né dal pool, quindi il miner ha preso un indirizzo dal DHCP del router per restare raggiungibile. Controlla le impostazioni statiche; al prossimo riavvio riproverà con l’indirizzo statico.",
   "evk_net": "Rete",
   "evd_static_ip_fallback": "IPv4 statico {ip} su {if}: nessuna risposta dal gateway {gw} né dal pool per {s} s, si torna al DHCP fino al prossimo riavvio"
