@@ -277,7 +277,7 @@ time of the measurement; the figures do not simply add up.
 | `codegen-units = 1` | 38,160 | The same in small. |
 | `CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_SILENT` | 53,472, and 6,896 bytes of internal RAM (`.iram0.text` −4,468, `.dram0.data` −2,428) | An ESP-IDF assert then says only where (the PC), no longer file, line and expression. The core dump is unchanged. A decision about crash reports, not about size alone. |
 | `CONFIG_NEWLIB_NANO_FORMAT` (ROM printf) | 44,624 | Taken for v0.1.47 after the check one by one: see "Nano printf" below. |
-| `Config` read through one parser instead of two | 31,856 | Three lines in `config::init` (`from_slice::<Value>` then `from_value::<Config>`, the route every PATCH already takes). The result is the same for every stored document, but the boot would build the document as a tree first: about 7 KB of small internal allocations, freed again around the strings that stay. Too close to "no internal RAM" to do unmeasured. |
+| `Config` read through one parser instead of two | 35,120 | Taken for v0.1.50 the other way round, without the boot's tree: see "One `Config` parser" below. |
 | `CONFIG_LWIP_IPV6=n` | 25,808 (`.dram0.bss` −1,768) | A function: no IPv6 address, no AAAA. |
 | `CONFIG_ESP_ERR_TO_NAME_LOOKUP=n` | 7,600 | Error texts in the log and the API turn into numbers. |
 | `opt-level = "z"` for serde_json, esp-idf-svc, anyhow, avalon, diag, displaycfg | 5,808 | Small, and serde_json and esp-idf-svc are in the pool's path. |
@@ -404,6 +404,41 @@ on a Bitaxe Gamma, a NerdQAxe++ and the devkit; in the log the
 clock and night mode in a time zone with summer time
 (`CET-1CEST,M3.5.0,M10.5.0/3`, parsed by nano's `siscanf` now); a WPA3
 join.
+
+## One `Config` parser (v0.1.50, 2026-11-24)
+
+The candidate above was to read the stored document at boot as a
+`Value` and then `from_value::<Config>`, the route a PATCH took. It
+was left for the boot's tree (about 7 KB of small internal
+allocations). `79b1421` goes the other way: a PATCH turns its merged
+tree back into text and reads it with `from_slice::<Config>`, the
+boot's parser (`config::patch`). The boot path is not touched.
+
+| | Image | Below 0x2F0000 |
+|---|---|---|
+| before `79b1421` | 3,000,672 | 79,520 |
+| with `79b1421` | 2,965,552 | **114,640** |
+
+35,120 bytes less (3,264 more than the 31,856 measured on 13.11.:
+`Config` has more fields since). In the ELF of a later build
+(`62da248`, static IPv4 test branch on main) `Config` is deserialized
+only from `SliceRead` (`visit_map` 15,340, `visit_seq` 16,176,
+`deserialize_struct` 636); no instance takes a `serde_json::Value`.
+What is left of `serde_json::value` for `Config` is its `Serialize`
+into a tree (1,979), which the PATCH merge needs.
+
+**RAM.** Boot: unchanged, the same code reads the same bytes. A PATCH
+holds the text (the document's size; it fits the 4 KB the boot reads
+it into) next to the tree it had built anyway, and drops the tree
+before it parses. Device test on `.42`
+(PATCH, IPv6 boot) and `.41` (offsets kept, fans) passed on main
+`76adaa4`.
+
+**Same result.** The text is `serde_json::to_vec` of the merged tree,
+so every field the tree holds reads as it would from the tree: same
+`#[serde(default)]` for a missing key, unknown keys ignored by both.
+Migrations (`config::migrate`) run on the
+parsed `Config` after either path, so they are unaffected.
 
 ## Still to check on devices
 
