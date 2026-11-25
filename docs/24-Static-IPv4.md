@@ -36,7 +36,11 @@ cannot work:
 - the mask is contiguous and between /8 and /30;
 - the gateway lies in the address's subnet and is not the address;
 - neither the address nor the gateway is the subnet's network or
-  broadcast address.
+  broadcast address;
+- the subnet overlaps neither the setup hotspot's 192.168.4.0/24 nor
+  the USB link's 192.168.<usbSubnet>.0/24 (a /16 around 192.168.4.x
+  counts): their routes would take the replies. A PATCH of
+  `usbSubnet` is checked against a static address that is on.
 
 Switched off, the fields are stored unchecked, so a half-filled form can
 be kept. Existing configs read the field as empty (off): nothing changes

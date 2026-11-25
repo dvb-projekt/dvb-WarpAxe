@@ -75,6 +75,10 @@ pub enum Error {
     BadDns,
     /// The second DNS server is not a unicast IPv4 address.
     BadDns2,
+    /// The subnet overlaps the setup hotspot's, 192.168.4.0/24.
+    OverlapsHotspot,
+    /// The subnet overlaps the USB link's, 192.168.<usbSubnet>.0/24.
+    OverlapsUsb,
 }
 
 impl Error {
@@ -93,6 +97,8 @@ impl Error {
             Error::GatewayIsNetworkOrBroadcast => "gateway is the subnet's network or broadcast",
             Error::BadDns => "DNS server invalid",
             Error::BadDns2 => "second DNS server invalid",
+            Error::OverlapsHotspot => "subnet overlaps the setup hotspot's 192.168.4.0/24",
+            Error::OverlapsUsb => "subnet overlaps the USB link's 192.168.<usbSubnet>.0/24",
         }
     }
 }
@@ -134,11 +140,20 @@ fn host_addr(s: &str, bad: Error, not_host: Error) -> Result<Ipv4Addr, Error> {
     Ok(a)
 }
 
+/// Whether the subnet `net`/`prefix` shares an address with the /24 `lan`.
+fn overlaps_24(net: u32, prefix: u8, lan: [u8; 4]) -> bool {
+    let m = mask_bits(prefix.min(24));
+    net & m == u32::from_be_bytes(lan) & m
+}
+
 /// The five fields as the config keeps them, in one string:
 /// `address,mask,gateway,dns,dns2` (spaces taken off, empty slots
 /// allowed, missing trailing ones count as empty). `dns` empty = the
 /// gateway answers DNS (what most home routers do); `dns2` empty = none.
-pub fn validate_packed(s: &str) -> Result<Settings, Error> {
+/// `usb_subnet` is the third octet of the USB link's /24 (0 = 7): the
+/// subnet may overlap neither it nor the setup hotspot's 192.168.4.0/24,
+/// whose routes would take the replies.
+pub fn validate_packed(s: &str, usb_subnet: u8) -> Result<Settings, Error> {
     let mut f = s.split(',').map(str::trim);
     let mut next = || f.next().unwrap_or("");
     let a = host_addr(next(), Error::BadAddr, Error::AddrNotUnicast)?;
@@ -154,6 +169,13 @@ pub fn validate_packed(s: &str) -> Result<Settings, Error> {
     }
     if ab == gb {
         return Err(Error::GatewayIsAddr);
+    }
+    if overlaps_24(ab, prefix, [192, 168, 4, 0]) {
+        return Err(Error::OverlapsHotspot);
+    }
+    let usb = if usb_subnet == 0 { 7 } else { usb_subnet };
+    if overlaps_24(ab, prefix, [192, 168, usb, 0]) {
+        return Err(Error::OverlapsUsb);
     }
     let edge = |x: u32| x & !m == 0 || x & !m == !m;
     if edge(ab) {
@@ -294,7 +316,11 @@ mod tests {
 
     /// The five fields one by one, as the tests write them.
     fn validate(a: &str, m: &str, g: &str, d: &str, d2: &str) -> Result<Settings, Error> {
-        validate_packed(&[a, m, g, d, d2].join(","))
+        validate_packed(&[a, m, g, d, d2].join(","), 7)
+    }
+
+    fn validate_packed_7(s: &str) -> Result<Settings, Error> {
+        validate_packed(s, 7)
     }
 
     fn ok(a: &str, m: &str, g: &str) -> Settings {
@@ -431,15 +457,50 @@ mod tests {
     }
 
     #[test]
+    fn neither_the_hotspot_nor_the_usb_subnet() {
+        assert_eq!(
+            validate("192.168.4.50", "24", "192.168.4.1", "", ""),
+            Err(Error::OverlapsHotspot)
+        );
+        // A wider mask that takes the hotspot's /24 in.
+        assert_eq!(
+            validate("192.168.1.50", "16", "192.168.1.1", "", ""),
+            Err(Error::OverlapsHotspot)
+        );
+        // A narrower one inside it.
+        assert_eq!(
+            validate("192.168.4.130", "25", "192.168.4.129", "", ""),
+            Err(Error::OverlapsHotspot)
+        );
+        assert_eq!(
+            validate("192.168.7.20", "24", "192.168.7.1", "", ""),
+            Err(Error::OverlapsUsb)
+        );
+        // usbSubnet 0 means 7; another one moves the check.
+        assert_eq!(
+            validate_packed("192.168.7.20,24,192.168.7.1", 0),
+            Err(Error::OverlapsUsb)
+        );
+        assert!(validate_packed("192.168.7.20,24,192.168.7.1", 9).is_ok());
+        assert_eq!(
+            validate_packed("192.168.9.20,24,192.168.9.1", 9),
+            Err(Error::OverlapsUsb)
+        );
+        // Next door is fine.
+        assert!(validate("192.168.5.20", "24", "192.168.5.1", "", "").is_ok());
+        assert!(validate("192.168.0.20", "22", "192.168.1.1", "", "").is_ok());
+    }
+
+    #[test]
     fn the_packed_form_is_the_five_fields_in_order() {
-        let s = validate_packed("192.168.1.50,24,192.168.1.1,,9.9.9.9").unwrap();
+        let s = validate_packed_7("192.168.1.50,24,192.168.1.1,,9.9.9.9").unwrap();
         assert_eq!(s.dns, Ipv4Addr::new(192, 168, 1, 1));
         assert_eq!(s.dns2, Some(Ipv4Addr::new(9, 9, 9, 9)));
-        assert!(validate_packed("192.168.1.50,24,192.168.1.1").is_ok());
-        assert_eq!(validate_packed(""), Err(Error::BadAddr));
-        assert_eq!(validate_packed("192.168.1.50,24"), Err(Error::BadGateway));
+        assert!(validate_packed_7("192.168.1.50,24,192.168.1.1").is_ok());
+        assert_eq!(validate_packed_7(""), Err(Error::BadAddr));
+        assert_eq!(validate_packed_7("192.168.1.50,24"), Err(Error::BadGateway));
         assert_eq!(
-            validate_packed("192.168.1.50,24,192.168.1.1,,,x"),
+            validate_packed_7("192.168.1.50,24,192.168.1.1,,,x"),
             Err(Error::BadDns2)
         );
     }

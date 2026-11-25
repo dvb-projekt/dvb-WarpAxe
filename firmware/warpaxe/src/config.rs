@@ -1486,7 +1486,10 @@ impl Config {
     pub fn static_settings(
         &self,
     ) -> Result<warpaxe_board::static_ip::Settings, warpaxe_board::static_ip::Error> {
-        warpaxe_board::static_ip::validate_packed(self.static_ipv4.trim_start_matches('-'))
+        warpaxe_board::static_ip::validate_packed(
+            self.static_ipv4.trim_start_matches('-'),
+            self.usb_subnet,
+        )
     }
 
     pub fn redacted(&self) -> Config {
@@ -1561,15 +1564,16 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     // must make a working address (warpaxe_board::static_ip), so a typo
     // is refused here rather than cutting the miner off at the next
     // start. Switched off they are kept as typed, unchecked. Only a PATCH
-    // that touches them is checked: a stored set never blocks other
-    // settings.
+    // that touches them (or usbSubnet, whose /24 they must not overlap)
+    // is checked: a stored set never blocks other settings.
     cfg.static_ipv4.retain(|c| c != ' ');
     if cfg.static_ipv4.len() > STATIC_MAX {
         anyhow::bail!("staticIpv4 longer than {STATIC_MAX} characters");
     }
-    let touches_static = v
-        .as_object()
-        .is_some_and(|o| o.keys().any(|k| k.starts_with("static")));
+    let touches_static = v.as_object().is_some_and(|o| {
+        o.keys()
+            .any(|k| k.starts_with("static") || k == "usbSubnet")
+    });
     if cfg.static_ip_on() && touches_static {
         cfg.static_settings()
             .map_err(|e| anyhow::anyhow!(e.text()))?;
