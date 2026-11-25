@@ -354,9 +354,25 @@ impl Guard {
         let addr = self.s.addr.to_string();
         let pool = link && crate::stratum::session_from(&addr);
         let mut answered = pool;
+        let mut arp = false;
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
             answered = gateway_answers(self.s.addr, self.s.gateway);
+            // A gateway that drops port 80 without a word still answered
+            // the probe's ARP request on this interface: the subnet and
+            // the gateway are right, and a working address is not given up
+            // for a silent port.
+            if !answered {
+                // SAFETY: a valid netif handle; the lookup runs in the
+                // TCP/IP task and only reads the ARP table.
+                arp = unsafe {
+                    sys::tusb::wa_arp_known(
+                        netif.handle() as *mut core::ffi::c_void,
+                        u32::from_ne_bytes(self.s.gateway.octets()),
+                    )
+                };
+                answered = arp;
+            }
         }
         match self.watch.tick(now, link, answered) {
             Verdict::Wait => Step::Keep,
@@ -367,7 +383,13 @@ impl Guard {
                 log::info!(
                     "static ip: {} confirmed by the {} after {} s (stack {} B never used)",
                     self.iface,
-                    if pool { "pool" } else { "gateway" },
+                    if pool {
+                        "pool"
+                    } else if arp {
+                        "gateway's ARP reply"
+                    } else {
+                        "gateway"
+                    },
                     self.watch.waited_s(),
                     crate::diag::stack_unused()
                 );

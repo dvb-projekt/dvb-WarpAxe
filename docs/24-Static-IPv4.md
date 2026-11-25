@@ -125,10 +125,12 @@ interface's thread:
   LAN then; the dead gateway still shows in the pool's failures.
 - Port 80 because nearly every router serves its web page there, or
   refuses the connect, which counts too. A router that drops packets to
-  port 80 from the LAN without an answer, on a network where no pool
-  connects either, never confirms: the miner goes back to DHCP after
-  180 s and stays reachable, which is harmless (and the static address
-  is worth little where the pool cannot be reached anyway).
+  port 80 without a word still answers the ARP request the probe sends
+  first: after a probe without an answer, a resolved ARP entry for the
+  gateway on the static interface confirms the address as well
+  (`wa_arp_known` in the glue, `etharp_find_addr` in the TCP/IP task;
+  log `confirmed by the gateway's ARP reply`). A wrong subnet or a
+  gateway that is not there leaves no entry.
 - The first answer confirms the address for the boot; no more probes.
 - 180 s of link without an answer (`GIVE_UP_S`; time without link does not
   count, so a router that is still booting after a power cut gets its

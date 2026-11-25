@@ -23,8 +23,37 @@
 #include "tusb_cdc_acm.h"
 #include "tusb_console.h"
 #include "esp_vfs_console.h"
+#include "esp_netif.h"
+#include "esp_netif_net_stack.h"
+#include "lwip/etharp.h"
 
 static const char *TAG = "wa_usb";
+
+typedef struct {
+    esp_netif_t *netif;
+    uint32_t ip;
+    bool found;
+} wa_arp_query_t;
+
+static esp_err_t wa_arp_lookup(void *ctx)
+{
+    wa_arp_query_t *q = ctx;
+    struct netif *nif = esp_netif_get_netif_impl(q->netif);
+    ip4_addr_t ip = { .addr = q->ip };
+    struct eth_addr *eth = NULL;
+    const ip4_addr_t *found = NULL;
+    q->found = nif != NULL && etharp_find_addr(nif, &ip, &eth, &found) >= 0;
+    return ESP_OK;
+}
+
+bool wa_arp_known(void *netif, uint32_t ip)
+{
+    wa_arp_query_t q = { .netif = netif, .ip = ip, .found = false };
+    if (netif == NULL || esp_netif_tcpip_exec(wa_arp_lookup, &q) != ESP_OK) {
+        return false;
+    }
+    return q.found;
+}
 
 static void free_tx(void *buffer, void *ctx)
 {
