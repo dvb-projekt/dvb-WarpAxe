@@ -82,6 +82,7 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
 .honest{border-left:4px solid var(--warn)}
 .honest strong{color:var(--fg)}
 .links{display:flex;gap:18px;flex-wrap:wrap;font-size:14px}
+.ws{border-left:4px solid var(--warp);gap:6px}.ws p{color:var(--mute);font-size:14px}.ws p:last-child{color:inherit}
 .sep{border:0;border-top:1px solid var(--line);margin:8px 0 0}
 @media (max-width:700px){.hero{grid-template-columns:1fr}.hero figure{order:-1}figure img{max-width:320px}}
 </style>
@@ -154,6 +155,7 @@ figcaption{color:var(--mute);font-size:13px;margin-top:6px}
 
   <div class="card honest"><p data-t="lp_honest"></p></div>
   <p class="links"><span data-t="lp_tune"></span></p>
+  <div class="card ws"><h2 data-t="ws_t"></h2><p data-t="ws_1"></p><p data-t="ws_2"></p><p data-t="ws_3"></p><p data-t="ws_more"></p></div>
   <hr class="sep">
 </div>
 
@@ -245,6 +247,11 @@ const T = {
     lp_c6p: "Overheating or a regulator fault switches the core voltage off. After cooling down, the miner starts again by itself; after a third shutdown within an hour, it stays off. Implausible sensor readings never reach the control loops.",
     lp_honest: "<strong>The honest part:</strong> AxeOS and NerdOS run on far more boards, have years of use by a large community behind them, and offer things WarpAxe does not, such as Wi-Fi setup over Bluetooth, mining on two pools at once or alerts. If you need those, stay with your stock firmware. If you try WarpAxe, keep the backup.",
     lp_tune: "Want less power at the same hashrate? <a href=\"https://warppool.org/warptune/\">WarpTune</a> finds the lowest error-free core voltage for each miner, on WarpAxe as well as on AxeOS and NerdOS.",
+    ws_t: "The WarpSuite: WarpAxe, WarpPool, WarpTune",
+    ws_1: "Each runs on its own; together they do more.",
+    ws_2: "Stock firmware (AxeOS, NerdOS, ForgeOS) + WarpPool: solo mining, 0 % fee. + WarpTune: the best stable point, Eco, Max or by power price.",
+    ws_3: "+ WarpAxe: clock per chip and a payout check that switches pools itself if a solo pool stops paying you.",
+    ws_more: "<a href=\"https://warppool.org/suite/\">More about the WarpSuite →</a>",
     fl_h: "What WarpAxe does",
     fl_status: "<strong>Status:</strong> early firmware. Runs on Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano and NerdNOS; eight more boards have a profile.",
     fl_g1: "Boards and first start",
@@ -362,6 +369,11 @@ const T = {
     lp_c6p: "Bei Überhitzung oder einem Fehler am Spannungsregler schaltet WarpAxe die Kernspannung ab. Nach dem Abkühlen startet der Miner von selbst wieder; nach dem dritten Abschalten innerhalb einer Stunde bleibt er aus. Unplausible Sensorwerte erreichen die Regelung gar nicht erst.",
     lp_honest: "<strong>Ehrlich gesagt:</strong> AxeOS und NerdOS laufen auf weit mehr Boards, sind seit Jahren bei einer großen Community im Einsatz und bieten Dinge, die WarpAxe nicht hat, etwa WLAN-Einrichtung per Bluetooth, Schürfen auf zwei Pools gleichzeitig oder Benachrichtigungen. Brauchst du das, bleib bei deiner Original-Firmware. Probierst du WarpAxe aus, heb die Sicherung auf.",
     lp_tune: "Weniger Strom bei gleicher Hashrate? <a href=\"https://warppool.org/de/warptune/\">WarpTune</a> findet für jeden Miner die niedrigste fehlerfreie Kernspannung, auf WarpAxe genauso wie auf AxeOS und NerdOS.",
+    ws_t: "Die WarpSuite: WarpAxe, WarpPool, WarpTune",
+    ws_1: "Jedes läuft allein, zusammen können sie mehr.",
+    ws_2: "Original-Firmware (AxeOS, NerdOS, ForgeOS) + WarpPool: solo minen, 0 % Gebühr. + WarpTune: der beste stabile Punkt, Eco, Max oder nach Strompreis.",
+    ws_3: "+ WarpAxe: Takt je Chip und eine Auszahlungsprüfung, die selbst den Pool wechselt, wenn ein Solo-Pool nicht mehr an dich zahlt.",
+    ws_more: "<a href=\"https://warppool.org/de/suite/\">Mehr zur WarpSuite →</a>",
     fl_h: "Was WarpAxe kann",
     fl_status: "<strong>Stand:</strong> frühe Firmware. Läuft auf Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano und NerdNOS; für acht weitere Boards gibt es ein Profil.",
     fl_g1: "Boards und erster Start",
@@ -479,6 +491,11 @@ const T = {
     lp_c6p: "El sobrecalentamiento o un fallo del regulador cortan el voltaje del núcleo. Al enfriarse, el minero vuelve a arrancar solo; si se detiene por tercera vez en una hora, se queda apagado. Las lecturas de sensores imposibles nunca llegan a los lazos de control.",
     lp_honest: "<strong>Siendo sinceros:</strong> AxeOS y NerdOS funcionan en muchas más placas, tienen detrás años de uso por parte de una gran comunidad y ofrecen cosas que WarpAxe no tiene, como configurar el Wi-Fi por Bluetooth, minar en dos pools a la vez o recibir alertas. Si necesitas eso, quédate con tu firmware original. Si pruebas WarpAxe, guarda la copia de seguridad.",
     lp_tune: "¿Quieres menos consumo con el mismo hashrate? <a href=\"https://warppool.org/es/warptune/\">WarpTune</a> encuentra para cada minero el voltaje del núcleo más bajo sin errores, tanto en WarpAxe como en AxeOS y NerdOS.",
+    ws_t: "La WarpSuite: WarpAxe, WarpPool, WarpTune",
+    ws_1: "Cada uno funciona por sí solo; juntos hacen más.",
+    ws_2: "Firmware original (AxeOS, NerdOS, ForgeOS) + WarpPool: minería en solitario, 0 % de comisión. + WarpTune: el mejor punto estable, Eco, Max o según el precio de la electricidad.",
+    ws_3: "+ WarpAxe: frecuencia por chip y una comprobación del pago que cambia de pool por sí sola si un pool en solitario deja de pagarte.",
+    ws_more: "<a href=\"https://warppool.org/es/suite/\">Más sobre la WarpSuite →</a>",
     fl_h: "Qué hace WarpAxe",
     fl_status: "<strong>Estado:</strong> firmware en fase temprana. Funciona en Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano y NerdNOS; otras ocho placas tienen perfil.",
     fl_g1: "Placas y primer arranque",
@@ -596,6 +613,11 @@ const T = {
     lp_c6p: "Une surchauffe ou un défaut du régulateur coupe la tension de cœur. Une fois refroidi, le mineur redémarre de lui-même ; au troisième arrêt en une heure, il reste éteint. Les mesures aberrantes des capteurs n’atteignent jamais les boucles de régulation.",
     lp_honest: "<strong>Pour être honnête :</strong> AxeOS et NerdOS tournent sur bien plus de cartes, ont derrière eux des années d’utilisation par une grande communauté et offrent des fonctions que WarpAxe n’a pas, comme la configuration du Wi-Fi par Bluetooth, le minage simultané sur deux pools ou les alertes. Si vous en avez besoin, restez sur votre firmware d’origine. Si vous essayez WarpAxe, conservez la sauvegarde.",
     lp_tune: "Envie de consommer moins pour le même hashrate ? <a href=\"https://warppool.org/fr/warptune/\">WarpTune</a> trouve pour chaque mineur la tension de cœur la plus basse sans erreur, sous WarpAxe comme sous AxeOS et NerdOS.",
+    ws_t: "La WarpSuite : WarpAxe, WarpPool, WarpTune",
+    ws_1: "Chacun fonctionne seul ; ensemble, ils vont plus loin.",
+    ws_2: "Firmware d’origine (AxeOS, NerdOS, ForgeOS) + WarpPool : minage solo, 0 % de frais. + WarpTune : le meilleur réglage stable, Eco, Max ou selon le prix de l’électricité.",
+    ws_3: "+ WarpAxe : fréquence par puce et une vérification du paiement qui change de pool d’elle-même si un pool solo cesse de vous payer.",
+    ws_more: "<a href=\"https://warppool.org/fr/suite/\">En savoir plus sur la WarpSuite →</a>",
     fl_h: "Ce que fait WarpAxe",
     fl_status: "<strong>État :</strong> firmware à un stade précoce. Fonctionne sur Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano et NerdNOS ; huit autres cartes disposent d’un profil.",
     fl_g1: "Cartes et premier démarrage",
@@ -713,6 +735,11 @@ const T = {
     lp_c6p: "In caso di surriscaldamento o di guasto del regolatore, la tensione del core viene spenta. Una volta raffreddato, il miner riparte da solo; al terzo arresto entro un’ora resta spento. Le letture non plausibili dei sensori non arrivano mai agli anelli di controllo.",
     lp_honest: "<strong>Per onestà:</strong> AxeOS e NerdOS girano su molte più schede, hanno alle spalle anni di utilizzo da parte di una grande community e offrono cose che WarpAxe non ha, come la configurazione del Wi-Fi via Bluetooth, il mining su due pool contemporaneamente o gli avvisi. Se ti servono, resta sul firmware originale. Se provi WarpAxe, conserva il backup.",
     lp_tune: "Vuoi consumare meno a parità di hashrate? <a href=\"https://warppool.org/it/warptune/\">WarpTune</a> trova per ogni miner la tensione del core più bassa senza errori, su WarpAxe come su AxeOS e NerdOS.",
+    ws_t: "La WarpSuite: WarpAxe, WarpPool, WarpTune",
+    ws_1: "Ognuno funziona anche da solo; insieme fanno di più.",
+    ws_2: "Firmware originale (AxeOS, NerdOS, ForgeOS) + WarpPool: mining in solo, commissione 0 %. + WarpTune: il miglior punto stabile, Eco, Max o in base al prezzo dell’energia.",
+    ws_3: "+ WarpAxe: frequenza per chip e una verifica del pagamento che cambia pool da sola se un pool di solo mining smette di pagarti.",
+    ws_more: "<a href=\"https://warppool.org/it/suite/\">Scopri di più sulla WarpSuite →</a>",
     fl_h: "Cosa fa WarpAxe",
     fl_status: "<strong>Stato:</strong> firmware in fase iniziale. Funziona su Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano e NerdNOS; altre otto schede hanno un profilo.",
     fl_g1: "Schede e primo avvio",
@@ -829,6 +856,11 @@ const T = {
     lp_c6p: "Superaquecimento ou falha do regulador desligam a tensão do núcleo. Depois de esfriar, o minerador volta a ligar sozinho; se parar pela terceira vez em uma hora, permanece desligado. Leituras implausíveis dos sensores nunca chegam às malhas de controle.",
     lp_honest: "<strong>Para ser honesto:</strong> o AxeOS e o NerdOS rodam em muito mais placas, têm anos de uso por uma grande comunidade e oferecem coisas que o WarpAxe não tem, como configuração do Wi-Fi por Bluetooth, mineração em dois pools ao mesmo tempo ou alertas. Se você precisa disso, fique com o firmware original. Se for testar o WarpAxe, guarde o backup.",
     lp_tune: "Quer consumir menos com a mesma hashrate? O <a href=\"https://warppool.org/pt/warptune/\">WarpTune</a> encontra para cada minerador a menor tensão do núcleo sem erros, tanto no WarpAxe quanto no AxeOS e no NerdOS.",
+    ws_t: "A WarpSuite: WarpAxe, WarpPool, WarpTune",
+    ws_1: "Cada um funciona sozinho; juntos, fazem mais.",
+    ws_2: "Firmware original (AxeOS, NerdOS, ForgeOS) + WarpPool: mineração solo, 0 % de taxa. + WarpTune: o melhor ponto estável, Eco, Max ou conforme o preço da energia.",
+    ws_3: "+ WarpAxe: frequência por chip e uma verificação de pagamento que troca de pool sozinha se um pool solo parar de pagar você.",
+    ws_more: "<a href=\"https://warppool.org/pt/suite/\">Saiba mais sobre a WarpSuite →</a>",
     fl_h: "O que o WarpAxe faz",
     fl_status: "<strong>Status:</strong> firmware em estágio inicial. Roda em Bitaxe Gamma, NerdQAxe++, NerdOCTAXE-γ, NerdAxe Gaia, BitForge Nano e NerdNOS; outras oito placas têm um perfil.",
     fl_g1: "Placas e primeira inicialização",
@@ -945,6 +977,11 @@ const T = {
     lp_c6p: "過熱やレギュレーターの異常を検知するとコア電圧を切ります。冷えるとマイナーは自動で再開しますが、1 時間以内に 3 回目の停止が起きた場合はオフのままになります。明らかに異常なセンサー値は制御ループに渡しません。",
     lp_honest: "<strong>正直に言うと：</strong>AxeOS と NerdOS ははるかに多くのボードで動き、大きなコミュニティで何年も使われてきました。Bluetooth での Wi-Fi 設定、2 つのプールでの同時マイニング、アラートなど、WarpAxe にない機能もあります。それらが必要なら純正ファームウェアのままにしてください。WarpAxe を試すなら、バックアップは残しておいてください。",
     lp_tune: "同じハッシュレートのまま消費電力を下げたいですか？<a href=\"https://warppool.org/ja/warptune/\">WarpTune</a> がマイナーごとにエラーの出ない最低のコア電圧を見つけます。WarpAxe でも AxeOS や NerdOS でも使えます。",
+    ws_t: "WarpSuite：WarpAxe、WarpPool、WarpTune",
+    ws_1: "それぞれ単独でも使えますが、組み合わせるとさらに多くのことができます。",
+    ws_2: "純正ファームウェア（AxeOS、NerdOS、ForgeOS）+ WarpPool：ソロマイニング、手数料 0%。+ WarpTune：最適な安定ポイントを、Eco、Max、または電気料金に合わせて。",
+    ws_3: "+ WarpAxe：チップごとのクロック設定と、ソロプールからの支払いが止まると自動でプールを切り替える支払いチェック。",
+    ws_more: "<a href=\"https://warppool.org/ja/suite/\">WarpSuite について詳しく →</a>",
     fl_h: "WarpAxe でできること",
     fl_status: "<strong>ステータス：</strong>初期段階のファームウェアです。Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano、NerdNOS で動作し、ほかに 8 種類のボードのプロファイルがあります。",
     fl_g1: "ボードと初回起動",
@@ -1061,6 +1098,11 @@ const T = {
     lp_c6p: "过热或稳压器故障时会切断核心电压。冷却后矿机自动重新启动；一小时内第三次停机则保持关闭。不合理的传感器读数绝不会参与调节。",
     lp_honest: "<strong>坦白说：</strong>AxeOS 和 NerdOS 支持的板卡多得多，背后有庞大社区多年的实际使用，还提供 WarpAxe 没有的功能，例如通过蓝牙配置 Wi-Fi、同时在两个矿池挖矿或告警。如果你需要这些，请继续使用原厂固件。如果你要试用 WarpAxe，请保管好备份。",
     lp_tune: "想在算力不变的情况下省电？<a href=\"https://warppool.org/zh/warptune/\">WarpTune</a> 会为每台矿机找到无错误的最低核心电压，在 WarpAxe、AxeOS 和 NerdOS 上都适用。",
+    ws_t: "WarpSuite：WarpAxe、WarpPool、WarpTune",
+    ws_1: "每款都能单独运行，搭配使用能做得更多。",
+    ws_2: "原厂固件（AxeOS、NerdOS、ForgeOS）+ WarpPool：单人挖矿，0% 手续费。+ WarpTune：找到最佳稳定点，可选 Eco、Max 或按电价调节。",
+    ws_3: "+ WarpAxe：逐芯片设置频率；单人矿池不再向你付款时，收益核对会自动切换矿池。",
+    ws_more: "<a href=\"https://warppool.org/zh/suite/\">进一步了解 WarpSuite →</a>",
     fl_h: "WarpAxe 的功能",
     fl_status: "<strong>状态：</strong>早期阶段的固件。可在 Bitaxe Gamma、NerdQAxe++、NerdOCTAXE-γ、NerdAxe Gaia、BitForge Nano 和 NerdNOS 上运行；另有八款板卡已有配置文件。",
     fl_g1: "板卡与首次启动",
