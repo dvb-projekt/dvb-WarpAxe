@@ -333,7 +333,9 @@ fn static_guard() -> Option<Guard> {
     }
     let n = super::state();
     if n.eth_fitted == Some(true) && !n.eth_failed {
-        log::info!("wifi: the static IPv4 address goes to the Ethernet HAT, the station keeps DHCP");
+        log::info!(
+            "wifi: the static IPv4 address goes to the Ethernet HAT, the station keeps DHCP"
+        );
         return None;
     }
     Some(Guard::new(s, "wifi"))

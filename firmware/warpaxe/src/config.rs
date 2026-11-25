@@ -1567,7 +1567,9 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     // The static IPv4 fields are taken trimmed; switched on, all of them
     // must make a working address (warpaxe_board::static_ip), so a typo
     // is refused here rather than cutting the miner off at the next
-    // start. Switched off they are kept as typed, unchecked.
+    // start. Switched off they are kept as typed, unchecked. Only a PATCH
+    // that touches them is checked: a stored set never blocks other
+    // settings.
     for f in [
         &mut cfg.static_ip_addr,
         &mut cfg.static_netmask,
@@ -1577,9 +1579,11 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     ] {
         *f = f.trim().to_string();
     }
-    if cfg.static_ip {
-        cfg.static_settings()
-            .map_err(|e| anyhow::anyhow!(e.text()))?;
+    let touches_static = v
+        .as_object()
+        .is_some_and(|o| o.keys().any(|k| k.starts_with("static")));
+    if cfg.static_ip && touches_static {
+        cfg.static_settings().map_err(|e| anyhow::anyhow!(e.text()))?;
     }
     if cfg.payout_max_fee > warpaxe_stratum::payout_check::MAX_FEE_LIMIT {
         anyhow::bail!("payoutMaxFee is in tenths of a percent, 0 to 1000");

@@ -82,15 +82,27 @@ impl Error {
     pub fn text(self) -> &'static str {
         match self {
             Error::BadAddr => "staticIpAddr is not an IPv4 address (e.g. 192.168.1.50)",
-            Error::AddrNotUnicast => "staticIpAddr cannot be a device address (0.x, 127.x, multicast or broadcast)",
+            Error::AddrNotUnicast => {
+                "staticIpAddr cannot be a device address (0.x, 127.x, multicast or broadcast)"
+            }
             Error::BadMask => "staticNetmask is not a subnet mask (e.g. 255.255.255.0 or 24)",
-            Error::MaskRange => "staticNetmask must be between /8 (255.0.0.0) and /30 (255.255.255.252)",
+            Error::MaskRange => {
+                "staticNetmask must be between /8 (255.0.0.0) and /30 (255.255.255.252)"
+            }
             Error::BadGateway => "staticGateway is not an IPv4 address",
-            Error::GatewayNotUnicast => "staticGateway cannot be a device address (0.x, 127.x, multicast or broadcast)",
-            Error::GatewayOutsideSubnet => "staticGateway is not in the subnet of staticIpAddr and staticNetmask",
+            Error::GatewayNotUnicast => {
+                "staticGateway cannot be a device address (0.x, 127.x, multicast or broadcast)"
+            }
+            Error::GatewayOutsideSubnet => {
+                "staticGateway is not in the subnet of staticIpAddr and staticNetmask"
+            }
             Error::GatewayIsAddr => "staticGateway is the miner's own address",
-            Error::AddrIsNetworkOrBroadcast => "staticIpAddr is the network or broadcast address of its subnet",
-            Error::GatewayIsNetworkOrBroadcast => "staticGateway is the network or broadcast address of its subnet",
+            Error::AddrIsNetworkOrBroadcast => {
+                "staticIpAddr is the network or broadcast address of its subnet"
+            }
+            Error::GatewayIsNetworkOrBroadcast => {
+                "staticGateway is the network or broadcast address of its subnet"
+            }
             Error::BadDns => "staticDns is not an IPv4 address (empty = the gateway)",
             Error::BadDns2 => "staticDns2 is not an IPv4 address (empty = none)",
         }
@@ -170,12 +182,18 @@ pub fn validate(
     let d = if dns.trim().is_empty() {
         g
     } else {
-        parse_addr(dns).filter(|d| unicast(*d)).ok_or(Error::BadDns)?
+        parse_addr(dns)
+            .filter(|d| unicast(*d))
+            .ok_or(Error::BadDns)?
     };
     let d2 = if dns2.trim().is_empty() {
         None
     } else {
-        Some(parse_addr(dns2).filter(|d| unicast(*d)).ok_or(Error::BadDns2)?)
+        Some(
+            parse_addr(dns2)
+                .filter(|d| unicast(*d))
+                .ok_or(Error::BadDns2)?,
+        )
     };
     Ok(Settings {
         addr: a,
@@ -311,27 +329,65 @@ mod tests {
             validate("192.168.1.5", "255.255.255.254", "192.168.1.1", "", ""),
             Err(Error::MaskRange)
         );
-        assert_eq!(validate("10.1.1.5", "7", "10.1.1.1", "", ""), Err(Error::MaskRange));
+        assert_eq!(
+            validate("10.1.1.5", "7", "10.1.1.1", "", ""),
+            Err(Error::MaskRange)
+        );
         assert!(validate("192.168.1.1", "30", "192.168.1.2", "", "").is_ok());
     }
 
     #[test]
     fn typos_are_refused_with_the_field_named() {
-        assert_eq!(validate("192.168.1", "24", "192.168.1.1", "", ""), Err(Error::BadAddr));
-        assert_eq!(validate("192.168.1.256", "24", "192.168.1.1", "", ""), Err(Error::BadAddr));
-        assert_eq!(validate("192.168.01.5", "24", "192.168.1.1", "", ""), Err(Error::BadAddr));
-        assert_eq!(validate("192.168.1.5", "abc", "192.168.1.1", "", ""), Err(Error::BadMask));
-        assert_eq!(validate("192.168.1.5", "24", "", "", ""), Err(Error::BadGateway));
-        assert_eq!(validate("192.168.1.5", "24", "192.168.1.1", "dns", ""), Err(Error::BadDns));
-        assert_eq!(validate("192.168.1.5", "24", "192.168.1.1", "", "x"), Err(Error::BadDns2));
-        assert_eq!(validate("192.168.1.5", "24", "192.168.1.1", "224.0.0.1", ""), Err(Error::BadDns));
+        assert_eq!(
+            validate("192.168.1", "24", "192.168.1.1", "", ""),
+            Err(Error::BadAddr)
+        );
+        assert_eq!(
+            validate("192.168.1.256", "24", "192.168.1.1", "", ""),
+            Err(Error::BadAddr)
+        );
+        assert_eq!(
+            validate("192.168.01.5", "24", "192.168.1.1", "", ""),
+            Err(Error::BadAddr)
+        );
+        assert_eq!(
+            validate("192.168.1.5", "abc", "192.168.1.1", "", ""),
+            Err(Error::BadMask)
+        );
+        assert_eq!(
+            validate("192.168.1.5", "24", "", "", ""),
+            Err(Error::BadGateway)
+        );
+        assert_eq!(
+            validate("192.168.1.5", "24", "192.168.1.1", "dns", ""),
+            Err(Error::BadDns)
+        );
+        assert_eq!(
+            validate("192.168.1.5", "24", "192.168.1.1", "", "x"),
+            Err(Error::BadDns2)
+        );
+        assert_eq!(
+            validate("192.168.1.5", "24", "192.168.1.1", "224.0.0.1", ""),
+            Err(Error::BadDns)
+        );
         assert!(Error::GatewayOutsideSubnet.text().contains("staticGateway"));
     }
 
     #[test]
     fn no_address_a_host_cannot_have() {
-        for a in ["0.0.0.0", "0.1.2.3", "127.0.0.1", "224.0.0.5", "240.0.0.1", "255.255.255.255"] {
-            assert_eq!(validate(a, "8", "10.0.0.1", "", ""), Err(Error::AddrNotUnicast), "{a}");
+        for a in [
+            "0.0.0.0",
+            "0.1.2.3",
+            "127.0.0.1",
+            "224.0.0.5",
+            "240.0.0.1",
+            "255.255.255.255",
+        ] {
+            assert_eq!(
+                validate(a, "8", "10.0.0.1", "", ""),
+                Err(Error::AddrNotUnicast),
+                "{a}"
+            );
         }
         assert_eq!(
             validate("192.168.1.5", "24", "127.0.0.1", "", ""),

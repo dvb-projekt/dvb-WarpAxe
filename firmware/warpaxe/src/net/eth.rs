@@ -376,7 +376,10 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         // The lock-out guard: no answer on the static address for a few
         // minutes of link and the cable goes back to DHCP for the boot.
         // The stop resets the netif to DHCP; the start asks for a lease.
-        if guard.as_mut().is_some_and(|g| g.tick(link && ip.is_some()) == Step::FallBack) {
+        if guard
+            .as_mut()
+            .is_some_and(|g| g.tick(link && ip.is_some()) == Step::FallBack)
+        {
             if let Err(e) = eth.stop() {
                 log::warn!("eth: stop failed: {e}");
             }
