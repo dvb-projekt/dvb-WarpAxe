@@ -421,7 +421,7 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     *PART.lock().unwrap() = Some(part.clone());
     let nvs = EspNvs::new(part, "warpaxe", true)?;
     let mut buf = vec![0u8; MAX_BYTES];
-    let cfg = match nvs.get_raw(KEY, &mut buf) {
+    let mut cfg = match nvs.get_raw(KEY, &mut buf) {
         Ok(Some(bytes)) => match serde_json::from_slice::<Config>(bytes) {
             Ok(c) => c,
             Err(e) => {
@@ -431,6 +431,12 @@ pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
         },
         _ => Config::default(),
     };
+    // Longer than a PATCH takes (only an old test build could store
+    // one): off, so it neither blocks a PATCH nor reaches the network.
+    if cfg.static_ipv4.len() > STATIC_MAX {
+        log::warn!("config: staticIpv4 too long, cleared (static IPv4 off)");
+        cfg.static_ipv4.clear();
+    }
     log::info!(
         "config: hostname={} wifi={:?} pool={}:{}",
         cfg.hostname,
@@ -1567,13 +1573,13 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     // that touches them (or usbSubnet, whose /24 they must not overlap)
     // is checked: a stored set never blocks other settings.
     cfg.static_ipv4.retain(|c| c != ' ');
-    if cfg.static_ipv4.len() > STATIC_MAX {
-        anyhow::bail!("staticIpv4 longer than {STATIC_MAX} characters");
-    }
     let touches_static = v.as_object().is_some_and(|o| {
         o.keys()
             .any(|k| k.starts_with("static") || k == "usbSubnet")
     });
+    if touches_static && cfg.static_ipv4.len() > STATIC_MAX {
+        anyhow::bail!("staticIpv4 longer than {STATIC_MAX} characters");
+    }
     if cfg.static_ip_on() && touches_static {
         cfg.static_settings()
             .map_err(|e| anyhow::anyhow!(e.text()))?;
