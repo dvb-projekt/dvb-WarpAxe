@@ -81,30 +81,18 @@ impl Error {
     /// The reason in English, naming the field.
     pub fn text(self) -> &'static str {
         match self {
-            Error::BadAddr => "staticIpAddr is not an IPv4 address (e.g. 192.168.1.50)",
-            Error::AddrNotUnicast => {
-                "staticIpAddr cannot be a device address (0.x, 127.x, multicast or broadcast)"
-            }
-            Error::BadMask => "staticNetmask is not a subnet mask (e.g. 255.255.255.0 or 24)",
-            Error::MaskRange => {
-                "staticNetmask must be between /8 (255.0.0.0) and /30 (255.255.255.252)"
-            }
-            Error::BadGateway => "staticGateway is not an IPv4 address",
-            Error::GatewayNotUnicast => {
-                "staticGateway cannot be a device address (0.x, 127.x, multicast or broadcast)"
-            }
-            Error::GatewayOutsideSubnet => {
-                "staticGateway is not in the subnet of staticIpAddr and staticNetmask"
-            }
-            Error::GatewayIsAddr => "staticGateway is the miner's own address",
-            Error::AddrIsNetworkOrBroadcast => {
-                "staticIpAddr is the network or broadcast address of its subnet"
-            }
-            Error::GatewayIsNetworkOrBroadcast => {
-                "staticGateway is the network or broadcast address of its subnet"
-            }
-            Error::BadDns => "staticDns is not an IPv4 address (empty = the gateway)",
-            Error::BadDns2 => "staticDns2 is not an IPv4 address (empty = none)",
+            Error::BadAddr => "IPv4 address invalid",
+            Error::AddrNotUnicast => "IPv4 address not usable for a device",
+            Error::BadMask => "subnet mask invalid",
+            Error::MaskRange => "subnet mask must be /8 to /30",
+            Error::BadGateway => "gateway invalid",
+            Error::GatewayNotUnicast => "gateway not usable for a device",
+            Error::GatewayOutsideSubnet => "gateway not in the subnet",
+            Error::GatewayIsAddr => "gateway is the miner's own address",
+            Error::AddrIsNetworkOrBroadcast => "IPv4 address is the subnet's network or broadcast",
+            Error::GatewayIsNetworkOrBroadcast => "gateway is the subnet's network or broadcast",
+            Error::BadDns => "DNS server invalid",
+            Error::BadDns2 => "second DNS server invalid",
         }
     }
 }
@@ -117,53 +105,48 @@ fn mask_bits(prefix: u8) -> u32 {
     }
 }
 
-/// A dotted IPv4 address, spaces around it taken. Leading zeros are
-/// refused (`010.1.1.1` would read as octal elsewhere).
-pub fn parse_addr(s: &str) -> Option<Ipv4Addr> {
-    s.trim().parse().ok()
-}
-
 /// A mask as dotted quad (`255.255.255.0`) or prefix length (`24`, `/24`):
-/// its prefix length, if the bits are contiguous.
+/// its prefix length, if the bits are contiguous. Spaces are taken off by
+/// the caller.
 pub fn parse_mask(s: &str) -> Option<u8> {
-    let s = s.trim();
     let s = s.strip_prefix('/').unwrap_or(s);
-    if !s.is_empty() && s.len() <= 2 && s.bytes().all(|b| b.is_ascii_digit()) {
-        let n: u8 = s.parse().ok()?;
-        return (n <= 32).then_some(n);
-    }
-    let bits = u32::from(parse_addr(s)?);
+    let bits = if s.len() <= 2 {
+        // A prefix length; mask_bits(33..) is never reached.
+        let n: u8 = s.parse().ok().filter(|n| *n <= 32)?;
+        return Some(n);
+    } else {
+        u32::from(s.parse::<Ipv4Addr>().ok()?)
+    };
     let prefix = bits.leading_ones() as u8;
     (mask_bits(prefix) == bits).then_some(prefix)
 }
 
-/// An address a host on a LAN can carry or talk to as its gateway.
-fn unicast(a: Ipv4Addr) -> bool {
-    let o = a.octets();
-    !(o[0] == 0 || a.is_loopback() || a.is_multicast() || o[0] >= 240 || a.is_broadcast())
+/// A dotted address a host on a LAN can carry or talk to as its gateway
+/// (no 0.x, 127.x, multicast, 240+ or broadcast; no leading zeros:
+/// `010.1.1.1` would read as octal elsewhere): `bad` when it is not an
+/// address, `not_host` when it is one no host can have.
+fn host_addr(s: &str, bad: Error, not_host: Error) -> Result<Ipv4Addr, Error> {
+    let a: Ipv4Addr = s.parse().map_err(|_| bad)?;
+    let o = a.octets()[0];
+    if o == 0 || o == 127 || o >= 224 {
+        return Err(not_host);
+    }
+    Ok(a)
 }
 
-/// Check the five fields as the API receives them. `dns` empty = the
+/// The five fields as the config keeps them, in one string:
+/// `address,mask,gateway,dns,dns2` (spaces taken off, empty slots
+/// allowed, missing trailing ones count as empty). `dns` empty = the
 /// gateway answers DNS (what most home routers do); `dns2` empty = none.
-pub fn validate(
-    addr: &str,
-    mask: &str,
-    gateway: &str,
-    dns: &str,
-    dns2: &str,
-) -> Result<Settings, Error> {
-    let a = parse_addr(addr).ok_or(Error::BadAddr)?;
-    if !unicast(a) {
-        return Err(Error::AddrNotUnicast);
-    }
-    let prefix = parse_mask(mask).ok_or(Error::BadMask)?;
+pub fn validate_packed(s: &str) -> Result<Settings, Error> {
+    let mut f = s.split(',').map(str::trim);
+    let mut next = || f.next().unwrap_or("");
+    let a = host_addr(next(), Error::BadAddr, Error::AddrNotUnicast)?;
+    let prefix = parse_mask(next()).ok_or(Error::BadMask)?;
     if !(8..=30).contains(&prefix) {
         return Err(Error::MaskRange);
     }
-    let g = parse_addr(gateway).ok_or(Error::BadGateway)?;
-    if !unicast(g) {
-        return Err(Error::GatewayNotUnicast);
-    }
+    let g = host_addr(next(), Error::BadGateway, Error::GatewayNotUnicast)?;
     let m = mask_bits(prefix);
     let (ab, gb) = (u32::from(a), u32::from(g));
     if ab & m != gb & m {
@@ -172,29 +155,24 @@ pub fn validate(
     if ab == gb {
         return Err(Error::GatewayIsAddr);
     }
-    let host = |x: u32| x & !m;
-    if host(ab) == 0 || host(ab) == !m {
+    let edge = |x: u32| x & !m == 0 || x & !m == !m;
+    if edge(ab) {
         return Err(Error::AddrIsNetworkOrBroadcast);
     }
-    if host(gb) == 0 || host(gb) == !m {
+    if edge(gb) {
         return Err(Error::GatewayIsNetworkOrBroadcast);
     }
-    let d = if dns.trim().is_empty() {
-        g
-    } else {
-        parse_addr(dns)
-            .filter(|d| unicast(*d))
-            .ok_or(Error::BadDns)?
+    let d = match next() {
+        "" => g,
+        x => host_addr(x, Error::BadDns, Error::BadDns)?,
     };
-    let d2 = if dns2.trim().is_empty() {
-        None
-    } else {
-        Some(
-            parse_addr(dns2)
-                .filter(|d| unicast(*d))
-                .ok_or(Error::BadDns2)?,
-        )
+    let d2 = match next() {
+        "" => None,
+        x => Some(host_addr(x, Error::BadDns2, Error::BadDns2)?),
     };
+    if f.next().is_some() {
+        return Err(Error::BadDns2);
+    }
     Ok(Settings {
         addr: a,
         prefix,
@@ -294,6 +272,11 @@ impl Watch {
 mod tests {
     use super::*;
 
+    /// The five fields one by one, as the tests write them.
+    fn validate(a: &str, m: &str, g: &str, d: &str, d2: &str) -> Result<Settings, Error> {
+        validate_packed(&[a, m, g, d, d2].join(","))
+    }
+
     fn ok(a: &str, m: &str, g: &str) -> Settings {
         validate(a, m, g, "", "").unwrap()
     }
@@ -370,7 +353,7 @@ mod tests {
             validate("192.168.1.5", "24", "192.168.1.1", "224.0.0.1", ""),
             Err(Error::BadDns)
         );
-        assert!(Error::GatewayOutsideSubnet.text().contains("staticGateway"));
+        assert!(Error::GatewayOutsideSubnet.text().contains("gateway"));
     }
 
     #[test]
@@ -425,6 +408,20 @@ mod tests {
         );
         // .255 is a host in a /23.
         assert!(validate("192.168.0.255", "23", "192.168.1.1", "", "").is_ok());
+    }
+
+    #[test]
+    fn the_packed_form_is_the_five_fields_in_order() {
+        let s = validate_packed("192.168.1.50,24,192.168.1.1,,9.9.9.9").unwrap();
+        assert_eq!(s.dns, Ipv4Addr::new(192, 168, 1, 1));
+        assert_eq!(s.dns2, Some(Ipv4Addr::new(9, 9, 9, 9)));
+        assert!(validate_packed("192.168.1.50,24,192.168.1.1").is_ok());
+        assert_eq!(validate_packed(""), Err(Error::BadAddr));
+        assert_eq!(validate_packed("192.168.1.50,24"), Err(Error::BadGateway));
+        assert_eq!(
+            validate_packed("192.168.1.50,24,192.168.1.1,,,x"),
+            Err(Error::BadDns2)
+        );
     }
 
     #[test]

@@ -11,30 +11,36 @@ default, with a guard so that a typo cannot cut the miner off.
 
 ## Settings
 
-| Field | Meaning |
-|---|---|
-| `staticIp` | the switch; off by default |
-| `staticIpAddr` | the address, dotted |
-| `staticNetmask` | dotted (`255.255.255.0`) or a prefix length (`24`, `/24`) |
-| `staticGateway` | the router |
-| `staticDns` | first DNS server; empty = the gateway |
-| `staticDns2` | second DNS server; empty = none |
+One config field, `staticIpv4`, holds the switch and the five fields:
 
-They apply at boot. A `PATCH /api/system` with the switch on (or turning
-it on) is checked as a whole by `warpaxe_board::static_ip::validate`
+```
+192.168.1.50,24,192.168.1.1,,9.9.9.9      on
+-192.168.1.50,24,192.168.1.1,,9.9.9.9     off, the fields kept
+                                          (empty) off
+```
+
+In order: the address; the mask, dotted (`255.255.255.0`) or a prefix
+length (`24`, `/24`); the gateway (the router); the first DNS server
+(empty = the gateway); the second (empty = none). Missing trailing
+fields count as empty, spaces are taken off. One field instead of six
+because every field of `Config` costs 0.5 to 0.9 KB of image in its
+serde code (see "Image size" below).
+
+The setting applies at boot. A `PATCH /api/system` that sets it on is
+checked as a whole by `warpaxe_board::static_ip::validate_packed`
 (host-tested) and refused with a 400 naming the field when the settings
 cannot work:
 
-- every address is dotted IPv4 unicast (no 0.x, 127.x, multicast, class E
-  or 255.255.255.255; no leading zeros);
+- every address is dotted IPv4 a host can have (no 0.x, 127.x,
+  multicast, 240 and up, 255.255.255.255; no leading zeros);
 - the mask is contiguous and between /8 and /30;
 - the gateway lies in the address's subnet and is not the address;
 - neither the address nor the gateway is the subnet's network or
   broadcast address.
 
-With the switch off the fields are stored trimmed and unchecked, so a
-half-filled form can be kept. Existing configs read the new fields as
-their defaults (off, empty): nothing changes for them.
+Switched off, the fields are stored unchecked, so a half-filled form can
+be kept. Existing configs read the field as empty (off): nothing changes
+for them.
 
 ## Which interface
 
@@ -99,15 +105,43 @@ System info (and so the diagnostics file):
 
 | Field | |
 |---|---|
-| `ipMode` | `dhcp`, `static`, `static-fallback` |
-| `staticIpInterface` | `wifi`, `ethernet`, or null |
-| `staticIpConfirmed` | the gateway or the pool answered on the static address |
-| `ipNetmask`, `ipGateway`, `ipDns` | what the LAN interface uses now (DHCP or static): the hint under the static fields |
+| `ipMode` | `dhcp`; `static-wait` (static, nothing has answered yet); `static` (the gateway or the pool answered); `static-fallback` (no answer, DHCP until a restart) |
+| `ipv4Now` | what the LAN interface uses now (DHCP or static) as `"mask,gateway,dns"`, the hint under the static fields; null without a LAN address |
+
+Which interface carries the static address is in the log
+(`static ip: wifi …` / `static ip: ethernet …`) and in the event.
 
 ## UI
 
 Network tab: a switch "Static IPv4" under the IPv6 switch; the five
 fields show only while it is on, each with the value in use now. The
 Connection block gets a line: in use (green), waiting for the gateway, or
-given up for DHCP (yellow). Texts in all eight UI languages; the six
-translated ones still need the native-speaker check before a release.
+given up for DHCP (yellow). Texts in all eight UI languages, the six
+translations native-speaker checked (2026-11-25). The page splits
+`staticIpv4` into the five fields and joins them back on save.
+
+## Image size
+
+The first build added 25.4 KB to the image (against main c7e1976 built
+in a worktree of the same path length). Taken out without giving up
+function, each step measured on its own:
+
+| Step | Bytes |
+|---|---|
+| Ip4 hint as plain bytes instead of three Strings | −304 |
+| Ip4 hint out of `NetState` (every reader copies the state) | −1,344 |
+| five String fields of `Config` packed into one | −4,592 |
+| `system_info`: three fields instead of six | −960 |
+| shorter error texts and log lines, no clone of the stratum state per tick | −352 |
+| the switch into the same field (`-` = off) | −624 |
+| `ipMode` carries "waiting" instead of its own field | −352 |
+| one validation function instead of two, a byte for the mode instead of enum + mutex | −4,560 |
+
+The last step gained more than its own functions weigh: with less code
+in the network threads, LLVM inlined the surrounding code as it did
+before the feature. Two tries did not count and were dropped: the raw
+`esp_wifi_disconnect` instead of `BlockingWifi::disconnect` (+16), and a
+short dashboard note instead of the long one (−528, kept the long one).
+The TCP probe costs nothing: `connect_timeout` and `lwip_select` were in
+the image already, as was core's IPv4 parser.
+

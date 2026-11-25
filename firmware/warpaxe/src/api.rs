@@ -392,19 +392,24 @@ pub fn system_info() -> serde_json::Value {
     if let (Some(o), Some(e)) = (v.as_object_mut(), eth.as_object()) {
         o.extend(e.clone());
     }
-    // IPv4 addressing of the LAN interface: `ipMode` dhcp, static or
-    // static-fallback (the static address had no answer and DHCP took
-    // over until a restart), the interface the static address is for,
-    // whether it has answered, and the mask, gateway and DNS in use now
-    // (the hint next to the static fields).
-    let (mode, static_if, static_ok) = crate::net::static_ip::status();
-    let ip4 = n.lan_ip4();
-    v["ipMode"] = json!(mode.as_str());
-    v["staticIpInterface"] = json!(static_if);
-    v["staticIpConfirmed"] = json!(static_ok);
-    v["ipNetmask"] = json!(ip4.map(|i| i.mask.as_str()));
-    v["ipGateway"] = json!(ip4.map(|i| i.gateway.as_str()));
-    v["ipDns"] = json!(ip4.map(|i| i.dns.as_str()).filter(|d| !d.is_empty()));
+    // IPv4 addressing of the LAN interface: `ipMode` dhcp, static-wait
+    // (static, nothing has answered yet), static (answered) or
+    // static-fallback (no answer, DHCP until a restart), and `ipv4Now`,
+    // the mask, gateway and DNS in use now as "mask,gateway,dns" (the
+    // hint next to the static fields; null without a LAN address).
+    v["ipMode"] = json!(crate::net::static_ip::mode());
+    v["ipv4Now"] = json!(crate::net::lan_ip4(&n).map(|i| {
+        let mut s = String::new();
+        for a in [i.mask, i.gateway, i.dns] {
+            if !s.is_empty() {
+                s.push(',');
+            }
+            if a != [0; 4] {
+                s += &std::net::Ipv4Addr::from(a).to_string();
+            }
+        }
+        s
+    }));
     // Discord notifications (docs/22): whether a webhook is set (never
     // the URL: it holds a token) and the last send's result (null
     // before the first): ok, HTTP code, error, what, unix time, uptime.

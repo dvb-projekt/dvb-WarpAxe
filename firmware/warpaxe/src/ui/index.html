@@ -814,7 +814,7 @@ function collect(form, cfg) {
 // network ones). Pool fields apply at once: the firmware reconnects on
 // every stratum*/fallbackStratum* change (api.rs, PATCH /api/system).
 async function save(form, restartKeys) {
-  const cfg = state.config, body = Object.assign(collect(form, cfg), displayCollect(form), chipClockCollect(form));
+  const cfg = state.config, body = Object.assign(collect(form, cfg), displayCollect(form), chipClockCollect(form), staticCollect(form));
   if (!Object.keys(body).length) return toast(t("nothing"));
   // One save at a time: a second tap while the first is on its way (the
   // captive window on a phone gives little feedback) would restart twice.
@@ -1008,8 +1008,8 @@ function fanChipNotice(i) {
 /* The static IPv4 address got no answer and the miner went back to DHCP
    for this boot (docs/24): it is reachable, but not where it was set. */
 function staticIpNotice(i) {
-  const c = state?.config || {};
-  return i.ipMode === "static-fallback" ? `<a href="#/network" class="note" style="background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3);align-items:center;text-decoration:none;color:inherit"><b class="warn">${t("staticIp")}</b><span class="mute" style="flex:1">${t("sip_fb_dash", {ip: esc(c.staticIpAddr || ""), gw: esc(c.staticGateway || "")})}</span><span class="warn">${t("nav_network")} →</span></a>` : "";
+  const f = (state?.config?.staticIpv4 || "").replace(/^-/, "").split(",");
+  return i.ipMode === "static-fallback" ? `<a href="#/network" class="note" style="background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3);align-items:center;text-decoration:none;color:inherit"><b class="warn">${t("staticIp")}</b><span class="mute" style="flex:1">${t("sip_fb_dash", {ip: esc(f[0] || ""), gw: esc(f[2] || "")})}</span><span class="warn">${t("nav_network")} →</span></a>` : "";
 }
 function poolNotice(i) {
   return i.poolsUnavailable && i.chainStopped && !i.shutdown && !i.overheat_mode ? `<a href="#/pool" class="note" style="background:rgba(245,185,66,.08);border:1px solid rgba(245,185,66,.3);align-items:center;text-decoration:none;color:inherit"><b class="warn">${t("st_nopool")}</b><span class="mute" style="flex:1">${t("nopool_dash")}</span><span class="warn">${t("nav_pool")} →</span></a>` : "";
@@ -1055,13 +1055,20 @@ function ipv6Hint(c) {
 // value the LAN interface has now, from DHCP or static.
 function staticIpSec(c) {
   const i = info || {}, now = v => v ? t("sip_now", {v: `<span class="num">${esc(v)}</span>`}) : "";
-  const lan = i.netInterface === "ethernet" ? i.ethIP : i.wifiIP;
-  return tog("staticIp", !!c.staticIp, t("staticIp_s"), true) +
-    fld("staticIpAddr", c.staticIpAddr || "", {hint: now(lan)}) + fld("staticNetmask", c.staticNetmask || "", {hint: now(i.ipNetmask)}) +
-    fld("staticGateway", c.staticGateway || "", {hint: now(i.ipGateway)}) + fld("staticDns", c.staticDns || "", {hint: `${t("sip_dns_empty")} ${now(i.ipDns)}`}) +
-    fld("staticDns2", c.staticDns2 || "", {hint: t("sip_dns2_empty")});
+  const lan = i.netInterface === "ethernet" ? i.ethIP : i.wifiIP, [nm, gw, dns] = (i.ipv4Now || "").split(",");
+  // The config keeps the five as one string, staticIpv4 = "address,mask,gateway,dns,dns2".
+  const on = !!c.staticIpv4 && c.staticIpv4[0] !== "-", v = (c.staticIpv4 || "").replace(/^-/, "").split(","), hints = [now(lan), now(nm), now(gw), `${t("sip_dns_empty")} ${now(dns)}`, t("sip_dns2_empty")];
+  return tog("staticIp", on, t("staticIp_s"), true) + SIP_FIELDS.map((k, n) => fld(k, v[n] || "", {hint: hints[n]})).join("");
 }
 const SIP_FIELDS = ["staticIpAddr", "staticNetmask", "staticGateway", "staticDns", "staticDns2"];
+// The switch and the five fields back into staticIpv4 ("-" first = off,
+// the fields kept), when that differs from what is stored.
+function staticCollect(form) {
+  if (!form.elements.staticIpAddr) return {};
+  let s = SIP_FIELDS.map(k => form.elements[k].value.trim()).join(",").replace(/,+$/, "");
+  if (s && !form.elements.staticIp.checked) s = "-" + s;
+  return s !== (state.config.staticIpv4 || "") ? {staticIpv4: s} : {};
+}
 function networkPage() {
   const c = state?.config || {};
   const net = sec(t("network"), t("network_hint"), netStatus() + `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:8px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="lbl">${t("found_nets")}</span><button type="button" class="btn" data-act="scan" style="height:36px">${t("scan")}</button></div><div id="nets" style="display:flex;flex-direction:column;gap:6px">${netsHtml()}</div></div>` +
@@ -1287,7 +1294,7 @@ function netStatus() {
   if (n.usb?.mounted) rows.push(row("USB", esc(n.usb.ip || ""), i.netInterface === "usb"));
   // ipMode (docs/24): static in use, static waiting for its first
   // answer, or given up for DHCP until a restart.
-  const sip = i.ipMode === "static-fallback" ? `<div class="warn" style="font-size:13px">${t("sip_fb")}</div>` : i.ipMode === "static" ? `<div class="${i.staticIpConfirmed ? "ok" : "dim"}" style="font-size:13px">${t(i.staticIpConfirmed ? "sip_on" : "sip_wait")}</div>` : "";
+  const sip = i.ipMode === "static-fallback" ? `<div class="warn" style="font-size:13px">${t("sip_fb")}</div>` : i.ipMode === "static" ? `<div class="ok" style="font-size:13px">${t("sip_on")}</div>` : i.ipMode === "static-wait" ? `<div class="dim" style="font-size:13px">${t("sip_wait")}</div>` : "";
   return `<div style="grid-column:1/-1;display:flex;flex-direction:column;gap:6px"><span class="lbl">${t("net_conn")}</span>${rows.join("")}${sip}${i.ethStatus != null ? `<div class="dim" style="font-size:13px">${t("net_eth_hint")}</div>` : ""}</div>`;
 }
 function netsHtml() {
@@ -1736,7 +1743,7 @@ function render() {
   // switch as it is flipped (before saving).
   const pc = pf?.elements.payoutCheck, mf = pf?.elements.payoutMaxFee?.closest("label");
   if (pc && mf) { const sync = () => { mf.style.display = pc.checked ? "" : "none"; }; pc.addEventListener("change", sync); sync(); }
-  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "usbSubnet", "ssid", "wifiPass", "useNTP", "ntpServer", "staticIp", ...SIP_FIELDS]); };
+  const sf = $("#sf"); if (sf) sf.onsubmit = e => { e.preventDefault(); save(sf, ["hostname", "usbSubnet", "ssid", "wifiPass", "useNTP", "ntpServer", "staticIpv4"]); };
   // The static IPv4 fields only while the switch is on, following it as it is flipped.
   const si = sf?.elements.staticIp;
   if (si) { const sync = () => SIP_FIELDS.forEach(k => { const l = sf.elements[k]?.closest("label"); if (l) l.style.display = si.checked ? "" : "none"; }); si.addEventListener("change", sync); sync(); }

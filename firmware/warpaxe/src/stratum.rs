@@ -269,6 +269,16 @@ pub fn state() -> StratumState {
     STATE.lock().unwrap().clone().unwrap_or_default()
 }
 
+/// A pool session is up from the local IPv4 address `ip`, without cloning
+/// the whole state (the static IPv4 guard asks every two seconds).
+pub fn session_from(ip: &str) -> bool {
+    STATE
+        .lock()
+        .unwrap()
+        .as_ref()
+        .is_some_and(|s| s.connected && s.local_ip.as_deref() == Some(ip))
+}
+
 /// Whether the session in use is on the fallback pool, without cloning
 /// the whole state (the probe thread asks every 5 s on a 4 KB stack).
 fn using_fallback() -> bool {

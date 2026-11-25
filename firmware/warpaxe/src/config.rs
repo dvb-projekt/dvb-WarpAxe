@@ -211,23 +211,15 @@ pub struct Config {
     /// pool answers within `warpaxe_board::static_ip::GIVE_UP_S` of link,
     /// the interface goes back to DHCP until the next restart (event
     /// `static_ip_fallback`, `ipMode` "static-fallback").
-    #[serde(rename = "staticIp")]
-    pub static_ip: bool,
-    /// The address, dotted.
-    #[serde(rename = "staticIpAddr")]
-    pub static_ip_addr: String,
-    /// The mask, dotted or as a prefix length ("24").
-    #[serde(rename = "staticNetmask")]
-    pub static_netmask: String,
-    /// The router, inside the subnet.
-    #[serde(rename = "staticGateway")]
-    pub static_gateway: String,
-    /// The first DNS server; empty = the gateway.
-    #[serde(rename = "staticDns")]
-    pub static_dns: String,
-    /// The second DNS server; empty = none.
-    #[serde(rename = "staticDns2")]
-    pub static_dns2: String,
+    ///
+    /// The switch and the five fields in one string,
+    /// `address,mask,gateway,dns,dns2`: the mask dotted or as a prefix
+    /// length ("24"), dns empty = the gateway, dns2 empty = none
+    /// (`warpaxe_board::static_ip::validate_packed`); a leading `-` = off
+    /// with the fields kept, empty = off. One field instead of six: each
+    /// field of `Config` costs 0.5 to 0.9 KB of image in its serde code.
+    #[serde(rename = "staticIpv4")]
+    pub static_ipv4: String,
     /// The rated output of the power supply that feeds this miner, whole
     /// watts; 0 = unknown. Only reported: WarpTune keeps a miner below
     /// 80 % of it and searches no higher than the stock point without it.
@@ -379,12 +371,7 @@ impl Default for Config {
             chip_init: String::new(),
             usb_subnet: 7,
             ipv6: true,
-            static_ip: false,
-            static_ip_addr: String::new(),
-            static_netmask: String::new(),
-            static_gateway: String::new(),
-            static_dns: String::new(),
-            static_dns2: String::new(),
+            static_ipv4: String::new(),
             psu_watts: 0,
             // The screens of v0.1.30, spelt out: a device updated from
             // there shows no difference.
@@ -1483,17 +1470,17 @@ impl Config {
         is_sv2(&self.fallback_protocol)
     }
 
+    /// The static IPv4 address is switched on (`staticIpv4` set and not
+    /// starting with `-`).
+    pub fn static_ip_on(&self) -> bool {
+        !self.static_ipv4.is_empty() && !self.static_ipv4.starts_with('-')
+    }
+
     /// The static IPv4 settings, checked (whether or not the switch is on).
     pub fn static_settings(
         &self,
     ) -> Result<warpaxe_board::static_ip::Settings, warpaxe_board::static_ip::Error> {
-        warpaxe_board::static_ip::validate(
-            &self.static_ip_addr,
-            &self.static_netmask,
-            &self.static_gateway,
-            &self.static_dns,
-            &self.static_dns2,
-        )
+        warpaxe_board::static_ip::validate_packed(self.static_ipv4.trim_start_matches('-'))
     }
 
     pub fn redacted(&self) -> Config {
@@ -1564,26 +1551,19 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
                 .map_err(|r| anyhow::anyhow!(r.text()))?;
         }
     }
-    // The static IPv4 fields are taken trimmed; switched on, all of them
+    // The static IPv4 fields are taken without spaces; switched on, they
     // must make a working address (warpaxe_board::static_ip), so a typo
     // is refused here rather than cutting the miner off at the next
     // start. Switched off they are kept as typed, unchecked. Only a PATCH
     // that touches them is checked: a stored set never blocks other
     // settings.
-    for f in [
-        &mut cfg.static_ip_addr,
-        &mut cfg.static_netmask,
-        &mut cfg.static_gateway,
-        &mut cfg.static_dns,
-        &mut cfg.static_dns2,
-    ] {
-        *f = f.trim().to_string();
-    }
+    cfg.static_ipv4.retain(|c| c != ' ');
     let touches_static = v
         .as_object()
         .is_some_and(|o| o.keys().any(|k| k.starts_with("static")));
-    if cfg.static_ip && touches_static {
-        cfg.static_settings().map_err(|e| anyhow::anyhow!(e.text()))?;
+    if cfg.static_ip_on() && touches_static {
+        cfg.static_settings()
+            .map_err(|e| anyhow::anyhow!(e.text()))?;
     }
     if cfg.payout_max_fee > warpaxe_stratum::payout_check::MAX_FEE_LIMIT {
         anyhow::bail!("payoutMaxFee is in tenths of a percent, 0 to 1000");

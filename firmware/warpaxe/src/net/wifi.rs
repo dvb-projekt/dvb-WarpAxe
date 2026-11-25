@@ -235,11 +235,9 @@ fn run(
                     .map(|i| i.ip.to_string())
                     .ok();
                 log::info!("wifi: connected, ip {ip:?}");
+                super::set_ip4(false, super::Ip4::of(wifi.wifi().sta_netif()));
             }
             super::set_wifi(true, ip.clone(), rssi());
-            if n.wifi_ip4.is_none() {
-                super::set_wifi_ip4(super::Ip4::of(wifi.wifi().sta_netif()));
-            }
             // IPv6 (`docs/17`): the link-local address starts SLAAC
             // (LWIP_IPV6_AUTOCONFIG); the router's advertisement then adds
             // the global and unique-local ones a few seconds later. Once

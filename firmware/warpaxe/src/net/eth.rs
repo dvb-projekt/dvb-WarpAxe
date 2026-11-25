@@ -322,15 +322,14 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             match &now_ip {
                 Some(a) => {
                     log::info!("eth: address {a}, the default route is the cable");
-                    let ip4 = super::Ip4::of(eth.netif());
-                    super::set_eth(|s| s.eth_ip4 = ip4);
+                    super::set_ip4(true, super::Ip4::of(eth.netif()));
                     ip_since = Some(Instant::now());
                     moved = false;
                 }
                 None => {
                     log::warn!("eth: address gone, the default route is Wi-Fi (if up)");
                     ip_since = None;
-                    super::set_eth(|s| s.eth_ip4 = None);
+                    super::set_ip4(true, None);
                     link_since = link.then(Instant::now);
                     // A pool session still up on the cable's address is
                     // dead with it: end it now rather than wait for its

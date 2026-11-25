@@ -19,7 +19,7 @@
 //! DHCP until the next restart, with an event and a dashboard banner.
 
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::time::{Duration, Instant};
 
 use esp_idf_svc::handle::RawHandle;
@@ -27,46 +27,17 @@ use esp_idf_svc::netif::EspNetif;
 use esp_idf_svc::sys;
 use warpaxe_board::static_ip::{Settings, Verdict, Watch};
 
-/// How the LAN interface got its IPv4 address, for `ipMode`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum Mode {
-    #[default]
-    Dhcp,
-    Static,
-    /// Static was set and nothing answered on it: DHCP until a restart.
-    Fallback,
-}
+/// `ipMode`, by index: no static address, static and nothing has
+/// answered yet, static and answered, given up for DHCP until a restart.
+const MODES: [&str; 4] = ["dhcp", "static-wait", "static", "static-fallback"];
+const WAIT: u8 = 1;
+const CONFIRMED: u8 = 2;
+const FALLBACK: u8 = 3;
+static MODE: AtomicU8 = AtomicU8::new(0);
 
-impl Mode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Mode::Dhcp => "dhcp",
-            Mode::Static => "static",
-            Mode::Fallback => "static-fallback",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct Status {
-    mode: Mode,
-    /// "wifi" or "ethernet" while the static address is (or was) in use.
-    iface: Option<&'static str>,
-    /// The static address answered (gateway or pool) at least once.
-    confirmed: bool,
-}
-
-static STATUS: Mutex<Status> = Mutex::new(Status {
-    mode: Mode::Dhcp,
-    iface: None,
-    confirmed: false,
-});
-
-/// The mode, the interface the static address is meant for, and whether
-/// it has answered, for the API.
-pub fn status() -> (Mode, Option<&'static str>, bool) {
-    let s = *STATUS.lock().unwrap();
-    (s.mode, s.iface, s.confirmed)
+/// `ipMode` for the API.
+pub fn mode() -> &'static str {
+    MODES[usize::from(MODE.load(Ordering::Relaxed)) & 3]
 }
 
 /// The checked settings when the switch is on. A config that no longer
@@ -74,13 +45,13 @@ pub fn status() -> (Mode, Option<&'static str>, bool) {
 /// ignored with a log line: DHCP rather than an address that cannot work.
 pub fn planned() -> Option<Settings> {
     let cfg = crate::config::get();
-    if !cfg.static_ip {
+    if !cfg.static_ip_on() {
         return None;
     }
     match cfg.static_settings() {
         Ok(s) => Some(s),
         Err(e) => {
-            log::warn!("static ip: settings refused ({}), using DHCP", e.text());
+            log::warn!("static ip: {}, using DHCP", e.text());
             None
         }
     }
@@ -110,20 +81,18 @@ fn set_dns(handle: *mut sys::esp_netif_t, which: sys::esp_netif_dns_type_t, a: I
 pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     let h = netif.handle();
     // SAFETY: a valid netif handle; plain in-parameters.
-    let stop = unsafe { sys::esp_netif_dhcpc_stop(h) };
-    if stop != sys::ESP_OK && stop != sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED as i32 {
-        log::error!("static ip: stopping DHCP on {iface} failed: {stop}");
-        return false;
+    let mut r = unsafe { sys::esp_netif_dhcpc_stop(h) };
+    if r == sys::ESP_OK || r == sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED as i32 {
+        let info = sys::esp_netif_ip_info_t {
+            ip: addr_t(s.addr),
+            netmask: addr_t(s.mask()),
+            gw: addr_t(s.gateway),
+        };
+        // SAFETY: as above.
+        r = unsafe { sys::esp_netif_set_ip_info(h, &info) };
     }
-    let info = sys::esp_netif_ip_info_t {
-        ip: addr_t(s.addr),
-        netmask: addr_t(s.mask()),
-        gw: addr_t(s.gateway),
-    };
-    // SAFETY: as above.
-    let r = unsafe { sys::esp_netif_set_ip_info(h, &info) };
     if r != sys::ESP_OK {
-        log::error!("static ip: setting {} on {iface} failed: {r}", s.addr);
+        log::error!("static ip: not set on {iface}: {r}");
         return false;
     }
     // After the address: setting it clears the DNS servers.
@@ -131,19 +100,19 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     if let Some(d2) = s.dns2 {
         set_dns(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP, d2);
     }
-    let mut st = STATUS.lock().unwrap();
-    if st.mode != Mode::Static || st.iface != Some(iface) {
+    // The first time only (the address is set again before each
+    // association): log it and start in "waiting for an answer".
+    if MODE
+        .compare_exchange(0, WAIT, Ordering::Relaxed, Ordering::Relaxed)
+        .is_ok()
+    {
         log::info!(
-            "static ip: {iface} uses {}/{} via {}, DNS {}{}",
+            "static ip: {iface} {}/{} gw {}",
             s.addr,
             s.prefix,
-            s.gateway,
-            s.dns,
-            s.dns2.map(|d| format!(", {d}")).unwrap_or_default()
+            s.gateway
         );
     }
-    st.mode = Mode::Static;
-    st.iface = Some(iface);
     true
 }
 
@@ -217,8 +186,7 @@ impl Guard {
         }
         let now = self.t0.elapsed().as_secs() as u32;
         let addr = self.s.addr.to_string();
-        let st = crate::stratum::state();
-        let pool = link && st.connected && st.local_ip.as_deref() == Some(addr.as_str());
+        let pool = link && crate::stratum::session_from(&addr);
         let mut answered = pool;
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
@@ -230,30 +198,20 @@ impl Guard {
                 // A pool on the LAN itself answers without the gateway: the
                 // address works for the local network, which is what the
                 // guard is for (reaching the miner).
-                if pool {
-                    log::info!(
-                        "static ip: the pool session runs over {addr} on {} ({} s of link)",
-                        self.iface,
-                        self.watch.waited_s()
-                    );
-                } else {
-                    log::info!(
-                        "static ip: the gateway {} answers on {} ({} s of link)",
-                        self.s.gateway,
-                        self.iface,
-                        self.watch.waited_s()
-                    );
-                }
-                STATUS.lock().unwrap().confirmed = true;
+                log::info!(
+                    "static ip: {} confirmed by the {} after {} s",
+                    self.iface,
+                    if pool { "pool" } else { "gateway" },
+                    self.watch.waited_s()
+                );
+                MODE.store(CONFIRMED, Ordering::Relaxed);
                 Step::Keep
             }
             Verdict::FallBack => {
+                // The event's own log line says what happened. No pool
+                // session can be up on the address here: one would have
+                // confirmed it.
                 let gw = self.s.gateway.to_string();
-                log::warn!(
-                    "static ip: no answer from the gateway {gw} or the pool on {} for {} s: back to DHCP until the next restart",
-                    self.iface,
-                    self.watch.waited_s()
-                );
                 crate::events::record(
                     "net",
                     warpaxe_diag::events::detail::static_ip_fallback(
@@ -263,11 +221,7 @@ impl Guard {
                         self.watch.waited_s(),
                     ),
                 );
-                STATUS.lock().unwrap().mode = Mode::Fallback;
-                // A session that is up on the address dies with it.
-                if st.connected && st.local_ip.as_deref() == Some(addr.as_str()) {
-                    crate::stratum::move_session("the static IPv4 address is given up for DHCP");
-                }
+                MODE.store(FALLBACK, Ordering::Relaxed);
                 Step::FallBack
             }
         }
