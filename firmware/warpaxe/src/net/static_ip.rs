@@ -45,6 +45,37 @@ static MODE: AtomicU8 = AtomicU8::new(0);
 /// The static address went to the Ethernet HAT (else to the station).
 static ON_ETH: AtomicBool = AtomicBool::new(false);
 
+/// The static address while it waits for an answer (network-order bytes
+/// as a word, 0 = none), and whether a connection came in on it.
+static ADDR: AtomicU32 = AtomicU32::new(0);
+static INBOUND: AtomicBool = AtomicBool::new(false);
+
+/// The HTTP server's open hook, for every accepted connection: one whose
+/// local address is the static address, while that waits for an answer,
+/// confirms it at the guard's next tick. An accepted connection means the
+/// handshake went both ways: a client on the network reached the address
+/// and got its replies. (An ARP reply of the gateway did not prove that:
+/// a mistyped subnet that contains the real gateway gets one too, with
+/// the replies to the address lost.)
+pub fn note_inbound(fd: i32) {
+    let want = ADDR.load(Ordering::Relaxed);
+    if want == 0 || MODE.load(Ordering::Relaxed) != WAIT {
+        return;
+    }
+    let mut buf = [0u8; 32];
+    let mut len = buf.len() as sys::socklen_t;
+    // SAFETY: an open socket of the HTTP server and a buffer of `len`.
+    if unsafe { sys::lwip_getsockname(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) } != 0 {
+        return;
+    }
+    let Some(v4) = warpaxe_board::static_ip::lwip_sockaddr_v4(&buf) else {
+        return;
+    };
+    if u32::from_ne_bytes(v4) == want {
+        INBOUND.store(true, Ordering::Relaxed);
+    }
+}
+
 /// The other interface's DNS servers (main, backup; network-order bytes
 /// as a word, 0 = none), seen in lwIP's one list before the typed ones
 /// replaced them: with the address on the HAT, the station's from its
@@ -188,6 +219,7 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     }
     // After the address: setting it clears the DNS servers.
     set_dns_both(h, s);
+    ADDR.store(u32::from_ne_bytes(s.addr.octets()), Ordering::Relaxed);
     // The first time only (the address is set again before each
     // association): log it and start in "waiting for an answer".
     if MODE
@@ -222,7 +254,7 @@ pub fn back_to_dhcp(netif: &EspNetif) {
 /// same subnet): a TCP connect to its port 80 that either opens or is
 /// refused within two seconds. A refusal is an answer (the host is
 /// there); a timeout or "host unreachable" (no ARP reply) is not.
-fn gateway_answers(netif: &EspNetif, from: Ipv4Addr, gw: Ipv4Addr) -> Option<&'static str> {
+fn gateway_answers(from: Ipv4Addr, gw: Ipv4Addr) -> bool {
     let sin = |a: Ipv4Addr, port: u16| sys::sockaddr_in {
         sin_len: core::mem::size_of::<sys::sockaddr_in>() as u8,
         sin_family: sys::AF_INET as _,
@@ -244,7 +276,7 @@ fn gateway_answers(netif: &EspNetif, from: Ipv4Addr, gw: Ipv4Addr) -> Option<&'s
             sys::IPPROTO_TCP as i32,
         );
         if fd < 0 {
-            return None;
+            return false;
         }
         let mut ok = false;
         if sys::lwip_bind(fd, &me as *const _ as *const sys::sockaddr, len) == 0 {
@@ -266,19 +298,7 @@ fn gateway_answers(netif: &EspNetif, from: Ipv4Addr, gw: Ipv4Addr) -> Option<&'s
             }
         }
         sys::lwip_close(fd);
-        if ok {
-            return Some("gateway");
-        }
-        // A gateway that drops port 80 without a word still answered the
-        // probe's ARP request on this interface: the subnet and the
-        // gateway are right, and a working address is not given up for a
-        // silent port. The lookup runs in the TCP/IP task and only reads
-        // the ARP table.
-        sys::tusb::wa_arp_known(
-            netif.handle() as *mut core::ffi::c_void,
-            u32::from_ne_bytes(gw.octets()),
-        )
-        .then_some("gateway's ARP reply")
+        ok
     }
 }
 
@@ -378,13 +398,15 @@ impl Guard {
         let addr = self.s.addr.to_string();
         let pool = link && crate::stratum::session_from(&addr);
         let mut answered = pool;
-        let mut by = "pool";
+        // A connection to the web UI on the static address: the handshake
+        // went both ways (`note_inbound`).
+        let inbound = link && INBOUND.swap(false, Ordering::Relaxed);
+        let mut by = if pool { "pool" } else { "web UI connection" };
+        answered |= inbound;
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
-            if let Some(b) = gateway_answers(netif, self.s.addr, self.s.gateway) {
-                by = b;
-                answered = true;
-            }
+            answered = gateway_answers(self.s.addr, self.s.gateway);
+            by = "gateway";
         }
         match self.watch.tick(now, link, answered) {
             Verdict::Wait => Step::Keep,

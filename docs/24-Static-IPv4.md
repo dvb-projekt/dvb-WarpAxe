@@ -123,14 +123,21 @@ interface's thread:
   fallback pool on the LAN, and that session confirmed the address). The
   guard is about reaching the miner, and the address does work on the
   LAN then; the dead gateway still shows in the pool's failures.
+- A connection to the web UI on the static address counts as an answer
+  as well: the HTTP server's open hook (`static_ip::note_inbound`) sees
+  its local address, and an accepted connection means the handshake went
+  both ways, a client on the network reached the address and got its
+  replies.
 - Port 80 because nearly every router serves its web page there, or
-  refuses the connect, which counts too. A router that drops packets to
-  port 80 without a word still answers the ARP request the probe sends
-  first: after a probe without an answer, a resolved ARP entry for the
-  gateway on the static interface confirms the address as well
-  (`wa_arp_known` in the glue, `etharp_find_addr` in the TCP/IP task;
-  log `confirmed by the gateway's ARP reply`). A wrong subnet or a
-  gateway that is not there leaves no entry.
+  refuses the connect, which counts too. A router that drops port 80
+  without a word, on a network where no pool connects and nobody opens
+  the web UI on the static address within 180 s of link, is given up:
+  DHCP until the next restart, harmless. An ARP reply of the gateway
+  confirmed the address from 021e053 to 2975a6c and no longer does: it
+  proves only that the gateway is on the wire, and a mistyped subnet
+  that contains the real gateway (10.0.2.50/16 with gateway 10.0.1.1 on
+  a real 10.0.1.0/24) got one while the replies to the address were
+  lost, a lock-out at every boot.
 - The first answer confirms the address for the boot; no more probes.
 - 180 s of link without an answer (`GIVE_UP_S`; time without link does not
   count, so a router that is still booting after a power cut gets its

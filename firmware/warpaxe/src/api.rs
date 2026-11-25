@@ -1030,6 +1030,9 @@ unsafe extern "C" fn local_only(
     fd: i32,
 ) -> esp_idf_svc::sys::esp_err_t {
     use esp_idf_svc::sys;
+    // A connection to a static address that waits for its first answer
+    // confirms it (`net::static_ip`).
+    crate::net::static_ip::note_inbound(fd);
     let mut buf = [0u8; 32];
     let mut len = buf.len() as sys::socklen_t;
     if sys::lwip_getpeername(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) != 0 {

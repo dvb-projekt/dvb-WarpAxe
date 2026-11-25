@@ -213,6 +213,21 @@ pub fn validate_packed(s: &str, usb_subnet: u8) -> Result<Settings, Error> {
     })
 }
 
+/// The IPv4 address in an lwIP `sockaddr` (as `getsockname` fills it:
+/// length, family, port, address): a plain IPv4 one (family 2, address
+/// at 4) or an IPv4-mapped IPv6 one (family 10, `::ffff:a.b.c.d` at 8),
+/// which the dual-stack HTTP server socket gives for IPv4 clients. `None`
+/// for a real IPv6 address. What counts as the static address answering
+/// when a connection comes in on it.
+pub fn lwip_sockaddr_v4(buf: &[u8; 32]) -> Option<[u8; 4]> {
+    let at = |i: usize| [buf[i], buf[i + 1], buf[i + 2], buf[i + 3]];
+    match buf[1] {
+        2 => Some(at(4)),
+        10 if buf[8..18].iter().all(|&b| b == 0) && buf[18..20] == [0xff, 0xff] => Some(at(20)),
+        _ => None,
+    }
+}
+
 /// What the interface's thread does after a [`Watch::tick`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -577,6 +592,27 @@ mod tests {
         let mut w = Watch::new();
         assert_eq!(w.tick(0, false, true), Verdict::Wait);
         assert!(!w.confirmed());
+    }
+
+    #[test]
+    fn the_local_address_of_a_connection_as_lwip_gives_it() {
+        let mut v4 = [0u8; 32];
+        v4[0] = 16;
+        v4[1] = 2;
+        v4[4..8].copy_from_slice(&[192, 0, 2, 50]);
+        assert_eq!(lwip_sockaddr_v4(&v4), Some([192, 0, 2, 50]));
+        let mut mapped = [0u8; 32];
+        mapped[0] = 28;
+        mapped[1] = 10;
+        mapped[18..20].copy_from_slice(&[0xff, 0xff]);
+        mapped[20..24].copy_from_slice(&[192, 0, 2, 50]);
+        assert_eq!(lwip_sockaddr_v4(&mapped), Some([192, 0, 2, 50]));
+        // A real IPv6 local address (fe80::…): no IPv4 address to match.
+        let mut v6 = mapped;
+        v6[8] = 0xfe;
+        v6[9] = 0x80;
+        assert_eq!(lwip_sockaddr_v4(&v6), None);
+        assert_eq!(lwip_sockaddr_v4(&[0u8; 32]), None);
     }
 
     #[test]
