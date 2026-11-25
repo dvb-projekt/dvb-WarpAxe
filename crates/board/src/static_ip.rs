@@ -223,7 +223,7 @@ pub fn lwip_sockaddr_v4(buf: &[u8; 32]) -> Option<[u8; 4]> {
     let at = |i: usize| [buf[i], buf[i + 1], buf[i + 2], buf[i + 3]];
     match buf[1] {
         2 => Some(at(4)),
-        10 if buf[8..18].iter().all(|&b| b == 0) && buf[18..20] == [0xff, 0xff] => Some(at(20)),
+        10 if buf[8..20] == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff] => Some(at(20)),
         _ => None,
     }
 }
