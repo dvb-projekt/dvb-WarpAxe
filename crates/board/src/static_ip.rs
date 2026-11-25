@@ -117,9 +117,9 @@ fn mask_bits(prefix: u8) -> u32 {
 pub fn parse_mask(s: &str) -> Option<u8> {
     let s = s.strip_prefix('/').unwrap_or(s);
     let bits = if s.len() <= 2 {
-        // A prefix length, digits only (`u8::parse` takes "+2");
-        // mask_bits(33..) is never reached.
-        if !s.bytes().all(|b| b.is_ascii_digit()) {
+        // A prefix length; `u8::parse` also takes a leading "+", the only
+        // non-digit it allows. mask_bits(33..) is never reached.
+        if s.starts_with('+') {
             return None;
         }
         let n: u8 = s.parse().ok().filter(|n| *n <= 32)?;
