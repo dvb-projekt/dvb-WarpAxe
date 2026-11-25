@@ -165,9 +165,85 @@ impl Warmup {
     }
 }
 
+/// The duty of a board's one fan output (Bitaxe, NerdAxe, BitForge
+/// Nano), which cools chip and regulator alike: `chip` is the chip
+/// fan's duty (PID, or the hand setting), `vr_pid` the regulator PID's
+/// when it ran this pass. In automatic the fan takes whichever needs
+/// more; a fan set by hand stays as set.
+///
+/// `full_without_vr` is the NerdAxe boards: up to v0.1.49 their one fan
+/// ran at 100 % while the regulator had no reading, by hand or in
+/// automatic, and it does again. With the chips off on purpose (`dark`)
+/// nothing heats, and the chip's duty stands.
+pub fn one_fan_duty(
+    chip: u8,
+    vr_pid: Option<u8>,
+    vr_reading: bool,
+    auto: bool,
+    idle: bool,
+    dark: bool,
+    full_without_vr: bool,
+) -> u8 {
+    if full_without_vr && !vr_reading && !dark {
+        return 100;
+    }
+    match vr_pid {
+        Some(d) if auto && !idle => chip.max(d),
+        _ => chip,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_nerdaxe_fan_runs_full_without_a_regulator_reading() {
+        // No reading, mining: 100 % in automatic and by hand.
+        assert_eq!(one_fan_duty(40, None, false, true, false, false, true), 100);
+        assert_eq!(
+            one_fan_duty(30, None, false, false, false, false, true),
+            100
+        );
+        // Chips off on purpose: the chip's (low) duty.
+        assert_eq!(one_fan_duty(25, None, false, true, true, true, true), 25);
+        // With a reading: automatic takes the higher, by hand stays.
+        assert_eq!(
+            one_fan_duty(40, Some(70), true, true, false, false, true),
+            70
+        );
+        assert_eq!(
+            one_fan_duty(40, Some(20), true, true, false, false, true),
+            40
+        );
+        assert_eq!(
+            one_fan_duty(30, Some(70), true, false, false, false, true),
+            30
+        );
+    }
+
+    #[test]
+    fn other_one_fan_boards_keep_the_chip_duty_without_a_reading() {
+        // Bitaxe, Nano: as in a1e8a56, no reading = the chip's duty.
+        assert_eq!(one_fan_duty(40, None, false, true, false, false, false), 40);
+        assert_eq!(
+            one_fan_duty(30, None, false, false, false, false, false),
+            30
+        );
+        assert_eq!(
+            one_fan_duty(40, Some(70), true, true, false, false, false),
+            70
+        );
+        assert_eq!(
+            one_fan_duty(30, Some(70), true, false, false, false, false),
+            30
+        );
+        // Idle: the regulator does not raise it.
+        assert_eq!(
+            one_fan_duty(25, Some(70), true, true, true, true, false),
+            25
+        );
+    }
 
     #[test]
     fn the_warm_up_hold_ends_near_the_target() {

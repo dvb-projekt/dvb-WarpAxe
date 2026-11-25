@@ -27,7 +27,7 @@ use warpaxe_board::detect::{self, Detection};
 use warpaxe_board::emc2101::Emc2101;
 use warpaxe_board::emc2103::Emc2103;
 use warpaxe_board::emc2302::{self, Emc2302, Fan};
-use warpaxe_board::fan::{FanPid, Warmup, SAMPLE_MS};
+use warpaxe_board::fan::{self, FanPid, Warmup, SAMPLE_MS};
 use warpaxe_board::fxl6408::{q13xx, Fxl6408};
 use warpaxe_board::ina260::Ina260;
 use warpaxe_board::overheat::{Cause, Guard, Reading, SensorWatch};
@@ -3221,11 +3221,17 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 };
                 // One fan output: the chip's duty, raised to the
                 // regulator's when that needs more (automatic fan only; a
-                // fan set by hand stays as set).
-                let one = match vr_pid {
-                    Some(d) if cfg.autofanspeed && !idle => chip.max(d),
-                    _ => chip,
-                };
+                // fan set by hand stays as set). A NerdAxe's runs at 100 %
+                // without a regulator reading, as up to v0.1.49.
+                let one = fan::one_fan_duty(
+                    chip,
+                    vr_pid,
+                    vr_temp.is_some(),
+                    cfg.autofanspeed,
+                    idle,
+                    dark,
+                    profile.name.starts_with("nerdaxe"),
+                );
                 (chip, if cfg.link_fans { chip } else { vrf }, one)
             };
             // The self-test's fan step: at least the asked duty on both
