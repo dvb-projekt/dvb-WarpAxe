@@ -1937,7 +1937,7 @@ pub(crate) fn flash_image(image: &[u8]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The address a request came from ("192.168.178.20"), for the log of
+/// The address a request came from ("192.0.2.20"), for the log of
 /// actions that change the firmware; "?" if the socket does not say.
 fn peer(req: &mut Request<&mut esp_idf_svc::http::server::EspHttpConnection>) -> String {
     use esp_idf_svc::handle::RawHandle;

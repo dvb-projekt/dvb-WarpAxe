@@ -52,7 +52,7 @@ confirmed by a click; not a custom-CA upload as the first answer.
 - API: the full string, no line breaks.
 - WarpPool shows the same value in its Connect window from its next
   release (`/api/overview` → `connect.tls_spki_sha256`).
-- The owner's Umbrel (192.168.178.3:3334), measured from the Mac on
+- The owner's Umbrel (192.0.2.3:3334), measured from the Mac on
   2026-11-05 and kept as a test vector:
   `15:1A:63:B8:21:17:9C:A4:60:E8:E9:C5:BC:66:9F:F4:2F:00:C8:7B:EE:E3:0F:06:35:06:26:BD:09:9E:E0:47`.
 
@@ -172,7 +172,7 @@ display, as before, which is fine for a click.
    log says "TLS up, certificate accepted by the pinned key"; the box
    turns to "Trusted key" with "The current connection was accepted with
    this key."; `stratumTLSPinned` true. Shares accepted.
-3. Set the pool address to the IP (192.168.178.3): still connects (no
+3. Set the pool address to the IP (192.0.2.3): still connects (no
    host-name check with the pin).
 4. Save the pool under a name, switch to another saved pool and back:
    the pin travels with the entry.

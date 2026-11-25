@@ -75,8 +75,8 @@ hour (`BLOCK_ONLY_LIMIT_S`), which only an unusual block gap reaches.
 After a switch the other pool has to show it again; a main pool marked
 stuck had refreshed before, so it keeps the short limit when the probe
 brings the miner back. Sv2 sessions count as refreshing (next section).
-Found by the v0.1.48 release audit; Rockem's pool refreshed every 30 s
-before it stopped, so his case is caught as before.
+Found by the v0.1.48 release audit; the pool in the user's report
+refreshed every 30 s before it stopped, so that case is caught as before.
 
 ## Sv2
 

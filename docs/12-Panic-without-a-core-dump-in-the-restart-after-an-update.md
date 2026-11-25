@@ -10,9 +10,9 @@ on main `bad4a85` (v0.1.36).
 
 John11, Bitaxe Gamma Turbo "gt2" (two BM1370, EMC2103, TPS546, 850 MHz /
 1221 mV, 64.5 W, Stratum V2 to a local pool), updated from **v0.1.34** to
-v0.1.36 with the Update button on 2026-10-23. From his diagnostics file
-(generated 13:47:16Z, private; the excerpt is in the project's CloudDocs
-folder `Update-Neustart-Panic-2026-10-23`):
+v0.1.36 with the Update button on 2026-10-23. From the user's diagnostics file
+(generated 13:47:16Z, private; the excerpt is kept outside the
+repository):
 
 - The old firmware wrote and verified the image: the install record reads
   `v0.1.36 verified`, which is stored only after `flash_image` succeeded.

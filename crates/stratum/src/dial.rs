@@ -255,7 +255,7 @@ mod tests {
         let own = [p("2001:db8:1:10:1234:56ff:fe78:9abc"), p("fd00:1::5")];
         assert!(ipv6_peer_is_local(p("fe80::1"), &own));
         assert!(ipv6_peer_is_local(p("fd12:3456:789a::61"), &own));
-        assert!(ipv6_peer_is_local(p("::ffff:192.168.178.10"), &own));
+        assert!(ipv6_peer_is_local(p("::ffff:192.0.2.10"), &own));
         assert!(ipv6_peer_is_local(p("::1"), &own));
         assert!(ipv6_peer_is_local(p("2001:db8:1:10::abcd"), &own));
         // Same provider, another customer's /64; and the wider internet.

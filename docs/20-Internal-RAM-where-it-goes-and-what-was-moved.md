@@ -257,7 +257,7 @@ Link 100 Mbit/s full duplex, the default route over the cable, mDNS
 `nerdqaxe.local` on it.
 
 - **V1 and the fallback probe (.46):** main pool port set to a closed
-  one; after three failed connects the V1 fallback (192.168.178.3:3333)
+  one; after three failed connects the V1 fallback (192.0.2.3:3333)
   took over, subscribed, authorized, 12 minutes, 23 shares, 0 rejected,
   the probe running every 300 s on its PSRAM stack; port set back, Sv2
   again.

@@ -188,7 +188,7 @@ Tests: `crates/avalon` parses the three replies recorded from the .43
 (wallet masked), a truncated `estats`, a non-JSON reply, an overlong one
 and an empty one, and reads the simulated Avalon Q of `warpaxe-cgminer`
 end to end, checking that its mode was not written. Live, read-only,
-against 192.168.178.43: `cargo run -p warpaxe-avalon -- 192.168.178.43`.
+against 192.0.2.43: `cargo run -p warpaxe-avalon -- 192.0.2.43`.
 
 ## The web UI, gzip-compressed
 

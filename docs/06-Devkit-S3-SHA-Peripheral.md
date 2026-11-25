@@ -1,6 +1,6 @@
 # The T-Display-S3's SHA peripheral: where the cycles of a nonce go
 
-Written 2026-10-15 for the chipless devkit (`192.168.178.111`, profile
+Written 2026-10-15 for the chipless devkit (`192.0.2.111`, profile
 `t-display-s3`, WarpAxe v0.1.28 at 240 MHz on USB power). Handover from
 dvb-WarpAxe #2: the firmware did ~293 kH/s (peripheral loop 265 on core
 1, C software loop 29 on core 0), NMMiner does 384.5 kH/s on the same

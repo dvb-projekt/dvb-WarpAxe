@@ -13,7 +13,7 @@
 # ~/.config/warppool/warpaxe-release.key (made once with
 # `cargo run -p warpaxe-sv2 --example release-key -- keygen <file>`).
 # Neither is ever printed. Before publishing, the image is uploaded to the
-# test miner SOAK_HOST (default .41) and watched for 5 min
+# test miner SOAK_HOST (required, no default) and watched for 5 min
 # (tools/soak-test.py); announce that to anyone else using the miner.
 #
 # A fourth asset, tested-on.txt, lists the board profiles the image ran
@@ -26,6 +26,11 @@
 set -euo pipefail
 
 TAG="${1:?usage: $0 vX.Y.Z [notes-file]}"
+# The soak's test miner has no default: say which one, before anything is built.
+if [ "${SKIP_SOAK:-0}" != 1 ] && [ -z "${SOAK_HOST:-}" ]; then
+    echo "SOAK_HOST is not set: name the test miner (SOAK_HOST=<address>), or SKIP_SOAK=1" >&2
+    exit 1
+fi
 NOTES_FILE="${2:-}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 FW="$ROOT/firmware/warpaxe"
@@ -133,7 +138,7 @@ tar -czf "$OUT/web-flasher.tar.gz" -C "$FL" .
 # SOAK_HOST picks the miner; SKIP_SOAK=1 only for a release that cannot
 # run on it, and say so in the notes.
 if [ "${SKIP_SOAK:-0}" != 1 ]; then
-    "$ROOT/tools/soak-test.py" "${SOAK_HOST:-192.168.178.41}" --upload "$OUT/warpaxe.bin" \
+    "$ROOT/tools/soak-test.py" "$SOAK_HOST" --upload "$OUT/warpaxe.bin" \
         --minutes "${SOAK_MINUTES:-5}" || { echo "soak test failed: not published" >&2; exit 1; }
     # WarpTune must still read and tune the soaked miner on the new image
     # (WarpTune v1.42.0 could not parse 0.1.34's selfTest fields). Runs
@@ -147,11 +152,11 @@ if [ "${SKIP_SOAK:-0}" != 1 ]; then
         PROBED=0
         for try in 1 2 3; do
             if cargo run -q --release --manifest-path "$WP/Cargo.toml" -p dvb-warppool-tune -- \
-                probe "${SOAK_HOST:-192.168.178.41}" --check; then PROBED=1; break; fi
+                probe "$SOAK_HOST" --check; then PROBED=1; break; fi
             echo "WarpTune probe try $try failed" >&2
             sleep 15
         done
-        [ "$PROBED" = 1 ] || { echo "WarpTune cannot read or tune ${SOAK_HOST:-192.168.178.41} on this image: not published" >&2; exit 1; }
+        [ "$PROBED" = 1 ] || { echo "WarpTune cannot read or tune $SOAK_HOST on this image: not published" >&2; exit 1; }
     fi
 fi
 # The boards the release ran on (see the header). The devkit's id comes

@@ -16,7 +16,7 @@ isn't there.
   architecture keeps the slot open (chip profile), but no profile gets written
   on speculation.
   **Measured on the device 2026-09-22** (NerdOS `v1.1.0-31-gae509770`, `/api/system/asic`
-  + `/api/system/info`, 192.168.178.40):
+  + `/api/system/info`, 192.0.2.40):
 
   | | BM1373 (Gaia) | BM1370 (Gamma 602) |
   |---|---|---|
@@ -1244,8 +1244,8 @@ one driver for every board; `main/boards/` has `nerdaxegamma`,
 
 Code: `firmware/proof-usb/` (Rust std on esp-idf-svc 0.51, ESP-IDF v5.3.3,
 esp_tinyusb 1.7.6 vendored as `components/esp_tinyusb`, TinyUSB 0.21).
-Full 16 MB flash backup of the NerdMiner taken first (CloudDocs, with
-SHA-256); restore is one `esptool write_flash 0`.
+Full 16 MB flash backup of the NerdMiner taken first (kept outside the
+repository, with SHA-256); restore is one `esptool write_flash 0`.
 
 `host-proof.sh` passes all six steps on macOS with a USB-A-to-C cable:
 the board enumerates as CDC-ACM + CDC-NCM, the host gets 192.168.7.2 by
@@ -1436,7 +1436,7 @@ colour, so its flags do not map to raw SSD1306 commands; the Gamma
 test settles the default with one PATCH.
 
 Backup: `tools/flash-backup.sh <name> [port] [out-dir]` reads the whole
-flash (size from the chip) to CloudDocs `WarpForge-Firmware/backups`
+flash (size from the chip) to `./backups` (or `$BACKUP_DIR`)
 with a `.sha256` and a RESTORE.txt (`esptool write_flash 0 <image>`);
 refuses to overwrite, checks the image length. First step on the Gamma.
 

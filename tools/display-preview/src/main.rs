@@ -490,9 +490,9 @@ mod net {
     }
     pub fn state() -> NetState {
         let ip = if crate::board::gamma() {
-            "192.168.178.42"
+            "192.0.2.42"
         } else {
-            "192.168.178.41"
+            "192.0.2.41"
         };
         NetState {
             wifi_ip: Some(ip.into()),

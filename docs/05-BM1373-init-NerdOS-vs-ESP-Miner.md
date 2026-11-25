@@ -1,6 +1,6 @@
 # BM1373: NerdOS's init against ESP-Miner's, for the NerdAxe Gaia
 
-Written 2026-10-10 for the Gaia (`192.168.178.40`, one BM1373 on a
+Written 2026-10-10 for the Gaia (`192.0.2.40`, one BM1373 on a
 TPS546, 12 V carrier, 380 MHz / 960 mV under WarpAxe v0.1.24). This is
 step 1 of the handoff: the whole bring-up of the three firmwares side by
 side, read from source, nothing run on a board. Step 2 (an A/B on the

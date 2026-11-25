@@ -222,30 +222,30 @@ mod tests {
 
     #[test]
     fn mac_addresses_keep_the_maker_and_lose_the_device() {
-        assert_eq!(mask_macs("58:E6:C5:6A:48:04"), "58:E6:C5:**:**:**");
+        assert_eq!(mask_macs("02:AB:CD:12:34:56"), "02:AB:CD:**:**:**");
         assert_eq!(
-            mask_macs("I (11305) wifi:mode : sta (58:e6:c5:6a:48:04)"),
-            "I (11305) wifi:mode : sta (58:e6:c5:**:**:**)"
+            mask_macs("I (11305) wifi:mode : sta (02:ab:cd:12:34:56)"),
+            "I (11305) wifi:mode : sta (02:ab:cd:**:**:**)"
         );
         assert_eq!(
-            mask_macs("aid = 21, bssid = c8:7f:54:27:96:10, x 00:11:22:33:44:55"),
-            "aid = 21, bssid = c8:7f:54:**:**:**, x 00:11:22:**:**:**"
+            mask_macs("aid = 21, bssid = 06:12:34:56:78:9a, x 00:11:22:33:44:55"),
+            "aid = 21, bssid = 06:12:34:**:**:**, x 00:11:22:**:**:**"
         );
         // Not a MAC: times, version masks, longer colon runs, non-hex.
         for t in [
             "12:30:45",
             "aa:bb:cc:dd:ee:ff:00",
             "gg:hh:ii:jj:kk:ll",
-            "58:e6:c5:6a:48",
+            "02:ab:cd:12:34",
             "",
             "ü 12:34",
         ] {
             assert_eq!(mask_macs(t), t);
         }
         // Through the scrubber, in JSON string values.
-        let mut v = serde_json::json!({"macAddr": "58:E6:C5:6A:48:04", "n": 5});
+        let mut v = serde_json::json!({"macAddr": "02:AB:CD:12:34:56", "n": 5});
         Scrubber::new().apply_json(&mut v);
-        assert_eq!(v["macAddr"], "58:E6:C5:**:**:**");
+        assert_eq!(v["macAddr"], "02:AB:CD:**:**:**");
     }
 
     #[test]

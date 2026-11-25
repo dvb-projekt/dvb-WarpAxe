@@ -986,7 +986,7 @@ fn active_pool(pools: &Value) -> Option<&serde_json::Map<String, Value>> {
         .or_else(|| list.first().and_then(Value::as_object))
 }
 
-/// `stratum+tcp://192.168.178.3:3333` → ("192.168.178.3", 3333).
+/// `stratum+tcp://192.0.2.3:3333` → ("192.0.2.3", 3333).
 fn split_url(url: &str) -> (String, Option<u16>) {
     let rest = url.split_once("://").map_or(url, |(_, r)| r);
     let rest = rest.split('/').next().unwrap_or(rest);
@@ -1332,7 +1332,7 @@ mod tests {
         assert_eq!(v["sharesRejected"], 130);
         assert_eq!(v["bestDiff"], 54_552_698_063u64);
         assert_eq!(v["uptimeSeconds"], 3_176_847);
-        assert_eq!(v["stratumURL"], "192.168.178.3");
+        assert_eq!(v["stratumURL"], "192.0.2.3");
         assert_eq!(v["stratumPort"], 3333);
         assert_eq!(v["stratumConnected"], true);
         assert_eq!(v["isUsingFallbackStratum"], 0);
@@ -1413,23 +1413,23 @@ mod tests {
     #[test]
     fn members_are_normalised_and_cgminer_ones_are_ipv4_only() {
         assert_eq!(
-            normalize_member(" http://192.168.178.42/ ").unwrap(),
-            "192.168.178.42"
+            normalize_member(" http://192.0.2.42/ ").unwrap(),
+            "192.0.2.42"
         );
         assert_eq!(
             normalize_member("miner.local:8080").unwrap(),
             "miner.local:8080"
         );
         assert_eq!(
-            normalize_member("CGMiner:192.168.178.43").unwrap(),
-            "cgminer:192.168.178.43"
+            normalize_member("CGMiner:192.0.2.43").unwrap(),
+            "cgminer:192.0.2.43"
         );
         assert_eq!(
-            normalize_member("cgminer: 192.168.178.43").unwrap(),
-            "cgminer:192.168.178.43"
+            normalize_member("cgminer: 192.0.2.43").unwrap(),
+            "cgminer:192.0.2.43"
         );
         assert!(normalize_member("cgminer:avalon.local").is_err());
-        assert!(normalize_member("cgminer:192.168.178.43:4028").is_err());
+        assert!(normalize_member("cgminer:192.0.2.43:4028").is_err());
         assert!(normalize_member("cgminer:").is_err());
         assert!(normalize_member("").is_err());
         assert!(normalize_member("bad host").is_err());
@@ -1480,7 +1480,7 @@ mod tests {
 
     #[test]
     fn the_version_reply_of_the_avalon_q_identifies_it() {
-        let f = identify("192.168.178.43".parse().unwrap(), &fixture("version")).unwrap();
+        let f = identify("192.0.2.43".parse().unwrap(), &fixture("version")).unwrap();
         assert_eq!(f.product, "Avalon Q");
         assert_eq!(f.model, "Q");
         assert_eq!(f.firmware, "25052801_14a19a2");
@@ -1499,13 +1499,13 @@ mod tests {
 
     #[test]
     fn the_search_walks_the_own_slash_24_without_itself() {
-        let hosts = subnet_hosts("192.168.178.41".parse().unwrap());
+        let hosts = subnet_hosts("192.0.2.41".parse().unwrap());
         assert_eq!(hosts.len(), 253);
-        assert_eq!(hosts[0], "192.168.178.1".parse::<Ipv4Addr>().unwrap());
-        assert_eq!(hosts[252], "192.168.178.254".parse::<Ipv4Addr>().unwrap());
-        assert!(!hosts.contains(&"192.168.178.41".parse().unwrap()));
-        assert!(!hosts.contains(&"192.168.178.0".parse().unwrap()));
-        assert!(!hosts.contains(&"192.168.178.255".parse().unwrap()));
+        assert_eq!(hosts[0], "192.0.2.1".parse::<Ipv4Addr>().unwrap());
+        assert_eq!(hosts[252], "192.0.2.254".parse::<Ipv4Addr>().unwrap());
+        assert!(!hosts.contains(&"192.0.2.41".parse().unwrap()));
+        assert!(!hosts.contains(&"192.0.2.0".parse().unwrap()));
+        assert!(!hosts.contains(&"192.0.2.255".parse().unwrap()));
     }
 
     #[test]

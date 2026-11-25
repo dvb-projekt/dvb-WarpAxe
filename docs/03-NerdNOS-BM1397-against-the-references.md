@@ -2,7 +2,7 @@
 
 Written 2026-10-08, before anything ran on the chip; the first run is
 recorded at the end. The device is
-the owner's NerdNOS (`192.168.178.46`, stock firmware "NerdNOS" 2.0.5, a
+the owner's NerdNOS (`192.0.2.46`, stock firmware "NerdNOS" 2.0.5, a
 NerdMiner fork by WantClue). The references:
 
 * **WantClue** — github.com/WantClue/NerdMiner_v2, branch `nerdnos`

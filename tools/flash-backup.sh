@@ -7,7 +7,7 @@
 #
 #   name     label for the files, e.g. bitaxe-gamma-601
 #   port     serial port; default: the single /dev/cu.usbmodem* present
-#   out-dir  default: ~/Library/Mobile Documents/com~apple~CloudDocs/Bitcoin/Claude/WarpForge-Firmware/backups
+#   out-dir  default: $BACKUP_DIR, else ./backups
 #
 # The board must be reachable by esptool: on a Bitaxe (native USB) the
 # USB-Serial/JTAG port appears while the stock firmware runs; esptool
@@ -21,7 +21,7 @@ set -euo pipefail
 
 name=${1:?usage: flash-backup.sh <name> [port] [out-dir]}
 port=${2:-}
-out=${3:-"$HOME/Library/Mobile Documents/com~apple~CloudDocs/Bitcoin/Claude/WarpForge-Firmware/backups"}
+out=${3:-"${BACKUP_DIR:-./backups}"}
 esptool=${ESPTOOL:-"python3 -m esptool"}
 
 if [[ -z $port ]]; then
