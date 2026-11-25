@@ -1,6 +1,6 @@
 # Static IPv4
 
-Status: test build on its own branch, not in a release.
+Status: in v0.1.50.
 
 Some routers forget DHCP reservations, or hand out a reserved address
 late, and a miner that moves around the LAN is lost to dashboards and
@@ -95,8 +95,7 @@ interface's thread:
 - With the link up and nothing confirmed, the gateway is probed every
   10 s with a TCP connect to port 80, 2 s timeout, from a socket bound to
   the static address (so an answer over the other interface on the same
-  subnet does not count). An open or a refused
-  connection is an answer (the host is there); a timeout or "host
+  subnet does not count). An open or a refused connection is an answer (the host is there); a timeout or "host
   unreachable" (no ARP reply) is not. A pool session whose local address
   is the static one counts as an answer too, also one to a pool on the
   LAN itself without the gateway (seen on the devkit: with a dead
@@ -104,16 +103,24 @@ interface's thread:
   fallback pool on the LAN, and that session confirmed the address). The
   guard is about reaching the miner, and the address does work on the
   LAN then; the dead gateway still shows in the pool's failures.
+- Port 80 because nearly every router serves its web page there, or
+  refuses the connect, which counts too. A router that drops packets to
+  port 80 from the LAN without an answer, on a network where no pool
+  connects either, never confirms: the miner goes back to DHCP after
+  180 s and stays reachable, which is harmless (and the static address
+  is worth little where the pool cannot be reached anyway).
 - The first answer confirms the address for the boot; no more probes.
 - 180 s of link without an answer (`GIVE_UP_S`; time without link does not
   count, so a router that is still booting after a power cut gets its
-  time). Only the time between two ticks that both had the link counts:
-  the Wi-Fi thread ticks without the link before every association, so
-  the scan and the join (up to 20 s) are not link time: the interface goes back to DHCP until the next restart. Wi-Fi
-  disconnects, starts its DHCP client and associates again; Ethernet stops
-  the driver, starts its DHCP client and starts the driver again (the stop
-  alone left the static address on the netif: .41, 2026-11-25). A pool session still on the static address is
-  moved. Event `static_ip_fallback` (kind `net`: address, interface,
+  time; only the time between two ticks that both had the link counts,
+  and the Wi-Fi thread ticks without the link before every association,
+  so the scan and the join, up to 20 s, are not link time): the
+  interface goes back to DHCP until the next restart. Wi-Fi disconnects,
+  starts its DHCP client and associates again; Ethernet stops the
+  driver, starts its DHCP client and starts the driver again (the stop
+  alone left the static address on the netif: .41, 2026-11-25). No pool
+  session can be up on the static address then: one would have
+  confirmed it. Event `static_ip_fallback` (kind `net`: address, interface,
   gateway, seconds), `ipMode` "static-fallback", and a yellow dashboard
   banner linking to the Network tab.
 
@@ -167,6 +174,12 @@ with 966dccb (2026-11-25):
 
 About 5.1 KB used at most, 3 KB to spare: the stack stays at 8 KB.
 
+The Ethernet thread (8 KB in PSRAM, `eth.rs`) runs the same guard. On
+the .41 with 966dccb (2026-11-25), logged at the guard's verdict:
+4,280 B never used when the gateway probe confirmed the static
+address, 4,296 B at the fallback after 183 s of failed probes. It
+stays at 8 KB too.
+
 ## Image size
 
 The feature added 25,376 B to the image at 62da248 (against main
@@ -193,6 +206,9 @@ in the network threads, LLVM inlined the surrounding code as it did
 before the feature. Two tries did not count and were dropped: the raw
 `esp_wifi_disconnect` instead of `BlockingWifi::disconnect` (+16), and a
 short dashboard note instead of the long one (−528, kept the long one).
-The TCP probe costs nothing: `connect_timeout` and `lwip_select` were in
-the image already, as was core's IPv4 parser.
+The probe is a raw lwIP socket bound to the static address,
+`lwip_connect` without blocking and `poll` for two seconds (since
+22be871; before, `TcpStream::connect_timeout`). The socket calls and
+`poll` were in the image already (`net::dial`), as was core's IPv4
+parser.
 
