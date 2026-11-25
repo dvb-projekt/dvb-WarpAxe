@@ -222,7 +222,7 @@ pub fn back_to_dhcp(netif: &EspNetif) {
 /// same subnet): a TCP connect to its port 80 that either opens or is
 /// refused within two seconds. A refusal is an answer (the host is
 /// there); a timeout or "host unreachable" (no ARP reply) is not.
-fn gateway_answers(from: Ipv4Addr, gw: Ipv4Addr) -> bool {
+fn gateway_answers(netif: &EspNetif, from: Ipv4Addr, gw: Ipv4Addr) -> Option<&'static str> {
     let sin = |a: Ipv4Addr, port: u16| sys::sockaddr_in {
         sin_len: core::mem::size_of::<sys::sockaddr_in>() as u8,
         sin_family: sys::AF_INET as _,
@@ -244,7 +244,7 @@ fn gateway_answers(from: Ipv4Addr, gw: Ipv4Addr) -> bool {
             sys::IPPROTO_TCP as i32,
         );
         if fd < 0 {
-            return false;
+            return None;
         }
         let mut ok = false;
         if sys::lwip_bind(fd, &me as *const _ as *const sys::sockaddr, len) == 0 {
@@ -266,7 +266,19 @@ fn gateway_answers(from: Ipv4Addr, gw: Ipv4Addr) -> bool {
             }
         }
         sys::lwip_close(fd);
-        ok
+        if ok {
+            return Some("gateway");
+        }
+        // A gateway that drops port 80 without a word still answered the
+        // probe's ARP request on this interface: the subnet and the
+        // gateway are right, and a working address is not given up for a
+        // silent port. The lookup runs in the TCP/IP task and only reads
+        // the ARP table.
+        sys::tusb::wa_arp_known(
+            netif.handle() as *mut core::ffi::c_void,
+            u32::from_ne_bytes(gw.octets()),
+        )
+        .then_some("gateway's ARP reply")
     }
 }
 
@@ -366,24 +378,12 @@ impl Guard {
         let addr = self.s.addr.to_string();
         let pool = link && crate::stratum::session_from(&addr);
         let mut answered = pool;
-        let mut arp = false;
+        let mut by = "pool";
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
-            answered = gateway_answers(self.s.addr, self.s.gateway);
-            // A gateway that drops port 80 without a word still answered
-            // the probe's ARP request on this interface: the subnet and
-            // the gateway are right, and a working address is not given up
-            // for a silent port.
-            if !answered {
-                // SAFETY: a valid netif handle; the lookup runs in the
-                // TCP/IP task and only reads the ARP table.
-                arp = unsafe {
-                    sys::tusb::wa_arp_known(
-                        netif.handle() as *mut core::ffi::c_void,
-                        u32::from_ne_bytes(self.s.gateway.octets()),
-                    )
-                };
-                answered = arp;
+            if let Some(b) = gateway_answers(netif, self.s.addr, self.s.gateway) {
+                by = b;
+                answered = true;
             }
         }
         match self.watch.tick(now, link, answered) {
@@ -395,13 +395,7 @@ impl Guard {
                 log::info!(
                     "static ip: {} confirmed by the {} after {} s (stack {} B never used)",
                     self.iface,
-                    if pool {
-                        "pool"
-                    } else if arp {
-                        "gateway's ARP reply"
-                    } else {
-                        "gateway"
-                    },
+                    by,
                     self.watch.waited_s(),
                     crate::diag::stack_unused()
                 );
