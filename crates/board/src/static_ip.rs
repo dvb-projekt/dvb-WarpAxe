@@ -201,7 +201,10 @@ pub enum Verdict {
 /// link.
 #[derive(Clone, Debug, Default)]
 pub struct Watch {
-    last: Option<u32>,
+    last: u32,
+    /// The last tick had the link: only the time between two such ticks
+    /// counts (a tick without, or none at all, ends the stretch).
+    last_link: bool,
     link_s: u32,
     last_probe: Option<u32>,
     confirmed: bool,
@@ -248,8 +251,16 @@ impl Watch {
     /// `answered` = the gateway answered a probe or the pool session runs
     /// over the static address. Each verdict other than `Wait` comes once.
     pub fn tick(&mut self, now_s: u32, link: bool, answered: bool) -> Verdict {
-        let dt = self.last.map_or(0, |t| now_s.saturating_sub(t));
-        self.last = Some(now_s);
+        // Time counts only from a tick that had the link to one that has
+        // it: the caller ticks without the link before an association
+        // (which can take 20 s of scanning), and nothing of that counts.
+        let dt = if self.last_link && link {
+            now_s.saturating_sub(self.last)
+        } else {
+            0
+        };
+        self.last = now_s;
+        self.last_link = link;
         if self.confirmed || self.fell_back {
             return Verdict::Wait;
         }
@@ -462,17 +473,45 @@ mod tests {
         let mut w = Watch::new();
         assert_eq!(w.tick(0, true, false), Verdict::Wait);
         assert_eq!(w.tick(100, true, false), Verdict::Wait);
+        assert_eq!(w.waited_s(), 100);
         // An hour with the cable out or the router off.
         assert_eq!(w.tick(3700, false, false), Verdict::Wait);
         assert_eq!(w.waited_s(), 100);
         assert!(!w.probe_due(3700, false));
-        // The link comes back and the router answers in time.
+        // The link is back at the next tick: the gap before it had no
+        // link and does not count, only the time from here on.
         assert_eq!(w.tick(3750, true, false), Verdict::Wait);
-        assert_eq!(w.waited_s(), 150);
-        assert_eq!(w.tick(3760, true, true), Verdict::Confirmed);
+        assert_eq!(w.waited_s(), 100);
+        assert_eq!(w.tick(3760, true, false), Verdict::Wait);
+        assert_eq!(w.waited_s(), 110);
+        // Wi-Fi: the link is lost, the thread ticks without it as the
+        // next association starts, and that association (scan and
+        // join) takes 25 s without a tick: none of the 25 s counts.
+        assert_eq!(w.tick(3762, false, false), Verdict::Wait);
+        assert_eq!(w.tick(3787, true, false), Verdict::Wait);
+        assert_eq!(w.waited_s(), 110);
+        assert_eq!(w.tick(3797, true, true), Verdict::Confirmed);
         // An answer without the link (a stale pool flag) confirms nothing.
         let mut w = Watch::new();
         assert_eq!(w.tick(0, false, true), Verdict::Wait);
         assert!(!w.confirmed());
+    }
+
+    #[test]
+    fn only_link_to_link_stretches_add_up_to_the_fallback() {
+        // The link drops for 10 s after every 30 s of it: five stretches
+        // are 150 s of link and no fallback, the sixth reaches 180.
+        let mut w = Watch::new();
+        let mut t = 0;
+        for _ in 0..5 {
+            assert_eq!(w.tick(t, true, false), Verdict::Wait);
+            assert_eq!(w.tick(t + 30, true, false), Verdict::Wait);
+            assert_eq!(w.tick(t + 35, false, false), Verdict::Wait);
+            t += 40;
+        }
+        assert_eq!(w.waited_s(), 150);
+        assert_eq!(w.tick(t, true, false), Verdict::Wait);
+        assert_eq!(w.tick(t + 30, true, false), Verdict::FallBack);
+        assert_eq!(w.waited_s(), GIVE_UP_S);
     }
 }
