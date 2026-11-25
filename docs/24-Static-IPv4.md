@@ -122,9 +122,11 @@ translations native-speaker checked (2026-11-25). The page splits
 
 ## Image size
 
-The first build added 25.4 KB to the image (against main c7e1976 built
-in a worktree of the same path length). Taken out without giving up
-function, each step measured on its own:
+The feature added 25,376 B to the image at 62da248 (against main
+c7e1976 built in a worktree of the same path length); db96424 adds
+12,304 B, 13,072 B less. Taken out without giving up function, each step
+measured on its own (the steps were measured on uncommitted trees, so
+they do not add up to the byte):
 
 | Step | Bytes |
 |---|---|
