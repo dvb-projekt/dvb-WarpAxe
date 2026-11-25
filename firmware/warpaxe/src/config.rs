@@ -1587,13 +1587,24 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     if cfg.payout_max_fee > warpaxe_stratum::payout_check::MAX_FEE_LIMIT {
         anyhow::bail!("payoutMaxFee is in tenths of a percent, 0 to 1000");
     }
-    save(&cfg)?;
+    store(&cfg, false)?;
     Ok(cfg)
 }
 
+/// Keep `cfg` and write it to NVS. For the firmware's own changes
+/// (safety clamps, migrations, the board choice): one too long for the
+/// boot's buffer is still taken in RAM for this boot, and the error says
+/// it was not saved. A PATCH changes nothing then ([`patch`]).
 pub fn save(cfg: &Config) -> anyhow::Result<()> {
+    store(cfg, true)
+}
+
+fn store(cfg: &Config, ram_anyway: bool) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(cfg)?;
     if bytes.len() > MAX_BYTES {
+        if ram_anyway {
+            *CONFIG.lock().unwrap() = Some(cfg.clone());
+        }
         anyhow::bail!(
             "settings too long ({} bytes, at most {MAX_BYTES}): nothing saved",
             bytes.len()
