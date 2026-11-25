@@ -117,7 +117,11 @@ fn mask_bits(prefix: u8) -> u32 {
 pub fn parse_mask(s: &str) -> Option<u8> {
     let s = s.strip_prefix('/').unwrap_or(s);
     let bits = if s.len() <= 2 {
-        // A prefix length; mask_bits(33..) is never reached.
+        // A prefix length, digits only (`u8::parse` takes "+2");
+        // mask_bits(33..) is never reached.
+        if !s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
         let n: u8 = s.parse().ok().filter(|n| *n <= 32)?;
         return Some(n);
     } else {
@@ -355,6 +359,9 @@ mod tests {
         assert_eq!(parse_mask("255.255.255.1"), None);
         assert_eq!(parse_mask("33"), None);
         assert_eq!(parse_mask(""), None);
+        assert_eq!(parse_mask("+24"), None);
+        assert_eq!(parse_mask("+8"), None);
+        assert_eq!(parse_mask("/+8"), None);
         assert_eq!(
             validate("192.168.1.5", "255.255.255.255", "192.168.1.1", "", ""),
             Err(Error::MaskRange)
