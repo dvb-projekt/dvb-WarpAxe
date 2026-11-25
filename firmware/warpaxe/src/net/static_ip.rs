@@ -217,7 +217,8 @@ impl Guard {
         let now = self.t0.elapsed().as_secs() as u32;
         let addr = self.s.addr.to_string();
         let st = crate::stratum::state();
-        let mut answered = link && st.connected && st.local_ip.as_deref() == Some(addr.as_str());
+        let pool = link && st.connected && st.local_ip.as_deref() == Some(addr.as_str());
+        let mut answered = pool;
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
             answered = gateway_answers(self.s.gateway);
@@ -225,12 +226,23 @@ impl Guard {
         match self.watch.tick(now, link, answered) {
             Verdict::Wait => Step::Keep,
             Verdict::Confirmed => {
-                log::info!(
-                    "static ip: {} answers on {} ({} s of link)",
-                    self.s.gateway,
-                    self.iface,
-                    self.watch.waited_s()
-                );
+                // A pool on the LAN itself answers without the gateway: the
+                // address works for the local network, which is what the
+                // guard is for (reaching the miner).
+                if pool {
+                    log::info!(
+                        "static ip: the pool session runs over {addr} on {} ({} s of link)",
+                        self.iface,
+                        self.watch.waited_s()
+                    );
+                } else {
+                    log::info!(
+                        "static ip: the gateway {} answers on {} ({} s of link)",
+                        self.s.gateway,
+                        self.iface,
+                        self.watch.waited_s()
+                    );
+                }
                 STATUS.lock().unwrap().confirmed = true;
                 Step::Keep
             }

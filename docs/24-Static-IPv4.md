@@ -68,7 +68,12 @@ interface's thread:
   10 s with a TCP connect to port 80, 2 s timeout. An open or a refused
   connection is an answer (the host is there); a timeout or "host
   unreachable" (no ARP reply) is not. A pool session whose local address
-  is the static one counts as an answer too.
+  is the static one counts as an answer too, also one to a pool on the
+  LAN itself without the gateway (seen on the devkit: with a dead
+  gateway the main pool's name did not resolve, the miner moved to its
+  fallback pool on the LAN, and that session confirmed the address). The
+  guard is about reaching the miner, and the address does work on the
+  LAN then; the dead gateway still shows in the pool's failures.
 - The first answer confirms the address for the boot; no more probes.
 - 180 s of link without an answer (`GIVE_UP_S`; time without link does not
   count, so a router that is still booting after a power cut gets its
