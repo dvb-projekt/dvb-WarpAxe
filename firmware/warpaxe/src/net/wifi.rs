@@ -302,7 +302,7 @@ fn run(
         // The lock-out guard: no answer on the static address for a few
         // minutes of link and the station goes back to DHCP for the boot.
         if let Some(g) = guard.as_mut() {
-            if g.tick(connected) == Step::FallBack {
+            if g.tick(wifi.wifi().sta_netif(), connected) == Step::FallBack {
                 let _ = wifi.disconnect();
                 static_ip::back_to_dhcp(wifi.wifi().sta_netif());
                 was_connected = false;

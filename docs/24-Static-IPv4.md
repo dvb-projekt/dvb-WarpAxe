@@ -57,13 +57,29 @@ a second, at most ten).
 The netifs stay DHCP clients as before (`net/wifi.rs`, `net/eth.rs`).
 `net/static_ip.rs` replaces DHCP on the chosen one while its link is
 down: `esp_netif_dhcpc_stop`, `esp_netif_set_ip_info`, then
-`esp_netif_set_dns_info` (main, backup), since setting the address clears
-the DNS servers. On the link-up event ESP-IDF raises "got IP" for the
+`esp_netif_set_dns_info` (main, backup; an empty second server repeats
+the first). On the link-up event ESP-IDF raises "got IP" for the
 static address itself (`esp_netif_action_connected` with the client
 stopped). An `esp_netif_stop` (the hotspot opening or closing, the
 Ethernet driver restarted after `eth::NO_ADDRESS`) resets the netif to
 DHCP, so the address is set again before every association and every
 driver start.
+
+### DNS
+
+lwIP keeps one list of DNS servers for all interfaces
+(`CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF` is off, and stays off: it
+would change DNS for every setup). That list is cleared by
+`esp_netif_set_ip_info` on a DHCP client netif and by every
+`esp_netif_dhcpc_start` (`dns_clear_servers`), and written by every
+DHCP lease, on either interface. With the address on the HAT and the
+station on DHCP, the station's lease would replace the typed servers.
+So the guard looks at the list on every tick (every one or two
+seconds) and sets the typed servers again when they were replaced,
+for as long as the static address is in use (confirmed or waiting,
+not after the fallback); the log says `static ip: DNS … set again`.
+A lookup in the second or so before that can still go to the lease's
+server. `ipv4Now` shows the server in the list.
 
 ## Lock-out guard
 
@@ -106,7 +122,7 @@ System info (and so the diagnostics file):
 | Field | |
 |---|---|
 | `ipMode` | `dhcp`; `static-wait` (static, nothing has answered yet); `static` (the gateway or the pool answered); `static-fallback` (no answer, DHCP until a restart) |
-| `ipv4Now` | what the LAN interface uses now (DHCP or static) as `"mask,gateway,dns"`, the hint under the static fields; null without a LAN address |
+| `ipv4Now` | what the LAN interface uses now (DHCP or static) as `"mask,gateway,dns"`, the hint under the static fields; `dns` is the first server in lwIP's list (the one lookups go to); null without a LAN address |
 
 Which interface carries the static address is in the log
 (`static ip: wifi …` / `static ip: ethernet …`) and in the event.

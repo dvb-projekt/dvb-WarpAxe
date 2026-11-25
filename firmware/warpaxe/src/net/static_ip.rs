@@ -75,6 +75,32 @@ fn set_dns(handle: *mut sys::esp_netif_t, which: sys::esp_netif_dns_type_t, a: I
     }
 }
 
+/// Both DNS servers of `s`; with no second one typed the first stands in
+/// for it (so a lease's backup server does not linger in that slot).
+fn set_dns_both(h: *mut sys::esp_netif_t, s: &Settings) {
+    set_dns(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN, s.dns);
+    set_dns(
+        h,
+        sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP,
+        s.dns2.unwrap_or(s.dns),
+    );
+}
+
+/// A DNS server as lwIP has it now (one list for all interfaces:
+/// CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF is off), 0.0.0.0 for none
+/// or an IPv6 one.
+pub(super) fn dns_now(h: *mut sys::esp_netif_t, which: sys::esp_netif_dns_type_t) -> [u8; 4] {
+    let mut d = sys::esp_netif_dns_info_t::default();
+    // SAFETY: a valid netif handle and a plain out-parameter.
+    let ok = unsafe { sys::esp_netif_get_dns_info(h, which, &mut d) } == sys::ESP_OK;
+    if ok && d.ip.type_ == sys::ESP_IPADDR_TYPE_V4 as u8 {
+        // SAFETY: the IPv4 member of the union, as the type says.
+        unsafe { d.ip.u_addr.ip4.addr }.to_ne_bytes()
+    } else {
+        [0; 4]
+    }
+}
+
 /// Stop the DHCP client of `netif` and give it the static address. Call
 /// while the link is down (before the association or the driver start):
 /// the address then comes up with the link.
@@ -96,10 +122,7 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
         return false;
     }
     // After the address: setting it clears the DNS servers.
-    set_dns(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN, s.dns);
-    if let Some(d2) = s.dns2 {
-        set_dns(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP, d2);
-    }
+    set_dns_both(h, s);
     // The first time only (the address is set again before each
     // association): log it and start in "waiting for an answer".
     if MODE
@@ -168,6 +191,26 @@ impl Guard {
         }
     }
 
+    /// The typed DNS servers stay the ones in use while the address
+    /// does. lwIP keeps one list for all interfaces, and every DHCP client
+    /// start and every lease of the other interface (the station beside a
+    /// static HAT) writes it: set them again when they were replaced.
+    fn keep_dns(&self, netif: &EspNetif) {
+        let h = netif.handle();
+        let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
+        let backup = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP);
+        let d = self.s.dns.octets();
+        let d2 = self.s.dns2.map_or(d, |x| x.octets());
+        if main == d && (backup == d2 || (self.s.dns2.is_none() && backup == [0; 4])) {
+            return;
+        }
+        set_dns_both(h, &self.s);
+        log::info!("static ip: DNS {} set again", self.s.dns);
+        if let Some(i) = super::Ip4::of(netif) {
+            super::set_ip4(self.iface == "ethernet", Some(i));
+        }
+    }
+
     pub fn settings(&self) -> &Settings {
         &self.s
     }
@@ -180,8 +223,12 @@ impl Guard {
     /// One look, every second or two: `link` = associated / cable in
     /// with the static address on the netif. Probes block for up to two
     /// seconds, only while nothing has answered yet.
-    pub fn tick(&mut self, link: bool) -> Step {
-        if !self.active() || self.watch.confirmed() {
+    pub fn tick(&mut self, netif: &EspNetif, link: bool) -> Step {
+        if !self.active() {
+            return Step::Keep;
+        }
+        self.keep_dns(netif);
+        if self.watch.confirmed() {
             return Step::Keep;
         }
         let now = self.t0.elapsed().as_secs() as u32;

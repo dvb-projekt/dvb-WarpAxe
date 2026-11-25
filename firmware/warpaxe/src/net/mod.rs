@@ -35,21 +35,14 @@ impl Ip4 {
         use esp_idf_svc::sys;
         let h = netif.handle();
         let mut i = sys::esp_netif_ip_info_t::default();
-        let mut d = sys::esp_netif_dns_info_t::default();
-        // SAFETY: a valid netif handle and plain out-parameters.
-        let ok = unsafe {
-            sys::esp_netif_get_ip_info(h, &mut i) == sys::ESP_OK
-                && sys::esp_netif_get_dns_info(
-                    h,
-                    sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN,
-                    &mut d,
-                ) == sys::ESP_OK
-        };
+        // SAFETY: a valid netif handle and a plain out-parameter.
+        let ok = unsafe { sys::esp_netif_get_ip_info(h, &mut i) } == sys::ESP_OK;
         (ok && i.ip.addr != 0).then(|| Ip4 {
             mask: i.netmask.addr.to_ne_bytes(),
             gateway: i.gw.addr.to_ne_bytes(),
-            // SAFETY: the IPv4 member of the union, as set for an IPv4 server.
-            dns: unsafe { d.ip.u_addr.ip4.addr }.to_ne_bytes(),
+            // lwIP's one list, the server in use whichever interface set
+            // it; 0.0.0.0 for none or an IPv6 one.
+            dns: static_ip::dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN),
         })
     }
 }

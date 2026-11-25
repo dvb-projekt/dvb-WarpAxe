@@ -379,7 +379,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         // netif (2026-11-25), and the start brought it back.
         if guard
             .as_mut()
-            .is_some_and(|g| g.tick(link && ip.is_some()) == Step::FallBack)
+            .is_some_and(|g| g.tick(eth.netif(), link && ip.is_some()) == Step::FallBack)
         {
             if let Err(e) = eth.stop() {
                 log::warn!("eth: stop failed: {e}");
