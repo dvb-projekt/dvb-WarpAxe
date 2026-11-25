@@ -132,9 +132,15 @@ interface's thread:
   gateway, seconds), `ipMode` "static-fallback", and a yellow dashboard
   banner linking to the Network tab.
 
-If DHCP fails too, the existing paths take over: the setup hotspot opens
-after its usual three minutes without a station link (Wi-Fi), and the
-next restart tries the static address again.
+If DHCP fails too, the setup hotspot is the way back, and the next
+restart tries the static address again. A link that carries a static
+address nothing has answered yet does not count as online for the
+hotspot (`setup::counts_online`, `static_ip::unconfirmed`; station and
+HAT alike): a boot that has only such a link opens the hotspot after
+the usual three minutes, beside the station, which keeps trying. Up to
+the fable audit of eebf687 such a link counted as "got on the network"
+and the hotspot never opened for the boot: a typo that passed the
+checks, on a network without DHCP, locked the miner out.
 
 No duplicate detection: an address another device already holds is
 confirmed all the same (the gateway answers). The router's ARP table

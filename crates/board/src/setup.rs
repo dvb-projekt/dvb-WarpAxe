@@ -106,6 +106,15 @@ impl Hotspot {
     }
 }
 
+/// Whether a link counts as online for [`Hotspot::tick`]: not while it
+/// carries a static IPv4 address that nothing has answered yet. Such a
+/// link may be a typo on a network without DHCP; counting it would mark
+/// the boot as "got on the network" and the hotspot would never open,
+/// even after the static address was given up and DHCP failed too.
+pub fn counts_online(link: bool, unconfirmed_static: bool) -> bool {
+    link && !unconfirmed_static
+}
+
 /// The captive-portal DNS answer: every A query resolves to `ip`, any
 /// other type gets an empty answer. Writes the reply into `out` and
 /// returns its length; `None` for anything that is not a plain query.
@@ -166,6 +175,29 @@ pub fn dns_reply(query: &[u8], ip: [u8; 4], out: &mut [u8]) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unconfirmed_static_link_does_not_keep_the_hotspot_shut() {
+        // Associated from second 5 with a static address that nothing
+        // answers; the guard gives it up at 185 s, and DHCP fails.
+        let mut h = Hotspot::new();
+        let mut opened = None;
+        for t in 0..400 {
+            let link = (5..185).contains(&t);
+            let unconfirmed = link;
+            if h.tick(true, t, counts_online(link, unconfirmed)) == Action::Open {
+                opened.get_or_insert(t);
+            }
+        }
+        // The usual three minutes: the hotspot opens (the station keeps
+        // trying beside it, the AP and the station run together).
+        assert_eq!(opened, Some(SETUP_AFTER_S));
+        // A confirmed static address is online like a DHCP one.
+        let mut h = Hotspot::new();
+        for t in 0..400 {
+            assert_eq!(h.tick(true, t, counts_online(t >= 5, false)), Action::Keep);
+        }
+    }
 
     fn query(name: &str, qtype: u16, extra: &[u8]) -> Vec<u8> {
         let mut q = vec![

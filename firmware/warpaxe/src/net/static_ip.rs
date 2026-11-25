@@ -19,7 +19,7 @@
 //! DHCP until the next restart, with an event and a dashboard banner.
 
 use std::net::Ipv4Addr;
-use std::sync::atomic::{AtomicU8, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::time::Instant;
 
 use esp_idf_svc::handle::RawHandle;
@@ -34,6 +34,17 @@ const WAIT: u8 = 1;
 const CONFIRMED: u8 = 2;
 const FALLBACK: u8 = 3;
 static MODE: AtomicU8 = AtomicU8::new(0);
+/// The static address went to the Ethernet HAT (else to the station).
+static ON_ETH: AtomicBool = AtomicBool::new(false);
+
+/// The interface (`eth` = the HAT, else the station) carries a static
+/// address that nothing has answered yet: its link does not count as
+/// online for the setup hotspot (`setup::counts_online`), so a static
+/// address that never works, followed by a DHCP that fails too, still
+/// gets the hotspot after its three minutes.
+pub fn unconfirmed(eth: bool) -> bool {
+    MODE.load(Ordering::Relaxed) == WAIT && ON_ETH.load(Ordering::Relaxed) == eth
+}
 
 /// `ipMode` for the API.
 pub fn mode() -> &'static str {
@@ -134,6 +145,7 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
         .compare_exchange(0, WAIT, Ordering::Relaxed, Ordering::Relaxed)
         .is_ok()
     {
+        ON_ETH.store(iface == "ethernet", Ordering::Relaxed);
         log::info!(
             "static ip: {iface} {}/{} gw {}",
             s.addr,

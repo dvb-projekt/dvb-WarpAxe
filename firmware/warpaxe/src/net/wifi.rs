@@ -167,10 +167,14 @@ fn run(
         let action = if !has_ssid && (n.eth_probing || (eth_fitted && n.eth_waiting)) {
             Action::Keep
         } else {
+            // A link with a static address nothing has answered yet does
+            // not count (`net::static_ip`): a typo on a network without
+            // DHCP must not keep the hotspot shut for the boot.
             hotspot.tick(
                 has_ssid || eth || eth_fitted,
                 t0.elapsed().as_secs() as u32,
-                connected || eth,
+                setup::counts_online(connected, static_ip::unconfirmed(false))
+                    || setup::counts_online(eth, static_ip::unconfirmed(true)),
             )
         };
         match action {
