@@ -37,10 +37,18 @@ cannot work:
 - the gateway lies in the address's subnet and is not the address;
 - neither the address nor the gateway is the subnet's network or
   broadcast address;
-- the subnet overlaps neither the setup hotspot's 192.168.4.0/24 nor
-  the USB link's 192.168.<usbSubnet>.0/24 (a /16 around 192.168.4.x
-  counts): their routes would take the replies. A PATCH of
-  `usbSubnet` is checked against a static address that is on.
+- the subnet overlaps neither the setup hotspot's 192.168.4.0/24
+  (`setup::AP_IP`) nor the USB link's 192.168.<usbSubnet>.0/24 (a /16
+  around 192.168.4.x counts): their routes would take the replies. A
+  PATCH of `usbSubnet` is checked against a static address that is on.
+  The hotspot runs beside the station (AP and STA together) whenever it
+  is open: at setup without a network, and after a boot that got no
+  link for three minutes, until the station or the cable has held for a
+  minute. The station keeps trying with the static address all that
+  time, so a static subnet around 192.168.4.0 would meet the hotspot's,
+  with the gateway 192.168.4.1 being the miner's own hotspot address.
+  This also refuses eero's default network 192.168.4.0/22; such a
+  network needs DHCP (with a reservation) until the hotspot can move.
 
 Switched off, the fields are stored unchecked, so a half-filled form can
 be kept. Existing configs read the field as empty (off): nothing changes

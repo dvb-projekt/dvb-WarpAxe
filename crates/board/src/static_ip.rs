@@ -170,7 +170,12 @@ pub fn validate_packed(s: &str, usb_subnet: u8) -> Result<Settings, Error> {
     if ab == gb {
         return Err(Error::GatewayIsAddr);
     }
-    if overlaps_24(ab, prefix, [192, 168, 4, 0]) {
+    // The hotspot runs beside the station (AP+STA) while it is open: at
+    // setup, and after a boot that never got online until the station or
+    // the cable has held for `setup::CLOSE_AFTER_S`. A static subnet
+    // around its /24 would meet it there, its own 192.168.4.1 included.
+    let [h0, h1, h2, _] = crate::setup::AP_IP;
+    if overlaps_24(ab, prefix, [h0, h1, h2, 0]) {
         return Err(Error::OverlapsHotspot);
     }
     let usb = if usb_subnet == 0 { 7 } else { usb_subnet };
