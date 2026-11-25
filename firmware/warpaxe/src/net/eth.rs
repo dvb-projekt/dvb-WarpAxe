@@ -388,13 +388,22 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             std::thread::sleep(Duration::from_secs(2));
             static_ip::back_to_dhcp(eth.netif());
             // The DHCP client start cleared lwIP's one DNS list, the
-            // station's servers too: back until the cable's own lease.
+            // station's servers too: back now. The driver start's link-up
+            // starts the client again and clears the list once more;
+            // `refill_dns` below puts them back after that.
             static_ip::restore_other_dns(eth.netif());
             if let Err(e) = eth.start() {
                 log::error!("eth: start failed: {e}");
             }
             link_since = None;
             was_link = false;
+        }
+        // A cable without an address of its own: each link-up starts its
+        // DHCP client, which clears lwIP's one DNS list, the station's
+        // servers included (also without a static address: v0.1.49 lost
+        // the pool name then until the station's next lease).
+        if link && ip.is_none() {
+            static_ip::refill_dns(eth.netif());
         }
         if link {
             down_since = None;

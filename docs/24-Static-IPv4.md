@@ -94,13 +94,20 @@ log says `static ip: DNS … set again`. A lookup in the second or so
 before that, or before the address is confirmed, can still go to the
 lease's server. `ipv4Now` shows the server in the list.
 
-Before the typed servers replace what is in the list, the guard keeps
-that (the other interface's, the station's from its lease) and puts it
-back (`static_ip::restore_other_dns`, log `DNS … of the other interface
-back`) when the HAT gives the list up: after the HAT's fallback, whose
-DHCP client start clears the list, and when the HAT's cable goes out
-after the address was confirmed, since the typed servers may sit behind
-the cable. The next lease of either interface writes the list anyway.
+The station's servers are kept when it joins (`remember_station_dns`,
+read from the list right after its lease; not when that already holds
+the HAT's typed servers) and when the typed servers replace them, and
+put back (`static_ip::restore_other_dns`, log `DNS … of the other
+interface back`) when the HAT gives the list up: right after the HAT's
+fallback, when its cable goes out after the address was confirmed (the
+typed servers may sit behind the cable), and whenever the cable is up
+without an address of its own while the list is empty (`refill_dns` in
+the Ethernet loop). The last one matters beyond the static address:
+every link-up of a cable without a lease starts its DHCP client, which
+clears the list, so after the fallback (the driver start brings a
+link-up and a second clear) and on any cable without a DHCP server,
+also with DHCP only (v0.1.49 lost the pool name there until the
+station's next lease).
 
 `apply` sets the typed servers before the first answer as well (with
 the address, which clears the list): until something answers they are

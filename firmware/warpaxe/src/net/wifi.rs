@@ -243,6 +243,7 @@ fn run(
                     crate::diag::stack_unused()
                 );
                 super::set_ip4(false, super::Ip4::of(wifi.wifi().sta_netif()));
+                static_ip::remember_station_dns(wifi.wifi().sta_netif());
             }
             super::set_wifi(true, ip.clone(), rssi());
             // IPv6 (`docs/17`): the link-local address starts SLAAC

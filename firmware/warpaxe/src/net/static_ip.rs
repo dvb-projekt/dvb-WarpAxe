@@ -82,6 +82,36 @@ pub fn note_inbound(fd: i32) {
 /// lease. Put back when the HAT gives the list up again.
 static OTHER_DNS: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
 
+/// The typed first DNS server while the static address is on the HAT
+/// (network-order bytes as a word, 0 = none): what the station must not
+/// take for its own when it reads lwIP's list.
+static TYPED_ETH_DNS: AtomicU32 = AtomicU32::new(0);
+
+/// The station joined and has its lease: lwIP's list holds the lease's
+/// DNS servers now (unless the HAT's typed ones replaced them already).
+/// Kept for [`restore_other_dns`]: every link-up of a cable without a
+/// lease clears the list (its DHCP client start), static or not.
+pub fn remember_station_dns(netif: &EspNetif) {
+    let h = netif.handle();
+    let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
+    let typed = TYPED_ETH_DNS.load(Ordering::Relaxed);
+    if main == [0; 4] || (typed != 0 && u32::from_ne_bytes(main) == typed) {
+        return;
+    }
+    let backup = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP);
+    OTHER_DNS[0].store(u32::from_ne_bytes(main), Ordering::Relaxed);
+    OTHER_DNS[1].store(u32::from_ne_bytes(backup), Ordering::Relaxed);
+}
+
+/// The cable is up without an address of its own and lwIP's list is
+/// empty (its DHCP client start cleared it, after the static fallback or
+/// on any link-up without a lease): the station's servers again.
+pub fn refill_dns(netif: &EspNetif) {
+    if dns_now(netif.handle(), sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN) == [0; 4] {
+        restore_other_dns(netif);
+    }
+}
+
 /// Put the other interface's DNS servers back ([`OTHER_DNS`]), if any were
 /// seen: after the HAT's fallback (its DHCP client start cleared the list)
 /// and when the HAT's link goes after the address was confirmed (the
@@ -220,6 +250,9 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     // After the address: setting it clears the DNS servers.
     set_dns_both(h, s);
     ADDR.store(u32::from_ne_bytes(s.addr.octets()), Ordering::Relaxed);
+    if iface == "ethernet" {
+        TYPED_ETH_DNS.store(u32::from_ne_bytes(s.dns.octets()), Ordering::Relaxed);
+    }
     // The first time only (the address is set again before each
     // association): log it and start in "waiting for an answer".
     if MODE
