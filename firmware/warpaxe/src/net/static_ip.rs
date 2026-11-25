@@ -110,8 +110,12 @@ static TYPED_ETH_DNS: AtomicU32 = AtomicU32::new(0);
 pub fn remember_station_dns(netif: &EspNetif) {
     let h = netif.handle();
     let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
+    // The HAT's typed server in the list: the station's lease gave the
+    // same one, or the guard put it there already, after keeping the
+    // lease's (`remember_other_dns`). Taken only when nothing is kept yet.
     let typed = TYPED_ETH_DNS.load(Ordering::Relaxed);
-    if main == [0; 4] || (typed != 0 && u32::from_ne_bytes(main) == typed) {
+    let is_typed = typed != 0 && u32::from_ne_bytes(main) == typed;
+    if main == [0; 4] || (is_typed && OTHER_DNS[0].load(Ordering::Relaxed) != 0) {
         return;
     }
     let backup = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP);
@@ -407,7 +411,11 @@ impl Guard {
     /// other interface's ([`OTHER_DNS`]).
     fn remember_other_dns(&self, h: *mut sys::esp_netif_t) {
         let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
-        if main == [0; 4] || main == self.s.dns.octets() {
+        // The typed server itself only when nothing is kept yet: the
+        // station's lease may have given the same one.
+        if main == [0; 4]
+            || (main == self.s.dns.octets() && OTHER_DNS[0].load(Ordering::Relaxed) != 0)
+        {
             return;
         }
         let backup = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_BACKUP);
