@@ -285,10 +285,11 @@ impl Guard {
                 // address works for the local network, which is what the
                 // guard is for (reaching the miner).
                 log::info!(
-                    "static ip: {} confirmed by the {} after {} s",
+                    "static ip: {} confirmed by the {} after {} s (stack {} B never used)",
                     self.iface,
                     if pool { "pool" } else { "gateway" },
-                    self.watch.waited_s()
+                    self.watch.waited_s(),
+                    crate::diag::stack_unused()
                 );
                 MODE.store(CONFIRMED, Ordering::Relaxed);
                 Step::Keep
@@ -308,6 +309,11 @@ impl Guard {
                     ),
                 );
                 MODE.store(FALLBACK, Ordering::Relaxed);
+                log::info!(
+                    "static ip: {} stack {} B never used",
+                    self.iface,
+                    crate::diag::stack_unused()
+                );
                 Step::FallBack
             }
         }

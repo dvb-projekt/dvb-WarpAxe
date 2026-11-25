@@ -234,7 +234,10 @@ fn run(
                     .get_ip_info()
                     .map(|i| i.ip.to_string())
                     .ok();
-                log::info!("wifi: connected, ip {ip:?}");
+                log::info!(
+                    "wifi: connected, ip {ip:?} (stack {} B never used)",
+                    crate::diag::stack_unused()
+                );
                 super::set_ip4(false, super::Ip4::of(wifi.wifi().sta_netif()));
             }
             super::set_wifi(true, ip.clone(), rssi());
