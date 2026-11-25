@@ -148,8 +148,9 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
 }
 
 /// Put `netif` back on DHCP. With the link down (Wi-Fi after a
-/// disconnect) the client starts with the next association; with it up,
-/// at once.
+/// disconnect, Ethernet after a driver stop) the client starts with the
+/// next link-up; with it up, at once. Starting the client also clears the
+/// static address from the netif.
 pub fn back_to_dhcp(netif: &EspNetif) {
     // SAFETY: a valid netif handle.
     let r = unsafe { sys::esp_netif_dhcpc_start(netif.handle()) };

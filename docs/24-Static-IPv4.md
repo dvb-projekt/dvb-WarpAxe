@@ -79,7 +79,8 @@ interface's thread:
   count, so a router that is still booting after a power cut gets its
   time): the interface goes back to DHCP until the next restart. Wi-Fi
   disconnects, starts its DHCP client and associates again; Ethernet stops
-  and starts the driver. A pool session still on the static address is
+  the driver, starts its DHCP client and starts the driver again (the stop
+  alone left the static address on the netif: .41, 2026-11-25). A pool session still on the static address is
   moved. Event `static_ip_fallback` (kind `net`: address, interface,
   gateway, seconds), `ipMode` "static-fallback", and a yellow dashboard
   banner linking to the Network tab.

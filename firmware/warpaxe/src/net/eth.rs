@@ -375,7 +375,9 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
         }
         // The lock-out guard: no answer on the static address for a few
         // minutes of link and the cable goes back to DHCP for the boot.
-        // The stop resets the netif to DHCP; the start asks for a lease.
+        // The DHCP client is started explicitly between stop and start:
+        // on the .41 the driver stop alone left the static address on the
+        // netif (2026-11-25), and the start brought it back.
         if guard
             .as_mut()
             .is_some_and(|g| g.tick(link && ip.is_some()) == Step::FallBack)
@@ -384,6 +386,7 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 log::warn!("eth: stop failed: {e}");
             }
             std::thread::sleep(Duration::from_secs(2));
+            static_ip::back_to_dhcp(eth.netif());
             if let Err(e) = eth.start() {
                 log::error!("eth: start failed: {e}");
             }
