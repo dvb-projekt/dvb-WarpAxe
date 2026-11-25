@@ -103,7 +103,10 @@ pub(super) fn dns_now(h: *mut sys::esp_netif_t, which: sys::esp_netif_dns_type_t
 
 /// Stop the DHCP client of `netif` and give it the static address. Call
 /// while the link is down (before the association or the driver start):
-/// the address then comes up with the link.
+/// the address then comes up with the link. False when the address could
+/// not be set: the netif is back on DHCP then (a stopped client and no
+/// address would leave it with neither, and no guard would ever see a
+/// link to fall back from), and the caller drops its guard for the boot.
 pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     let h = netif.handle();
     // SAFETY: a valid netif handle; plain in-parameters.
@@ -118,7 +121,9 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
         r = unsafe { sys::esp_netif_set_ip_info(h, &info) };
     }
     if r != sys::ESP_OK {
-        log::error!("static ip: not set on {iface}: {r}");
+        log::error!("static ip: not set on {iface}: {r}, DHCP until the next restart");
+        back_to_dhcp(netif);
+        MODE.store(0, Ordering::Relaxed);
         return false;
     }
     // After the address: setting it clears the DNS servers.

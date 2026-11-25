@@ -255,10 +255,9 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
     // The static IPv4 address (`net::static_ip`) goes to the cable when
     // the setting is on: set before each driver start, since a stop puts
     // the netif back on DHCP.
-    let mut guard = static_ip::planned().map(|s| Guard::new(s, "ethernet"));
-    if let Some(g) = guard.as_ref() {
-        static_ip::apply(eth.netif(), g.settings(), "ethernet");
-    }
+    let mut guard = static_ip::planned()
+        .map(|s| Guard::new(s, "ethernet"))
+        .filter(|g| static_ip::apply(eth.netif(), g.settings(), "ethernet"));
     if let Err(e) = eth.start() {
         log::error!("eth: start failed: {e}");
         super::set_eth(|s| s.eth_failed = true);
@@ -361,8 +360,10 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                     log::warn!("eth: stop failed: {e}");
                 }
                 std::thread::sleep(Duration::from_secs(2));
-                if let Some(g) = guard.as_ref().filter(|g| g.active()) {
-                    static_ip::apply(eth.netif(), g.settings(), "ethernet");
+                if guard.as_ref().is_some_and(|g| {
+                    g.active() && !static_ip::apply(eth.netif(), g.settings(), "ethernet")
+                }) {
+                    guard = None;
                 }
                 if let Err(e) = eth.start() {
                     log::error!("eth: start failed: {e}");

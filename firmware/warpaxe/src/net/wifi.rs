@@ -269,10 +269,12 @@ fn run(
             // take 20 s of scanning, and none of it counts as link time
             // ([`Guard::tick`]). After the address, whose DNS servers the
             // tick would otherwise find missing.
+            if guard.as_ref().is_some_and(|g| {
+                g.active() && !static_ip::apply(wifi.wifi().sta_netif(), g.settings(), "wifi")
+            }) {
+                guard = None;
+            }
             if let Some(g) = guard.as_mut() {
-                if g.active() {
-                    static_ip::apply(wifi.wifi().sta_netif(), g.settings(), "wifi");
-                }
                 g.tick(wifi.wifi().sta_netif(), false);
             }
             // Not while someone is on the hotspot: an attempt scans every
