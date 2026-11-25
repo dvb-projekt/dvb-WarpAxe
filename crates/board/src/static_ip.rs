@@ -227,6 +227,15 @@ impl Watch {
         self.fell_back
     }
 
+    /// Whether the typed DNS servers are to be held in lwIP's one list
+    /// now: only with the static interface's link up and the address
+    /// confirmed, never after the fallback. A HAT without its cable must
+    /// leave the DNS of a station on DHCP (maybe in another network)
+    /// alone.
+    pub fn holds_dns(&self, link: bool) -> bool {
+        link && self.confirmed && !self.fell_back
+    }
+
     /// Seconds of link without an answer so far.
     pub fn waited_s(&self) -> u32 {
         self.link_s
@@ -495,6 +504,25 @@ mod tests {
         let mut w = Watch::new();
         assert_eq!(w.tick(0, false, true), Verdict::Wait);
         assert!(!w.confirmed());
+    }
+
+    #[test]
+    fn the_typed_dns_is_held_only_confirmed_and_with_the_link() {
+        let mut w = Watch::new();
+        // Waiting: not yet, with or without the link.
+        assert!(!w.holds_dns(true));
+        assert_eq!(w.tick(0, true, true), Verdict::Confirmed);
+        assert!(w.holds_dns(true));
+        // The cable is out (the HAT case): the station's DNS stays.
+        assert!(!w.holds_dns(false));
+        // After a fallback never.
+        let mut w = Watch::new();
+        let mut t = 0;
+        while w.tick(t, true, false) == Verdict::Wait {
+            t += 2;
+        }
+        assert!(w.fell_back());
+        assert!(!w.holds_dns(true));
     }
 
     #[test]

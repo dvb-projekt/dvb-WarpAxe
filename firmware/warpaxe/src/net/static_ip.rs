@@ -272,13 +272,10 @@ impl Guard {
         if !self.active() {
             return Step::Keep;
         }
+        if self.watch.holds_dns(link) {
+            self.keep_dns(netif);
+        }
         if self.watch.confirmed() {
-            // Only while the static interface has its link: a HAT whose
-            // cable is out must not override the DNS of a station on
-            // DHCP, perhaps in another network.
-            if link {
-                self.keep_dns(netif);
-            }
             return Step::Keep;
         }
         let now = self.t0.elapsed().as_secs() as u32;
