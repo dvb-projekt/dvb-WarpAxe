@@ -276,7 +276,7 @@ fn start(c: &Cand) -> io::Result<i32> {
 }
 
 /// The socket's pending error after poll said it is done: 0 = connected.
-fn so_error(fd: i32) -> i32 {
+pub(super) fn so_error(fd: i32) -> i32 {
     let mut err: i32 = 0;
     let mut len = core::mem::size_of::<i32>() as u32;
     let r = unsafe {

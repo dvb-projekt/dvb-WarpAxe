@@ -18,9 +18,9 @@
 //! too. Nothing for `GIVE_UP_S` of link and the interface goes back to
 //! DHCP until the next restart, with an event and a dashboard banner.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+use std::net::Ipv4Addr;
 use std::sync::atomic::{AtomicU8, Ordering};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use esp_idf_svc::handle::RawHandle;
 use esp_idf_svc::netif::EspNetif;
@@ -151,17 +151,56 @@ pub fn back_to_dhcp(netif: &EspNetif) {
     }
 }
 
-/// The gateway answers on the LAN: a TCP connect to its port 80 that
-/// either opens or is refused. A refusal is an answer (the host is
+/// The gateway answers on the LAN, asked from the static address `from`
+/// (bound, so the answer cannot come over the other interface on the
+/// same subnet): a TCP connect to its port 80 that either opens or is
+/// refused within two seconds. A refusal is an answer (the host is
 /// there); a timeout or "host unreachable" (no ARP reply) is not.
-fn gateway_answers(gw: Ipv4Addr) -> bool {
-    let to = SocketAddr::new(IpAddr::V4(gw), 80);
-    match TcpStream::connect_timeout(&to, Duration::from_secs(2)) {
-        Ok(_) => true,
-        Err(e) => matches!(
-            e.kind(),
-            std::io::ErrorKind::ConnectionRefused | std::io::ErrorKind::ConnectionReset
-        ),
+fn gateway_answers(from: Ipv4Addr, gw: Ipv4Addr) -> bool {
+    let sin = |a: Ipv4Addr, port: u16| sys::sockaddr_in {
+        sin_len: core::mem::size_of::<sys::sockaddr_in>() as u8,
+        sin_family: sys::AF_INET as _,
+        sin_port: port.to_be(),
+        sin_addr: sys::in_addr {
+            s_addr: u32::from_ne_bytes(a.octets()),
+        },
+        sin_zero: [0; 8],
+    };
+    let (me, to) = (sin(from, 0), sin(gw, 80));
+    let len = core::mem::size_of::<sys::sockaddr_in>() as u32;
+    let answer = |e: i32| e == 0 || e == sys::ECONNREFUSED as i32 || e == sys::ECONNRESET as i32;
+    // SAFETY: plain lwIP socket calls on a socket of our own, closed on
+    // every path; the addresses outlive the calls.
+    unsafe {
+        let fd = sys::lwip_socket(
+            sys::AF_INET as i32,
+            sys::SOCK_STREAM as i32,
+            sys::IPPROTO_TCP as i32,
+        );
+        if fd < 0 {
+            return false;
+        }
+        let mut ok = false;
+        if sys::lwip_bind(fd, &me as *const _ as *const sys::sockaddr, len) == 0 {
+            sys::lwip_fcntl(fd, sys::F_SETFL as i32, sys::O_NONBLOCK as i32);
+            if sys::lwip_connect(fd, &to as *const _ as *const sys::sockaddr, len) == 0 {
+                ok = true;
+            } else {
+                let e = std::io::Error::last_os_error().raw_os_error().unwrap_or(-1);
+                if e == sys::EINPROGRESS as i32 {
+                    let mut p = sys::pollfd {
+                        fd,
+                        events: sys::POLLOUT as i16,
+                        revents: 0,
+                    };
+                    ok = sys::poll(&mut p, 1, 2000) > 0 && answer(super::dial::so_error(fd));
+                } else {
+                    ok = answer(e);
+                }
+            }
+        }
+        sys::lwip_close(fd);
+        ok
     }
 }
 
@@ -237,7 +276,7 @@ impl Guard {
         let mut answered = pool;
         if link && !answered && self.watch.probe_due(now, link) {
             self.watch.probed(now);
-            answered = gateway_answers(self.s.gateway);
+            answered = gateway_answers(self.s.addr, self.s.gateway);
         }
         match self.watch.tick(now, link, answered) {
             Verdict::Wait => Step::Keep,

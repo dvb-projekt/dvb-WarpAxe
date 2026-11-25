@@ -87,7 +87,9 @@ server. `ipv4Now` shows the server in the list.
 interface's thread:
 
 - With the link up and nothing confirmed, the gateway is probed every
-  10 s with a TCP connect to port 80, 2 s timeout. An open or a refused
+  10 s with a TCP connect to port 80, 2 s timeout, from a socket bound to
+  the static address (so an answer over the other interface on the same
+  subnet does not count). An open or a refused
   connection is an answer (the host is there); a timeout or "host
   unreachable" (no ARP reply) is not. A pool session whose local address
   is the static one counts as an answer too, also one to a pool on the
