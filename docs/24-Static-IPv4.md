@@ -134,7 +134,14 @@ interface's thread:
   as well: the HTTP server's open hook (`static_ip::note_inbound`) sees
   its local address, and an accepted connection means the handshake went
   both ways, a client on the network reached the address and got its
-  replies.
+  replies. Only from the network: the peer must not be in the setup
+  hotspot's 192.168.4.0/24 or the USB link's 192.168.<usbSubnet>.0/24,
+  nor the address itself (`warpaxe_board::static_ip::inbound_confirms`).
+  lwIP takes packets to any of its addresses on any interface, and the
+  hotspot and the USB link have the miner as their gateway, so a phone on
+  the hotspot or the computer on the USB link reaches the static address
+  without the network having anything to do with it. The flag is taken
+  at every tick of the guard and counts only with the link up.
 - Port 80 because nearly every router serves its web page there, or
   refuses the connect, which counts too. A router that drops port 80
   without a word, on a network where no pool connects and nobody opens
