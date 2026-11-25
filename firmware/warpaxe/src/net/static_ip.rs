@@ -1,4 +1,4 @@
-//! The optional static IPv4 address (`staticIp` in the config) on the
+//! The optional static IPv4 address (`staticIpv4` in the config) on the
 //! LAN interface: the Ethernet HAT when a W5500 answered at boot, else
 //! the Wi-Fi station. The other interface, the setup hotspot and the USB
 //! link keep their own addressing; IPv6 (SLAAC) is not touched.
@@ -108,7 +108,7 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
     let h = netif.handle();
     // SAFETY: a valid netif handle; plain in-parameters.
     let mut r = unsafe { sys::esp_netif_dhcpc_stop(h) };
-    if r == sys::ESP_OK || r == sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED as i32 {
+    if r == sys::ESP_OK || r == sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STOPPED {
         let info = sys::esp_netif_ip_info_t {
             ip: addr_t(s.addr),
             netmask: addr_t(s.mask()),
@@ -146,7 +146,7 @@ pub fn apply(netif: &EspNetif, s: &Settings, iface: &'static str) -> bool {
 pub fn back_to_dhcp(netif: &EspNetif) {
     // SAFETY: a valid netif handle.
     let r = unsafe { sys::esp_netif_dhcpc_start(netif.handle()) };
-    if r != sys::ESP_OK && r != sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED as i32 {
+    if r != sys::ESP_OK && r != sys::ESP_ERR_ESP_NETIF_DHCP_ALREADY_STARTED {
         log::warn!("static ip: starting DHCP failed: {r}");
     }
 }

@@ -115,9 +115,13 @@ If DHCP fails too, the existing paths take over: the setup hotspot opens
 after its usual three minutes without a station link (Wi-Fi), and the
 next restart tries the static address again.
 
-Not covered: another device already holding the address (the gateway
-answers, so the guard confirms). The router's ARP table then flips
-between the two.
+No duplicate detection: an address another device already holds is
+confirmed all the same (the gateway answers). The router's ARP table
+then flips between the two.
+
+With the HAT fitted and no cable in, the address waits for the cable:
+`ipMode` stays `static-wait` and the guard counts nothing, while the
+station keeps DHCP. That is the HAT's own state, not a fault.
 
 ## API
 
