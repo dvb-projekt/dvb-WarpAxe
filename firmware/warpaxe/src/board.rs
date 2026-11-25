@@ -3216,7 +3216,9 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                         (Some(d), _) => d,
                         (None, None) if dark => low,
                         (None, None) => 100,
-                        (None, Some(_)) => low,
+                        // Not reached (no PID only in the warm-up hold,
+                        // handled above); full fan if it ever is.
+                        (None, Some(_)) => 100,
                     }
                 };
                 // One fan output: the chip's duty, raised to the
