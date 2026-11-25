@@ -144,11 +144,30 @@ given up for DHCP (yellow). Texts in all eight UI languages, the six
 translations native-speaker checked (2026-11-25). The page splits
 `staticIpv4` into the five fields and joins them back on save.
 
+## Stack
+
+The Wi-Fi thread has 8 KB of internal RAM and now also runs the probe
+(a raw lwIP connect), the event record and the address texts. The least
+stack it left untouched, logged at every Wi-Fi connect and at the
+guard's confirm and fallback (`stack … B never used`), on the devkit
+with 966dccb (2026-11-25):
+
+| Run | Never used |
+|---|---|
+| DHCP, connect | 3,128 B |
+| static, confirmed by the gateway probe | 3,008 B |
+| static, 182 s of failed probes, fallback, DHCP association | 3,128 B |
+| switched off again, connect | 3,312 B |
+
+About 5.1 KB used at most, 3 KB to spare: the stack stays at 8 KB.
+
 ## Image size
 
 The feature added 25,376 B to the image at 62da248 (against main
 c7e1976 built in a worktree of the same path length); db96424 adds
-12,304 B, 13,072 B less. Taken out without giving up function, each step
+12,304 B, 13,072 B less. The review fixes (DNS kept, bound probe,
+link-to-link counting, stack log lines) add 800 B: 966dccb is
+2,980,176 B, +13,104 B against c7e1976, 100,016 B below 0x2F0000. Taken out without giving up function, each step
 measured on its own (the steps were measured on uncommitted trees, so
 they do not add up to the byte):
 
