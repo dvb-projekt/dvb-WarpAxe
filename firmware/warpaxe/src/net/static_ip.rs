@@ -49,6 +49,8 @@ static ON_ETH: AtomicBool = AtomicBool::new(false);
 /// as a word, 0 = none), and whether a connection came in on it.
 static ADDR: AtomicU32 = AtomicU32::new(0);
 static INBOUND: AtomicBool = AtomicBool::new(false);
+/// The USB link's third octet (`usbSubnet`), for [`note_inbound`].
+static USB_NET: AtomicU8 = AtomicU8::new(7);
 
 /// The HTTP server's open hook, for every accepted connection: one whose
 /// local address is the static address, while that waits for an answer,
@@ -68,10 +70,24 @@ pub fn note_inbound(fd: i32) {
     if unsafe { sys::lwip_getsockname(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) } != 0 {
         return;
     }
-    let Some(v4) = warpaxe_board::static_ip::lwip_sockaddr_v4(&buf) else {
+    let Some(local) = warpaxe_board::static_ip::lwip_sockaddr_v4(&buf) else {
         return;
     };
-    if u32::from_ne_bytes(v4) == want {
+    buf = [0u8; 32];
+    len = buf.len() as sys::socklen_t;
+    // SAFETY: as above.
+    if unsafe { sys::lwip_getpeername(fd, buf.as_mut_ptr() as *mut sys::sockaddr, &mut len) } != 0 {
+        return;
+    }
+    let Some(peer) = warpaxe_board::static_ip::lwip_sockaddr_v4(&buf) else {
+        return;
+    };
+    if warpaxe_board::static_ip::inbound_confirms(
+        local,
+        peer,
+        want.to_ne_bytes(),
+        USB_NET.load(Ordering::Relaxed),
+    ) {
         INBOUND.store(true, Ordering::Relaxed);
     }
 }
@@ -168,6 +184,7 @@ pub fn planned() -> Option<Settings> {
     if !cfg.static_ip_on() {
         return None;
     }
+    USB_NET.store(cfg.usb_subnet, Ordering::Relaxed);
     match cfg.static_settings() {
         Ok(s) => Some(s),
         Err(e) => {

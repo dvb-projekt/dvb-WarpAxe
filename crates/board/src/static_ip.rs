@@ -228,6 +228,19 @@ pub fn lwip_sockaddr_v4(buf: &[u8; 32]) -> Option<[u8; 4]> {
     }
 }
 
+/// Whether a connection whose local address is `local` and whose peer is
+/// `peer` confirms the static address `addr`: it came in on the address,
+/// from a host on the network, not from the setup hotspot's /24
+/// ([`crate::setup::AP_IP`]) or the USB link's (`usb_subnet`, 0 = 7),
+/// which reach the miner too (lwIP takes packets to any of its addresses
+/// on any interface) and have the miner as their gateway, nor from the
+/// miner itself.
+pub fn inbound_confirms(local: [u8; 4], peer: [u8; 4], addr: [u8; 4], usb_subnet: u8) -> bool {
+    let [h0, h1, h2, _] = crate::setup::AP_IP;
+    let usb = if usb_subnet == 0 { 7 } else { usb_subnet };
+    local == addr && peer != addr && peer[..3] != [h0, h1, h2] && peer[..3] != [192, 168, usb]
+}
+
 /// What the interface's thread does after a [`Watch::tick`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Verdict {
@@ -613,6 +626,27 @@ mod tests {
         v6[9] = 0x80;
         assert_eq!(lwip_sockaddr_v4(&v6), None);
         assert_eq!(lwip_sockaddr_v4(&[0u8; 32]), None);
+    }
+
+    #[test]
+    fn only_a_connection_from_the_network_confirms() {
+        let addr = [192, 168, 1, 50];
+        // A laptop on the LAN opens the web UI on the static address.
+        assert!(inbound_confirms(addr, [192, 168, 1, 23], addr, 7));
+        // From the setup hotspot or the USB link: not proof.
+        assert!(!inbound_confirms(addr, [192, 168, 4, 2], addr, 7));
+        assert!(!inbound_confirms(addr, [192, 168, 7, 2], addr, 7));
+        assert!(!inbound_confirms(addr, [192, 168, 7, 2], addr, 0));
+        assert!(inbound_confirms(addr, [192, 168, 7, 2], addr, 9));
+        assert!(!inbound_confirms(addr, [192, 168, 9, 2], addr, 9));
+        // The miner itself, or another local address.
+        assert!(!inbound_confirms(addr, addr, addr, 7));
+        assert!(!inbound_confirms(
+            [192, 168, 4, 1],
+            [192, 168, 1, 23],
+            addr,
+            7
+        ));
     }
 
     #[test]
