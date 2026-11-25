@@ -450,7 +450,9 @@ impl Guard {
         let mut answered = pool;
         // A connection to the web UI on the static address: the handshake
         // went both ways (`note_inbound`).
-        let inbound = link && INBOUND.swap(false, Ordering::Relaxed);
+        // Taken every tick, counted only with the link: a connection
+        // while the link was down must not confirm at the next link.
+        let inbound = INBOUND.swap(false, Ordering::Relaxed) && link;
         let mut by = if pool { "pool" } else { "web UI connection" };
         answered |= inbound;
         if link && !answered && self.watch.probe_due(now, link) {
