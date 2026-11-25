@@ -757,6 +757,7 @@
   "sip_on": "正在使用静态 IPv4 地址",
   "sip_wait": "已设置静态 IPv4 地址，等待网关响应",
   "sip_fb": "静态 IPv4 地址未收到响应：下次重启前使用 DHCP",
+  "sip_inv": "静态 IPv4 设置无效：正在使用 DHCP。请检查下方各项。",
   "sip_fb_dash": "静态地址 {ip} 没有收到网关 {gw} 或矿池的响应，为保持可访问，矿机已从路由器的 DHCP 获取地址。请检查静态设置；下次重启会再次尝试静态地址。",
   "evk_net": "网络",
   "evd_static_ip_fallback": "静态 IPv4 {ip}（{if}）：{s} 秒内网关 {gw} 和矿池均无响应，下次重启前改回 DHCP"

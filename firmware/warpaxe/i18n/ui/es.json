@@ -757,6 +757,7 @@
   "sip_on": "Dirección IPv4 estática en uso",
   "sip_wait": "Dirección IPv4 estática configurada, esperando respuesta de la puerta de enlace",
   "sip_fb": "La dirección IPv4 estática no obtuvo respuesta: DHCP hasta el siguiente reinicio",
+  "sip_inv": "Los ajustes de IPv4 estática no son válidos: se usa DHCP. Revisa los campos de abajo.",
   "sip_fb_dash": "La dirección estática {ip} no obtuvo respuesta de la puerta de enlace {gw} ni del pool, así que el minero tomó una dirección del DHCP del router para seguir accesible. Revisa los ajustes estáticos; en el siguiente reinicio se vuelve a probar la dirección estática.",
   "evk_net": "Red",
   "evd_static_ip_fallback": "IPv4 estática {ip} en {if}: sin respuesta de la puerta de enlace {gw} ni del pool durante {s} s, de vuelta a DHCP hasta el siguiente reinicio"

@@ -757,6 +757,7 @@
   "sip_on": "Adresse IPv4 statique utilisée",
   "sip_wait": "Adresse IPv4 statique définie, en attente d’une réponse de la passerelle",
   "sip_fb": "IPv4 statique sans réponse : DHCP jusqu’au prochain redémarrage",
+  "sip_inv": "Réglages IPv4 statique invalides : DHCP utilisé. Vérifiez les champs ci-dessous.",
   "sip_fb_dash": "L’adresse statique {ip} n’a reçu de réponse ni de la passerelle {gw} ni du pool ; pour rester joignable, le mineur a pris une adresse auprès du DHCP du routeur. Vérifiez les réglages statiques ; l’adresse statique sera retentée au prochain redémarrage.",
   "evk_net": "Réseau",
   "evd_static_ip_fallback": "IPv4 statique {ip} sur {if} : aucune réponse de la passerelle {gw} ni du pool pendant {s} s, retour au DHCP jusqu’au prochain redémarrage"

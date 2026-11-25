@@ -28,11 +28,19 @@ use esp_idf_svc::sys;
 use warpaxe_board::static_ip::{Settings, Verdict, Watch};
 
 /// `ipMode`, by index: no static address, static and nothing has
-/// answered yet, static and answered, given up for DHCP until a restart.
-const MODES: [&str; 4] = ["dhcp", "static-wait", "static", "static-fallback"];
+/// answered yet, static and answered, given up for DHCP until a restart,
+/// switched on but the stored settings do not check (DHCP).
+const MODES: [&str; 5] = [
+    "dhcp",
+    "static-wait",
+    "static",
+    "static-fallback",
+    "static-invalid",
+];
 const WAIT: u8 = 1;
 const CONFIRMED: u8 = 2;
 const FALLBACK: u8 = 3;
+const INVALID: u8 = 4;
 static MODE: AtomicU8 = AtomicU8::new(0);
 /// The static address went to the Ethernet HAT (else to the station).
 static ON_ETH: AtomicBool = AtomicBool::new(false);
@@ -85,7 +93,10 @@ pub fn unconfirmed(eth: bool) -> bool {
 
 /// `ipMode` for the API.
 pub fn mode() -> &'static str {
-    MODES[usize::from(MODE.load(Ordering::Relaxed)) & 3]
+    MODES
+        .get(usize::from(MODE.load(Ordering::Relaxed)))
+        .copied()
+        .unwrap_or(MODES[0])
 }
 
 /// The checked settings when the switch is on. A config that no longer
@@ -100,6 +111,7 @@ pub fn planned() -> Option<Settings> {
         Ok(s) => Some(s),
         Err(e) => {
             log::warn!("static ip: {}, using DHCP", e.text());
+            MODE.store(INVALID, Ordering::Relaxed);
             None
         }
     }

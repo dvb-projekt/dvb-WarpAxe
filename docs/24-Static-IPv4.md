@@ -170,7 +170,7 @@ System info (and so the diagnostics file):
 
 | Field | |
 |---|---|
-| `ipMode` | `dhcp`; `static-wait` (static, nothing has answered yet); `static` (the gateway or the pool answered); `static-fallback` (no answer, DHCP until a restart) |
+| `ipMode` | `dhcp`; `static-wait` (static, nothing has answered yet); `static` (the gateway or the pool answered); `static-fallback` (no answer, DHCP until a restart); `static-invalid` (switched on, but the stored settings do not check at boot: DHCP, a yellow line on the Network tab) |
 | `ipv4Now` | what the LAN interface uses now (DHCP or static) as `"mask,gateway,dns"`, the hint under the static fields; `dns` is the first server in lwIP's list (the one lookups go to); null without a LAN address |
 
 Which interface carries the static address is in the log
