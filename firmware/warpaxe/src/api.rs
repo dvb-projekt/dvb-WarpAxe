@@ -476,7 +476,8 @@ fn nerd_fans(
 }
 
 /// The regulator temperature the fans hold, °C (the second fan output on
-/// the Nerd boards, the one fan with the chip on the NerdAxe boards).
+/// the two-fan Nerd boards, the one fan with the chip on every other
+/// board with a fan: Bitaxe, NerdAxe, BitForge Nano).
 fn vr_target(cfg: &config::Config) -> u32 {
     if cfg.vr_target_temp > 0 {
         u32::from(cfg.vr_target_temp)

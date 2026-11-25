@@ -640,7 +640,7 @@ function dashboard() {
   const tot = (i.sharesAccepted || 0) + (i.sharesRejected || 0), rejPct = tot ? i.sharesRejected / tot * 100 : 0, ofExp = th && exp ? th / exp * 100 : null, c = cpuHs(i);
   // Two fans: on the Nerd boards M2 follows the chips and M1 the
   // regulator; on the BitForge Nano both follow the chips.
-  const nano = (i.boardVersion || "").startsWith("bitforge"), two = i.fanrpm2 != null && !nano, vrTarget = two || (i.boardVersion || "").startsWith("nerdaxe") ? i.vrTargetTemp || 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
+  const nano = (i.boardVersion || "").startsWith("bitforge"), two = i.fanrpm2 != null && !nano, vrTarget = i.hasFan !== false && i.hasVr !== false ? i.vrTargetTemp || 65 : null, maxT = Math.max(90, (i.vrOverheatTemp || 0) + 5);
   const fans = nano ? fanrow(t("fan") + " 1", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow(t("fan") + " 2", t("fan_chips"), i.fanspeed2 ?? i.fanspeed, i.fanrpm2) : two ? fanrow("M2", t("fan_chips"), i.fanspeed, i.fanrpm) + fanrow("M1", i.linkFans ? t("fan_chips") : i.fanrpm2 ? t("fan_vreg") : t("fan_vreg") + " · " + t("fan_empty"), i.fanspeed2, i.fanrpm2, true) : fanrow(t("fan"), (i.boardVersion || "").startsWith("nerdaxe") ? t("fan_chips") + " · " + t("fan_vreg") : t("fan_chips"), i.fanspeed, i.fanrpm);
   // AxeOS's Bitaxe boards report the regulator's output current; the
   // Nerd boards and the Nano report what the board draws.
@@ -1252,7 +1252,11 @@ setInterval(previewTick, 3000);
 
 function xpSec(c, i, two) {
   const num = (k, v, o) => fld(k, v, Object.assign({type: "number"}, o));
-  const body = (two ? tog("autofanspeed2", c.autofanspeed2, t("autofan2_s")) + `<div></div>` + num("vrTargetTemp", c.vrTargetTemp || i.vrTargetTemp, {min: 40, max: 90}) + num("manualFanSpeed2", c.manualFanSpeed2, {min: 0, max: 100, hint: t("fanspeed2_s")}) : "") +
+  // The regulator target on every board with a fan and a regulator: the
+  // second fan follows it on the two-fan boards, the one fan (Bitaxe,
+  // NerdAxe, Nano) takes it into account since v0.1.50.
+  const vrT = i.hasFan !== false && i.hasVr !== false ? num("vrTargetTemp", c.vrTargetTemp || i.vrTargetTemp, {min: 40, max: 90}) : "";
+  const body = (two ? tog("autofanspeed2", c.autofanspeed2, t("autofan2_s")) + `<div></div>` + vrT + num("manualFanSpeed2", c.manualFanSpeed2, {min: 0, max: 100, hint: t("fanspeed2_s")}) : vrT ? vrT + `<div></div>` : "") +
     num("pidP", c.pidP, {min: 0, max: 100, step: "any", hint: t("pid_def", {v: 5})}) + num("pidI", c.pidI, {min: 0, max: 10, step: "any", hint: t("pid_def", {v: nf(0.1, 1)})}) + num("pidD", c.pidD, {min: 0, max: 100, step: "any", hint: t("pid_def", {v: 2})}) + `<div></div>` +
     num("stratumSuggestedDifficulty", c.stratumSuggestedDifficulty, {min: 0, hint: t("sugg_s")}) + num("jobInterval", c.jobInterval, {min: 0, max: 5000, hint: t("job_s")}) +
     `<div class="dim" style="grid-column:1/-1;font-size:13px">${t("xp_later")}</div>`;
