@@ -238,7 +238,12 @@ pub fn lwip_sockaddr_v4(buf: &[u8; 32]) -> Option<[u8; 4]> {
 pub fn inbound_confirms(local: [u8; 4], peer: [u8; 4], addr: [u8; 4], usb_subnet: u8) -> bool {
     let [h0, h1, h2, _] = crate::setup::AP_IP;
     let usb = if usb_subnet == 0 { 7 } else { usb_subnet };
-    local == addr && peer != addr && peer[..3] != [h0, h1, h2] && peer[..3] != [192, 168, usb]
+    // As words: the /24 of the peer against the two.
+    let net = u32::from_be_bytes(peer) >> 8;
+    local == addr
+        && peer != addr
+        && net != u32::from_be_bytes([0, h0, h1, h2])
+        && net != u32::from_be_bytes([0, 192, 168, usb])
 }
 
 /// What the interface's thread does after a [`Watch::tick`].
