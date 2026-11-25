@@ -265,14 +265,15 @@ fn run(
             // The static address (`net::static_ip`), set again before each
             // attempt: a stop of the station (the hotspot opening or
             // closing) puts its netif back on DHCP.
-            // The guard ticks without the link first: the attempt below
-            // can take 20 s of scanning, and none of it counts as link
-            // time ([`Guard::tick`]).
+            // Then the guard ticks without the link: the attempt below can
+            // take 20 s of scanning, and none of it counts as link time
+            // ([`Guard::tick`]). After the address, whose DNS servers the
+            // tick would otherwise find missing.
             if let Some(g) = guard.as_mut() {
-                g.tick(wifi.wifi().sta_netif(), false);
                 if g.active() {
                     static_ip::apply(wifi.wifi().sta_netif(), g.settings(), "wifi");
                 }
+                g.tick(wifi.wifi().sta_netif(), false);
             }
             // Not while someone is on the hotspot: an attempt scans every
             // channel for ~20 s and drops the phone that is setting it up.
