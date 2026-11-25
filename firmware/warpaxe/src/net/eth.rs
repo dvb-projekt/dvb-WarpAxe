@@ -32,6 +32,8 @@ use esp_idf_svc::netif::{EspNetif, NetifConfiguration};
 use esp_idf_svc::sys;
 use warpaxe_board::EthPins;
 
+use super::static_ip::{self, Guard, Step};
+
 /// SPI clock, as NerdOS runs the HAT (long wires on a header).
 const SPI_HZ: u32 = 2_000_000;
 /// Without an interrupt line the driver asks the chip this often.
@@ -250,6 +252,13 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 return;
             }
         };
+    // The static IPv4 address (`net::static_ip`) goes to the cable when
+    // the setting is on: set before each driver start, since a stop puts
+    // the netif back on DHCP.
+    let mut guard = static_ip::planned().map(|s| Guard::new(s, "ethernet"));
+    if let Some(g) = guard.as_ref() {
+        static_ip::apply(eth.netif(), g.settings(), "ethernet");
+    }
     if let Err(e) = eth.start() {
         log::error!("eth: start failed: {e}");
         super::set_eth(|s| s.eth_failed = true);
@@ -313,12 +322,15 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
             match &now_ip {
                 Some(a) => {
                     log::info!("eth: address {a}, the default route is the cable");
+                    let ip4 = super::Ip4::of(eth.netif());
+                    super::set_eth(|s| s.eth_ip4 = ip4);
                     ip_since = Some(Instant::now());
                     moved = false;
                 }
                 None => {
                     log::warn!("eth: address gone, the default route is Wi-Fi (if up)");
                     ip_since = None;
+                    super::set_eth(|s| s.eth_ip4 = None);
                     link_since = link.then(Instant::now);
                     // A pool session still up on the cable's address is
                     // dead with it: end it now rather than wait for its
@@ -350,6 +362,9 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                     log::warn!("eth: stop failed: {e}");
                 }
                 std::thread::sleep(Duration::from_secs(2));
+                if let Some(g) = guard.as_ref().filter(|g| g.active()) {
+                    static_ip::apply(eth.netif(), g.settings(), "ethernet");
+                }
                 if let Err(e) = eth.start() {
                     log::error!("eth: start failed: {e}");
                 }
@@ -357,6 +372,20 @@ fn run(spi: SPI2, sysloop: EspSystemEventLoop, pins: EthPins, hostname: String) 
                 was_link = false;
                 dhcp_failed = true;
             }
+        }
+        // The lock-out guard: no answer on the static address for a few
+        // minutes of link and the cable goes back to DHCP for the boot.
+        // The stop resets the netif to DHCP; the start asks for a lease.
+        if guard.as_mut().is_some_and(|g| g.tick(link && ip.is_some()) == Step::FallBack) {
+            if let Err(e) = eth.stop() {
+                log::warn!("eth: stop failed: {e}");
+            }
+            std::thread::sleep(Duration::from_secs(2));
+            if let Err(e) = eth.start() {
+                log::error!("eth: start failed: {e}");
+            }
+            link_since = None;
+            was_link = false;
         }
         if link {
             down_since = None;

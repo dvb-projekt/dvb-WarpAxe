@@ -325,6 +325,22 @@ pub mod detail {
         coded("fan_chip", &[("chip", Value::from(chip))])
     }
 
+    /// The static IPv4 address `ip` (gateway `gw`) on `iface` (wifi or
+    /// ethernet) had no answer from the gateway or the pool for `s`
+    /// seconds of link: the interface went back to DHCP until the next
+    /// restart.
+    pub fn static_ip_fallback(ip: &str, gw: &str, iface: &str, s: u32) -> Detail {
+        coded(
+            "static_ip_fallback",
+            &[
+                ("ip", name(ip)),
+                ("gw", name(gw)),
+                ("if", name(iface)),
+                ("s", Value::from(s)),
+            ],
+        )
+    }
+
     /// The core regulator came back from its NVM (a reset of its own):
     /// the core at `got` mV instead of `want`; set up again and the chips
     /// switched off and on.
@@ -760,6 +776,7 @@ pub const CODES: &[&str] = &[
     "chain_restart",
     "fan_chip",
     "vr_reset",
+    "static_ip_fallback",
     "block_found",
     "block_confirmed",
     "block_orphaned",
@@ -842,6 +859,13 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
         "fan_chip" => format!(
             "fan chip ({}) not found: no fan control, ASICs stay off",
             g("chip")
+        ),
+        "static_ip_fallback" => format!(
+            "static IPv4 {} on {}: no answer from the gateway {} or the pool for {} s, back to DHCP until the next restart",
+            g("ip"),
+            g("if"),
+            g("gw"),
+            g("s")
         ),
         "vr_reset" => format!(
             "core regulator lost its settings (core at {} mV instead of {} mV), reconfigured, ASICs power-cycled",

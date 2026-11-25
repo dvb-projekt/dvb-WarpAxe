@@ -23,6 +23,7 @@ pub mod profile;
 pub mod psu_sag;
 pub mod selftest;
 pub mod setup;
+pub mod static_ip;
 pub mod tps53647;
 pub mod tps546;
 pub mod warm_boot;

@@ -22,6 +22,8 @@ use esp_idf_svc::wifi::{
 };
 use warpaxe_board::setup::{self, Action, Hotspot, AP_IP};
 
+use super::static_ip::{self, Guard, Step};
+
 /// Between station attempts while the hotspot is up: each attempt moves
 /// the hotspot to the network's channel and can drop the phone on it.
 const RETRY_WITH_AP: Duration = Duration::from_secs(60);
@@ -125,6 +127,7 @@ fn run(
         return;
     }
     no_modem_sleep();
+    let mut guard = static_guard();
 
     let t0 = Instant::now();
     let mut hotspot = Hotspot::new();
@@ -234,6 +237,9 @@ fn run(
                 log::info!("wifi: connected, ip {ip:?}");
             }
             super::set_wifi(true, ip.clone(), rssi());
+            if n.wifi_ip4.is_none() {
+                super::set_wifi_ip4(super::Ip4::of(wifi.wifi().sta_netif()));
+            }
             // IPv6 (`docs/17`): the link-local address starts SLAAC
             // (LWIP_IPV6_AUTOCONFIG); the router's advertisement then adds
             // the global and unique-local ones a few seconds later. Once
@@ -255,6 +261,12 @@ fn run(
             }
         } else if has_ssid && Instant::now() >= next_try && !(hotspot.is_open() && ap_clients() > 0)
         {
+            // The static address (`net::static_ip`), set again before each
+            // attempt: a stop of the station (the hotspot opening or
+            // closing) puts its netif back on DHCP.
+            if let Some(g) = guard.as_ref().filter(|g| g.active()) {
+                static_ip::apply(wifi.wifi().sta_netif(), g.settings(), "wifi");
+            }
             // Not while someone is on the hotspot: an attempt scans every
             // channel for ~20 s and drops the phone that is setting it up.
             // SLAAC as soon as the station is associated, not after DHCP:
@@ -289,8 +301,42 @@ fn run(
                 }
             }
         }
+        // The lock-out guard: no answer on the static address for a few
+        // minutes of link and the station goes back to DHCP for the boot.
+        if let Some(g) = guard.as_mut() {
+            if g.tick(connected) == Step::FallBack {
+                let _ = wifi.disconnect();
+                static_ip::back_to_dhcp(wifi.wifi().sta_netif());
+                was_connected = false;
+                ip = None;
+                super::set_wifi(false, None, None);
+                ip6_started = false;
+                ip6_logged = false;
+                super::set_ip6_started(None);
+                next_try = Instant::now();
+                continue;
+            }
+        }
         std::thread::sleep(Duration::from_secs(2));
     }
+}
+
+/// The static IPv4 address for the station, when the setting is on and
+/// no Ethernet HAT takes it (`net::static_ip`). Waits for the HAT's
+/// probe first (a fraction of a second; at most ten), since its verdict
+/// decides which interface carries the address.
+fn static_guard() -> Option<Guard> {
+    let s = static_ip::planned()?;
+    let t = Instant::now();
+    while super::state().eth_probing && t.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let n = super::state();
+    if n.eth_fitted == Some(true) && !n.eth_failed {
+        log::info!("wifi: the static IPv4 address goes to the Ethernet HAT, the station keeps DHCP");
+        return None;
+    }
+    Some(Guard::new(s, "wifi"))
 }
 
 /// IPv6 (`docs/17`): create the station's link-local address, which

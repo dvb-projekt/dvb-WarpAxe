@@ -743,5 +743,21 @@
   "pay_fee": "comisión {f} %",
   "pay_fee_over": "Este pool se queda con el {f} % de la coinbase, más que tu límite del {m} % (2 bloques seguidos). No hay otro pool al que cambiar: el minero sigue minando aquí.",
   "pay_last_fee": "{p} se quedó con más que tu límite de comisión en 2 bloques seguidos, hace {ago}.",
-  "evd_payout_fee": "el pool {p} se quedó con el {fee} % de la coinbase en 2 bloques seguidos (límite {max} %)"
+  "evd_payout_fee": "el pool {p} se quedó con el {fee} % de la coinbase en 2 bloques seguidos (límite {max} %)",
+  "staticIp": "IPv4 estática",
+  "staticIp_s": "Una dirección fija en lugar del DHCP del router: para el cable Ethernet si hay un HAT, si no para el Wi-Fi. Se aplica tras un reinicio. Si ni la puerta de enlace ni el pool responden en 3 minutos, el minero vuelve a tomar una dirección por DHCP hasta el siguiente reinicio, así un error al escribir no te deja fuera. IPv6 no se ve afectado.",
+  "staticIpAddr": "Dirección IPv4",
+  "staticNetmask": "Máscara de subred",
+  "staticGateway": "Puerta de enlace (router)",
+  "staticDns": "Servidor DNS",
+  "staticDns2": "Segundo servidor DNS",
+  "sip_now": "ahora: {v}",
+  "sip_dns_empty": "Vacío = la puerta de enlace.",
+  "sip_dns2_empty": "Vacío = ninguno.",
+  "sip_on": "Dirección IPv4 estática en uso",
+  "sip_wait": "Dirección IPv4 estática configurada, esperando respuesta de la puerta de enlace",
+  "sip_fb": "La dirección IPv4 estática no obtuvo respuesta: DHCP hasta el siguiente reinicio",
+  "sip_fb_dash": "La dirección estática {ip} no obtuvo respuesta de la puerta de enlace {gw} ni del pool, así que el minero tomó una dirección del DHCP del router para seguir accesible. Revisa los ajustes estáticos; el siguiente reinicio vuelve a probar la dirección estática.",
+  "evk_net": "Red",
+  "evd_static_ip_fallback": "IPv4 estática {ip} en {if}: sin respuesta de la puerta de enlace {gw} ni del pool durante {s} s, vuelta a DHCP hasta el siguiente reinicio"
 }

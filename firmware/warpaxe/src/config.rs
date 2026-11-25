@@ -203,6 +203,31 @@ pub struct Config {
     /// `docs/17`.
     #[serde(rename = "ipv6")]
     pub ipv6: bool,
+    /// A static IPv4 address instead of the router's DHCP (off by
+    /// default). It goes to the Ethernet HAT when a W5500 answered at
+    /// boot, else to the Wi-Fi station; the other interface keeps DHCP,
+    /// the setup hotspot and the USB link are untouched, IPv6 (SLAAC)
+    /// stays as it is. Applied at boot. If neither the gateway nor the
+    /// pool answers within `warpaxe_board::static_ip::GIVE_UP_S` of link,
+    /// the interface goes back to DHCP until the next restart (event
+    /// `static_ip_fallback`, `ipMode` "static-fallback").
+    #[serde(rename = "staticIp")]
+    pub static_ip: bool,
+    /// The address, dotted.
+    #[serde(rename = "staticIpAddr")]
+    pub static_ip_addr: String,
+    /// The mask, dotted or as a prefix length ("24").
+    #[serde(rename = "staticNetmask")]
+    pub static_netmask: String,
+    /// The router, inside the subnet.
+    #[serde(rename = "staticGateway")]
+    pub static_gateway: String,
+    /// The first DNS server; empty = the gateway.
+    #[serde(rename = "staticDns")]
+    pub static_dns: String,
+    /// The second DNS server; empty = none.
+    #[serde(rename = "staticDns2")]
+    pub static_dns2: String,
     /// The rated output of the power supply that feeds this miner, whole
     /// watts; 0 = unknown. Only reported: WarpTune keeps a miner below
     /// 80 % of it and searches no higher than the stock point without it.
@@ -354,6 +379,12 @@ impl Default for Config {
             chip_init: String::new(),
             usb_subnet: 7,
             ipv6: true,
+            static_ip: false,
+            static_ip_addr: String::new(),
+            static_netmask: String::new(),
+            static_gateway: String::new(),
+            static_dns: String::new(),
+            static_dns2: String::new(),
             psu_watts: 0,
             // The screens of v0.1.30, spelt out: a device updated from
             // there shows no difference.
@@ -1452,6 +1483,19 @@ impl Config {
         is_sv2(&self.fallback_protocol)
     }
 
+    /// The static IPv4 settings, checked (whether or not the switch is on).
+    pub fn static_settings(
+        &self,
+    ) -> Result<warpaxe_board::static_ip::Settings, warpaxe_board::static_ip::Error> {
+        warpaxe_board::static_ip::validate(
+            &self.static_ip_addr,
+            &self.static_netmask,
+            &self.static_gateway,
+            &self.static_dns,
+            &self.static_dns2,
+        )
+    }
+
     pub fn redacted(&self) -> Config {
         let mut c = self.clone();
         let mask = |v: &String| {
@@ -1519,6 +1563,23 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
             warpaxe_alerts::webhook::validate(&cfg.discord_webhook)
                 .map_err(|r| anyhow::anyhow!(r.text()))?;
         }
+    }
+    // The static IPv4 fields are taken trimmed; switched on, all of them
+    // must make a working address (warpaxe_board::static_ip), so a typo
+    // is refused here rather than cutting the miner off at the next
+    // start. Switched off they are kept as typed, unchecked.
+    for f in [
+        &mut cfg.static_ip_addr,
+        &mut cfg.static_netmask,
+        &mut cfg.static_gateway,
+        &mut cfg.static_dns,
+        &mut cfg.static_dns2,
+    ] {
+        *f = f.trim().to_string();
+    }
+    if cfg.static_ip {
+        cfg.static_settings()
+            .map_err(|e| anyhow::anyhow!(e.text()))?;
     }
     if cfg.payout_max_fee > warpaxe_stratum::payout_check::MAX_FEE_LIMIT {
         anyhow::bail!("payoutMaxFee is in tenths of a percent, 0 to 1000");

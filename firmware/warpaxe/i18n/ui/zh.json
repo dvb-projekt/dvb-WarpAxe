@@ -743,5 +743,21 @@
   "pay_fee": "费率 {f} %",
   "pay_fee_over": "此矿池保留 coinbase 的 {f} %，超过你设定的 {m} % 上限（连续 2 个区块）。没有可切换的矿池：矿机继续在此挖矿。",
   "pay_last_fee": "{ago}前，{p} 连续 2 个区块保留的比例超过你设定的费率上限。",
-  "evd_payout_fee": "矿池 {p} 连续 2 个区块保留 coinbase 的 {fee} %（上限 {max} %）"
+  "evd_payout_fee": "矿池 {p} 连续 2 个区块保留 coinbase 的 {fee} %（上限 {max} %）",
+  "staticIp": "静态 IPv4",
+  "staticIp_s": "用固定地址代替路由器的 DHCP：装有 HAT 时用于以太网线，否则用于 Wi-Fi。重启后生效。如果 3 分钟内网关和矿池都没有响应，矿机会在下次重启前重新通过 DHCP 获取地址，因此输错也不会把你锁在外面。IPv6 不受影响。",
+  "staticIpAddr": "IPv4 地址",
+  "staticNetmask": "子网掩码",
+  "staticGateway": "网关（路由器）",
+  "staticDns": "DNS 服务器",
+  "staticDns2": "备用 DNS 服务器",
+  "sip_now": "当前：{v}",
+  "sip_dns_empty": "留空 = 网关。",
+  "sip_dns2_empty": "留空 = 无。",
+  "sip_on": "正在使用静态 IPv4 地址",
+  "sip_wait": "已设置静态 IPv4 地址，等待网关响应",
+  "sip_fb": "静态 IPv4 地址无响应：下次重启前使用 DHCP",
+  "sip_fb_dash": "静态地址 {ip} 没有收到网关 {gw} 或矿池的响应，为保持可访问，矿机已从路由器的 DHCP 获取地址。请检查静态设置；下次重启会再次尝试静态地址。",
+  "evk_net": "网络",
+  "evd_static_ip_fallback": "静态 IPv4 {ip}（{if}）：{s} 秒内网关 {gw} 和矿池均无响应，下次重启前改回 DHCP"
 }

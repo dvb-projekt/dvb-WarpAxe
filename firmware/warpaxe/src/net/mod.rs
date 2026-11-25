@@ -13,10 +13,36 @@ pub mod dial;
 pub mod eth;
 pub mod http;
 pub mod mdns;
+pub mod static_ip;
 pub mod usb;
 pub mod wifi;
 
 use std::sync::Mutex;
+
+/// An interface's IPv4 mask, gateway and first DNS server as it has them
+/// now (DHCP or static), dotted: the hint next to the static fields.
+#[derive(Clone, Debug, Default)]
+pub struct Ip4 {
+    pub mask: String,
+    pub gateway: String,
+    pub dns: String,
+}
+
+impl Ip4 {
+    pub fn of(netif: &esp_idf_svc::netif::EspNetif) -> Option<Ip4> {
+        let i = netif.get_ip_info().ok()?;
+        if i.ip.is_unspecified() {
+            return None;
+        }
+        let p = u32::from(i.subnet.mask.0.min(32));
+        let mask = if p == 0 { 0 } else { u32::MAX << (32 - p) };
+        Some(Ip4 {
+            mask: std::net::Ipv4Addr::from(mask).to_string(),
+            gateway: i.subnet.gateway.to_string(),
+            dns: i.dns.map(|d| d.to_string()).unwrap_or_default(),
+        })
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct NetState {
@@ -25,6 +51,8 @@ pub struct NetState {
     pub wifi_connected: bool,
     pub wifi_ip: Option<String>,
     pub wifi_rssi: Option<i32>,
+    /// The station's mask, gateway and DNS while it has an address.
+    pub wifi_ip4: Option<Ip4>,
     /// The Ethernet HAT: `None` while the board has no pins for one or
     /// the probe has not run; `Some(false)` when no W5500 answered on the
     /// board's pins (no HAT fitted); `Some(true)` when one did and the
@@ -39,6 +67,8 @@ pub struct NetState {
     /// cable), until an address comes.
     pub eth_waiting: bool,
     pub eth_ip: Option<String>,
+    /// The cable's mask, gateway and DNS while it has an address.
+    pub eth_ip4: Option<Ip4>,
     /// The W5500's MAC, as the driver set it (the ESP's efuse Ethernet
     /// address, `ESP_MAC_ETH`).
     pub eth_mac: Option<String>,
@@ -83,6 +113,17 @@ impl NetState {
         }
     }
 
+    /// Mask, gateway and DNS of the LAN interface ([`Self::lan_ip`]).
+    pub fn lan_ip4(&self) -> Option<&Ip4> {
+        if self.eth_connected {
+            self.eth_ip4.as_ref()
+        } else if self.wifi_connected {
+            self.wifi_ip4.as_ref()
+        } else {
+            None
+        }
+    }
+
     /// The address to reach the web UI at: the LAN one, else the USB one.
     pub fn ip(&self) -> Option<String> {
         self.lan_ip().or_else(|| self.usb_ip.clone())
@@ -95,11 +136,13 @@ static STATE: Mutex<NetState> = Mutex::new(NetState {
     wifi_connected: false,
     wifi_ip: None,
     wifi_rssi: None,
+    wifi_ip4: None,
     eth_fitted: None,
     eth_link: false,
     eth_connected: false,
     eth_waiting: false,
     eth_ip: None,
+    eth_ip4: None,
     eth_mac: None,
     eth_speed_mbit: None,
     eth_full_duplex: None,
@@ -119,6 +162,13 @@ pub(crate) fn set_wifi(connected: bool, ip: Option<String>, rssi: Option<i32>) {
     s.wifi_connected = connected;
     s.wifi_ip = ip;
     s.wifi_rssi = rssi;
+    if !connected {
+        s.wifi_ip4 = None;
+    }
+}
+
+pub(crate) fn set_wifi_ip4(ip4: Option<Ip4>) {
+    STATE.lock().unwrap().wifi_ip4 = ip4;
 }
 
 /// What the Ethernet thread found and sees ([`eth`]).
