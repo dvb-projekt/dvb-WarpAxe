@@ -409,12 +409,18 @@ static CONFIG: Mutex<Option<Config>> = Mutex::new(None);
 static NVS: Mutex<Option<EspNvs<NvsDefault>>> = Mutex::new(None);
 static PART: Mutex<Option<EspDefaultNvsPartition>> = Mutex::new(None);
 const KEY: &str = "config";
+/// The boot reads the stored JSON into a buffer of this size
+/// ([`init`]); [`save`] refuses a larger one, which would read back as
+/// defaults (no Wi-Fi: the hotspot only).
+const MAX_BYTES: usize = 4096;
+/// `staticIpv4` at most: five dotted addresses and four commas are 79.
+const STATIC_MAX: usize = 80;
 
 /// Load from NVS (or defaults) and remember the NVS handle for saves.
 pub fn init(part: EspDefaultNvsPartition) -> anyhow::Result<()> {
     *PART.lock().unwrap() = Some(part.clone());
     let nvs = EspNvs::new(part, "warpaxe", true)?;
-    let mut buf = vec![0u8; 4096];
+    let mut buf = vec![0u8; MAX_BYTES];
     let cfg = match nvs.get_raw(KEY, &mut buf) {
         Ok(Some(bytes)) => match serde_json::from_slice::<Config>(bytes) {
             Ok(c) => c,
@@ -1558,6 +1564,9 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
     // that touches them is checked: a stored set never blocks other
     // settings.
     cfg.static_ipv4.retain(|c| c != ' ');
+    if cfg.static_ipv4.len() > STATIC_MAX {
+        anyhow::bail!("staticIpv4 longer than {STATIC_MAX} characters");
+    }
     let touches_static = v
         .as_object()
         .is_some_and(|o| o.keys().any(|k| k.starts_with("static")));
@@ -1574,6 +1583,12 @@ pub fn patch(v: &serde_json::Value) -> anyhow::Result<Config> {
 
 pub fn save(cfg: &Config) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(cfg)?;
+    if bytes.len() > MAX_BYTES {
+        anyhow::bail!(
+            "settings too long ({} bytes, at most {MAX_BYTES}): nothing saved",
+            bytes.len()
+        );
+    }
     if let Some(nvs) = NVS.lock().unwrap().as_mut() {
         nvs.set_raw(KEY, &bytes)?;
     }
