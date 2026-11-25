@@ -76,10 +76,12 @@ DHCP lease, on either interface. With the address on the HAT and the
 station on DHCP, the station's lease would replace the typed servers.
 So the guard looks at the list on every tick (every one or two
 seconds) and sets the typed servers again when they were replaced,
-for as long as the static address is in use (confirmed or waiting,
-not after the fallback); the log says `static ip: DNS … set again`.
-A lookup in the second or so before that can still go to the lease's
-server. `ipv4Now` shows the server in the list.
+for as long as the static address is in use: confirmed and with its
+link up (a HAT with its cable out leaves the station's DNS alone, the
+station may be in another network), not before the first answer and
+not after the fallback. The log says `static ip: DNS … set again`. A
+lookup in the second or so before that, or before the address is
+confirmed, can still go to the lease's server. `ipv4Now` shows the server in the list.
 
 ## Lock-out guard
 

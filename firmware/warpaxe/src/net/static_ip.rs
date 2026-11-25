@@ -236,9 +236,10 @@ impl Guard {
     }
 
     /// The typed DNS servers stay the ones in use while the address
-    /// does. lwIP keeps one list for all interfaces, and every DHCP client
-    /// start and every lease of the other interface (the station beside a
-    /// static HAT) writes it: set them again when they were replaced.
+    /// does (confirmed, with the link up). lwIP keeps one list for all
+    /// interfaces, and every DHCP client start and every lease of the
+    /// other interface (the station beside a static HAT) writes it: set
+    /// them again when they were replaced.
     fn keep_dns(&self, netif: &EspNetif) {
         let h = netif.handle();
         let main = dns_now(h, sys::esp_netif_dns_type_t_ESP_NETIF_DNS_MAIN);
@@ -271,8 +272,13 @@ impl Guard {
         if !self.active() {
             return Step::Keep;
         }
-        self.keep_dns(netif);
         if self.watch.confirmed() {
+            // Only while the static interface has its link: a HAT whose
+            // cable is out must not override the DNS of a station on
+            // DHCP, perhaps in another network.
+            if link {
+                self.keep_dns(netif);
+            }
             return Step::Keep;
         }
         let now = self.t0.elapsed().as_secs() as u32;
