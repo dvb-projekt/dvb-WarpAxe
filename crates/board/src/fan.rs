@@ -171,10 +171,12 @@ impl Warmup {
 /// when it ran this pass. In automatic the fan takes whichever needs
 /// more; a fan set by hand stays as set.
 ///
-/// `full_without_vr` is the NerdAxe boards: up to v0.1.49 their one fan
-/// ran at 100 % while the regulator had no reading, by hand or in
-/// automatic, and it does again. With the chips off on purpose (`dark`)
-/// nothing heats, and the chip's duty stands.
+/// `full_without_vr` is the NerdAxe boards: without a regulator reading
+/// their one fan runs at 100 %, by hand or in automatic. Stricter than
+/// up to v0.1.49 on purpose, where only `linkFans` off gave 100 % there
+/// (with the default `linkFans` on the fan kept the chip's duty). With
+/// the chips off on purpose (`dark`) nothing heats, and the chip's duty
+/// stands.
 pub fn one_fan_duty(
     chip: u8,
     vr_pid: Option<u8>,

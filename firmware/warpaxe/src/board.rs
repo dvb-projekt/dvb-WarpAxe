@@ -3222,7 +3222,8 @@ fn run(profile: &'static Profile, mut vr: Option<Regulator>, mut thermal: Option
                 // One fan output: the chip's duty, raised to the
                 // regulator's when that needs more (automatic fan only; a
                 // fan set by hand stays as set). A NerdAxe's runs at 100 %
-                // without a regulator reading, as up to v0.1.49.
+                // without a regulator reading, by hand too: stricter than
+                // up to v0.1.49 (only linkFans off did that), on purpose.
                 let one = fan::one_fan_duty(
                     chip,
                     vr_pid,

@@ -547,7 +547,9 @@ back at any time with `GET /api/v1/display/frame`.
   overheat stop — the fans stay at full until the chips are near their
   target, then the PID takes over from there instead of running them down
   on a cold board. Boards with one fan for chip and regulator (NerdAxe) run it for
-  whichever of the two needs more (regulator target 80 °C).
+  whichever of the two needs more (regulator target 80 °C). Without a
+  regulator reading a NerdAxe's fan runs at 100 %, set by hand or not
+  (since v0.1.50; up to v0.1.49 only with linkFans off).
 - Overheat shutdown of the core voltage at the stock firmware's lines
   (Bitaxe: chip 75 °C, regulator 105 °C as AxeOS stops; BitForge Nano the
   same, as ForgeOS stops, on ForgeOS's diode scale since v0.1.36;
