@@ -156,6 +156,10 @@ struct PoolTrust {
     seen: Option<Seen>,
     /// The leaf was accepted by the pin (not by the bundle).
     pinned: bool,
+    /// The pool presented a certificate and it was refused (any reason:
+    /// another name, expired, an unknown authority, a key that is not
+    /// the pin). Not set when the handshake failed before a certificate.
+    refused: bool,
 }
 
 /// A pool key the verify callback refused, kept in RAM for the Pool
@@ -172,6 +176,7 @@ static POOL: Mutex<PoolTrust> = Mutex::new(PoolTrust {
     pin: None,
     seen: None,
     pinned: false,
+    refused: false,
 });
 
 /// The slot; a poisoned lock (no panic site holds it, but the callback
@@ -186,6 +191,7 @@ pub fn pool_begin(pin: Option<Pin>) {
         pin,
         seen: None,
         pinned: false,
+        refused: false,
     };
 }
 
@@ -195,6 +201,13 @@ pub fn pool_begin(pin: Option<Pin>) {
 pub fn pool_outcome() -> (Option<Seen>, bool) {
     let p = pool();
     (p.seen, p.pinned)
+}
+
+/// After the pool handshake: whether the pool's certificate was refused
+/// (`stratum::run` keeps a protected main pool instead of moving on to a
+/// plain fallback on a public host, `warpaxe_stratum::guard`).
+pub fn pool_refused() -> bool {
+    pool().refused
 }
 
 unsafe extern "C" fn verify_pool(
@@ -244,6 +257,9 @@ unsafe extern "C" fn verify_pool(
         // ESP-IDF's own verdict first: a leaf a bundle root issued
         // directly is validated here and never reported as refused.
         let ret = esp_crt_verify_callback(buf, crt, depth, flags);
+        if ret != 0 || *flags != 0 {
+            pool().refused = true;
+        }
         if let Some(seen) = seen {
             if ret != 0 || *flags != 0 {
                 if seen.changed {

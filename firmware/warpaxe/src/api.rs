@@ -204,6 +204,10 @@ pub fn system_info() -> serde_json::Value {
         "fallbackStratumProtocol": cfg.fallback_protocol, "fallbackStratumV2AuthorityPubkey": cfg.fallback_v2_authority_pubkey, "fallbackStratumV2ChannelType": cfg.fallback_v2_channel_type, "fallbackStratumV2RequireAuth": cfg.fallback_v2_require_auth,
         "stratumProtocolActive": if st.sv2 { "SV2" } else { "SV1" },
         "isUsingFallbackStratum": u8::from(st.using_fallback), "activePool": st.pool,
+        // Plain V1 on a public host, and the main pool kept because its
+        // certificate was refused while the fallback is such a pool
+        // (docs/25).
+        "stratumPlainPublic": st.plain_public, "stratumHeldForCert": st.held_for_cert,
         // Neither the main nor (where set) the fallback pool answers:
         // the chips are off until one does (AxeOS's and ForgeOS's name).
         "poolsUnavailable": st.pools_unavailable,

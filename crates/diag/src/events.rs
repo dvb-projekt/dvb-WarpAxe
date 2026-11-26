@@ -383,6 +383,13 @@ pub mod detail {
         coded("pool_fallback", &[("n", Value::from(fails))])
     }
 
+    /// The main pool's certificate or key was refused and the fallback is
+    /// unencrypted on a public host: the miner stays on the main pool
+    /// (docs/25).
+    pub fn pool_held_cert() -> Detail {
+        coded("pool_held_cert", &[])
+    }
+
     /// The main pool answers again.
     pub fn pool_back() -> Detail {
         coded("pool_back", &[])
@@ -782,6 +789,7 @@ pub const CODES: &[&str] = &[
     "block_orphaned",
     "block_unknown",
     "pool_fallback",
+    "pool_held_cert",
     "pool_back",
     "pool_stale",
     "pool_stale_fallback",
@@ -883,6 +891,9 @@ pub fn english(c: &str, p: &Map<String, Value>) -> Option<String> {
             g("h")
         ),
         "pool_fallback" => format!("main pool failed {} times, on the fallback", g("n")),
+        "pool_held_cert" => {
+            "main pool certificate refused, staying on it because the fallback is unencrypted on a public host".into()
+        }
         "pool_back" => "main pool answers again, back from the fallback".into(),
         "pool_stale" => format!("no new job from the pool for {} s, reconnecting", g("s")),
         "pool_stale_fallback" => format!(
@@ -1337,6 +1348,10 @@ mod tests {
                 "chip 4 domain 2 still stuck after 3 resets, no more until a new clock, a new voltage or the next boot",
             ),
             (detail::pool_fallback(3), "main pool failed 3 times, on the fallback"),
+            (
+                detail::pool_held_cert(),
+                "main pool certificate refused, staying on it because the fallback is unencrypted on a public host",
+            ),
             (detail::pool_back(), "main pool answers again, back from the fallback"),
             (
                 detail::pool_stale(600),

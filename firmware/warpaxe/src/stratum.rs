@@ -85,6 +85,14 @@ pub struct StratumState {
     pub tls: bool,
     /// The live session speaks Stratum V2 (always encrypted).
     pub sv2: bool,
+    /// The live (or tried) pool is plain Stratum V1 on a public host
+    /// (`warpaxe_stratum::guard::plain_public`): the connection a
+    /// reroute can take over.
+    pub plain_public: bool,
+    /// The main pool's certificate or key was refused and the fallback
+    /// is plain on a public host: the miner stays on the main pool
+    /// instead of switching (`warpaxe_stratum::guard::hold_main`).
+    pub held_for_cert: bool,
     /// Height of the block the current job builds (BIP34), 0 = unknown.
     pub block_height: u64,
     /// Network difficulty of the current job (from nbits).
@@ -828,6 +836,10 @@ fn run() {
     let mut probing = false;
     // That probe's second try, IPv4 first after silence over IPv6, used.
     let mut probe_retried = false;
+    // The main pool's certificate was refused and the fallback is plain
+    // on a public host: no switch until the main pool is accepted again
+    // or the settings change (`warpaxe_stratum::guard::hold_main`).
+    let mut cert_hold = false;
     // PSRAM like this thread (see `start`): a TCP connect, no flash.
     if diag::spawn_psram("probe", 4096, probe_primary).is_err() {
         std::thread::Builder::new()
@@ -843,6 +855,7 @@ fn run() {
             fails = 0;
             backoff = Duration::from_secs(3);
             probing = false;
+            cert_hold = false;
             BACK_UNREPORTED.store(false, Ordering::Relaxed);
             PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
             crate::net::dial::forget_no_work();
@@ -859,10 +872,34 @@ fn run() {
         }
         let fallback_ok =
             cfg.use_fallback && !cfg.fallback_url.is_empty() && !cfg.fallback_user.is_empty();
+        // Protected: TLS, or Stratum V2 with the pool's authority key
+        // (without one the Noise handshake trusts any key).
+        let main_protected = if cfg.sv2() {
+            !cfg.stratum_v2_authority_pubkey.trim().is_empty()
+        } else {
+            cfg.stratum_tls > 0
+        };
+        let fallback_plain_public = fallback_ok
+            && warpaxe_stratum::guard::plain_public(
+                cfg.fallback_tls > 0,
+                cfg.fallback_sv2(),
+                &cfg.fallback_url,
+            );
+        if !(main_protected && fallback_plain_public) {
+            // The settings no longer call for it (a saved change also
+            // clears it, above).
+            cert_hold = false;
+        }
+        // Where the hold stands, the fallback is not there to switch to.
+        let fallback_ok = fallback_ok && !cert_hold;
         if !fallback_ok {
             on_fallback = false;
         } else if !on_fallback && fails >= FAILS_BEFORE_FALLBACK && !pools_out() {
-            log::warn!("stratum: main pool failed {fails} times, switching to the fallback");
+            if fallback_plain_public {
+                log::warn!("stratum: main pool failed {fails} times, switching to the fallback, which is unencrypted on a public host");
+            } else {
+                log::warn!("stratum: main pool failed {fails} times, switching to the fallback");
+            }
             crate::events::record("pool", warpaxe_diag::events::detail::pool_fallback(fails));
             on_fallback = true;
             fails = 0;
@@ -913,6 +950,8 @@ fn run() {
             s.tls = tls && !sv2;
             s.tls_pinned = false;
             s.sv2 = sv2;
+            s.plain_public = warpaxe_stratum::guard::plain_public(tls, sv2, &host);
+            s.held_for_cert = cert_hold;
             s.connected = false;
             s.local_ip = None;
             s.subscribed = false;
@@ -924,6 +963,7 @@ fn run() {
         // Only this session's verdict counts (a `continue` above could
         // have left the last one's flag standing).
         CLOCK_UNSURE.store(false, Ordering::Relaxed);
+        REFUSED.store(false, Ordering::Relaxed);
         // The probe's word is for the fallback session it ended, and is
         // taken right after it (below). One left standing (a settings
         // change ended that session first) must not end the next
@@ -961,6 +1001,7 @@ fn run() {
                 fails = 0;
                 backoff = Duration::from_secs(3);
                 probing = false;
+                cert_hold = false;
                 BACK_UNREPORTED.store(false, Ordering::Relaxed);
                 PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
                 crate::net::dial::forget_no_work();
@@ -1090,6 +1131,25 @@ fn run() {
             }
         }
         let held = started.elapsed() >= SHORT_SESSION && !no_work;
+        // The main pool's certificate refused while the fallback is plain
+        // on a public host: stay (`warpaxe_stratum::guard::hold_main`).
+        // Before the probe's branches, so a return from the fallback that
+        // meets a refused certificate holds too instead of going back.
+        let refused = REFUSED.swap(false, Ordering::Relaxed);
+        if !held
+            && !on_fallback
+            && !cert_hold
+            && warpaxe_stratum::guard::hold_main(main_protected, fallback_plain_public, refused)
+        {
+            cert_hold = true;
+            fails = 0;
+            probing = false;
+            // A return still pending is not one: the miner never mined there.
+            BACK_UNREPORTED.store(false, Ordering::Relaxed);
+            update(|s| s.held_for_cert = true);
+            log::warn!("stratum: the main pool's certificate was refused; the fallback is unencrypted on a public host, so the miner stays on the main pool");
+            crate::events::record("pool", warpaxe_diag::events::detail::pool_held_cert());
+        }
         if probing && (on_fallback || !net_up) {
             // The probe's session ended without a network, or the pool
             // choice moved on to the fallback since (the outage's rounds,
@@ -1164,7 +1224,8 @@ fn run() {
                 // turn, a round every half minute, until one sends work
                 // (`publish`). The main pool is tried again too, which
                 // the fallback's own backoff never did.
-                let (next_fallback, pause_s) = outage::next_probe(on_fallback, fallback_ok);
+                let (next_fallback, pause_s) =
+                    outage::next_probe(on_fallback, fallback_ok && !cert_hold);
                 if next_fallback != on_fallback {
                     STALE.lock().unwrap().switched();
                 }
@@ -1181,7 +1242,7 @@ fn run() {
                 // are known to be out (the fallback alone used to be
                 // retried for ever). `fails` stays at 0 meanwhile: no
                 // switch at the loop's top, no fallback event per turn.
-                if fallback_ok && WATCH.lock().unwrap().alternate() {
+                if fallback_ok && !cert_hold && WATCH.lock().unwrap().alternate() {
                     on_fallback = !on_fallback;
                     fails = 0;
                     STALE.lock().unwrap().switched();
@@ -1196,6 +1257,12 @@ fn run() {
             if !on_fallback {
                 probing = false;
                 PROBE_EVERY_S.store(PRIMARY_PROBE, Ordering::Relaxed);
+                if cert_hold {
+                    // Accepted again and mined on: the fallback is there
+                    // to switch to once more.
+                    cert_hold = false;
+                    update(|s| s.held_for_cert = false);
+                }
             }
         }
     }
@@ -1300,6 +1367,9 @@ fn session(
     let stream = match Link::connect(host, port, tls, pin) {
         Ok(s) => Arc::new(s),
         Err(e) => {
+            if tls && crate::tls_trust::pool_refused() {
+                REFUSED.store(true, Ordering::Relaxed);
+            }
             // A certificate refused for its key alone: the Pool page
             // offers the key seen for confirmation (RAM only; the pin
             // is written by the HTTP handler on the click).
@@ -1704,6 +1774,10 @@ const CLOCK_GRACE_S: u64 = 300;
 /// Set by a V2 session whose certificate check failed against a clock
 /// NTP had not confirmed; `run` takes it and skips the failure count.
 static CLOCK_UNSURE: AtomicBool = AtomicBool::new(false);
+/// Set by a session whose pool presented a certificate that was refused
+/// (TLS: `tls_trust::pool_refused`; Sv2: a certificate not signed by the
+/// authority key). `run` takes it for `warpaxe_stratum::guard::hold_main`.
+static REFUSED: AtomicBool = AtomicBool::new(false);
 
 /// The Sv2 session on a thread whose stack lives in PSRAM: the Noise
 /// handshake (secp256k1) wants more stack than the V1 thread carries,
@@ -1833,8 +1907,12 @@ fn session_v2(
         // A certificate that fails against a clock NTP has not confirmed
         // is the clock's doing until proven otherwise: `run` does not
         // count it towards the fallback.
-        if clock_unsure && matches!(e, warpaxe_sv2::Error::Certificate(_)) {
-            CLOCK_UNSURE.store(true, Ordering::Relaxed);
+        if matches!(e, warpaxe_sv2::Error::Certificate(_)) {
+            if clock_unsure {
+                CLOCK_UNSURE.store(true, Ordering::Relaxed);
+            } else {
+                REFUSED.store(true, Ordering::Relaxed);
+            }
         }
         anyhow::anyhow!("sv2: {e}")
     })?;

@@ -105,6 +105,10 @@ impl Link {
             }
             return Ok(Link::Tcp(s));
         }
+        // A fresh slot before anything can fail: a lookup or connect that
+        // fails before the handshake must not leave the last pool's
+        // verdict (`tls_trust::pool_refused`) standing for this one.
+        tls_trust::pool_begin(pin);
         log::info!(
             "stratum: connecting to {} (TLS{})",
             warpaxe_stratum::dial::host_port(host, port),
