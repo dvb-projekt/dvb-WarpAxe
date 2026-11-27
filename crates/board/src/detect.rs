@@ -57,6 +57,7 @@ pub const TESTED: &[&str] = &[
     "bitforge-nano",
     "nerdaxe-gaia",
     "nerdnos",
+    "bitaxe-naja-duo",
 ];
 
 /// The outcome of a first-start detection.
@@ -796,7 +797,9 @@ mod tests {
                 matches!(d, Detection::Choose([p], _) if p.name == name),
                 "{v}"
             );
-            assert!(!TESTED.contains(&name));
+            // The Naja Duo is tested (on our bench since 2026-11-12) and
+            // still only offered: the list does not decide the detection.
+            assert_eq!(TESTED.contains(&name), name == "bitaxe-naja-duo", "{v}");
         }
         // 650 lies inside the Gamma's 600 range but is the Duo.
         let d = detect((Some("gamma"), Some("BM1370"), Some("650")), &[], &[], None);
