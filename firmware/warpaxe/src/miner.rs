@@ -751,8 +751,9 @@ fn run(mut uart: ChipUart) {
     // One chip silent while the others hash, and one hash domain stuck
     // while its chip hashes: both kept across chain restarts, and both
     // share the hour between two interventions. A board whose nonce-to-
-    // chip attribution is not confirmed on a device (the Naja Duo) only
-    // reports the silence (`Profile::silent_chip_restart`).
+    // chip attribution is not confirmed on a device (the NerdQAxe+; the
+    // Naja Duo until v0.1.51) only reports the silence
+    // (`Profile::silent_chip_restart`).
     // In PSRAM with the chain driver, not on this stack (`Held`).
     let Held { chain, lone, latch } = held();
     if !board::profile().silent_chip_restart {

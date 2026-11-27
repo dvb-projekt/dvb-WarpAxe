@@ -14,8 +14,10 @@
 //!   up until the next boot.
 //!
 //! A board whose nonce-to-chip attribution has not been seen on a device
-//! (`Profile::silent_chip_restart` false: the Naja Duo until its first
-//! run) gets the policy in report-only mode ([`LoneSilence::report_only`]):
+//! (`Profile::silent_chip_restart` false: the NerdQAxe+ until it has
+//! run; the Naja Duo was one until its nonces had been counted on the
+//! bench, 2026-11-27) gets the policy in report-only mode
+//! ([`LoneSilence::report_only`]):
 //! the same ten minutes of silence yield a [`Verdict::Report`] instead of
 //! a restart, once per ten minutes for as long as the chip stays silent,
 //! and nothing is counted against the chip. A wrong attribution would

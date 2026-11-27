@@ -272,11 +272,13 @@ pub struct Profile {
     /// the chain started over for it (`warpaxe_chain::lone`). `false`
     /// only reports: the silence is logged and shown, nothing restarts.
     /// For a board whose nonce-to-chip attribution has not been seen on
-    /// a device yet (the Naja Duo: ESP-Miner reads bit 24 of the nonce,
-    /// NerdOS bits 24–25, nobody has run two BM1373 under either), where
-    /// a wrong attribution would call a hashing chip silent and restart
-    /// a healthy chain every hour. Flip to `true` once the per-chip
-    /// nonce counts on the device agree with the hash counters.
+    /// a device yet, where a wrong attribution would call a hashing
+    /// chip silent and restart a healthy chain every hour. Flip to
+    /// `true` once the per-chip nonce counts on the device agree with
+    /// the hash counters. The Naja Duo was such a board from its first
+    /// run until 2026-11-27 (ESP-Miner reads bit 24 of the nonce, NerdOS
+    /// bits 24–25, nobody had run two BM1373 under either; see its
+    /// profile for what the device answered); the NerdQAxe+ still is.
     pub silent_chip_restart: bool,
 }
 
@@ -793,9 +795,16 @@ pub const BITAXE_NAJA_DUO: Profile = Profile {
     // hash counters read about 6900 cores at a fixed clock (2026-11-13,
     // ESP-Miner issue #2102), ESP-Miner's 6725 was 2.5 % low.
     small_cores: 0,
-    // Report only until the nonce-to-chip attribution has been seen on a
-    // device: see the field. One line to arm it after the first run.
-    silent_chip_restart: false,
+    // Armed 2026-11-27, report-only from the first run (v0.1.44) until
+    // then. On our bench board (v0.1.50, 3.5 h) the nonces' address bits
+    // fell cleanly into the two halves: 1600 nonces below 128, every one
+    // credited to chip 0, and 1672 from 128 up, every one to chip 1,
+    // none anywhere else (values 0, 1, 8, 9, 64, 65, 72, 73 and the same
+    // + 128). Bit 24 is the chip, as ESP-Miner reads it. The fleet
+    // watches never showed a silent chip on the board in between. The
+    // restart for a silent chip is host-tested only on this board: a
+    // silent chip cannot be provoked on demand.
+    silent_chip_restart: true,
     ..BITAXE_GAMMA
 };
 
@@ -1587,15 +1596,17 @@ mod tests {
     }
 
     /// The Naja Duo's own figures from its maker's firmware and factory
-    /// NVS; nothing else carries a board small-core count, and every
-    /// other board restarts its chain for a silent chip.
+    /// NVS; no board carries a small-core count of its own, and every
+    /// board restarts its chain for a silent chip, the Naja Duo too
+    /// since its nonce-to-chip attribution was seen on the device
+    /// (2026-11-27), all but the NerdQAxe+, which has never run.
     #[test]
-    fn naja_duo_counts_the_chips_own_cores_and_only_reports_silence() {
+    fn naja_duo_counts_the_chips_own_cores_and_restarts_for_a_silent_chip() {
         use super::*;
         let naja = Profile::by_name("bitaxe-naja-duo").unwrap();
         assert_eq!(naja.small_cores, 0);
         assert_eq!(naja.fan_target_c, 50.0);
-        assert!(!naja.silent_chip_restart);
+        assert!(naja.silent_chip_restart);
         let vr = naja.tps546().unwrap();
         assert_eq!(
             (vr.iout_oc_warn, vr.iout_oc_fault),

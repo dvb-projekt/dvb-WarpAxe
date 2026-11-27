@@ -424,3 +424,33 @@ watchdog goes by nonces (which chip 1 delivered) and only reports on
 this board, and a failed self-test switches nothing off except for a
 regulator phase under its floor.
 
+## The Naja Duo's silent-chip watchdog armed (2026-11-27)
+
+The question the first run left open was whether bit 24 of the nonce
+is the chip (ESP-Miner) or bits 24–25 are (NerdOS). The few dozen
+nonces of 12.11. fitted bit 24; the watchdog stayed report-only through
+v0.1.50 all the same. Read from our bench board on v0.1.50 after 3.5 h
+(dvb-WarpAxe #2, `GET /api/v1/chip/cores`):
+
+| | chip 0 | chip 1 |
+|---|---|---|
+| nonces credited | 1600 | 1671 |
+| address bits seen | 0, 1, 8, 9, 64, 65, 72, 73 | the same + 128 |
+| nonces in that half | 1600 (0–127) | 1672 (128–255) |
+
+Every value below 128 is credited to chip 0, every value from 128 up
+to chip 1, none to a chip the chain does not have (the two tallies
+are one nonce apart: they are read one after the other). On the device
+`silentChips` and `chipSilentRestarts` are 0 and the log has no silent
+chip; the fleet watches since the first run never showed one on this
+board. Bit 24 is the chip; the buckets below it are the ones reported
+in ESP-Miner #2113.
+
+So `silent_chip_restart` is `true` on the Naja Duo from v0.1.51: one
+chip silent for ten minutes while the other hashes has the chain
+started over, at most once an hour, three tries, as on every other
+board that has run. What this does not show: the restart on a Naja Duo
+itself. The policy is host-tested; a silent chip cannot be provoked on
+demand, so the first real one on this board is its device test. The
+NerdQAxe+ stays report-only until it has run (docs/21).
+
