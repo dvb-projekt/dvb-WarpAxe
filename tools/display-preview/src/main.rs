@@ -487,6 +487,15 @@ mod net {
         pub wifi_ip: Option<String>,
         pub usb_ip: Option<String>,
         pub wifi_rssi: Option<i32>,
+        /// The preview shows Wi-Fi: no Ethernet HAT.
+        pub eth_connected: bool,
+        pub eth_speed_mbit: Option<u16>,
+    }
+    impl NetState {
+        /// As the firmware's: the LAN address, else the USB one.
+        pub fn ip(&self) -> Option<String> {
+            self.wifi_ip.clone().or_else(|| self.usb_ip.clone())
+        }
     }
     pub fn state() -> NetState {
         let ip = if crate::board::gamma() {
@@ -498,6 +507,8 @@ mod net {
             wifi_ip: Some(ip.into()),
             usb_ip: None,
             wifi_rssi: Some(-66),
+            eth_connected: false,
+            eth_speed_mbit: None,
         }
     }
     pub fn hotspot() -> Option<(String, String)> {
