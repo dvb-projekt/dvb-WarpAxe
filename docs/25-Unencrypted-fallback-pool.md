@@ -1,6 +1,6 @@
 # An unencrypted fallback pool
 
-Status: built on `feat/plaintext-fallback`, not in a release yet.
+Status: in main, for v0.1.51. Device-tested on a Bitaxe Gamma on 2026-11-27: a TLS main pool reached by its IPv4 address (certificate name refused) with a plain public fallback held, and the chips went off with `poolsUnavailable` after about 70 s; with the fallback on the LAN the miner switched after about 11 s.
 
 On 25 November 2026 Braiins reported BGP hijacks against plain Stratum
 V1. The attacker announces a more specific route to the pool's address,
