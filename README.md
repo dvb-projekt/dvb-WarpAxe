@@ -207,7 +207,7 @@ gets from AxeOS, NerdOS, ForgeOS and WarpAxe.
 
 <p align="center">
   <img src="docs/screenshots/web-network.png" alt="Network: Wi-Fi, hostname, time by NTP and time zone" width="760"><br>
-  <em>Network — Wi-Fi with a list of networks found, hostname, USB address, time by NTP and time zone, and whether and when the clock was last synchronised.</em>
+  <em>Network — Wi-Fi with a list of networks found, hostname, USB address, IPv6, an optional static IPv4 address (here switched on and in use, each field with the value in use now), time by NTP and time zone, and whether and when the clock was last synchronised.</em>
 </p>
 
 <p align="center">
