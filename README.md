@@ -5,7 +5,7 @@
 <p align="center">
   <strong>Open-source Rust firmware for BM1370, BM1373 and BM1397 Bitcoin miners</strong><br>
   Runs on Bitaxe Gamma · NerdQAxe++ · NerdOCTAXE-γ · NerdAxe Gaia · BitForge Nano · NerdNOS · Bitaxe Naja Duo<br>
-  <a href="#supported-boards">profiles for 6 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
+  <a href="#supported-boards">profiles for 7 more boards</a> · experimental on the T-Display-S3 · Stratum V1 + V2 · AxeOS-compatible API · Signed online updates
 </p>
 
 <p align="center">
@@ -116,7 +116,7 @@ move fast; corrections welcome.
 | Other makers' miners on the swarm page | AxeOS devices only (the browser reads `/api/system/info`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS devices only (the browser reads `/api/system/info` and `/api/system/asic`) | AxeOS, NerdOS, ForgeOS, WarpAxe — and an **Avalon over the cgminer API**, found by the network search and read by the miner, read-only |
 | Web UI languages | English | 9 | English | 8 |
 | Language, tests | C; unit tests (Stratum, ASIC) in CI | C++/C | C; unit tests (Stratum, mining) in QEMU in CI | Rust; chip, chain and board drivers host-tested against a simulated chain and I²C bus |
-| Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 7 run, 6 more with a profile (see below) |
+| Supported boards | ~20 board versions | 11 boards, plus the NerdAxe Gaia since v1.1.1 | 1 (BitForge Nano) | 7 run, 7 more with a profile (see below) |
 
 What the stock firmware offers in addition: AxeOS and NerdOS support far more
 boards and have years of use by a large community; AxeOS has a scoreboard, themes,
